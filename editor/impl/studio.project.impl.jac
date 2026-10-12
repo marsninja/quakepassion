@@ -109,8 +109,19 @@ impl Studio.drop_addon(path: str) {
 impl Studio.sync_addons {
     stock = self.archive;
     if stock is not None {
-        stock.extras = dict(self.addon_textures);
-        # What was read of an add-on's files is read again.
+        folders: dict[str, str] = {};
+        for label in self.addon_textures.keys() {
+            folders["addon:" + label] = self.addon_textures[label];
+        }
+        links = self.all_links();
+        for link in links.keys() {
+            # A project's link may be a path from the project's own folder.
+            folders["link:" + link] = links[link]
+                if links[link].startswith("/") or not self.project_folder
+                else self.project_folder + "/" + links[link];
+        }
+        stock.extras = folders;
+        # What was read of such folders is read again.
         stock.found = {};
         stock.listed = {};
     }
@@ -126,7 +137,7 @@ impl Studio.sync_addons {
 impl Studio.addon_words(path: str) -> str {
     label = self.addon_labels.get(path, "");
     stock = self.archive;
-    pictures = len(stock.extra_names(label)) if stock is not None else 0;
+    pictures = len(stock.extra_names("addon:" + label)) if stock is not None else 0;
     prefabs = 0;
     if label in self.addon_prefabs {
         prefabs = len([each for each in own_files(self.addon_prefabs[label]) if each.lower().endswith(".map")]);
@@ -176,6 +187,8 @@ impl Studio.close_project {
     if stock is not None {
         stock.folder = "";
     }
+    # Its links and lists go with it.
+    self.sync_addons();
     self.materials_changed += 1;
     ui = self.ui;
     if ui is not None {
@@ -221,6 +234,8 @@ impl Studio.open_project(folder: str) -> bool {
             self.say("The project's add-on " + addon + " could not be read");
         }
     }
+    # The folders it links to are materials now.
+    self.sync_addons();
     ui = self.ui;
     if ui is not None {
         ui.library.rows = [];

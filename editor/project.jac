@@ -15,6 +15,8 @@ line by line:
     scene yard
     addon classes/traps.txt
     recipe fine "ed_build full; ed_bake 128"
+    link stone "/home/me/pictures/stone"
+    list walls q1:e1m1/tech04_1 link:stone/rough.png
 
 An add-on is a text file too: lines of entity classes, in the form the
 studio's own table has them, after the word `class`."""
@@ -33,6 +35,10 @@ obj Project {
         bake: int = 0,
         addons: list[str] = [],
         recipes: dict[str, str] = {},
+        # Folders of image files it uses where they lie, by a name of its
+        # own for each, and lists of materials it keeps together by name.
+        links: dict[str, str] = {},
+        lists: dict[str, list[str]] = {},
         # Lines it did not understand, kept as they were.
         other: list[str] = [];
 }
@@ -109,6 +115,10 @@ def read_project(text: str) -> Project {
             }
         } elif key == "recipe" and len(words) > 2 and file_name(value) {
             found.recipes[file_name(value)] = " ".join(words[2:]);
+        } elif key == "link" and len(words) > 2 and file_name(value) {
+            found.links[file_name(value).lower()] = words[2];
+        } elif key == "list" and file_name(value) {
+            found.lists[file_name(value).lower()] = words[2:];
         } else {
             found.other.append(line);
         }
@@ -138,6 +148,12 @@ def write_project(project: Project) -> str {
     }
     for recipe in sorted(project.recipes.keys()) {
         lines.append("recipe " + recipe + " " + manifest_word(project.recipes[recipe]));
+    }
+    for link in sorted(project.links.keys()) {
+        lines.append("link " + link + " " + manifest_word(project.links[link]));
+    }
+    for kept in sorted(project.lists.keys()) {
+        lines.append("list " + kept + "".join([" " + manifest_word(material) for material in project.lists[kept]]));
     }
     for line in project.other {
         lines.append(line);

@@ -255,6 +255,20 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   linked like any other. Dropping the add-on takes them away with its
   classes; reloading reads its folders again. (`ed_pack project` does
   not yet carry an add-on's files into a pack.)
+- **Folders linked to, and lists of materials**: `ed_texlink <name>
+  <folder>` uses a folder of image files as materials where it lies:
+  they are a shelf of the Materials tab (`link stone`) and are called
+  `link:stone/<file>`, and nothing is copied. `ed_texlink drop <name>`
+  lets the folder go (it is as it was) and `ed_texlink` lists the links
+  with how many materials each holds. `ed_texlist <name> add [material
+  ...]` puts the material in hand, or those named, on a list kept by
+  name; the list is a shelf too (`list walls`), in the order things were
+  put on it, of materials from anywhere: a game's, the project's, a
+  link's. `drop` takes materials off, `remove` gives the list up, and
+  the name alone shows it. With a project open both are kept in its
+  manifest (`link`, `list`; a link's folder may be a path from the
+  project's own), so the project refers to its textures and does not
+  carry copies; with none, they are kept in the studio's settings.
 - **What a game's scenes begin with**: `ed_game <passion|q1|q2|q3>
   <material|build|bake> [value]` sets the material new brushes are made
   of, how levels are lit and how wide a bake's cells are for scenes of

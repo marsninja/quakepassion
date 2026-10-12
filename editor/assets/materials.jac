@@ -24,7 +24,9 @@ obj ArchiveMaterials(Materials) {
         listed: dict[str, list[str]] = {},
         # Where image files used as materials are kept, when a project says.
         folder: str = "",
-        # Folders of image files that add-ons bring, by the add-on's name.
+        # Folders of image files from elsewhere, each by what its materials'
+        # names begin with: `addon:castle` for what an add-on brings,
+        # `link:stone` for a folder used where it lies.
         extras: dict[str, str] = {};
 
     def reader -> Loader {
@@ -65,13 +67,13 @@ obj ArchiveMaterials(Materials) {
         return self.images_under(self.files_folder(), "file:");
     }
 
-    """The image files an add-on brings, as material names: `addon:`, the
-    add-on's name and the path under its folder."""
-    def extra_names(label: str) -> list[str] {
-        if label not in self.extras {
+    """The image files of a folder from elsewhere, as material names: what
+    the folder goes by (`addon:castle`, `link:stone`) and the path under it."""
+    def extra_names(key: str) -> list[str] {
+        if key not in self.extras {
             return [];
         }
-        return self.images_under(self.extras[label], "addon:" + label + "/");
+        return self.images_under(self.extras[key], key + "/");
     }
 
     """The image files under a folder, each as `lead` and its path from it."""
@@ -102,13 +104,13 @@ obj ArchiveMaterials(Materials) {
         path = "";
         if len(parts) == 2 and parts[0] == "file" and parts[1] and ".." not in parts[1] {
             path = self.files_folder() + "/" + parts[1];
-        } elif len(parts) == 2 and parts[0] == "addon" and ".." not in parts[1] {
-            # An add-on's own file: under the folder its add-on named.
+        } elif len(parts) == 2 and parts[0] in ["addon", "link"] and ".." not in parts[1] {
+            # A file of a folder from elsewhere: an add-on's, or one linked to.
             halves = parts[1].split("/", 1);
-            if len(halves) != 2 or halves[0] not in self.extras or not halves[1] {
+            if len(halves) != 2 or parts[0] + ":" + halves[0] not in self.extras or not halves[1] {
                 return None;
             }
-            path = self.extras[halves[0]] + "/" + halves[1];
+            path = self.extras[parts[0] + ":" + halves[0]] + "/" + halves[1];
         }
         if path {
             kind = image_kind(path);
@@ -238,9 +240,9 @@ obj ArchiveMaterials(Materials) {
         }
         result: list[str] = [];
         parts = group.split(":", 1);
-        if len(parts) == 2 and parts[0] == "addon" {
-            # Read each time: an add-on's folder is changed by hand.
-            return self.extra_names(parts[1]);
+        if len(parts) == 2 and parts[0] in ["addon", "link"] {
+            # Read each time: such a folder is changed by hand.
+            return self.extra_names(group);
         }
         try {
             if len(parts) == 2 and parts[0] == "q1" {

@@ -68,3 +68,16 @@ test "an add-on's materials and prefabs go by its file's name" {
     assert addon_label("/home/me/addons/Castle Keep.addon") == "castle_keep";
     assert addon_label("traps.txt") == "traps" and addon_label("plain") == "plain" and addon_label("") == "addon";
 }
+
+test "a project's manifest keeps the folders it links to and its lists of materials" {
+    text = "name \"The keep\"\ngame q1\nlink Stone \"/home/me/my pictures/stone\"\nlink brick pictures/brick\n"
+        + "list walls q1:e1m1/tech04_1 link:stone/rough.png\nlist empty\n";
+    read = read_project(text);
+    assert read.links == {"stone": "/home/me/my pictures/stone", "brick": "pictures/brick"};
+    assert read.lists == {"walls": ["q1:e1m1/tech04_1", "link:stone/rough.png"], "empty": []} and read.other == [];
+    written = write_project(read);
+    assert "link brick pictures/brick\nlink stone \"/home/me/my pictures/stone\"\n" in written;
+    assert "list empty\nlist walls q1:e1m1/tech04_1 link:stone/rough.png\n" in written;
+    again = read_project(written);
+    assert again.links == read.links and again.lists == read.lists;
+}

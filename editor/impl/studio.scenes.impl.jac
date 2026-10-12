@@ -992,13 +992,24 @@ impl Studio.list_materials(ui: StudioUi) {
         if len(shelf.file_names()) > 0 {
             rows.append(TreeRow(key="files", text="your files", picked=self.shelf == "files", tone="accent"));
         }
-        # What add-ons bring: each one's image files under its name.
+        # Folders from elsewhere, each under its name: what add-ons bring,
+        # and folders linked to. Then the lists of materials kept by name.
         for label in sorted(shelf.extras.keys()) {
             if len(shelf.extra_names(label)) > 0 {
                 rows.append(
-                    TreeRow(key="addon:" + label, text="add-on " + label, picked=self.shelf == "addon:" + label, tone="accent")
+                    TreeRow(
+                        key=label,
+                        text=("add-on " if label.startswith("addon:") else "link ") + label.split(":", 1)[-1],
+                        picked=self.shelf == label,
+                        tone="accent"
+                    )
                 );
             }
+        }
+        for kept_list in sorted(self.all_lists().keys()) {
+            rows.append(
+                TreeRow(key="list:" + kept_list, text="list " + kept_list, picked=self.shelf == "list:" + kept_list, tone="accent")
+            );
         }
         for group in shelf.groups() {
             # A filter looks inside the groups already listed once, so typing

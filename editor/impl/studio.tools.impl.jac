@@ -297,6 +297,9 @@ impl Studio.fill_gallery(ui: StudioUi) {
         }
     } elif self.shelf == "files" {
         names = shelf.file_names();
+    } elif self.shelf.startswith("list:") {
+        # A list of materials kept by name, in the order they were put on it.
+        names = list(self.all_lists().get(self.shelf[5:], []));
     } elif self.shelf == "recent" {
         # What has been taken in hand, the latest first.
         names = list(self.recent_materials);

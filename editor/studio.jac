@@ -410,6 +410,16 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "list the studio's settings, each a click to change; open them by subject in a box; or print them as the console variables they also are"
     ),
     (
+        "ed_texlink",
+        "ed_texlink [<name> <folder> | drop <name>]",
+        "use a folder of image files as materials where it lies, under a name: nothing is copied (kept in the open project, or in the settings)"
+    ),
+    (
+        "ed_texlist",
+        "ed_texlist [<name> [add|drop [material ...] | remove]]",
+        "a list of materials kept by name and shown as a shelf of the Materials tab: add the material in hand or those named, take them off, or show the list"
+    ),
+    (
         "ed_colour",
         "ed_colour <accent|select|text|panel|all> <rrggbb|default>",
         "one of the studio's colours set by hand over its theme, as six digits, or given back"
@@ -1204,6 +1214,11 @@ obj Studio(Workbench) {
         addon_labels: dict[str, str] = {},
         addon_textures: dict[str, str] = {},
         addon_prefabs: dict[str, str] = {},
+        # Folders of image files used where they lie, by a name for each,
+        # and lists of materials kept by name: those of the studio's own
+        # settings (a project keeps its own in its manifest).
+        tex_links: dict[str, str] = {},
+        tex_lists: dict[str, list[str]] = {},
         user_addons: list[str] = [],
         game_setup: dict[str, str] = {},
         game_applied: str = "",
@@ -2049,8 +2064,8 @@ obj Studio(Workbench) {
         home = game_directory("passion");
         if os.path.isdir(home) {
             found = ArchiveMaterials(directory=home);
-            found.extras = dict(self.addon_textures);
             self.archive = found;
+            self.sync_addons();
             self.materials = found;
         }
         view = ViewArea(
@@ -3856,6 +3871,13 @@ obj Studio(Workbench) {
     """An add-on's line of the listing: its classes, name, and how many
     materials and prefabs it brings."""
     def addon_words(path: str) -> str;
+    # Linked folders and lists of materials (impl/studio.texlinks.impl.jac)
+    """The folders linked to and the lists kept: the settings' own, and
+    over them the open project's."""
+    def all_links -> dict[str, str];
+    def all_lists -> dict[str, list[str]];
+    """Run ed_texlink or ed_texlist. False when it is neither."""
+    def texlink_command(scene: Scene, args: list[str]) -> bool;
     """Take up what a game is set up with, when a scene of it is first shown."""
     def apply_game(game: str);
     def close_project;
@@ -4385,7 +4407,7 @@ obj Studio(Workbench) {
             and not self.nav_command(scene, args) and not self.restrict_command(scene, args)
             and not self.integral_command(scene, args)
             and not self.games_command(scene, args)
-            and not self.script_command(scene, args)
+            and not self.script_command(scene, args) and not self.texlink_command(scene, args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.preview_command(scene, args)
             and not self.entity_command(scene, args)
@@ -4741,6 +4763,13 @@ obj Studio(Workbench) {
         }
         if self.settings_box is not None {
             lines.append("studio: settings box subject=" + self.settings_subject);
+        }
+        if len(self.all_links()) > 0 or len(self.all_lists()) > 0 {
+            both_lists = self.all_lists();
+            lines.append(
+                "studio: materials links=" + ",".join(sorted(self.all_links().keys())) + " lists="
+                    + ",".join([each + ":" + str(len(both_lists[each])) for each in sorted(both_lists.keys())])
+            );
         }
         if len(self.user_inks) > 0 {
             lines.append("studio: colours " + " ".join([each + " " + self.user_inks[each] for each in sorted(self.user_inks.keys())]));

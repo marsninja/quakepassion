@@ -513,6 +513,14 @@ impl Studio.settings_lines -> list[str] {
         lines.append("ed_recipe " + kept_recipe + " " + quote_command_word(self.recipes[kept_recipe]));
     }
     lines.append("ed_autosave every " + str(int(self.autosave_every)));
+    for link in sorted(self.tex_links.keys()) {
+        lines.append("ed_texlink " + link + " " + quote_command_word(self.tex_links[link]));
+    }
+    for kept_list in sorted(self.tex_lists.keys()) {
+        if len(self.tex_lists[kept_list]) > 0 {
+            lines.append("ed_texlist " + kept_list + " add " + " ".join(self.tex_lists[kept_list]));
+        }
+    }
     for which in sorted(self.user_inks.keys()) {
         lines.append("ed_colour " + which + " " + self.user_inks[which]);
     }
