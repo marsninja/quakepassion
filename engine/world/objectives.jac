@@ -109,7 +109,8 @@ behind."""
 def objective_owner_actions(world: World, source: Signal, why: str) -> list[Objective] {
     found: list[Objective] = [];
     for trigger in [world->:HasTrigger:->][?:TouchTrigger] {
-        if trigger.signal is not source or not trigger.enabled {
+        # A trigger that fires once and has: nothing more to get from it.
+        if trigger.signal is not source or not trigger.enabled or (trigger.once and trigger.activations > 0) {
             continue;
         }
         middle = objective_volume_center(trigger);
@@ -123,7 +124,9 @@ def objective_owner_actions(world: World, source: Signal, why: str) -> list[Obje
         }
     }
     for part in objective_movers(world) {
-        if part.activation is not source or part.kind != "button" {
+        # A button already in (one that stays in, or not yet back out) has
+        # done what it does; a counter it feeds wants the others.
+        if part.activation is not source or part.kind != "button" or part.position > 0.0 or part.state != "closed" {
             continue;
         }
         box = part.bounds;

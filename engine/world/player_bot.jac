@@ -315,17 +315,24 @@ walker AutoThink {
         if mesh is None {
             return (0, point);
         }
+        # A standing origin within reach of the point's own height: not the
+        # floor of a pit below a button on a walkway.
         for reach in [0.0, 16.0, 32.0, 48.0, 64.0] {
             for k in range(8 if reach > 0.0 else 1) {
                 angle = float(k) * math.pi / 4.0;
                 spot = point.add(Vec3(x=math.cos(angle) * reach, y=math.sin(angle) * reach));
-                area = mesh.locate(spot);
-                if area > 0 {
-                    return (area, spot);
+                for drop in [0.0, 16.0, 32.0, 48.0, 64.0, 80.0] {
+                    area = mesh.aas.area_at(spot.sub(Vec3(z=drop)));
+                    if area > 0 and mesh.aas.areas[area].reach_count > 0 {
+                        return (area, spot);
+                    }
                 }
             }
         }
-        return (0, point);
+        # Nothing near its height (it is over a mover compiled elsewhere,
+        # a floor lowered as a lift): the area under it, however far.
+        under = mesh.locate(point);
+        return (under, point);
     }
 
     """The mover the route to the goal runs into first (or that the bot
