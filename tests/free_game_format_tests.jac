@@ -8,7 +8,8 @@ import from engine.formats.animated { AnimationFrame }
 import from engine.assets.materials { material_name }
 import from engine.assets.pk3 { Pk3Assets, file_key }
 import from engine.assets.library { AssetLibrary }
-import from games.opponents { frame_indices, expand_frames, standard_frames }
+import from games.frame_order { expand_frames, standard_frames }
+import from games.opponents { frame_indices }
 import from games.arena_character { player_part }
 
 """An MD3 of one frame and one tag, with a triangle surface named `name`

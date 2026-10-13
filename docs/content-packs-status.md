@@ -111,7 +111,7 @@ it was listed under; the console's `map` loads from the pack being played.
   leaf or contents counted down from 65535, as QuakeSpasm reads them. Four of
   LibreQuake's maps (`lq_e1m4`, `lq_e2m5`, `lq_e4m4`, `lq_e4m5`) have more
   than 32767 clip nodes.
-- **Frames by number** (`games/opponents.jac`, `QUAKE_FRAME_ORDER`): QuakeC compiles `$pain1`
+- **Frames by number** (`games/frame_order.jac`): QuakeC compiles `$pain1`
   to a frame number, so Quake never looks a frame up by name. A rule names
   its frames; a Quake model with Quake's number of frames under other names
   (LibreQuake's are `frame1`, `frame2`, ...) is animated by their number in
