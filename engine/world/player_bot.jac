@@ -19,7 +19,7 @@ import from .bot_travel { FollowRoute, TravelResult, yaw_of, gap_distance }
 import from .pickups { Pickup, HasPickup }
 import from .inventory { quantity }
 import from .bot_trace { BotTrace, trace_text, trace_number }
-import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_for, selected_weapon }
+import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_for, selected_weapon, Projectile, HasProjectile }
 import from .weapons { WeaponRule }
 import from .exits { LevelExit, HasExit }
 import from .objectives { Objective, mover_objectives, exit_objectives, objective_mover, mover_blocked, objective_item_box }
@@ -113,6 +113,8 @@ node PlayerBot {
         # The areas it has stood in, and when it last chose where to roam.
         visited: set[int] = set(),
         roam_chosen: float = -100.0,
+        roam_nearest: float = 1.0e9,
+        roam_nearer_at: float = 0.0,
         # Areas compiled with their mover where the level starts it (a floor
         # that drops): usable only while it is still there.
         rest_areas: set[int] = set(),
@@ -132,6 +134,9 @@ node PlayerBot {
         detour_until: float = 0.0,
         detours: int = 0,
         reopened: float = -100.0,
+        # Areas closed to routing: by area, the mover that shut it and until
+        # when (a closing lapses; doors open).
+        closed: dict[int, tuple[int, float]] = {},
         # How long it has been trying to move and not moving.
         blocked_time: float = 0.0,
         moving_time: float = 0.0,
@@ -229,6 +234,50 @@ node PlayerBot {
             }
         }
         return (0, origin);
+    }
+
+    """Close `area` to routing for a while, for the mover `model` (0: none)
+    that makes it no way through."""
+    def close_area(area: int, model: int) {
+        mesh = self.mesh;
+        if mesh is None or area <= 0 {
+            return;
+        }
+        mesh.enable_area(area, False);
+        self.closed[area] = (model, self.clock + 30.0);
+    }
+
+    """Open again the closed areas whose closing has lapsed or whose mover
+    no longer stands in the way; and all of them, with what was given up,
+    after five seconds with no way on. Whether any was opened."""
+    def reopen_areas(world: World, player: Player) -> bool {
+        mesh = self.mesh;
+        if mesh is None {
+            return False;
+        }
+        opened = False;
+        for area in list(self.closed.keys()) {
+            (model, until) = self.closed[area];
+            if self.clock > until or (model > 0 and not mover_blocked(world, model, player)) {
+                mesh.enable_area(area, True);
+                self.closed.pop(area);
+                opened = True;
+            }
+        }
+        if self.lost_since >= 0.0 and self.clock - self.lost_since > 5.0 {
+            self.given_up = [];
+            for area in list(mesh.disabled) {
+                mesh.enable_area(area, True);
+            }
+            self.closed = {};
+            self.lost_since = -1.0;
+            opened = True;
+            print("AUTOPLAY no way on: trying again what was closed and given up");
+        }
+        if opened {
+            self.route.abandon();
+        }
+        return opened;
     }
 
     """The nearest point to `origin` that lies in an area with ways out, at
@@ -413,6 +462,48 @@ node PlayerBot {
         }
     }
 
+    """Which way to step to keep out of a burst: from a grenade lying or
+    landing within its reach, or across the line of a rocket that will pass
+    close. None when nothing threatens."""
+    def dodge(world: World, origin: Vec3) -> Vec3 | None {
+        best: Vec3 | None = None;
+        worst = 1.0e9;
+        for missile in [world->:HasProjectile:->][?:Projectile] {
+            reach = max(missile.radius, 120.0 if missile.splash > 0 else 0.0);
+            if reach <= 0.0 {
+                continue;
+            }
+            rel = origin.sub(missile.pos);
+            distance = rel.length();
+            if distance > 320.0 {
+                continue;
+            }
+            speed = missile.velocity.length();
+            if missile.gravity or speed < 50.0 {
+                # A grenade: away from where it is, while within its reach.
+                if distance < reach + 48.0 and distance < worst {
+                    worst = distance;
+                    away = Vec3(x=rel.x, y=rel.y);
+                    best = away.normalized() if away.length() > 0.001 else Vec3(x=1.0);
+                }
+                continue;
+            }
+            # A rocket: where it passes nearest the bot in the next moment.
+            ahead = missile.velocity.scale(1.0 / speed);
+            along = rel.dot(ahead);
+            if along < 0.0 or along / speed > 0.8 {
+                continue;
+            }
+            miss = rel.sub(ahead.scale(along));
+            if miss.length() < reach and along < worst {
+                worst = along;
+                side = Vec3(x=miss.x, y=miss.y);
+                best = side.normalized() if side.length() > 0.001 else Vec3(x=-ahead.y, y=ahead.x).normalized();
+            }
+        }
+        return best;
+    }
+
     """One frame of play: the command the player's body gets."""
     def drive(world: World, level: Level, player: Player, state: CombatState, dt: float) -> Intent;
 
@@ -434,6 +525,7 @@ node PlayerBot {
         self.exit_name = "";
         self.visited = set();
         self.roam_chosen = -100.0;
+        self.closed = {};
         self.lost_since = -1.0;
         self.leap = 0;
         self.best_distance = 1.0e9;
@@ -686,7 +778,7 @@ walker AutoThink {
                 here_area = bot.area_near(self.origin)[0];
                 if not its_own and area > 0 and area != here_area and area not in mesh.disabled
                     and mover_blocked(self.world, model, self.player) {
-                    mesh.enable_area(area, False);
+                    bot.close_area(area, model);
                     bot.route.abandon();
                     print("AUTOPLAY mover", model, "is still shut: area", area, "closed");
                 }
@@ -695,7 +787,7 @@ walker AutoThink {
             if area in bot.rest_areas {
                 leader = objective_mover(self.world, model);
                 if leader is not None and leader.position > 0.01 and area not in mesh.disabled {
-                    mesh.enable_area(area, False);
+                    bot.close_area(area, model);
                     bot.route.abandon();
                     print("AUTOPLAY mover", model, "has moved: area", area, "closed");
                     return False;
@@ -716,7 +808,7 @@ walker AutoThink {
             }
             # In the way with nothing to be done about it now: route round it.
             if area > 0 and area not in mesh.disabled and mover_blocked(self.world, model, self.player) {
-                mesh.enable_area(area, False);
+                bot.close_area(area, model);
                 bot.route.abandon();
                 print("AUTOPLAY mover", model, "is shut: area", area, "closed");
                 return False;
@@ -945,15 +1037,7 @@ walker AutoThink {
         # No way to the exit for a while: what was given up and closed is
         # tried again (the key behind a door it set aside).
         mesh = bot.mesh;
-        if bot.lost_since >= 0.0 and bot.clock - bot.lost_since > 5.0 and mesh is not None {
-            bot.given_up = [];
-            for area in list(mesh.disabled) {
-                mesh.enable_area(area, True);
-            }
-            bot.lost_since = -1.0;
-            bot.route.abandon();
-            print("AUTOPLAY no way to the exit: trying again what was given up");
-        }
+
         if self.check_movers() {
             visit self.shift(here, "activate");
             return;
@@ -1117,7 +1201,25 @@ walker AutoThink {
             if worth <= 0.0 {
                 continue;
             }
-            area = mesh.locate(item.pos);
+            passed_over = False;
+            for (spot, until) in bot.given_up {
+                if until > bot.clock and spot.sub(item.pos).length() < 8.0 {
+                    passed_over = True;
+                }
+            }
+            if passed_over {
+                continue;
+            }
+            # Only where the player's box can touch it: an area reaching into
+            # its pickup box (not the floor under one on a ledge).
+            area = 0;
+            reach_box = objective_item_box(item);
+            for candidate in mesh.aas.box_areas(reach_box.mins, reach_box.maxs, 16) {
+                if mesh.aas.areas[candidate].reach_count > 0 and candidate not in mesh.disabled {
+                    area = candidate;
+                    break;
+                }
+            }
             if area == 0 {
                 continue;
             }
@@ -1162,6 +1264,8 @@ walker AutoThink {
         bot.goal_name = best_name;
         bot.route.abandon();
         bot.roam_chosen = bot.clock;
+        bot.roam_nearest = 1.0e9;
+        bot.roam_nearer_at = bot.clock;
         return True;
     }
 
@@ -1187,6 +1291,22 @@ walker AutoThink {
             self.roam_goal();
         }
         mesh = bot.mesh;
+        goal = bot.goal;
+        if goal is not None {
+            # Not getting nearer for fifteen seconds: set it aside and choose
+            # again (an item it cannot after all reach).
+            gap = goal.sub(self.origin).length();
+            if gap < bot.roam_nearest - 32.0 {
+                bot.roam_nearest = gap;
+                bot.roam_nearer_at = bot.clock;
+            } elif bot.clock - bot.roam_nearer_at > 15.0 {
+                bot.given_up.append((goal, bot.clock + 240.0));
+                bot.trace.event("roam_given_up", bot.clock, {"goal": trace_text(bot.goal_name), "nearest": str(int(bot.roam_nearest))});
+                print("AUTOPLAY roam given up:", bot.goal_name);
+                self.roam_goal();
+                return;
+            }
+        }
         if mesh is not None and bot.goal is not None and self.bot.area_near(self.origin)[0] == bot.goal_area {
             # Arrived: choose again.
             self.roam_goal();
@@ -1257,6 +1377,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                 self.visited.add(standing);
             }
         }
+        self.reopen_areas(world, player);
         self.mind spawn AutoThink(
             bot=self, world=world, level=level, player=player, state=state, origin=origin, eye_height=eye_height
         );
@@ -1504,6 +1625,15 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         intent.move = Vec3(
             x=world_move.dot(right_from(turned)), y=world_move.dot(forward_from(turned, 0.0)), z=intent.move.z
         );
+    }
+    # Grenades and rockets: out of the way of one that will burst near
+    # (Q3's BotCheckForGrenades keeps clear of each live grenade).
+    dodge = self.dodge(world, origin);
+    if dodge is not None {
+        forward = forward_from(player.yaw, 0.0);
+        right = right_from(player.yaw);
+        intent.move = Vec3(x=dodge.dot(right), y=dodge.dot(forward), z=intent.move.z);
+        self.travel = TravelResult(direction=dodge, speed=400.0);
     }
     # The last step of an objective: a button is pressed and an item taken
     # by touching it, which the route's end (an area's middle, a waypoint
