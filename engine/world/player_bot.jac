@@ -660,6 +660,13 @@ walker AutoThink {
         busy.extend([held.mover for held in bot.waiting]);
         for (model, area) in movers {
             if model in busy {
+                # Being seen to further down the stack, and not yet open: no
+                # way through it meanwhile.
+                if area > 0 and area not in mesh.disabled and mover_blocked(self.world, model, self.player) {
+                    mesh.enable_area(area, False);
+                    bot.route.abandon();
+                    print("AUTOPLAY mover", model, "is still shut: area", area, "closed");
+                }
                 continue;
             }
             if area in bot.rest_areas {
@@ -775,20 +782,19 @@ walker AutoThink {
     }
 
     """Ammunition on the map for the weapons held, within reach: wanted when
-    nothing but the axe or blaster has any left."""
+    no weapon held has fifteen shots left."""
     def ammo_nearby() -> list[Objective] {
         found: list[Objective] = [];
         wanted: list[str] = [];
-        armed = False;
+        shots = 0;
         for rule in self.state.rules {
             if owns_weapon(self.player, rule) and rule.ammo {
                 wanted.append(rule.ammo);
-                if has_ammo_for(self.player, rule) {
-                    armed = True;
-                }
+                shots = max(shots, quantity(self.player.inventory, rule.ammo) // max(1, rule.cost));
             }
         }
-        if armed {
+        # Running low, not only out: a fight empties a shotgun fast.
+        if shots >= 15 {
             return found;
         }
         for item in [self.world->:HasPickup:->][?:Pickup] {
@@ -811,7 +817,11 @@ walker AutoThink {
         if self.bot.enemy is not None {
             return False;
         }
-        if self.player.health < 60 and self.take_objective(self.health_nearby(), 1500) {
+        # Before pressing or touching what opens the way (it may let monsters
+        # out), it tops up sooner.
+        current = self.bot.objective;
+        wary = current is not None and current.kind in ["press", "touch", "shoot"];
+        if self.player.health < (75 if wary else 60) and self.take_objective(self.health_nearby(), 1500) {
             return True;
         }
         # Something worth a short way round, but not on top of an objective
