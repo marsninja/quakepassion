@@ -2470,6 +2470,15 @@ impl App.tick_powerups(dt: float) {
     game = self.level.bsp.game;
     self.quad_sound_wait = max(0.0, self.quad_sound_wait - dt);
     result = self.player spawn PowerupTick(game=game, dt=dt);
+    if result.drained > 0 {
+        # Rot and overcharge decay are not hits (Q1 PainSound, Q2
+        # P_DamageFeedback and Q3 EV_PAIN all follow damage taken): the pain
+        # face, the voice and the body are told the health they compare with
+        # has fallen too.
+        self.pain_health -= result.drained;
+        voice = voice_of(self.player);
+        voice.health -= result.drained;
+    }
     for cue in result.cues {
         self.audio.play_path(cue);
     }

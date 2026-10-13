@@ -158,8 +158,8 @@ test "megahealth rots after five seconds and Q3 regeneration overcharges" {
     assert player.health == 200;
     player spawn PowerupTick(game="q2", dt=4.5);
     assert player.health == 200;
-    player spawn PowerupTick(game="q2", dt=1.0);
-    assert player.health == 199;
+    rotted = player spawn PowerupTick(game="q2", dt=1.0);
+    assert player.health == 199 and rotted.drained == 1;
     player.health = 101;
     player spawn PowerupTick(game="q2", dt=5.0);
     assert player.health == 100 and effect(player, "megahealth") is None;

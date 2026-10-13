@@ -246,6 +246,9 @@ walker PowerupTick {
         cues: list[str] = [],
         messages: list[str] = [],
         healed: int = 0,
+        # Health the lasting rules took back (rot and overcharge decay): a
+        # loss no hit dealt, so nothing cries out or flinches at it.
+        drained: int = 0,
         expired: list[str] = [],
         actor: Actor | None = None;
 
@@ -281,6 +284,7 @@ walker PowerupTick {
             while here.clock >= 1.0 and actor.health > actor.max_health {
                 here.clock -= 1.0;
                 actor.health -= 1;
+                self.drained += 1;
             }
             if actor.health <= actor.max_health {
                 actor del --> here;
@@ -350,6 +354,7 @@ walker PowerupTick {
             }
         } elif actor.health > actor.max_health {
             actor.health -= 1;
+            self.drained += 1;
         }
         if actor.armor > actor.max_health {
             actor.armor -= 1;

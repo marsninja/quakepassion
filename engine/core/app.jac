@@ -118,7 +118,7 @@ import from ..world.combat {
     KillBox,
     ClearActors
 }
-import from ..world.vitals { CrashLand, VoiceTick }
+import from ..world.vitals { CrashLand, VoiceTick, voice_of }
 import from ..world.demise { LieDead, mortality_of, in_touch, stand_again }
 import from games.deaths { prepare_death }
 import from ..world.particles { Explosion, HasExplosion, ImpactSound, HasImpactSound, spawn_effect }

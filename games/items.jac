@@ -677,8 +677,9 @@ def special_rule(game: str, kind: str, fields: dict[str, str]) -> PickupRule | N
                 capacity=200,
                 armor_mode="shard",
                 armor_ratio=2.0 / 3.0,
+                # bg_itemlist names shard_sphere.md3 beside it, but CG_Item
+                # draws the second model of health and powerups only.
                 model="models/powerups/armor/shard.md3",
-                extra_model="models/powerups/armor/shard_sphere.md3",
                 sound="sound/misc/ar1_pkup.wav"
             );
         }
