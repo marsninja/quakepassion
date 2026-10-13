@@ -25,6 +25,7 @@ import from .pickups { Pickup, HasPickup }
 import from .inventory { quantity }
 import from .exits { LevelExit }
 import from ..math.vec3 { Vec3 }
+import from ..math.aabb { AABB }
 
 """One thing to do: `kind` is "press" (walk into a button), "touch" (stand
 in a trigger), "shoot" (a button, door or trigger with health), "kill" (a
@@ -41,6 +42,12 @@ node Objective {
         item: Pickup | None = None,
         # The mover (BSP model) it is to get by, 0 for none.
         mover: int = 0,
+        # Where a body's origin does it, when that is a volume (a trigger to
+        # stand in, a button to walk into); and the area and point the bot
+        # chose to do it from.
+        box: AABB | None = None,
+        stand: int = 0,
+        stand_point: Vec3 = Vec3(),
         # How many times its signal had fired, when it was taken up, and how
         # long it is given.
         fired: int = 0,
@@ -68,6 +75,13 @@ node Objective {
 }
 
 edge Requires: Objective --> Objective {}
+
+"""Where a player's origin picks an item up: its box (16 a side, 56 tall
+from the item's origin) touching the player's (16 a side, 24 below and 32
+above the origin)."""
+def objective_item_box(item: Pickup) -> AABB {
+    return AABB(mins=item.pos.sub(Vec3(x=32.0, y=32.0, z=32.0)), maxs=item.pos.add(Vec3(x=32.0, y=32.0, z=80.0)));
+}
 
 """The middle of a trigger's volume."""
 def objective_volume_center(trigger: TouchTrigger) -> Vec3 | None {
@@ -124,7 +138,8 @@ def objective_owner_actions(world: World, source: Signal, why: str) -> list[Obje
         if trigger.health > 0 {
             found.append(Objective(kind="shoot", point=middle, aim=middle, why=why, signal=source));
         } elif trigger.players and trigger.touchable {
-            found.append(Objective(kind="touch", point=middle, why=why, signal=source));
+            box = trigger.volume.bounds[0];
+            found.append(Objective(kind="touch", point=middle, why=why, signal=source, box=box));
         }
     }
     for part in objective_movers(world) {
@@ -136,7 +151,15 @@ def objective_owner_actions(world: World, source: Signal, why: str) -> list[Obje
         box = part.bounds;
         middle = box.mins.add(box.maxs).scale(0.5).add(part.rest);
         kind = "shoot" if part.health > 0 else "press";
-        found.append(Objective(kind=kind, point=middle, aim=middle, why=why, signal=source, door=part));
+        # Pressed by the player's box touching it: its origin within the
+        # button's box grown by the player's.
+        reach = AABB(
+            mins=box.mins.add(part.rest).sub(Vec3(x=17.0, y=17.0, z=33.0)),
+            maxs=box.maxs.add(part.rest).add(Vec3(x=17.0, y=17.0, z=25.0))
+        );
+        found.append(
+            Objective(kind=kind, point=middle, aim=middle, why=why, signal=source, door=part, box=reach if kind == "press" else None)
+        );
     }
     for body in [world->:HasOpponent:->][?:Opponent] {
         if body.activation is source and body.health > 0 {
@@ -145,7 +168,9 @@ def objective_owner_actions(world: World, source: Signal, why: str) -> list[Obje
     }
     for item in [world->:HasPickup:->][?:Pickup] {
         if item.activation is source and item.active {
-            found.append(Objective(kind="pickup", point=item.pos, why=why, item=item, signal=source));
+            found.append(
+                Objective(kind="pickup", point=item.pos, why=why, item=item, signal=source, box=objective_item_box(item))
+            );
         }
     }
     return found;
@@ -188,7 +213,7 @@ def objective_key_items(world: World, key: str, why: str) -> list[Objective] {
     found: list[Objective] = [];
     for item in [world->:HasPickup:->][?:Pickup] {
         if item.active and item.rule.kind == key {
-            found.append(Objective(kind="pickup", point=item.pos, why=why, item=item));
+            found.append(Objective(kind="pickup", point=item.pos, why=why, item=item, box=objective_item_box(item)));
         }
     }
     return found;

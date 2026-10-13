@@ -15,6 +15,8 @@ import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
 import from engine.world.player_bot { PlayerBot }
 import from engine.core.savegame { unpack_campaign }
+import from engine.math.vec3 { Vec3 }
+import from engine.input.input { Intent }
 
 with entry {
     renderer = Renderer();
@@ -44,6 +46,23 @@ with entry {
         print("RUN entry save records", tags);
         app.restart_level();
         print("RUN restart without play:", app.menu.message if app.menu.opened else "ok");
+    }
+    # QP_LOOK=x,y,z,yaw: stand there (eye), look along yaw (degrees), and
+    # save a screenshot a second later (to see a place the bot struggles).
+    look = [float(word) for word in os.getenv("QP_LOOK", "").split(",") if word];
+    if len(look) == 4 {
+        app.autoplay = None;
+        app.player.pos = Vec3(x=look[0], y=look[1], z=look[2]);
+        app.player.yaw = look[3] * 3.14159265 / 180.0;
+        app.player.pitch = -0.2;
+        app.player.god_mode = True;
+        for k in range(60) {
+            app.scripted = Intent();
+            app.step();
+        }
+        app.renderer.screenshot(".jac/look.png");
+        app.step();
+        print("RUN look saved");
     }
     if os.getenv("QP_GOD", "") {
         app.player.god_mode = True;

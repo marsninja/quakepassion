@@ -13,6 +13,7 @@ import from engine.world.world { World, Player }
 import from engine.world.exits { LevelExit, HasExit }
 import from engine.world.bot_routes { build_navmesh, plan_route }
 import from engine.nav.compile { compile_navigation, NavStep }
+import from engine.world.objectives { exit_objectives }
 import from engine.world.doors { Door, HasDoor }
 import from engine.formats.aas { Aas, area_mover_model }
 
@@ -110,6 +111,11 @@ with entry {
             }
         }
         for portal in [app.world->:HasExit:->][?:LevelExit] {
+            chain = exit_objectives(app.world, portal);
+            print("NAV exit", portal.destination, "touch volume", bool(portal.volume.bounds), "chain", len(chain));
+            for action in chain {
+                print("NAV   ", action.kind, int(action.point.x), int(action.point.y), int(action.point.z), "area", mesh.locate(action.point));
+            }
             if not portal.volume.bounds {
                 continue;
             }

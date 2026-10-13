@@ -21,7 +21,7 @@ import from .inventory { quantity }
 import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_for, selected_weapon }
 import from .weapons { WeaponRule }
 import from .exits { LevelExit, HasExit }
-import from .objectives { Objective, mover_objectives, exit_objectives, objective_mover, mover_blocked }
+import from .objectives { Objective, mover_objectives, exit_objectives, objective_mover, mover_blocked, objective_item_box }
 import from .bot_routes { predict_mover }
 import from ..nav.compile { compile_navigation }
 import from ..formats.aas { TFL_DEFAULT, TRAVEL_JUMP, area_mover_model }
@@ -125,6 +125,12 @@ node PlayerBot {
         best_distance: float = 1.0e9,
         progress_time: float = 0.0,
         stuck_count: int = 0,
+        # A sidestep round what it is caught on (BotAIBlocked): which way,
+        # until when, and how many in a row without getting on.
+        detour: Vec3 = Vec3(),
+        detour_until: float = 0.0,
+        detours: int = 0,
+        reopened: float = -100.0,
         # Since when no route to the goal has been found from here.
         lost_since: float = -1.0,
         travel: TravelResult = TravelResult(),
@@ -216,17 +222,32 @@ node PlayerBot {
         here_area = mesh.locate(origin);
         best: Vec3 | None = None;
         best_distance = 1.0e9;
-        reach = Vec3(x=384.0, y=384.0, z=256.0);
-        for area in mesh.aas.box_areas(origin.sub(reach), origin.add(reach), 256) {
-            if area == here_area or area >= len(times) or times[area] >= UNREACHED {
-                continue;
+        for size in [384.0, 768.0, 1536.0] {
+            reach = Vec3(x=size, y=size, z=size * 0.5);
+            for area in mesh.aas.box_areas(origin.sub(reach), origin.add(reach), 512) {
+                if area == here_area or area >= len(times) or times[area] >= UNREACHED {
+                    continue;
+                }
+                center = mesh.aas.areas[area].center;
+                distance = center.sub(origin).length();
+                if distance < best_distance {
+                    best_distance = distance;
+                    best = center;
+                }
             }
-            center = mesh.aas.areas[area].center;
-            distance = center.sub(origin).length();
-            if distance < best_distance {
-                best_distance = distance;
-                best = center;
+            if best is not None {
+                return best;
             }
+        }
+        # Nowhere near has a way on: what was closed may be open now (a door
+        # opened since); open it all again, at most every ten seconds.
+        if mesh.disabled and self.clock - self.reopened > 10.0 {
+            self.reopened = self.clock;
+            for area in list(mesh.disabled) {
+                mesh.enable_area(area, True);
+            }
+            self.lost_since = -1.0;
+            print("AUTOPLAY lost: closed areas opened again");
         }
         return best;
     }
@@ -600,18 +621,43 @@ walker AutoThink {
             if passed_over {
                 continue;
             }
-            stand = self.stand_area(choice.point);
-            if stand[0] == 0 {
-                continue;
+            # Where it is done from: an area within its volume, the soonest
+            # reached; else the area at (or by) its point.
+            spots: list[tuple[int, Vec3]] = [];
+            box = choice.box;
+            if box is not None {
+                for area in mesh.aas.box_areas(box.mins, box.maxs, 64) {
+                    if mesh.aas.areas[area].reach_count == 0 or area in mesh.disabled {
+                        continue;
+                    }
+                    center = mesh.aas.areas[area].center;
+                    inside = Vec3(
+                        x=max(box.mins.x, min(box.maxs.x, center.x)),
+                        y=max(box.mins.y, min(box.maxs.y, center.y)),
+                        z=center.z
+                    );
+                    spots.append((area, inside));
+                }
             }
-            cost = 1;
-            if stand[0] != here_area and here_area > 0 {
-                times = mesh.times_to(stand[0], TFL_DEFAULT);
-                cost = times[here_area] if here_area < len(times) else UNREACHED;
+            # A volume no area reaches into is not done from beside it.
+            if not spots and box is None {
+                spots.append(self.stand_area(choice.point));
             }
-            if cost < best_time and cost <= within {
-                best_time = cost;
-                best = choice;
+            for (area, spot) in spots {
+                if area == 0 {
+                    continue;
+                }
+                cost = 1;
+                if area != here_area and here_area > 0 {
+                    times = mesh.times_to(area, TFL_DEFAULT);
+                    cost = times[here_area] if here_area < len(times) else UNREACHED;
+                }
+                if cost < best_time and cost <= within {
+                    best_time = cost;
+                    best = choice;
+                    choice.stand = area;
+                    choice.stand_point = spot;
+                }
             }
         }
         if best is None {
@@ -653,7 +699,7 @@ walker AutoThink {
         for item in [self.world->:HasPickup:->][?:Pickup] {
             if item.active and (item.rule.kind in wanted or item.rule.ammo in wanted or item.rule.kind == "backpack")
                 and item.pos.sub(self.origin).length() < 2000.0 {
-                found.append(Objective(kind="pickup", point=item.pos, why="ammo", item=item));
+                found.append(Objective(kind="pickup", point=item.pos, why="ammo", item=item, box=objective_item_box(item)));
             }
         }
         return found;
@@ -696,7 +742,7 @@ walker AutoThink {
                 continue;
             }
             if self.item_worth(item) >= 25.0 {
-                found.append(Objective(kind="pickup", point=item.pos, why="supply", item=item));
+                found.append(Objective(kind="pickup", point=item.pos, why="supply", item=item, box=objective_item_box(item)));
             }
         }
         return found;
@@ -707,7 +753,7 @@ walker AutoThink {
         found: list[Objective] = [];
         for item in [self.world->:HasPickup:->][?:Pickup] {
             if item.active and item.rule.kind == "health" and item.pos.sub(self.origin).length() < 1500.0 {
-                found.append(Objective(kind="pickup", point=item.pos, why="health", item=item));
+                found.append(Objective(kind="pickup", point=item.pos, why="health", item=item, box=objective_item_box(item)));
             }
         }
         return found;
@@ -805,12 +851,14 @@ walker AutoThink {
             enemy = self.spot_enemy();
             bot.enemy = enemy;
         }
-        stand = self.stand_area(objective.point);
-        if bot.goal is None or bot.goal.sub(objective.point).length() > 1.0 {
+        # A button is walked into (its middle); a trigger stood in, at the
+        # point chosen inside it; anything else gone to.
+        target = objective.stand_point if objective.kind == "touch" and objective.stand > 0 else objective.point;
+        if bot.goal is None or bot.goal.sub(target).length() > 1.0 {
             bot.route.abandon();
         }
-        bot.goal = objective.point;
-        bot.goal_area = stand[0];
+        bot.goal = target;
+        bot.goal_area = objective.stand if objective.stand > 0 else self.stand_area(objective.point)[0];
         bot.goal_name = objective.kind + " for " + objective.why;
     }
 
@@ -1008,6 +1056,35 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         if distance < self.best_distance - 8.0 {
             self.best_distance = distance;
             self.progress_time = self.clock;
+            self.detours = 0;
+        } elif self.clock - self.progress_time > 1.2 and self.route.points and self.clock > self.detour_until {
+            # Caught on a corner: step aside, the clearer way, for a moment.
+            ahead = self.route.points[0].sub(origin);
+            flat = Vec3(x=ahead.x, y=ahead.y);
+            if flat.length() > 0.001 {
+                flat = flat.normalized();
+                left = Vec3(x=-flat.y, y=flat.x);
+                to_left = level.collision.trace(origin, origin.add(left.scale(48.0))).fraction;
+                to_right = level.collision.trace(origin, origin.sub(left.scale(48.0))).fraction;
+                side = left if to_left >= to_right else left.scale(-1.0);
+                self.detour = side.add(flat.scale(0.4)).normalized();
+                self.detour_until = self.clock + 0.6;
+            }
+            self.detours += 1;
+            self.progress_time = self.clock;
+            if self.detours >= 3 {
+                # Still caught: keep off this way for a while and plan again.
+                passage = self.route.passages[0] if self.route.passages else None;
+                if passage is not None {
+                    for k in range(6) {
+                        self.avoid.add(passage, self.clock);
+                    }
+                }
+                self.route.abandon();
+                self.detours = 0;
+                self.stuck_count += 1;
+                print("AUTOPLAY stuck at", int(origin.x), int(origin.y), int(origin.z), "area", mesh.locate(origin), ": way avoided");
+            }
         } elif self.clock - self.progress_time > 3.0 {
             self.stuck_count += 1;
             self.progress_time = self.clock;
@@ -1024,6 +1101,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                 self.lost_since = -1.0;
             } elif not planned.pending and self.lost_since < 0.0 {
                 self.lost_since = self.clock;
+                print("AUTOPLAY no route from area", mesh.locate(origin), "to area", self.goal_area, "for", self.goal_name);
             }
         }
         lost = self.lost_since >= 0.0 and self.clock - self.lost_since > 2.0;
@@ -1092,6 +1170,10 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                 self.jump_due = False;
             }
             intent.crouch = travel.result.crouch;
+            if self.clock < self.detour_until {
+                heading = self.detour;
+                share = 1.0;
+            }
             flat = Vec3(x=heading.x, y=heading.y);
             if flat.length() > 0.001 and share > 0.0 {
                 flat = flat.normalized();
