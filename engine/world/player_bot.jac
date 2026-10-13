@@ -113,6 +113,11 @@ node PlayerBot {
         # The areas it has stood in, and when it last chose where to roam.
         visited: set[int] = set(),
         roam_chosen: float = -100.0,
+        # A dodge under way: which way, until when.
+        dodge_way: Vec3 = Vec3(),
+        dodge_until: float = 0.0,
+        # The direction the view settles on while travelling (100: none yet).
+        view_yaw: float = 100.0,
         roam_nearest: float = 1.0e9,
         roam_nearer_at: float = 0.0,
         # Areas compiled with their mover where the level starts it (a floor
@@ -529,6 +534,26 @@ node PlayerBot {
                 }
             }
             best = across;
+        }
+        return best;
+    }
+
+    """The direction to look while travelling: toward the farthest of the
+    route's next waypoints within 220 units that the eye can see, or None."""
+    def look_ahead(level: Level, eye: Vec3, origin: Vec3) -> Vec3 | None {
+        best: Vec3 | None = None;
+        for point in self.route.points[0:6] {
+            flat = Vec3(x=point.x - origin.x, y=point.y - origin.y);
+            if flat.length() > 220.0 {
+                break;
+            }
+            sight = level.collision.trace_point(eye, point.add(Vec3(z=16.0)));
+            if sight.fraction < 0.98 {
+                break;
+            }
+            if flat.length() > 24.0 {
+                best = flat.normalized();
+            }
         }
         return best;
     }
@@ -1638,12 +1663,25 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         want_yaw = math.radians(self.travel.yaw);
         want_pitch = -math.radians(self.travel.pitch);
     } else {
+        # Where it is headed, not where its feet go this moment: the farthest
+        # waypoint ahead still in sight, up to a couple of hundred units off
+        # (the feet still take every waypoint).
         heading = self.travel.direction;
+        look = self.look_ahead(level, player.pos, origin);
+        if look is not None {
+            heading = look;
+        }
         if Vec3(x=heading.x, y=heading.y).length() > 0.1 {
-            want_yaw = math.atan2(heading.y, heading.x);
+            aim_yaw = math.atan2(heading.y, heading.x);
+            # Small changes are let be.
+            if abs(autoplay_turn(self.view_yaw, aim_yaw)) > 0.25 or self.view_yaw > 99.0 {
+                self.view_yaw = aim_yaw;
+            }
+            want_yaw = self.view_yaw;
         }
     }
-    limit = AUTO_TURN * max(dt, 0.001);
+    calm = (enemy is None or enemy.health <= 0) and shoot_at is None and not self.travel.view_set;
+    limit = (AUTO_TURN * 0.35 if calm else AUTO_TURN) * max(dt, 0.001);
     intent.look_yaw = max(-limit, min(limit, autoplay_turn(player.yaw, want_yaw)));
     intent.look_pitch = max(-limit, min(limit, want_pitch - player.pitch));
     # A turned view leaves the move pointing where the body faced: keep the
@@ -1657,7 +1695,18 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
     }
     # Grenades and rockets: out of the way of one that will burst near
     # (Q3's BotCheckForGrenades keeps clear of each live grenade).
-    dodge = self.dodge(world, origin);
+    # Once chosen, a way out is kept for half a second: choosing afresh each
+    # frame turned it back and forth in place.
+    dodge: Vec3 | None = None;
+    if self.clock < self.dodge_until {
+        dodge = self.dodge_way;
+    } else {
+        dodge = self.dodge(world, origin);
+        if dodge is not None {
+            self.dodge_way = dodge;
+            self.dodge_until = self.clock + 0.5;
+        }
+    }
     if dodge is not None {
         forward = forward_from(player.yaw, 0.0);
         right = right_from(player.yaw);
