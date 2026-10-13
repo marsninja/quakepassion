@@ -258,6 +258,7 @@ impl App.host_command(args: list[str]) {
             bot = PlayerBot();
             bot.shot_every = float(os.getenv("QP_AUTOPLAY_SHOTS", "0") or "0");
             bot.shot_dir = os.getenv("QP_AUTOPLAY_SHOT_DIR", bot.shot_dir);
+            bot.trace.path = os.getenv("QP_AUTOPLAY_TRACE", "");
             self.autoplay = bot;
             self.shell.print("autoplay ON");
         } else {

@@ -18,6 +18,7 @@ import from .bot_routes { NavMesh, HasNavMesh, BotRoute, AvoidReach, plan_route,
 import from .bot_travel { FollowRoute, TravelResult, yaw_of, gap_distance }
 import from .pickups { Pickup, HasPickup }
 import from .inventory { quantity }
+import from .bot_trace { BotTrace, trace_text, trace_number }
 import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_for, selected_weapon }
 import from .weapons { WeaponRule }
 import from .exits { LevelExit, HasExit }
@@ -151,6 +152,8 @@ node PlayerBot {
         shot_wait: float = 0.0,
         shot_dir: str = ".jac/shots",
         fired: bool = False,
+        trace: BotTrace = BotTrace(),
+        dead_seen: bool = False,
         menu_notice: str = "",
         # Which way it sidesteps in a fight (1 right, -1 left), and when it
         # turns about.
@@ -401,6 +404,12 @@ node PlayerBot {
             mesh = self.mesh;
             area = self.area_near(origin)[0] if mesh is not None else 0;
             print("AUTOPLAY blocked at", int(origin.x), int(origin.y), int(origin.z), "area", area, ": way avoided");
+            self.trace.event("blocked", self.clock, {
+                "at": "[" + str(int(origin.x)) + ", " + str(int(origin.y)) + ", " + str(int(origin.z)) + "]",
+                "area": str(area),
+                "goal": trace_text(self.goal_name)
+            });
+            self.trace.dump("blocked", self.clock);
         }
     }
 
@@ -445,6 +454,12 @@ node PlayerBot {
             self.status = "navigation compiled in " + str(round(self.compile_seconds, 1)) + " s: " + build.summary();
         }
         print("AUTOPLAY", level.bsp.game, level.name, self.status);
+        mesh = self.mesh;
+        self.trace.event("level", self.clock, {
+            "map": trace_text(level.bsp.game + ":" + level.name),
+            "navigation": trace_text(self.status),
+            "areas": str(len(mesh.aas.areas) - 1 if mesh is not None else 0)
+        });
     }
 }
 
@@ -507,6 +522,9 @@ walker AutoThink {
     """Hand over to the mode `name` along the mind's edges: the modes to
     visit to run it this think too."""
     def shift(current: AutoMode, name: str) -> list[AutoMode] {
+        if current.name != name {
+            self.bot.trace.event("mode", self.bot.clock, {"from": trace_text(current.name), "to": trace_text(name)});
+        }
         self.bot.mind.current = name;
         self.switches += 1;
         if self.switches >= 4 {
@@ -718,6 +736,7 @@ walker AutoThink {
         here_area = self.bot.area_near(self.origin)[0];
         best: Objective | None = None;
         best_time = UNREACHED;
+        notes: list[str] = [];
         for choice in choices {
             passed_over = False;
             for (spot, until) in bot.given_up {
@@ -725,9 +744,13 @@ walker AutoThink {
                     passed_over = True;
                 }
             }
+            where = "[" + str(int(choice.point.x)) + ", " + str(int(choice.point.y)) + ", " + str(int(choice.point.z)) + "]";
+            label = "{\"kind\": " + trace_text(choice.kind) + ", \"why\": " + trace_text(choice.why) + ", \"at\": " + where;
             if passed_over {
+                notes.append(label + ", \"result\": \"given up lately\"}");
                 continue;
             }
+            cheapest = UNREACHED;
             # Where it is done from: an area within its volume, the soonest
             # reached; else the area at (or by) its point.
             spots: list[tuple[int, Vec3]] = [];
@@ -759,6 +782,7 @@ walker AutoThink {
                     times = mesh.times_to(area, TFL_DEFAULT);
                     cost = times[here_area] if here_area < len(times) else UNREACHED;
                 }
+                cheapest = min(cheapest, cost);
                 if cost < best_time and cost <= within {
                     best_time = cost;
                     best = choice;
@@ -766,10 +790,26 @@ walker AutoThink {
                     choice.stand_point = spot;
                 }
             }
+            if not spots {
+                notes.append(label + ", \"result\": \"no area reaches it\"}");
+            } elif cheapest >= UNREACHED {
+                notes.append(label + ", \"result\": \"no route to it\"}");
+            } else {
+                over = " (over the " + str(within) + " limit)" if cheapest > within else "";
+                notes.append(label + ", \"result\": " + trace_text("route " + str(cheapest) + over) + "}");
+            }
         }
         if best is None {
             return False;
         }
+        bot.trace.event("choose", bot.clock, {
+            "chose": trace_text(best.kind + " for " + best.why),
+            "at": "[" + str(int(best.point.x)) + ", " + str(int(best.point.y)) + ", " + str(int(best.point.z)) + "]",
+            "route": str(best_time),
+            "from_area": str(here_area),
+            "stack": trace_text(bot.chain()),
+            "choices": "[" + ", ".join(notes[0:16]) + "]"
+        });
         best.started = bot.clock;
         # As long as the way there should take, twice over, and twenty seconds
         # to do it in.
@@ -958,6 +998,22 @@ walker AutoThink {
         if objective is None or objective.done(self.player)
             or bot.clock - objective.nearer_at > max(25.0, objective.allowed * 0.5)
             or bot.clock - objective.started > max(180.0, objective.allowed * 3.0) {
+            if objective is not None {
+                finished = objective.done(self.player);
+                why_end = "done" if finished else (
+                    "no nearer for " + str(int(bot.clock - objective.nearer_at)) + " s (nearest " + str(int(objective.nearest)) + ")"
+                    if bot.clock - objective.nearer_at > max(25.0, objective.allowed * 0.5)
+                    else "over its time (" + str(int(bot.clock - objective.started)) + " s)"
+                );
+                bot.trace.event("objective_end", bot.clock, {
+                    "objective": trace_text(objective.kind + " for " + objective.why),
+                    "result": trace_text(why_end),
+                    "seconds": trace_number(bot.clock - objective.started)
+                });
+                if not finished {
+                    bot.trace.dump("gave up " + objective.kind + " for " + objective.why, bot.clock);
+                }
+            }
             if objective is not None and objective.done(self.player) {
                 print("AUTOPLAY objective done:", objective.kind, "for", objective.why);
             } elif objective is not None {
@@ -1154,6 +1210,28 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
     }
     eye_height = level.collision.eye_height;
     origin = player.pos.sub(Vec3(z=eye_height));
+    if player.health <= 0 and not self.dead_seen {
+        self.dead_seen = True;
+        killer = player.killer;
+        slayer = "";
+        if killer is not None and isinstance(killer, Opponent) {
+            slayer = killer.rule.model.split("/")[-1];
+        }
+        self.trace.event("death", self.clock, {
+            "map": trace_text(level.name),
+            "means": trace_text(player.death_means),
+            "killer": trace_text(slayer),
+            "at": "[" + str(int(origin.x)) + ", " + str(int(origin.y)) + ", " + str(int(origin.z)) + "]",
+            "water": str(player.water_depth),
+            "stack": trace_text(self.chain()),
+            "goal": trace_text(self.goal_name)
+        });
+        self.trace.dump("death", self.clock);
+        print("AUTOPLAY died:", player.death_means, slayer);
+    }
+    if player.health > 0 {
+        self.dead_seen = False;
+    }
     if player.health <= 0 {
         # Fire brings the dead back (respawn, or the level restarted).
         self.route.abandon();
@@ -1198,9 +1276,30 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             if planned.found {
                 self.route = planned;
                 self.lost_since = -1.0;
+                kinds = [str(passage.kind) for passage in planned.passages if passage is not None];
+                self.trace.event("route", self.clock, {
+                    "goal": trace_text(self.goal_name),
+                    "from_area": str(self.area_near(origin)[0]),
+                    "to_area": str(self.goal_area),
+                    "legs": str(len(planned.points)),
+                    "kinds": trace_text(" ".join(kinds[0:24]))
+                });
             } elif not planned.pending and self.lost_since < 0.0 {
                 self.lost_since = self.clock;
-                print("AUTOPLAY no route from area", self.area_near(origin)[0], "to area", self.goal_area, "for", self.goal_name);
+                here = self.area_near(origin)[0];
+                reason = "standing in no area" if here == 0 else (
+                    "goal in no area" if self.goal_area == 0 else (
+                        "goal area closed" if self.goal_area in mesh.disabled
+                        else "no way between them (" + str(len(mesh.disabled)) + " areas closed)"
+                    )
+                );
+                print("AUTOPLAY no route from area", here, "to area", self.goal_area, "for", self.goal_name, ":", reason);
+                self.trace.event("no_route", self.clock, {
+                    "goal": trace_text(self.goal_name),
+                    "from_area": str(here),
+                    "to_area": str(self.goal_area),
+                    "reason": trace_text(reason)
+                });
             }
         }
         lost = self.lost_since >= 0.0 and self.clock - self.lost_since > 2.0;
@@ -1410,6 +1509,20 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         intent.jump = True;
     }
     self.check_blocked(level, player, origin, intent, dt);
+    if self.trace.on() {
+        foe = self.enemy;
+        passage = self.route.passages[0] if self.route.passages else None;
+        self.trace.sample(self.clock, dt, "{\"t\": " + trace_number(self.clock) + ", \"at\": [" + str(int(origin.x)) + ", "
+            + str(int(origin.y)) + ", " + str(int(origin.z)) + "], \"vel\": [" + str(int(player.velocity.x)) + ", "
+            + str(int(player.velocity.y)) + ", " + str(int(player.velocity.z)) + "], \"move\": [" + trace_number(intent.move.x)
+            + ", " + trace_number(intent.move.y) + ", " + trace_number(intent.move.z) + "], \"jump\": "
+            + ("true" if intent.jump else "false") + ", \"fire\": " + ("true" if intent.fire else "false") + ", \"hp\": "
+            + str(player.health) + ", \"area\": " + str(self.area_near(origin)[0]) + ", \"mode\": "
+            + trace_text(self.mind.current) + ", \"leg\": " + str(passage.kind if passage is not None else 0)
+            + ", \"waiting\": " + ("true" if self.travel.waiting else "false") + ", \"enemy\": "
+            + (str(int(foe.pos.sub(player.pos).length())) if foe is not None and foe.health > 0 else "null")
+            + ", \"water\": " + str(player.water_depth) + "}");
+    }
     self.log_wait -= dt;
     if self.log_wait <= 0.0 {
         self.log_wait = 2.0;

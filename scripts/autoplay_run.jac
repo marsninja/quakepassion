@@ -5,6 +5,8 @@ controls, a line every few seconds and one when the level changes.
     QP_RUN=q1:e1m1 QP_SECONDS=120 DYLD_LIBRARY_PATH=vendor .jac/autoplay
 
 QP_KILL=<seconds> kills the player once at that time (to see a restart);
+QP_AUTOPLAY_TRACE names the decision trace (default .jac/autoplay-trace.jsonl,
+read back by scripts/autoplay_report.jac);
 QP_GOD=1 plays in god mode; QP_AUTOPLAY_SHOTS works as in qp."""
 import os;
 import time;
@@ -34,6 +36,11 @@ with entry {
     app.walking = True;
     bot = PlayerBot();
     bot.shot_every = float(os.getenv("QP_AUTOPLAY_SHOTS", "0") or "0");
+    # The decision trace (scripts/autoplay_report.jac reads it).
+    bot.trace.path = os.getenv("QP_AUTOPLAY_TRACE", ".jac/autoplay-trace.jsonl");
+    if os.path.exists(bot.trace.path) {
+        os.remove(bot.trace.path);
+    }
     if not os.getenv("QP_NOBOT", "") {
         app.autoplay = bot;
     }
