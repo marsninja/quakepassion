@@ -46,6 +46,11 @@ impl Studio.shader_command(scene: Scene, args: list[str]) -> bool {
             }
         }
         read = read_shaders(text);
+        # The script in hand stays open beside it (or, when it is this one, is taken again).
+        if path != self.shader_file {
+            self.park_shader();
+            self.shaders_parked = [held for held in self.shaders_parked if held.file != path];
+        }
         self.shader_file = path;
         self.shader_list = read[0];
         self.shader_broken = read[1];
@@ -69,6 +74,7 @@ impl Studio.shader_command(scene: Scene, args: list[str]) -> bool {
             return True;
         }
         read = read_shaders(whole.decode("utf-8", "replace"));
+        self.park_shader();
         self.shader_file = self.shader_path(seen.name.split("/")[-1]);
         self.shader_list = read[0];
         self.shader_broken = read[1];

@@ -963,10 +963,18 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   all together as one step.
 - **Tabs for the open documents**: with more than one document open,
   each has a tab beside the menu bar (a star when it has changes not
-  saved; the one shown is lit): the maps and scenes, the model being
-  edited, and the shader script. A click goes to it (`ed_tab
-  <doc:game/name|model|shader>`), and the x at the end closes the one
-  shown.
+  saved; the one shown is lit): the maps and scenes, the models being
+  edited, the shader scripts and the textures. A click goes to it
+  (`ed_tab <doc:game/name|model[:n]|shader[:n]|texture:game:file>`), and
+  the x at the end closes the one shown. Several models and scripts are
+  open at once: making, editing or opening another, or taking a script
+  from the explorer, keeps the one in hand open beside it (a model with
+  its skin's picture and its bone in hand, a script with its shader in
+  hand and whether it has changed); `ed_model close` takes the last one
+  kept back in hand. `ed_texture open <game:file>` opens a picture (of a
+  game's archives, or the project's own as `own:`) as a document of its
+  own, shown in the explorer, and `ed_texture close [game:file]` closes
+  one. `ed_documents` lists what is open.
 - **What the move arrows run along**: `ed_axes world|local|view` (alone,
   it goes to the next; it is in Settings > General and kept between
   sessions). Local is the selection's own: one brush's axes from its

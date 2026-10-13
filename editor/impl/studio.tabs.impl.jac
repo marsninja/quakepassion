@@ -10,12 +10,22 @@ impl Studio.tabs_words -> str {
         words += key + ("*" if held.dirty else "") + ("<" if held is current else "") + "|";
     }
     doc = self.model_doc;
+    for slot in self.models_parked {
+        words += "model:" + slot.doc.name + ("*" if slot.doc.dirty else "") + "|";
+    }
+    for held in self.shaders_parked {
+        words += "shader:" + held.file + "|";
+    }
+    for held_key in self.textures_open {
+        words += "texture:" + held_key + ("<" if held_key == self.texture_now else "") + "|";
+    }
     return words + "model:" + (doc.name if doc is not None else "") + "|shader:" + self.shader_file + "|"
         + ("assets" if self.assets_shown else ("logic" if self.logic_shown else "views"));
 }
 
 impl Studio.tabs_count -> int {
-    return len(self.scenes) + (1 if self.model_doc is not None else 0) + (1 if self.shader_file else 0);
+    return len(self.scenes) + (1 if self.model_doc is not None else 0) + (1 if self.shader_file else 0)
+        + len(self.models_parked) + len(self.shaders_parked) + len(self.textures_open);
 }
 
 impl Studio.fill_doc_strip(ui: StudioUi) {
@@ -39,8 +49,16 @@ impl Studio.fill_doc_strip(ui: StudioUi) {
     if doc is not None {
         strip.adopt(
             PushButton(
-                text="model " + doc.name + (" *" if doc.dirty else ""), command="ed_tab model", lit=self.assets_shown,
+                text="model " + doc.name + (" *" if doc.dirty else ""), command="ed_tab model", lit=self.assets_shown and not self.texture_now,
                 hint="Go to the model being edited"
+            )
+        );
+    }
+    for (index, slot) in enumerate(self.models_parked) {
+        strip.adopt(
+            PushButton(
+                text="model " + slot.doc.name + (" *" if slot.doc.dirty else ""), command="ed_tab model:" + str(index),
+                hint="Take this model in hand"
             )
         );
     }
@@ -49,6 +67,19 @@ impl Studio.fill_doc_strip(ui: StudioUi) {
             PushButton(
                 text="shader " + os.path.basename(self.shader_file), command="ed_tab shader",
                 hint="List the shader script's shaders"
+            )
+        );
+    }
+    for (index, held) in enumerate(self.shaders_parked) {
+        strip.adopt(
+            PushButton(text="shader " + os.path.basename(held.file), command="ed_tab shader:" + str(index), hint="Take this script in hand")
+        );
+    }
+    for held_key in self.textures_open {
+        strip.adopt(
+            PushButton(
+                text="texture " + held_key.split("/")[-1], command="ed_tab " + quote_command_word("texture:" + held_key),
+                lit=held_key == self.texture_now and self.assets_shown, hint="Show " + held_key
             )
         );
     }
@@ -85,9 +116,29 @@ impl Studio.tabs_command(scene: Scene, args: list[str]) -> bool {
                 self.say("That document is not open");
             }
         } elif word == "model" and self.model_doc is not None {
+            # The model, not a texture, is what the explorer shows now.
+            self.texture_now = "";
+            self.show_model_doc(False);
             self.logic_shown = False;
             self.assets_shown = True;
             self.arrange_views(self.layout);
+        } elif word.startswith("model:") and word[6:].isdigit() {
+            if not self.unpark_model(int(word[6:])) {
+                self.say("No such model is open");
+            } else {
+                self.texture_now = "";
+                self.logic_shown = False;
+                self.assets_shown = True;
+                self.arrange_views(self.layout);
+            }
+        } elif word.startswith("shader:") and word[7:].isdigit() {
+            if not self.unpark_shader(int(word[7:])) {
+                self.say("No such shader script is open");
+            } else {
+                self.command(["ed_shader"]);
+            }
+        } elif word.startswith("texture:") and word[8:] in self.textures_open {
+            self.show_texture_doc(word[8:]);
         } elif word == "shader" and self.shader_file {
             self.command(["ed_shader"]);
         } else {

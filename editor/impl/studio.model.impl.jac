@@ -454,6 +454,8 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
             return True;
         }
         if how == "new" or doc is None {
+            # What was in hand stays open beside it.
+            self.park_model();
             doc = ModelDoc(name=kind);
             self.model_doc = doc;
         }
@@ -473,6 +475,7 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
         }
         label = figure.name.split("/")[-1];
         taken = doc_from_model(figure.model, label.split(".")[0] if label else "model");
+        self.park_model();
         self.model_doc = taken;
         taken.frame = self.model_frame;
         self.show_model_doc(False);
@@ -501,6 +504,7 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
                 print("studio: no bones read from " + path + ".rig");
             }
         }
+        self.park_model();
         self.bone_now = "";
         self.model_doc = opened_doc;
         self.show_model_doc(True);
@@ -526,7 +530,12 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
             self.model_doc = None;
             self.model_now = None;
             self.model_edges = [];
+            self.model_skin = None;
             self.folds += 1;
+            # The model open beside it, if there is one, is taken in hand.
+            if len(self.models_parked) > 0 {
+                self.unpark_model(-1);
+            }
             shown_ui = self.ui;
             if shown_ui is not None {
                 self.show_asset(shown_ui);

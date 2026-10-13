@@ -165,6 +165,8 @@ impl Studio.preview_shader -> str {
     self.shader_drawer = drawer;
     shown = ModelLook(game="q3", name="shader:" + shader.name, model=square, frames=1, triangles=2, vertices=4);
     self.model_now = shown;
+    # A model being edited is kept open beside the preview.
+    self.park_model();
     self.model_doc = None;
     self.model_frame = 0;
     self.model_edges = [];

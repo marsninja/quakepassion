@@ -475,9 +475,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_bar", "ed_bar <tools|status> [show|hide] | tools <above|below>", "show or hide the row of tools and the status bar, and put the tools over or under the views"),
     ("ed_shapebox", "ed_shapebox [open|close|kind <kind>|set <w|d|h|count|thick> <value>|build|at <x> <y>]", "the shape dialog: choose a kind of shape and its sizes in a window, and build it"),
     ("ed_weights", "ed_weights [open|close]", "the weights dialog: the bone in hand, the weight it takes of the picked points, and what carries each of them"),
-    ("ed_tab", "ed_tab <doc:game/name|model|shader>", "go to an open document by its tab: a map or scene, the model being edited, or the shader script"),
+    ("ed_tab", "ed_tab <doc:game/name|model[:n]|shader[:n]|texture:game:file>", "go to an open document by its tab: a map or scene, a model being edited, a shader script or a texture"),
     ("ed_pickfile", "ed_pickfile <noise|music|model|model2>", "choose the selected entities' sound or model from the files of their game, in a list that is typed in to find one"),
     ("ed_close", "ed_close [force]", "close this document (force, when it has edits that are not saved)"),
+    ("ed_documents", "ed_documents", "list the documents open: scenes, models, shader scripts and textures"),
+    ("ed_texture", "ed_texture open <game:file> | close [game:file]", "open a picture as a document of its own, with a tab, or close one"),
     ("ed_recent", "ed_recent [number]", "list the files opened and saved lately, or open one of them"),
     ("ed_log", "ed_log [lines] | panel [on|off] [rows] | panel up|down [n] | panel end", "show the console's last lines; panel keeps them in sight along the foot of the views, and scrolls back through them"),
     ("ed_mapopts", "ed_mapopts [comments|whole] [on|off]", "how maps are written: with numbered comments, with whole coordinates only"),
@@ -1429,6 +1431,12 @@ obj Studio(Workbench) {
         shader_now: int = -1,
         shader_broken: list[ShaderFault] = [],
         shader_dirty: bool = False,
+        # The other documents open: models and shader scripts not in hand,
+        # and the textures open as documents (by "game:file") with the one shown.
+        models_parked: list[ModelSlot] = [],
+        shaders_parked: list[ShaderSlot] = [],
+        textures_open: list[str] = [],
+        texture_now: str = "",
         plot: list[int] = [],
         plot_land: Item | None = None,
         plot_variance: float = 0.0,
@@ -4081,6 +4089,22 @@ obj Studio(Workbench) {
     def patch_box_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Several documents of each kind (impl/studio.docset.impl.jac)
+
+    """Put the model in hand aside (with its skin) to take another, and take
+    a parked one in hand (by its place among them, -1 the last); the same
+    for shader scripts. False when there is no such one."""
+    def park_model;
+    def unpark_model(index: int) -> bool;
+    def park_shader;
+    def unpark_shader(index: int) -> bool;
+    def docset_words -> str;
+    """Run `ed_documents` or `ed_texture`. False when it is neither."""
+    def docset_command(scene: Scene, args: list[str]) -> bool;
+    """Show an open texture document in the explorer."""
+    def show_texture_doc(key: str);
+
+    # ------------------------------------------------------------------
     # The shader box and preview (impl/studio.shaderbox.impl.jac)
 
     """Make the shader box again when the shader in hand has changed; its
@@ -4876,6 +4900,7 @@ obj Studio(Workbench) {
             and not self.modelview_command(scene, args)
             and not self.patch_box_command(scene, args)
             and not self.shader_box_command(scene, args)
+            and not self.docset_command(scene, args)
             and not self.playview_command(scene, args)
             and not self.links_command(scene, args)
             and not self.prefab_change(scene, args)
@@ -5298,6 +5323,9 @@ obj Studio(Workbench) {
         if self.patch_preview {
             lines.append(self.patch_preview_words(scene));
         }
+        if len(self.models_parked) > 0 or len(self.shaders_parked) > 0 or len(self.textures_open) > 0 {
+            lines.append(self.docset_words());
+        }
         if self.overdraw {
             lines.append("studio: overdraw faces=" + str(self.overdraw_faces));
         }
@@ -5499,6 +5527,24 @@ obj LightTask {
         cells_share = cut.share() if cut is not None else 0.0;
         return (lit + cells_share) * 0.5 if light is not None else cells_share;
     }
+}
+
+"""A model being edited that is not in hand: the model, its skin's picture
+and the bone that was in hand."""
+obj ModelSlot {
+    has doc: ModelDoc,
+        skin: Skin | None = None,
+        bone_now: str = "";
+}
+
+"""A shader script open but not in hand: its file, its shaders, which was in
+hand, its faults as read, and whether it has been changed."""
+obj ShaderSlot {
+    has file: str,
+        shaders: list[ShaderText] = [],
+        now: int = -1,
+        broken: list[ShaderFault] = [],
+        dirty: bool = False;
 }
 
 """How the explorer's model view is laid out: one view, or four."""
