@@ -3,7 +3,7 @@ import from engine.formats.numbers { atof, atoi }
 import os;
 import math;
 import from ..assets.pak { open_pak, PakArchive }
-import from ..assets.content { archive_paths }
+import from ..assets.content { archive_paths, loose_file }
 import from ..formats.q1.bsp { parse_bsp }
 import from ..formats.bsp {
     Bsp,
@@ -738,10 +738,20 @@ obj LeafLiquids(LiquidProbe) {
     }
 }
 
-def asset(paks: list[PakArchive], name: str) -> bytes {
+"""A file of a Quake or Quake II search path: from its paks, else lying loose
+in its folders (`directory`), as COM_FindFile and FS_FOpenFile search a game
+directory's paks before its files. LibreQuake keeps its deathmatch maps
+loose in maps/."""
+def asset(paks: list[PakArchive], name: str, directory: str = "") -> bytes {
     for pak in reversed(paks) {
         if pak.has_file(name) {
             return pak.read_file(name);
+        }
+    }
+    path = loose_file(directory, name);
+    if path {
+        with open(path, "rb") as handle {
+            return handle.read();
         }
     }
     raise ValueError("Missing Quake asset: " + name);
@@ -849,12 +859,12 @@ def load_level(
         for path in archive_paths(directory, ".pak") {
             paks.append(open_pak(path));
         }
-        data = asset(paks, "maps/" + map_name + ".bsp");
+        data = asset(paks, "maps/" + map_name + ".bsp", directory);
         if game == "q2" {
             textures: list[Texture] = [];
             for name in texture_names(data) {
                 textures.append(
-                    parse_wal(asset(paks, "textures/" + name + ".wal"), name)
+                    parse_wal(asset(paks, "textures/" + name + ".wal", directory), name)
                 );
             }
             level.bsp = parse_q2(data, textures);
@@ -877,10 +887,10 @@ def load_level(
             for suffix in ["rt", "lf", "bk", "ft", "up", "dn"] {
                 name = "env/" + sky_name + suffix + ".tga";
                 level.bsp.sky.append(
-                    Texture(name=name, encoded=asset(paks, name), extension=".tga")
+                    Texture(name=name, encoded=asset(paks, name, directory), extension=".tga")
                 );
             }
-            pcx = asset(paks, "pics/colormap.pcx");
+            pcx = asset(paks, "pics/colormap.pcx", directory);
             if len(pcx) < 769 or pcx[len(pcx) - 769] != 12 {
                 raise ValueError("Missing PCX palette");
             }
@@ -890,7 +900,7 @@ def load_level(
             if entities {
                 level.bsp.entities = parse_entities(entities);
             }
-            level.palette = asset(paks, "gfx/palette.lmp");
+            level.palette = asset(paks, "gfx/palette.lmp", directory);
         }
         if len(level.palette) != 768 {
             raise ValueError("Palette must contain 256 RGB colors");

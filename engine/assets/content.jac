@@ -8,14 +8,18 @@ edge joins it to the pack beneath it, and a walker that climbs those edges
 reads off the folders to search, base first.
 
 A pack names the game whose formats and rules its maps use (`game`: q1, q2 or
-q3), so a mission pack is that game with more in it, not a fifth game. The
-folders hang off one assets root, laid out as the Steam installs lay them out:
+q3), so a mission pack is that game with more in it, not a fifth game. Free
+games made for those engines are packs with nothing beneath them: LibreQuake
+plays by Quake's rules on its own data, OpenArena by Quake III's. The folders
+hang off one assets root, laid out as the Steam installs lay them out:
 
     id1/  baseq2/  baseq3/           the three games
     quake/hipnotic  quake/rogue      Quake's mission packs
     quake/rerelease/<folder>         the 2021 re-release's id1, dopa, mg1, mg3, ctf
     quake2/xatrix  quake2/rogue  quake2/ctf
     quake3/missionpack
+    librequake/id1                   LibreQuake
+    openarena/baseoa                 OpenArena
 
 Everything that opens archives takes a search path: the folders joined by
 `;`, later ones over earlier ones. A lone folder is a search path of one.
@@ -141,6 +145,7 @@ def shelf() -> Shelf {
     }
     made = Shelf();
     made.stock("q1", "q1", "Quake", "id1");
+    made.stock("librequake", "q1", "LibreQuake", "librequake/id1");
     made.stock("hipnotic", "q1", "Scourge of Armagon", "quake/hipnotic", "q1");
     made.stock("rogue", "q1", "Dissolution of Eternity", "quake/rogue", "q1");
     made.stock("q1r", "q1", "Quake (2021 re-release)", "quake/rerelease/id1", "q1");
@@ -153,6 +158,7 @@ def shelf() -> Shelf {
     made.stock("groundzero", "q2", "Ground Zero", "quake2/rogue", "q2");
     made.stock("q2ctf", "q2", "Capture the Flag", "quake2/ctf", "q2");
     made.stock("q3", "q3", "Quake III Arena", "baseq3");
+    made.stock("openarena", "q3", "OpenArena", "openarena/baseoa");
     made.stock("teamarena", "q3", "Team Arena", "quake3/missionpack", "q3");
     _content.shelf = made;
     return made;
@@ -275,11 +281,31 @@ def game_packs(game: str) -> list[ContentPack] {
     return [pack for pack in shelf().packs(game) if installed(pack)];
 }
 
-"""The pack a game is playing: the game itself until another is chosen."""
+"""Whether a pack plays on its own data, with no pack beneath it: a game,
+or a free game made for its engine."""
+def stands_alone(pack: ContentPack) -> bool {
+    layers = pack spawn Layers();
+    return len(layers.packs) == 1;
+}
+
+"""The pack a game is playing: the game itself until another is chosen. When
+the game's own data is not there, the first installed pack that stands alone
+(LibreQuake for Quake, OpenArena for Quake III)."""
 def playing(game: str) -> ContentPack | None {
     stocked = shelf();
-    chosen = stocked.find(_content.playing.get(game, game));
-    return chosen if chosen is not None else stocked.find(game);
+    chosen = stocked.find(_content.playing.get(game, ""));
+    if chosen is not None {
+        return chosen;
+    }
+    itself = stocked.find(game);
+    if itself is not None and not installed(itself) {
+        for pack in game_packs(game) {
+            if stands_alone(pack) {
+                return pack;
+            }
+        }
+    }
+    return itself;
 }
 
 """Play a pack: its game's maps and assets now come from its search path.
@@ -293,14 +319,16 @@ def play_pack(id: str) -> str {
     return pack.game;
 }
 
-"""The map a pack opens on. Quake's packs each have a `start`; the others'
-first maps are their campaigns' own."""
+"""The map a pack opens on. Quake's packs each have a `start` (LibreQuake's
+too); the others' first maps are their campaigns' own, OpenArena's the first
+arena of its ladder."""
 def pack_start_map(id: str) -> str {
     starts = {
         "xatrix": "xswamp",
         "groundzero": "rmine1",
         "q2ctf": "q2ctf1",
         "teamarena": "mpteam1",
+        "openarena": "oa_rpg3dm2",
         "q1ctf": "ctf1",
         "q2": "base1",
         "q3": "q3dm1",

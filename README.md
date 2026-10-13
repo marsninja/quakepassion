@@ -45,6 +45,17 @@ present ([docs/content-packs-status.md](docs/content-packs-status.md)):
 Their maps load and can be walked; the monsters, weapons, items and map
 mechanics they add are not implemented yet.
 
+Two free games made for these engines are supported too, and need no id
+data at all: [LibreQuake](https://github.com/lavenderdotpet/LibreQuake)
+(BSD-3, played by Quake's rules) and [OpenArena](https://openarena.ws)
+(GPL-2, played by Quake III's). They appear in the Quake and Quake III tabs,
+and a game whose own data is missing plays them instead:
+
+| Directory | Contents |
+| --- | --- |
+| `~/quake-assets/librequake/id1` | The `id1` folder of LibreQuake's `full.zip` (v0.09-beta): `pak0.pak`, `pak1.pak`, loose `maps/lqdm*.bsp`, `music/` |
+| `~/quake-assets/openarena/baseoa` | The `baseoa` folder of `openarena-0.8.8.zip`: its nine `pak*.pk3` |
+
 ### Compiler
 
 QuakePassion builds with the released [Jac 0.37.25](https://github.com/jaseci-labs/jac/releases/tag/v0.37.25)
@@ -116,7 +127,7 @@ QP_GAME=passion QP_SEED=42 ./qp     # a seeded Passion expedition
 | Variable | Effect |
 | --- | --- |
 | `QP_GAME` | `q1` (default), `q2`, `q3` or `passion` |
-| `QP_PACK` | A content pack to play instead: a mission pack or re-release episode (`hipnotic`, `rogue`, `xatrix`, `teamarena`, ...; see [docs/content-packs-status.md](docs/content-packs-status.md)) |
+| `QP_PACK` | A content pack to play instead: a mission pack, re-release episode or free game (`hipnotic`, `rogue`, `xatrix`, `teamarena`, `librequake`, `openarena`, ...; see [docs/content-packs-status.md](docs/content-packs-status.md)) |
 | `QP_MAP` | Starting map basename (default `e1m1`, `base1`, `q3dm1`) |
 | `QP_ASSETS` | Asset directory for the selected game (for Passion, the parent of all three) |
 | `QP_SEED` | Passion expedition seed |

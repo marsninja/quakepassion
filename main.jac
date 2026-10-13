@@ -1,9 +1,11 @@
 """Native Quake I/II/III and generated Passion expeditions.
 
 QP_GAME selects q1 (default), q2, q3 or passion. QP_PACK selects one of a
-game's content packs instead (hipnotic, rogue, q1r, dopa, mg1, mg3, q1ctf,
-xatrix, groundzero, q2ctf, teamarena; see engine/assets/content.jac) and
-starts on its `start` map when it has one. QP_ASSETS overrides the game's
+game's content packs instead (librequake, hipnotic, rogue, q1r, dopa, mg1,
+mg3, q1ctf, xatrix, groundzero, q2ctf, openarena, teamarena; see
+engine/assets/content.jac) and starts on its `start` map when it has one. A
+game whose own data is missing plays LibreQuake or OpenArena when they are
+installed. QP_ASSETS overrides the game's
 asset directory (the common parent for Passion). QP_MAP overrides the default
 map basename; QP_SEED selects Passion's expedition seed.
 QP_GRAYBOX=1 selects the development arena. QP_SMOKE=1 captures deterministic
@@ -21,7 +23,7 @@ import from engine.world.level { Level, spawn_player }
 import from games.levels { open_level, saved_entities, override_path }
 import from engine.core.preferences { Preferences }
 import from engine.core.menu { game_directory }
-import from engine.assets.content { play_pack, pack_start_map }
+import from engine.assets.content { play_pack, pack_start_map, playing }
 import from engine.core.app { App, HostCvars }
 import from engine.console.shell { Shell, command_line_text }
 import from engine.core.clock { Clock }
@@ -71,6 +73,15 @@ with entry {
                 file=sys.stderr
             );
             sys.exit(2);
+        }
+        # Without the game's own data, the free game made for its engine
+        # (LibreQuake for Quake, OpenArena for Quake III) when it is there.
+        if pack_id == "" and game != "passion" {
+            standing = playing(game);
+            if standing is not None and standing.id != game {
+                pack_id = standing.id;
+                play_pack(pack_id);
+            }
         }
         map_name = "q3dm1" if game == "q3" else ("base1" if game == "q2" else "e1m1");
         if pack_id != "" and pack_id != game {

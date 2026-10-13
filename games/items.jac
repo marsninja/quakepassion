@@ -780,6 +780,12 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
             position = Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
             key = source + ":" + rule.model + ":" + str(rule.skin);
             extra = source + ":" + rule.extra_model + ":0" if rule.extra_model else "";
+            # cg_weapons.c CG_RegisterItemVisuals: a second model the game
+            # does not have (OpenArena's invisibility has no ring) registers
+            # as nothing and is not drawn.
+            if extra and extra not in resources and not catalog.source(source).exists(rule.extra_model) {
+                extra = "";
+            }
             for name in [key, extra] {
                 if not name or name in resources {
                     continue;
