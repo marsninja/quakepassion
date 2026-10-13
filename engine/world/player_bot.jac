@@ -1403,6 +1403,12 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             x=world_move.dot(right_from(turned)), y=world_move.dot(forward_from(turned, 0.0)), z=intent.move.z
         );
     }
+    # Out of breath under water (Quake's twelve seconds of air): up for air
+    # before going on, whatever the route says.
+    if player.water_depth >= 3 and player.air_remaining < 5.0 {
+        intent.move = Vec3(x=intent.move.x * 0.3, y=intent.move.y * 0.3, z=1.0);
+        intent.jump = True;
+    }
     self.check_blocked(level, player, origin, intent, dt);
     self.log_wait -= dt;
     if self.log_wait <= 0.0 {

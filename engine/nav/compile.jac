@@ -91,8 +91,10 @@ node NavSpot {
         ledge: bool = False,
         walks: int = 0,
         expanded: bool = False,
-        # On a floor (else floating in a liquid: a place to swim).
+        # On a floor (else floating in a liquid: a place to swim), and with
+        # the head under (no air there).
         grounded: bool = True,
+        submerged: bool = False,
         # 1 when found with the movers posed for travel (doors open, plats
         # up); 0 when found with them where the level starts them (a floor
         # that drops, a bridge that is there until it moves).
@@ -166,6 +168,7 @@ obj NavGrid {
             index=len(self.spots), column=column, row=row, origin=Vec3(x=middle.x, y=middle.y, z=z), pose=self.pose
         );
         spot.liquid = self.level.liquid_at(spot.origin.add(Vec3(z=4.0)));
+        spot.submerged = spot.liquid > 0 and self.level.liquid_at(spot.origin.add(Vec3(z=22.0))) > 0;
         floor = self.sweep(spot.origin.add(Vec3(z=1.0)), spot.origin.sub(Vec3(z=4.0)));
         spot.grounded = floor.fraction < 1.0 or floor.start_solid;
         if self.mover_models and floor.model in self.mover_models {
@@ -1070,7 +1073,8 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
                     start=start,
                     finish=finish,
                     kind=kind,
-                    time=nav_step_time(kind, start, finish, rules),
+                    # Under water a swimmer runs out of air: dry ways first.
+                    time=nav_step_time(kind, start, finish, rules) * (3 if best[1].submerged else 1),
                     face_num=best[2] if kind == TRAVEL_ELEVATOR else 0
                 )
             );
