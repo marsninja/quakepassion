@@ -1180,7 +1180,14 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   <percent>` say the left views' share of the width and the upper views'
   of the height, and `ed_split even` halves it again. `ed_sides swap`
   (or `left`, `right`) has the scene list and the inspector change
-  sides. `ed_layout save <name>` keeps the layout as it stands (how many
+  sides. Either panel is docked by dragging: the inspector by its
+  header, the scene panel by the grip at its foot. Let go within a fifth
+  of the window's width of its left or right edge, the panel docks on
+  that side (both on one side stand one over the other, the column as
+  wide as the wider of them); let go in between, it floats in a window
+  of its own over the views, whose cross docks it back. `ed_dock
+  <tabs|inspector> <left|right|float>` does the same by command, and
+  where each is docked is kept in the settings. `ed_layout save <name>` keeps the layout as it stands (how many
   views, the split, the sides, the log panel) and `ed_layout load <name>`
   brings it back; `ed_layout list` and `ed_layout drop <name>` list and
   forget them. All of it is kept between sessions. In the toolkit a

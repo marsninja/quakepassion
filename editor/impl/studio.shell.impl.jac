@@ -603,6 +603,10 @@ impl Studio.settings_lines -> list[str] {
     lines.append("ed_split x " + str(self.split_x));
     lines.append("ed_split y " + str(self.split_y));
     lines.append("ed_sides " + ("right" if self.sides_swapped else "left"));
+    if self.dock_tabs != ("right" if self.sides_swapped else "left") or self.dock_inspector != ("left" if self.sides_swapped else "right") {
+        lines.append("ed_dock tabs " + self.dock_tabs);
+        lines.append("ed_dock inspector " + self.dock_inspector);
+    }
     for kept_name in sorted(self.kept_layouts.keys()) {
         lines.append("ed_layout keep " + kept_name + " " + self.kept_layouts[kept_name]);
     }

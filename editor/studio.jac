@@ -52,8 +52,8 @@ import from .ui.input { UiSource, UiStep, script_click, script_drag }
 import from .ui.logview { log_reach, log_window, log_fitted }
 import from .ui.order { moved_before }
 import from .tools.host { ToolHost, StudioTool, PanelSpec }
-import from .ui.widget { Widget, Stage, UiEvent }
-import from .ui.controls { Combo, TextArea }
+import from .ui.widget { Widget, Stage, UiEvent, Child }
+import from .ui.controls { Combo, TextArea, DockGrip, dock_place }
 import from .ui.widgets {
     Box,
     Label,
@@ -608,6 +608,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_flyover", "ed_flyover [on|off]", "whether a control's hint is shown beside the pointer when it rests there"),
     ("ed_rename", "ed_rename [name]", "name the selected entity (a group's own name, or the name it is fired by): typed over its row of the scene list (F2), or said"),
     ("ed_split", "ed_split [x|y] <percent> | even", "how the level views share the room: the left views' share of the width, the upper views' of the height"),
+    ("ed_dock", "ed_dock <tabs|inspector> <left|right|float> | <panel> at <x> <y>", "dock a side panel on the left or the right (both on one side are stacked), or float it in a window of its own; at a point: where a panel's grip was let go"),
     ("ed_sides", "ed_sides [swap|left|right]", "which side the scene list is on: the inspector takes the other"),
     ("ed_palette", "ed_palette", "open the list of every studio command, to find one by typing"),
     ("ed_grid", "ed_grid <size|up|down>", "the grid moves and resizes snap to (1 to 256)"),
@@ -1109,6 +1110,12 @@ obj Studio(Workbench) {
         split_rows: list[Box] = [],
         split_column: Box | None = None,
         sides_swapped: bool = False,
+        # Where each side panel is docked: left, right or float; the windows
+        # the floating ones are in; and each panel's width when it is docked.
+        dock_tabs: str = "left",
+        dock_inspector: str = "right",
+        dock_windows: dict[str, Floater] = {},
+        dock_widths: dict[str, int] = {"tabs": 280, "inspector": 320},
         kept_layouts: dict[str, str] = {},
         # The part of a view its overlays are drawn in, when a floating
         # window covers the rest (the whole of it when this has no size).
@@ -2172,6 +2179,13 @@ obj Studio(Workbench) {
         body.adopt(left);
         side = Tabs(titles=["Scene", "Materials", "Checks", "Library", "Classes"], grow=1);
         left.adopt(side);
+        # At the panel's foot, so that what is above it stands where it did.
+        left.adopt(
+            DockGrip(
+                panel="tabs", text="Scene, materials, checks, library, classes",
+                hint="Drag to dock this panel on the other side, or let go in the middle to float it"
+            )
+        );
         scene_page = Box();
         side.adopt(scene_page);
         search_row = Box(pad=4);
@@ -2334,7 +2348,12 @@ obj Studio(Workbench) {
         right = Box(size=320, fill="panel");
         body.adopt(Splitter(target=right, after=True, low=220, high=640));
         body.adopt(right);
-        right.adopt(Header(text="Inspector"));
+        right.adopt(
+            DockGrip(
+                panel="inspector", text="Inspector", heading=True,
+                hint="Drag to dock this panel on the other side, or let go in the middle to float it"
+            )
+        );
         scroller = Scroll(grow=1);
         right.adopt(scroller);
         form = Box(pad=6, gap=4);
@@ -5248,6 +5267,9 @@ obj Studio(Workbench) {
                 "studio: split x=" + str(self.split_x) + " y=" + str(self.split_y) + " sides=" + ("swapped" if self.sides_swapped else "usual")
                     + " kept=" + ",".join(sorted(self.kept_layouts.keys()))
             );
+        }
+        if self.dock_tabs != "left" or self.dock_inspector != "right" {
+            lines.append("studio: dock tabs=" + self.dock_tabs + " inspector=" + self.dock_inspector);
         }
         if self.theme_name != "dark" or not self.tools_shown or not self.status_shown or self.tools_below
             or self.shape_box is not None {

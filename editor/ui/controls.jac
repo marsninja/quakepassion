@@ -635,3 +635,84 @@ node TextArea(Widget) {
         return self.enabled;
     }
 }
+
+"""A bar at the top of a panel that docks it where it is dragged: let go
+near the window's left or right edge, the panel docks on that side; let go
+in between, it floats there. It asks for `ed_dock <panel> at <x> <y>`
+with where it was let go, and while it is dragged says where the pointer is
+for the one who shows where it will land."""
+node DockGrip(Widget) {
+    has panel: str = "",
+        text: str = "",
+        # As tall as a panel's header, standing in for it.
+        heading: bool = False,
+        dragging: bool = False,
+        at_x: int = 0,
+        at_y: int = 0;
+
+    def wanted(canvas: Canvas, across: bool) -> int {
+        if across {
+            return canvas.text_width(self.text, canvas.theme.small) + 24;
+        }
+        return canvas.theme.row + 2 if self.heading else 16;
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        canvas.fill(self.area, theme.accent.faded(120) if self.dragging else (theme.header if not self.hovered else theme.window));
+        if self.heading {
+            canvas.line(self.area.x, self.area.bottom() - 1, self.area.right(), self.area.bottom() - 1, theme.border);
+        }
+        # Three rows of dots: a thing to take hold of.
+        for row in range(3) {
+            for dot in range(3) {
+                canvas.fill(Rect(x=self.area.x + 5 + dot * 3, y=self.area.y + 4 + row * 3, w=1, h=1), theme.dim);
+            }
+        }
+        canvas.label(
+            self.text.upper() if self.heading else self.text, Rect(x=self.area.x + 16, y=self.area.y, w=max(0, self.area.w - 16), h=self.area.h),
+            theme.dim if self.heading else theme.faint, -1, 2, theme.small
+        );
+    }
+
+    def on(event: UiEvent, stage: Stage) -> bool {
+        if event.kind == "press" and event.button == 0 {
+            self.dragging = False;
+            self.at_x = event.x;
+            self.at_y = event.y;
+            return True;
+        }
+        if event.kind == "drag" {
+            self.dragging = True;
+            self.at_x = event.x;
+            self.at_y = event.y;
+            return True;
+        }
+        if event.kind == "release" and event.button == 0 {
+            if self.dragging {
+                stage.emit("ed_dock " + self.panel + " at " + str(event.x) + " " + str(event.y));
+            }
+            self.dragging = False;
+            return True;
+        }
+        return event.kind in ["click", "double"];
+    }
+
+    def solid -> bool {
+        return True;
+    }
+}
+
+"""Where a panel let go at `x` of a window `width` wide docks: on the left
+or the right within a fifth of the window's width of that edge, else it
+floats."""
+def dock_place(x: int, width: int) -> str {
+    margin = max(40, width // 5);
+    if x <= margin {
+        return "left";
+    }
+    if x >= width - margin {
+        return "right";
+    }
+    return "float";
+}
