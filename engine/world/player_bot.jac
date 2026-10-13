@@ -131,6 +131,9 @@ node PlayerBot {
         detour_until: float = 0.0,
         detours: int = 0,
         reopened: float = -100.0,
+        # How long it has been trying to move and not moving.
+        blocked_time: float = 0.0,
+        moving_time: float = 0.0,
         # Since when no route to the goal has been found from here.
         lost_since: float = -1.0,
         travel: TravelResult = TravelResult(),
@@ -307,6 +310,61 @@ node PlayerBot {
         intent.move = Vec3(x=aim.dot(right), y=aim.dot(forward));
         self.travel = TravelResult(direction=aim, speed=400.0);
         return intent;
+    }
+
+    """Stuck is trying to move and not moving: on the ground, asking for a
+    run and going nowhere, not waiting on a lift or a door. Caught so for
+    half a second it steps aside, the clearer way (BotAIBlocked); three
+    times without getting on, it keeps off that way a while and plans
+    again."""
+    def check_blocked(level: Level, player: Player, origin: Vec3, intent: Intent, dt: float) {
+        asked = Vec3(x=intent.move.x, y=intent.move.y).length();
+        speed = Vec3(x=player.velocity.x, y=player.velocity.y).length();
+        foe = self.enemy;
+        fighting = foe is not None and foe.health > 0 and foe.pos.sub(player.pos).length() < 400.0;
+        trying = asked > 0.5 and player.grounded and not self.travel.waiting and self.route.points and not fighting;
+        if trying and speed < 30.0 {
+            self.blocked_time += dt;
+            self.moving_time = 0.0;
+        } else {
+            self.blocked_time = max(0.0, self.blocked_time - dt);
+            if speed > 100.0 {
+                self.moving_time += dt;
+                if self.moving_time > 1.0 {
+                    self.detours = 0;
+                }
+            }
+        }
+        if self.blocked_time < 0.5 or self.clock < self.detour_until or not self.route.points {
+            return;
+        }
+        self.blocked_time = 0.0;
+        ahead = self.route.points[0].sub(origin);
+        flat = Vec3(x=ahead.x, y=ahead.y);
+        if flat.length() > 0.001 {
+            flat = flat.normalized();
+            left = Vec3(x=-flat.y, y=flat.x);
+            to_left = level.collision.trace(origin, origin.add(left.scale(48.0))).fraction;
+            to_right = level.collision.trace(origin, origin.sub(left.scale(48.0))).fraction;
+            side = left if to_left >= to_right else left.scale(-1.0);
+            self.detour = side.add(flat.scale(0.4)).normalized();
+            self.detour_until = self.clock + 0.5;
+        }
+        self.detours += 1;
+        if self.detours >= 3 {
+            passage = self.route.passages[0] if self.route.passages else None;
+            if passage is not None {
+                for k in range(6) {
+                    self.avoid.add(passage, self.clock);
+                }
+            }
+            self.route.abandon();
+            self.detours = 0;
+            self.stuck_count += 1;
+            mesh = self.mesh;
+            area = mesh.locate(origin) if mesh is not None else 0;
+            print("AUTOPLAY blocked at", int(origin.x), int(origin.y), int(origin.z), "area", area, ": way avoided");
+        }
     }
 
     """One frame of play: the command the player's body gets."""
@@ -1002,7 +1060,6 @@ walker AutoThink {
         bot.stuck_count = 0;
         bot.best_distance = 1.0e9;
         bot.progress_time = bot.clock;
-        bot.jump_due = True;
         visit self.shift(here, "seek_exit");
     }
 }
@@ -1048,48 +1105,6 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         mesh.advance_tables();
     }
     if mesh is not None and goal is not None {
-        # Progress: nearer the goal along the route's next waypoint.
-        distance = goal.sub(origin).length();
-        if self.route.points {
-            distance = self.route.points[0].sub(origin).length() + float(len(self.route.points)) * 64.0;
-        }
-        if distance < self.best_distance - 8.0 {
-            self.best_distance = distance;
-            self.progress_time = self.clock;
-            self.detours = 0;
-        } elif self.clock - self.progress_time > 1.2 and self.route.points and self.clock > self.detour_until {
-            # Caught on a corner: step aside, the clearer way, for a moment.
-            ahead = self.route.points[0].sub(origin);
-            flat = Vec3(x=ahead.x, y=ahead.y);
-            if flat.length() > 0.001 {
-                flat = flat.normalized();
-                left = Vec3(x=-flat.y, y=flat.x);
-                to_left = level.collision.trace(origin, origin.add(left.scale(48.0))).fraction;
-                to_right = level.collision.trace(origin, origin.sub(left.scale(48.0))).fraction;
-                side = left if to_left >= to_right else left.scale(-1.0);
-                self.detour = side.add(flat.scale(0.4)).normalized();
-                self.detour_until = self.clock + 0.6;
-            }
-            self.detours += 1;
-            self.progress_time = self.clock;
-            if self.detours >= 3 {
-                # Still caught: keep off this way for a while and plan again.
-                passage = self.route.passages[0] if self.route.passages else None;
-                if passage is not None {
-                    for k in range(6) {
-                        self.avoid.add(passage, self.clock);
-                    }
-                }
-                self.route.abandon();
-                self.detours = 0;
-                self.stuck_count += 1;
-                print("AUTOPLAY stuck at", int(origin.x), int(origin.y), int(origin.z), "area", mesh.locate(origin), ": way avoided");
-            }
-        } elif self.clock - self.progress_time > 3.0 {
-            self.stuck_count += 1;
-            self.progress_time = self.clock;
-            print("AUTOPLAY stuck at", int(origin.x), int(origin.y), int(origin.z), "area", mesh.locate(origin), "legs", len(self.route.points));
-        }
         self.replan_wait -= dt;
         if not self.route.points and self.replan_wait <= 0.0 {
             planned = plan_route(
@@ -1121,7 +1136,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                         intent.move.z = 1.0 if heading3.z > 0.0 else -1.0;
                     }
                     self.travel = TravelResult(direction=heading, speed=400.0);
-                    intent.jump = player.water_depth < 2 and self.frames % 40 == 0;
+                    intent.jump = player.water_depth < 2 and self.blocked_time > 0.5;
                 }
             }
         } elif not self.route.points and mesh.locate(origin) == 0 {
@@ -1135,7 +1150,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                     right = right_from(player.yaw);
                     intent.move = Vec3(x=heading.dot(right), y=heading.dot(forward));
                     self.travel = TravelResult(direction=heading, speed=400.0);
-                    intent.jump = self.stuck_count > 0 and self.frames % 40 == 0;
+                    intent.jump = self.blocked_time > 0.5;
                 }
             }
         }
@@ -1289,6 +1304,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             x=world_move.dot(right_from(turned)), y=world_move.dot(forward_from(turned, 0.0)), z=intent.move.z
         );
     }
+    self.check_blocked(level, player, origin, intent, dt);
     self.log_wait -= dt;
     if self.log_wait <= 0.0 {
         self.log_wait = 2.0;
