@@ -661,6 +661,18 @@ walker AutoThink {
         if bot.exit_goal is None {
             self.choose_exit();
         }
+        if bot.exit_goal is None and bot.objective is None {
+            # No exit to walk into (Quake II's target_changelevel): what
+            # fires one, found the way a door's opener is.
+            chained: list[Objective] = [];
+            for portal in [self.world->:HasExit:->][?:LevelExit] {
+                chained.extend(exit_objectives(self.world, portal));
+            }
+            if self.take_objective(chained) {
+                visit self.shift(here, "activate");
+                return;
+            }
+        }
         bot.goal = bot.exit_goal;
         bot.goal_area = bot.exit_area;
         bot.goal_name = bot.exit_name;

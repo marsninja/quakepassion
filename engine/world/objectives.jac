@@ -151,7 +151,8 @@ def objective_owner_actions(world: World, source: Signal, why: str) -> list[Obje
 
 """Backwards from a signal to what a player can do to fire it: through the
 `Targets` edges into it, and the triggers that `Activates` it directly, past
-relays, delays and counters, up to sixty-four signals deep."""
+relays, delays and counters and on behind anything that can itself be fired,
+up to sixty-four signals deep. Every action found is a choice."""
 walker FindActions {
     has world: World,
         why: str = "",
@@ -169,14 +170,12 @@ walker FindActions {
                 self.found.extend(objective_owner_actions(self.world, source, self.why));
             }
         }
+        # What fires each source is looked at too, not only relays: a
+        # trigger out of reach may also be fired by a button that uses it.
         behind: list[Signal] = [];
         for source in [here<-:Targets:<-][?:Signal] {
-            actions = objective_owner_actions(self.world, source, self.why);
-            if actions {
-                self.found.extend(actions);
-            } else {
-                behind.append(source);
-            }
+            self.found.extend(objective_owner_actions(self.world, source, self.why));
+            behind.append(source);
         }
         visit behind;
     }

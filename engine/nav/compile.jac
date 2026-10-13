@@ -359,6 +359,12 @@ walker FloodFloors {
                     fresh.append(spot);
                     self.added += 1;
                 }
+                # Movers at rest only add ways to the places that exist then:
+                # between two places found with them posed, the posed ways
+                # stand (a drop through a bridge now out is no way).
+                if grid.pose == 0 and here.pose == 1 and spot.pose == 1 {
+                    continue;
+                }
                 here +>:NavStep(kind=kind, target=spot.index):+> spot;
             }
             bit *= 2;
@@ -372,6 +378,9 @@ walker FloodFloors {
             if index < 0 {
                 fresh.append(spot);
                 self.added += 1;
+            }
+            if grid.pose == 0 and here.pose == 1 and spot.pose == 1 {
+                continue;
             }
             here +>:NavStep(kind=TRAVEL_SWIM, target=spot.index):+> spot;
         }
