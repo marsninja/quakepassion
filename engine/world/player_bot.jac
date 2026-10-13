@@ -660,9 +660,14 @@ walker AutoThink {
         busy.extend([held.mover for held in bot.waiting]);
         for (model, area) in movers {
             if model in busy {
-                # Being seen to further down the stack, and not yet open: no
-                # way through it meanwhile.
-                if area > 0 and area not in mesh.disabled and mover_blocked(self.world, model, self.player) {
+                # Being seen to further down the stack (not by the objective
+                # under way, which may be done from on the mover), and not yet
+                # open: no way through it meanwhile. Never the area it is in.
+                current = bot.objective;
+                its_own = current is not None and (current.mover == model or current.stand == area);
+                here_area = bot.area_near(self.origin)[0];
+                if not its_own and area > 0 and area != here_area and area not in mesh.disabled
+                    and mover_blocked(self.world, model, self.player) {
                     mesh.enable_area(area, False);
                     bot.route.abandon();
                     print("AUTOPLAY mover", model, "is still shut: area", area, "closed");
