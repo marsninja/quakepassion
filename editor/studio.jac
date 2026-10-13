@@ -260,7 +260,16 @@ import from engine.world.signals { Signal, Fire, HasSignal }
 import from engine.world.doors { Door, HasDoor }
 import from engine.world.pickups { Pickup, HasPickup }
 import from engine.world.combat { Opponent, HasOpponent }
-import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials, swatch_texture }
+import from .compile.live {
+    compile_scene,
+    LiveLevel,
+    Materials,
+    SwatchMaterials,
+    swatch_texture,
+    level_changes,
+    take_changes
+}
+import from engine.formats.brush_collision { refresh_world_hulls }
 import from .assets.materials { ArchiveMaterials, small_picture }
 import from engine.core.menu { game_directory }
 import from engine.assets.content { shelf, pack_folder, folders_path, set_folders, keep_folder }
@@ -450,6 +459,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_reload", "ed_reload", "read the project's image files again and build the level afresh"),
     ("ed_watch", "ed_watch [on|off]", "whether image files are read again when they change on disk"),
     ("ed_cells", "ed_cells [on|off]", "draw the cells of a bake: the one looked from, what it sees and what it does not"),
+    (
+        "ed_portals",
+        "ed_portals [on|off] | load [file.prt] | write [file.prt] | forget",
+        "draw the portals of a bake by planes, read a compiler's portal file to draw, or write the bake's"
+    ),
     ("ed_recipe", "ed_recipe [name] [commands]", "keep a row of commands, apart at semicolons, under a name; forget one; or list them"),
     ("ed_make", "ed_make <name>", "run a recipe's commands"),
     ("ed_run", "ed_run <command line>", "run another program over the scene written as a map (%map%), and list what it says of entities and brushes"),
@@ -459,11 +473,6 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_unbind", "ed_unbind <key>", "give a key back what the studio gives it"),
     ("ed_binds", "ed_binds", "list the keys bound by hand"),
     (
-    (
-        "ed_portals",
-        "ed_portals [on|off] | load [file.prt] | write [file.prt] | forget",
-        "draw the portals of a bake by planes, read a compiler's portal file to draw, or write the bake's"
-    ),
         "ed_settings",
         "ed_settings [box [general|display|view|map|model|files|colours|close] | vars [word]]",
         "list the studio's settings, each a click to change; open them by subject in a box; or print them as the console variables they also are"
@@ -1392,19 +1401,22 @@ obj Studio(Workbench) {
         # light and cells of levels already built, by a mark of what they
         # were built of.
         cells_shown: bool = False,
+        # The bake's portals drawn, and those read from a portal file.
+        portals_shown: bool = False,
+        portal_lines: list[list[Vec3]] = [],
+        portal_file: str = "",
         recipes: dict[str, str] = {},
         built_copies: list[KeptBake] = [],
         built_reused: bool = False,
+        # Whether the last build was brought in line in place: only the
+        # faces and brushes an edit changed packed again (patch_built).
+        built_patched: bool = False,
         # The project open and its folder; the add-ons loaded (each file's
         # classes), those of them kept in the settings; and what each game
         # is set up with ("q1.material" and the like).
         project: Project | None = None,
         project_folder: str = "",
         addons: dict[str, list[str]] = {},
-        # The bake's portals drawn, and those read from a portal file.
-        portals_shown: bool = False,
-        portal_lines: list[list[Vec3]] = [],
-        portal_file: str = "",
         # What add-ons bring beside classes: each one's name by its file,
         # and its folders of image files and of prefabs by its name.
         addon_labels: dict[str, str] = {},
@@ -3796,6 +3808,7 @@ obj Studio(Workbench) {
             wire_line(self.leak[i - 1], self.leak[i], ink(0xe5484d));
         }
         self.draw_cells(scene);
+        self.draw_portals(scene);
         self.draw_plot(scene);
         self.draw_depth_lines(view);
         rlDrawRenderBatchActive();
@@ -3808,7 +3821,6 @@ obj Studio(Workbench) {
         scene = self.scene;
         if stage is None or scene is None {
             return;
-        self.draw_portals(scene);
         }
         stage.paint();
         self.draw_skin_marks();
@@ -3939,6 +3951,10 @@ obj Studio(Workbench) {
     def save_scene(path: str = "");
     """Rebuild the level when the document's brushes have changed."""
     def keep_built;
+    """Bring the level in line with the document in place, where only the
+    world's brushes moved or changed shape: False when it must be built
+    again."""
+    def patch_built(scene: Scene) -> bool;
     """Bring the brushes' outlines in line with the document."""
     def outline_solids(scene: Scene);
     """The shape of an entity made of brushes: the box around them."""
@@ -4341,6 +4357,8 @@ obj Studio(Workbench) {
     """How many cells that one sees, itself among them."""
     def cells_seen(scene: Scene) -> int;
     def draw_cells(scene: Scene);
+    def draw_portals(scene: Scene);
+    def portals_command(scene: Scene, args: list[str]);
     """What a level built of this scene now would be known by."""
     def build_mark(whole: Scene) -> str;
     """List what a program said of entities and brushes as findings."""
@@ -4357,8 +4375,6 @@ obj Studio(Workbench) {
     """Where projects named without a path are kept."""
     def projects_folder -> str;
     def save_project;
-    def draw_portals(scene: Scene);
-    def portals_command(scene: Scene, args: list[str]);
     """A scene was saved there: one of the project's when among its scenes."""
     def project_took(path: str);
     """The recipes kept in the settings and the open project's, by name."""
@@ -5175,7 +5191,7 @@ obj Studio(Workbench) {
         }
         if scene.solids() {
             lines.append(
-                "studio: build from=" + ("copy" if self.built_reused else "new") + " copies=" + str(len(self.built_copies))
+                "studio: build from=" + ("patch" if self.built_patched else ("copy" if self.built_reused else "new")) + " copies=" + str(len(self.built_copies))
             );
         }
         built_now = self.live;

@@ -247,3 +247,116 @@ def compile_scene(scene: Scene, materials: Materials) -> LiveLevel {
     bsp.visibility = bytes([0, 0, 0, 0, 0, 0, 0, 0, 1]);
     return result;
 }
+
+"""What changed between two compiles of a scene where only brushes of the
+world moved or changed shape: the faces whose corners, texture coordinates
+or colours differ, and the brushes whose planes do."""
+obj LiveChanges {
+    has faces: list[int] = [],
+        brushes: list[int] = [];
+}
+
+def:priv same_point(first: Vec3, second: Vec3) -> bool {
+    return abs(first.x - second.x) < 0.0001 and abs(first.y - second.y) < 0.0001 and abs(first.z - second.z) < 0.0001;
+}
+
+"""Whether a material is a liquid's, which the level reads its water from."""
+def:priv liquid_material(name: str) -> bool {
+    lowered = name.lower();
+    return lowered.split("/")[-1].split(":")[-1].startswith("*") or "water" in lowered or "slime" in lowered or "lava" in lowered;
+}
+
+"""The faces and brushes of the world that changed from one compile of a
+scene (`old`) to the next (`new`), for a level that can be brought in line
+in place. None when anything else changed: the entities, the materials,
+the count of faces, brushes, planes or models, a face's count of corners
+or its material, a brush of another model, or a liquid."""
+def level_changes(old: Bsp, new: Bsp) -> LiveChanges | None {
+    if len(old.faces) != len(new.faces) or len(old.brushes) != len(new.brushes) or len(old.planes) != len(new.planes)
+        or len(old.models) != len(new.models) or len(old.textures) != len(new.textures)
+        or len(old.entities) != len(new.entities) or len(old.models) == 0 {
+        return None;
+    }
+    for (index, entity) in enumerate(old.entities) {
+        if entity.fields != new.entities[index].fields {
+            return None;
+        }
+    }
+    for (index, texture) in enumerate(old.textures) {
+        if texture.name != new.textures[index].name {
+            return None;
+        }
+    }
+    for (index, model) in enumerate(old.models) {
+        other = new.models[index];
+        if model.first_face != other.first_face or model.face_count != other.face_count or model.brushes != other.brushes {
+            return None;
+        }
+    }
+    world = old.models[0];
+    found = LiveChanges();
+    for index in range(len(old.faces)) {
+        was = old.faces[index];
+        now = new.faces[index];
+        if was.texture != now.texture or len(was.vertices) != len(now.vertices) {
+            return None;
+        }
+        moved = not same_point(was.normal, now.normal) or was.uv != now.uv or was.colors != now.colors;
+        for corner in range(len(was.vertices)) {
+            if not moved and not same_point(was.vertices[corner], now.vertices[corner]) {
+                moved = True;
+            }
+        }
+        if not moved {
+            continue;
+        }
+        if index < world.first_face or index >= world.first_face + world.face_count
+            or (0 <= was.texture < len(old.textures) and liquid_material(old.textures[was.texture].name)) {
+            return None;
+        }
+        found.faces.append(index);
+    }
+    for index in range(len(old.brushes)) {
+        before = old.brushes[index];
+        after = new.brushes[index];
+        if before.contents != after.contents or before.planes != after.planes {
+            return None;
+        }
+        moved = False;
+        for plane in before.planes {
+            if not same_point(old.planes[plane].normal, new.planes[plane].normal)
+                or abs(old.planes[plane].distance - new.planes[plane].distance) > 0.0001 {
+                moved = True;
+            }
+        }
+        if moved {
+            if index not in world.brushes {
+                return None;
+            }
+            found.brushes.append(index);
+        }
+    }
+    return found;
+}
+
+"""Bring a compiled level in line with the next compile of its scene, where
+`level_changes` found only these: the changed faces and planes taken from
+it, and the bounds of the world and its leaf."""
+def take_changes(old: Bsp, new: Bsp, changes: LiveChanges) {
+    for index in changes.faces {
+        old.faces[index] = new.faces[index];
+    }
+    for index in changes.brushes {
+        for plane in old.brushes[index].planes {
+            old.planes[plane] = new.planes[plane];
+        }
+    }
+    for (index, model) in enumerate(old.models) {
+        model.mins = new.models[index].mins;
+        model.maxs = new.models[index].maxs;
+    }
+    if old.leaves and new.leaves {
+        old.leaves[0].mins = new.leaves[0].mins;
+        old.leaves[0].maxs = new.leaves[0].maxs;
+    }
+}

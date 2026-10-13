@@ -30,6 +30,7 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
         source = scene_from_map(scene.game, scene.name, MapFile(items=scene.built_map(self.play_build)));
     }
     whole = self.expanded(source);
+    self.built_patched = False;
     mark = self.build_mark(whole);
     made = compile_scene(whole, self.materials);
     kept: KeptBake | None = None;
@@ -238,6 +239,11 @@ impl Studio.keep_built {
     }
     # A way out found before the brushes changed may not be one now.
     self.leak = [];
+    if self.patch_built(scene) {
+        self.built_geometry = scene.geometry;
+        self.seen_revision = -1;
+        return;
+    }
     loaded = self.load(scene.game, scene.name, quiet=True);
     # Loading a level takes the mouse for the game; the studio keeps it free.
     _release();
@@ -246,6 +252,43 @@ impl Studio.keep_built {
         return;
     }
     self.seen_revision = -1;
+}
+
+impl Studio.patch_built(scene: Scene) -> bool {
+    app = self.app;
+    before = self.live;
+    if app is None or before is None or app.level.bsp is not before.bsp or self.lit or self.vis_cell > 0.0
+        or self.play_only or self.light_task is not None {
+        return False;
+    }
+    began = time.time();
+    source = scene;
+    if scene.filtered(self.play_build) {
+        source = scene_from_map(scene.game, scene.name, MapFile(items=scene.built_map(self.play_build)));
+    }
+    made = compile_scene(self.expanded(source), self.materials);
+    changes = level_changes(before.bsp, made.bsp);
+    if changes is None {
+        return False;
+    }
+    level = app.level;
+    take_changes(before.bsp, made.bsp, changes);
+    # The renderer packs the faces again where they were, and the world's
+    # collision takes the brushes' new planes; if either cannot, the level
+    # is built again whole.
+    if not app.quake.refresh_faces(level, changes.faces) or not refresh_world_hulls(level.collision, level.bsp, changes.brushes) {
+        return False;
+    }
+    before.faces_of = made.faces_of;
+    before.warnings = made.warnings;
+    before.brushes = made.brushes;
+    self.built_patched = True;
+    self.build_ms = int((time.time() - began) * 1000.0);
+    print(
+        "studio: build patched faces=" + str(len(changes.faces)) + " brushes=" + str(len(changes.brushes)) + " ms="
+            + str(self.build_ms)
+    );
+    return True;
 }
 
 impl Studio.preview_light(scene: Scene) -> bool {

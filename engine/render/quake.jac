@@ -200,6 +200,10 @@ obj QuakeRenderer {
     # lists of recent visible sets, and the brush models' groups.
     has chunks: list[GpuMesh] = [],
         face_chunks: list[int] = [],
+        # Where each drawn face's vertices begin in its chunk, and how many
+        # it has (for faces packed again in place: refresh_faces).
+        face_bases: list[int] = [],
+        face_sizes: list[int] = [],
         face_batches: list[list[int]] = [],
         face_runs: list[bytes] = [],
         brush_face: list[bool] = [],
@@ -652,43 +656,15 @@ obj QuakeRenderer {
             buffers.append(bytearray(used[c] * WORLD_VERTEX_STRIDE));
         }
         self.face_runs = [b""] * count;
+        self.face_bases = placed[1];
+        self.face_sizes = counts;
         self.curve_bases = {};
         self.curve_steps = {};
         self.curve_runs = {};
-        fogs = min(len(level.bsp.fogs), WORLD_FOG_LIMIT);
         for f in drawn {
             face = faces[f];
-            rect = self.rects[f];
-            flags = 0;
-            lit = face.light_offset >= 0;
-            if lit {
-                flags = SURFACE_LIGHTMAP;
-            }
-            if self.single_pass {
-                flags = flags | (face.alpha_test << SURFACE_ALPHA_SHIFT);
-                if not lit and face.emission {
-                    flags = flags | SURFACE_EMISSION;
-                }
-                if not lit and len(face.colors) >= len(face.vertices) * 4 {
-                    flags = flags | SURFACE_VERTEX_COLOR;
-                }
-            }
             base = placed[1][f];
-            pack_world_face(
-                buffers[self.face_chunks[f]],
-                base * WORLD_VERTEX_STRIDE,
-                face,
-                rect.x,
-                rect.y,
-                self.atlas_size,
-                0.0 if self.single_pass else rect.layer,
-                flags,
-                face.fog if 0 <= face.fog < fogs else -1,
-                self.overbright,
-                sprites=self.single_pass,
-                alpha=int(face.opacity * 255.0),
-                unit=self.atlas_unit
-            );
+            self.pack_face(level, f, buffers[self.face_chunks[f]], base * WORLD_VERTEX_STRIDE);
             # AutospriteDeform rebuilds each quad as RB_AddQuadStamp's triangles.
             stamped = self.single_pass and len(face.vertices) == 4 and face.texture in level.surface_deforms
                 and any([deform.kind == "autosprite" for deform in level.surface_deforms[face.texture]]);
@@ -723,6 +699,62 @@ obj QuakeRenderer {
         self.brush_lists = IndexLists();
         self.views = [];
         self.plan_stages(level);
+    }
+
+    """Write one face's vertices into a chunk's bytes at `offset`."""
+    def pack_face(level: Level, f: int, out: bytearray, offset: int) {
+        face = level.bsp.faces[f];
+        rect = self.rects[f];
+        flags = 0;
+        lit = face.light_offset >= 0;
+        if lit {
+            flags = SURFACE_LIGHTMAP;
+        }
+        if self.single_pass {
+            flags = flags | (face.alpha_test << SURFACE_ALPHA_SHIFT);
+            if not lit and face.emission {
+                flags = flags | SURFACE_EMISSION;
+            }
+            if not lit and len(face.colors) >= len(face.vertices) * 4 {
+                flags = flags | SURFACE_VERTEX_COLOR;
+            }
+        }
+        fogs = min(len(level.bsp.fogs), WORLD_FOG_LIMIT);
+        pack_world_face(
+            out,
+            offset,
+            face,
+            rect.x,
+            rect.y,
+            self.atlas_size,
+            0.0 if self.single_pass else rect.layer,
+            flags,
+            face.fog if 0 <= face.fog < fogs else -1,
+            self.overbright,
+            sprites=self.single_pass,
+            alpha=int(face.opacity * 255.0),
+            unit=self.atlas_unit
+        );
+    }
+
+    """Pack faces again in place, where only their corners, texture
+    coordinates or colours have changed (an editor moving brushes): each
+    goes where it was in its chunk. False, with nothing changed, when one
+    is not drawn or has another number of corners than it was packed with."""
+    def refresh_faces(level: Level, changed: list[int]) -> bool {
+        for f in changed {
+            if f < 0 or f >= len(self.face_chunks) or f >= len(self.face_bases) or self.face_chunks[f] < 0
+                or self.face_chunks[f] >= len(self.chunks)
+                or len(level.bsp.faces[f].vertices) != self.face_sizes[f] {
+                return False;
+            }
+        }
+        for f in changed {
+            out = bytearray(self.face_sizes[f] * WORLD_VERTEX_STRIDE);
+            self.pack_face(level, f, out, 0);
+            self.chunks[self.face_chunks[f]].set_vertices(bytes(out), self.face_bases[f] * WORLD_VERTEX_STRIDE);
+        }
+        return True;
     }
 
     """The index lists of a visible face set: reused while the same set comes

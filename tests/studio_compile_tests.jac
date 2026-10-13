@@ -219,3 +219,44 @@ test "a baked level prepares, finds the player's cell and draws less behind a wa
     everything = level.visible(world, Vec3(x=-192.0, y=0.0, z=56.0), False);
     assert 0 < len(drawn) and len(drawn) < len(everything) and len(everything) == total;
 }
+
+import from editor.compile.live { level_changes, take_changes, LiveChanges }
+import from engine.formats.brush_collision { build_brush_collision, refresh_world_hulls }
+
+test "a brush of the world moved is found among the faces and brushes it changed, and taken in place" {
+    scene = room();
+    first = compile_scene(scene, SwatchMaterials());
+    collision = build_brush_collision(first.bsp);
+    wall = scene.solids()[1];
+    # Through where the wall stands, and through where it is moved to.
+    assert collision.trace(Vec3(x=0.0, y=200.0, z=64.0), Vec3(x=0.0, y=300.0, z=64.0), point=True).fraction < 1.0;
+    assert collision.trace(Vec3(x=0.0, y=-200.0, z=64.0), Vec3(x=0.0, y=-300.0, z=64.0), point=True).fraction == 1.0;
+    wall.sides = box_sides(Vec3(x=-256.0, y=-256.0, z=0.0), Vec3(x=256.0, y=-240.0, z=128.0), "wall");
+    second = compile_scene(scene, SwatchMaterials());
+    changes = level_changes(first.bsp, second.bsp);
+    assert changes is not None;
+    found: LiveChanges = changes;
+    assert len(found.faces) == 6 and found.faces == first.faces_of[wall.serial];
+    assert found.brushes == [1];
+    take_changes(first.bsp, second.bsp, found);
+    assert first.bsp.faces[found.faces[0]] is second.bsp.faces[found.faces[0]];
+    assert refresh_world_hulls(collision, first.bsp, found.brushes);
+    assert collision.trace(Vec3(x=0.0, y=200.0, z=64.0), Vec3(x=0.0, y=300.0, z=64.0), point=True).fraction == 1.0;
+    assert collision.trace(Vec3(x=0.0, y=-200.0, z=64.0), Vec3(x=0.0, y=-300.0, z=64.0), point=True).fraction < 1.0;
+    # Nothing changed: nothing to take.
+    again = level_changes(second.bsp, compile_scene(scene, SwatchMaterials()).bsp);
+    assert again is not None and len(again.faces) == 0 and len(again.brushes) == 0;
+    # Anything more than brushes of the world moving is built again whole:
+    # an entity's field, a material, a brush more, the door (a model of its own).
+    scene.items()[0].fields["message"] = "Another room";
+    assert level_changes(second.bsp, compile_scene(scene, SwatchMaterials()).bsp) is None;
+    scene.items()[0].fields["message"] = "A room";
+    wall.sides = box_sides(Vec3(x=-256.0, y=-256.0, z=0.0), Vec3(x=256.0, y=-240.0, z=128.0), "brick");
+    assert level_changes(second.bsp, compile_scene(scene, SwatchMaterials()).bsp) is None;
+    wall.sides = box_sides(Vec3(x=-256.0, y=-256.0, z=0.0), Vec3(x=256.0, y=-240.0, z=128.0), "wall");
+    door = scene.solids()[3];
+    door.sides = box_sides(Vec3(x=-32.0, y=120.0, z=0.0), Vec3(x=32.0, y=136.0, z=96.0), "door");
+    assert level_changes(second.bsp, compile_scene(scene, SwatchMaterials()).bsp) is None;
+    scene.add_solid(scene.world(), box_sides(Vec3(x=0.0, y=0.0, z=0.0), Vec3(x=16.0, y=16.0, z=16.0), "wall"));
+    assert level_changes(second.bsp, compile_scene(scene, SwatchMaterials()).bsp) is None;
+}

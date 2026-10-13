@@ -248,6 +248,17 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   When it is done it is kept under the build's mark and the level is
   built again, which takes it. An edit made meanwhile starts a bake of
   its own, and `ed_build cancel` gives the one under way up.
+- **Edits brought into the level in place**: where an edit only moves or
+  reshapes brushes of the world (not an entity, a material, a brush
+  model, a liquid, or the number of brushes or of a face's corners) and
+  the level is neither lit nor baked, it is not loaded again: the scene is
+  compiled, the faces and brushes that changed are found against the level
+  standing, and only those are put into it, the renderer packing just
+  their vertices again where they were and the collision taking just
+  their planes. Anything more is built again whole. A dump's `build
+  from=patch` says the last build was such, and the console says how many
+  faces and brushes were taken (on a scene of 3268 brushes, about a tenth
+  of a second for a moved brush).
 - **Recipes**: `ed_recipe <name> "<command>; <command>"` keeps a row of
   editor commands under a name (in the settings, between sessions),
   `ed_make <name>` runs them, `ed_recipe <name>` alone forgets one, and
@@ -1362,8 +1373,9 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   built them in and their files were left out. The class table lists
   every class the three games' own levels use (237 classes), with the
   fields those levels give them, so the Classes tab offers them all.
-- Every edit that changes the brushes rebuilds the level at once, so the
-  level view is what Play runs. Save writes the scene as a Valve 220 `.map`
+- Every edit that changes the brushes rebuilds the level at once (or,
+  where only brushes of the world moved, brings just those into it), so
+  the level view is what Play runs. Save writes the scene as a Valve 220 `.map`
   under `QP_SCENES` (default `./scenes`), which other Quake editors open.
 
 - **Copy and paste** (Ctrl+C, Ctrl+X, Ctrl+V): the selection is copied as
