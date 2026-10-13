@@ -501,6 +501,35 @@ node PlayerBot {
                 best = side.normalized() if side.length() > 0.001 else Vec3(x=-ahead.y, y=ahead.x).normalized();
             }
         }
+        # A monster coming at it fast (a fiend's leap, a charge) is a missile
+        # too: off its line, to the roomier side.
+        level = self.level;
+        for body in [world->:HasOpponent:->][?:Opponent] {
+            if body.health <= 0 or body.dormant {
+                continue;
+            }
+            rel = origin.sub(body.pos.sub(Vec3(z=body.eye_height)));
+            flat_rel = Vec3(x=rel.x, y=rel.y);
+            distance = flat_rel.length();
+            run = Vec3(x=body.velocity.x, y=body.velocity.y);
+            if distance > 350.0 or distance < 1.0 or run.length() < 250.0 {
+                continue;
+            }
+            closing = run.dot(flat_rel.scale(1.0 / distance));
+            if closing < 200.0 or distance >= worst {
+                continue;
+            }
+            worst = distance;
+            across = Vec3(x=-run.y, y=run.x).normalized();
+            if level is not None {
+                left_room = level.collision.trace(origin, origin.add(across.scale(64.0))).fraction;
+                right_room = level.collision.trace(origin, origin.sub(across.scale(64.0))).fraction;
+                if right_room > left_room {
+                    across = across.scale(-1.0);
+                }
+            }
+            best = across;
+        }
         return best;
     }
 
