@@ -1574,6 +1574,17 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                 if player.water_depth >= 2 {
                     intent.move.z = heading.normalized().z * share;
                 }
+                # In water at all, a waypoint well below or above is swum to
+                # straight down or up: floating at the surface it was never
+                # dived for.
+                if player.water_depth >= 1 and self.route.points {
+                    rise = self.route.points[0].z - origin.z;
+                    if rise < -24.0 {
+                        intent.move.z = -1.0;
+                    } elif rise > 24.0 and player.water_depth >= 2 {
+                        intent.move.z = 1.0;
+                    }
+                }
             }
         }
     }
