@@ -179,7 +179,17 @@ import from engine.formats.q2.model { parse_md2 }
 import from .geometry.extrude { profile_pieces, profile_of, sweep_brushes, PROFILE_KINDS }
 import from .compile.light { bake_light, lamp_cone, light_job, LightJob }
 import from .compile.spot { Cone, cone_rim, cone_through, square_to }
-import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport, cell_job, CellJob }
+import from .compile.bake {
+    bake_cells,
+    cell_sees,
+    leaf_at,
+    VisReport,
+    cell_job,
+    CellJob,
+    BAKE_BY_PLANES,
+    portal_file_text,
+    portal_file_windings
+}
 import from .project {
     Project, MANIFEST_NAME, read_project, write_project, addon_classes, addon_folders, addon_label, file_name
 }
@@ -338,8 +348,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_autocaulk", "ed_autocaulk [on|off]", "whether shapes are built with their inner faces caulked"),
     (
         "ed_bake",
-        "ed_bake [cell|off]",
-        "cut the built level into cells that know which others they see (256 units wide unless told), or build it as one again"
+        "ed_bake [planes|cell|off]",
+        "cut the built level into cells that know which others they see (256 units wide unless told), or by its brushes' own planes into leaves joined by portals, or build it as one again"
     ),
     (
         "ed_project",
@@ -449,6 +459,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_unbind", "ed_unbind <key>", "give a key back what the studio gives it"),
     ("ed_binds", "ed_binds", "list the keys bound by hand"),
     (
+    (
+        "ed_portals",
+        "ed_portals [on|off] | load [file.prt] | write [file.prt] | forget",
+        "draw the portals of a bake by planes, read a compiler's portal file to draw, or write the bake's"
+    ),
         "ed_settings",
         "ed_settings [box [general|display|view|map|model|files|colours|close] | vars [word]]",
         "list the studio's settings, each a click to change; open them by subject in a box; or print them as the console variables they also are"
@@ -483,7 +498,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_recent", "ed_recent [number]", "list the files opened and saved lately, or open one of them"),
     ("ed_log", "ed_log [lines] | panel [on|off] [rows] | panel up|down [n] | panel end", "show the console's last lines; panel keeps them in sight along the foot of the views, and scrolls back through them"),
     ("ed_mapopts", "ed_mapopts [comments|whole] [on|off]", "how maps are written: with numbered comments, with whole coordinates only"),
-    ("ed_overlay", "ed_overlay [triggers|unseen] [on|off] | width <1..4> | overdraw [on|off]", "outline trigger volumes, or clip, hint and caulk brushes, in colours of their own; how wide the studio's lines are drawn; how many faces the renderer draws over each place; alone, count them"),
+    ("ed_overlay", "ed_overlay [triggers|unseen|portals|leaves] [on|off] | width <1..4> | overdraw [on|off]", "outline trigger volumes, or clip, hint and caulk brushes, in colours of their own, or a bake's portals or leaves; how wide the studio's lines are drawn; how many faces the renderer draws over each place; alone, count them"),
     ("ed_export", "ed_export <file.map> [valve|classic|q3]", "write the scene as a map for another tool: Valve's form, the classic one, or Quake III's brush primitives and patches"),
     ("ed_fire", "ed_fire <targetname>", "set off what has that name, in a game played from the studio"),
     ("ed_spawn", "ed_spawn <all|easy|normal|hard|deathmatch>", "show the level as it would spawn at a skill or in a mode"),
@@ -1386,6 +1401,10 @@ obj Studio(Workbench) {
         project: Project | None = None,
         project_folder: str = "",
         addons: dict[str, list[str]] = {},
+        # The bake's portals drawn, and those read from a portal file.
+        portals_shown: bool = False,
+        portal_lines: list[list[Vec3]] = [],
+        portal_file: str = "",
         # What add-ons bring beside classes: each one's name by its file,
         # and its folders of image files and of prefabs by its name.
         addon_labels: dict[str, str] = {},
@@ -2060,7 +2079,12 @@ obj Studio(Workbench) {
                     MenuItem(text="Bake navigation for bots", command="ed_nav bake"),
                     MenuItem(text="What the baked navigation cannot reach", command="ed_nav check"),
                     MenuItem(text="Draw the baked ways", command="ed_nav show"),
-                    MenuItem(text="Draw the ways bots take between camp spots", command="ed_camps routes")
+                    MenuItem(text="Draw the ways bots take between camp spots", command="ed_camps routes"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Bake by the brushes' own planes", command="ed_bake planes"),
+                    MenuItem(text="Show the bake's portals", command="ed_portals"),
+                    MenuItem(text="Load a portal file", command="ed_portals load"),
+                    MenuItem(text="Write the bake's portal file", command="ed_portals write")
                 ],
                 [
                     MenuItem(text="Next document", command="ed_doc next"),
@@ -3784,6 +3808,7 @@ obj Studio(Workbench) {
         scene = self.scene;
         if stage is None or scene is None {
             return;
+        self.draw_portals(scene);
         }
         stage.paint();
         self.draw_skin_marks();
@@ -4332,6 +4357,8 @@ obj Studio(Workbench) {
     """Where projects named without a path are kept."""
     def projects_folder -> str;
     def save_project;
+    def draw_portals(scene: Scene);
+    def portals_command(scene: Scene, args: list[str]);
     """A scene was saved there: one of the project's when among its scenes."""
     def project_took(path: str);
     """The recipes kept in the settings and the open project's, by name."""
@@ -5123,7 +5150,14 @@ obj Studio(Workbench) {
                     + str(self.built_geometry)
             );
         }
-        if self.vis_cell > 0.0 {
+        if self.vis_cell == BAKE_BY_PLANES {
+            done = self.vis_done;
+            lines.append(
+                "studio: bake planes leaves=" + str(done.leaves) + " cells=" + str(done.cells) + " portals="
+                    + str(done.portals) + " areas=" + str(done.areas) + " buried=" + str(done.buried) + " hidden="
+                    + str(done.hidden) + " capped=" + ("1" if done.capped else "0") + " leaked=" + ("1" if done.leaked else "0")
+            );
+        } elif self.vis_cell > 0.0 {
             done = self.vis_done;
             lines.append(
                 "studio: bake cell=" + str(int(self.vis_cell)) + " cells=" + str(done.cells) + " hidden=" + str(done.hidden)

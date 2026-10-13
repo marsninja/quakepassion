@@ -151,3 +151,167 @@ test "cells baked a few lines of sight at a time come out as cells baked at once
         assert job.outcome.cells == outcome.cells;
     }
 }
+
+import from editor.compile.bake { bake_planes, BAKE_BY_PLANES, portal_file_text, portal_file_windings }
+import from engine.world.world { World }
+import from engine.world.map_areas { AreaMap, AreaPortal }
+import from engine.world.area_portals { chart_areas, load_area_portals, HasAreaPortal, AreaPortalTick }
+import from engine.world.signals { Fire }
+
+"""The cluster a point is in, in a baked level (-1 in what is solid)."""
+def cluster_at(made: LiveLevel, point: Vec3) -> int {
+    return made.bsp.leaves[leaf_at(made.bsp, made.bsp.models[0].head, point)].cluster;
+}
+
+import from editor.compile.live { LiveLevel }
+
+"""A corridor that turns back on itself: an arm running west at the south,
+a column up the east side, and an arm running back west at the north, with
+a block between the arms and walls, floor and roof all round. A hint across
+both arms where they meet the column cuts each from its corner (without it
+an arm and its corner are one leaf, and see the other's up the column)."""
+def bend(standing: bool = True) -> Scene {
+    scene = Scene(game="passion", name="studio:test");
+    world = scene.world();
+    scene.add_solid(world, box_sides(Vec3(x=-528.0, y=-80.0, z=-16.0), Vec3(x=144.0, y=528.0, z=0.0), "floor"));
+    scene.add_solid(world, box_sides(Vec3(x=-528.0, y=-80.0, z=128.0), Vec3(x=144.0, y=528.0, z=144.0), "roof"));
+    scene.add_solid(world, box_sides(Vec3(x=-512.0, y=64.0, z=0.0), Vec3(x=0.0, y=384.0, z=128.0), "wall"));
+    scene.add_solid(world, box_sides(Vec3(x=-528.0, y=-80.0, z=0.0), Vec3(x=-512.0, y=528.0, z=128.0), "wall"));
+    scene.add_solid(world, box_sides(Vec3(x=128.0, y=-80.0, z=0.0), Vec3(x=144.0, y=528.0, z=128.0), "wall"));
+    scene.add_solid(world, box_sides(Vec3(x=-512.0, y=-80.0, z=0.0), Vec3(x=128.0, y=-64.0, z=128.0), "wall"));
+    scene.add_solid(world, box_sides(Vec3(x=-512.0, y=512.0, z=0.0), Vec3(x=128.0, y=528.0, z=128.0), "wall"));
+    scene.add_solid(world, box_sides(Vec3(x=-16.0, y=-64.0, z=0.0), Vec3(x=0.0, y=512.0, z=128.0), "common/hint"));
+    if standing {
+        scene.add_item({"classname": "info_player_start", "origin": "-448 0 24"});
+        scene.add_item({"classname": "light", "origin": "-448 448 64"});
+    }
+    return scene;
+}
+
+test "a bake by planes cuts space at the brushes' own faces, fills the outside and buries hidden faces" {
+    scene = hall(True);
+    made = compile_scene(scene, SwatchMaterials());
+    faces = len(made.bsp.leaves[0].faces);
+    outcome = bake_planes(scene, made);
+    bsp = made.bsp;
+    assert not outcome.leaked and not outcome.capped and outcome.leaves == len(bsp.leaves);
+    assert outcome.cells >= 3 and outcome.leaves > outcome.cells and outcome.portals >= outcome.cells - 1;
+    assert bsp.clusters == outcome.cells and len(bsp.visibility) == 8 + outcome.cells * bsp.cluster_bytes;
+    for leaf in bsp.leaves {
+        # Solid (a brush, or the outside filled) or a cluster, never both.
+        assert (leaf.contents == 1) == (leaf.cluster < 0);
+        assert leaf.contents == 0 or len(leaf.faces) == 0;
+    }
+    # In the room, in a wall, and outside the level.
+    assert cluster_at(made, Vec3(x=-200.0, y=0.0, z=32.0)) >= 0 and cluster_at(made, Vec3(x=200.0, y=0.0, z=32.0)) >= 0;
+    assert cluster_at(made, Vec3(x=0.0, y=-100.0, z=100.0)) < 0;
+    assert cluster_at(made, Vec3(x=-300.0, y=0.0, z=100.0)) < 0 and cluster_at(made, Vec3(x=0.0, y=0.0, z=300.0)) < 0;
+    # The faces looking out of the level, and those against another brush,
+    # are buried; those looking into the hall are kept.
+    kept: set[int] = set();
+    for leaf in bsp.leaves {
+        for index in leaf.faces {
+            kept.add(index);
+        }
+    }
+    assert outcome.buried > 0 and len(kept) + outcome.buried == faces and len(kept) >= 12;
+    assert len(made.portals) == outcome.portals and len(made.portal_ends) == outcome.portals * 2;
+    assert len(made.shapes) == outcome.leaves;
+    # Written as a portal file and read back, every portal between clusters.
+    text = portal_file_text(made);
+    assert text.startswith("PRT1\n" + str(outcome.cells) + "\n");
+    read = portal_file_windings(text);
+    assert read is not None and len(read) == int(text.split("\n")[2]) and len(read) >= 1;
+    assert len(read[0]) >= 3;
+    # Quake III's form, with a count of faces and a flag after the clusters.
+    q3 = portal_file_windings("PRT1\n2\n1\n0\n4 0 1 0 (0 0 0 ) (0 64 0 ) (0 64 64 ) (0 0 64 ) \n");
+    assert q3 is not None and len(q3) == 1 and q3[0][2].y == 64.0 and q3[0][2].z == 64.0;
+    assert portal_file_windings("not a portal file") is None;
+    # Two rooms joined only by a doorway see each other through it.
+    assert cell_sees(bsp, cluster_at(made, Vec3(x=-200.0, y=0.0, z=32.0)), cluster_at(made, Vec3(x=200.0, y=0.0, z=32.0)));
+}
+
+test "a corridor that turns back on itself hides each arm from the other" {
+    scene = bend();
+    made = compile_scene(scene, SwatchMaterials());
+    outcome = bake_planes(scene, made);
+    south = cluster_at(made, Vec3(x=-448.0, y=0.0, z=32.0));
+    corner = cluster_at(made, Vec3(x=64.0, y=0.0, z=32.0));
+    north = cluster_at(made, Vec3(x=-448.0, y=448.0, z=32.0));
+    top = cluster_at(made, Vec3(x=64.0, y=448.0, z=32.0));
+    assert not outcome.leaked and outcome.hidden > 0 and not outcome.capped;
+    # The column up the east side is one leaf: nothing cuts it.
+    assert south >= 0 and north >= 0 and len(set([south, corner, north])) == 3 and corner == top;
+    assert cell_sees(made.bsp, south, corner) and cell_sees(made.bsp, north, top) and cell_sees(made.bsp, corner, top);
+    assert not cell_sees(made.bsp, south, north) and not cell_sees(made.bsp, north, south);
+    # With nothing standing in it, the bend is outside and filled.
+    empty = bend(False);
+    bare = compile_scene(empty, SwatchMaterials());
+    open_outcome = bake_planes(empty, bare);
+    assert open_outcome.cells == open_outcome.leaves - len([leaf for leaf in bare.bsp.leaves if leaf.contents == 1]);
+}
+
+test "an area portal in a doorway divides the level into two areas it joins" {
+    scene = hall(True);
+    scene.add_item({"classname": "light", "origin": "192 0 64"});
+    portal = scene.add_item({"classname": "func_areaportal", "targetname": "gate"});
+    scene.add_solid(portal, box_sides(Vec3(x=-8.0, y=-32.0, z=0.0), Vec3(x=8.0, y=32.0, z=192.0), "common/areaportal"));
+    made = compile_scene(scene, SwatchMaterials());
+    outcome = bake_planes(scene, made);
+    bsp = made.bsp;
+    assert outcome.areas == 2 and len(bsp.areas) == 3 and len(made.warnings) == 0;
+    west = bsp.leaves[leaf_at(bsp, bsp.models[0].head, Vec3(x=-200.0, y=0.0, z=32.0))].area;
+    east = bsp.leaves[leaf_at(bsp, bsp.models[0].head, Vec3(x=200.0, y=0.0, z=32.0))].area;
+    assert west > 0 and east > 0 and west != east;
+    assert len(bsp.areas[west]) == 1 and bsp.areas[west][0].portal == 1 and bsp.areas[west][0].area == east;
+    assert bsp.areas[east][0].area == west;
+    styled = [entity for entity in bsp.entities if entity.fields.get("classname", "") == "func_areaportal"];
+    assert len(styled) == 1 and styled[0].fields.get("style", "") == "1";
+    # The engine charts the areas and the portal between them, shut until used.
+    world = World();
+    charted = chart_areas(world, bsp, []);
+    assert charted is not None;
+    chart: AreaMap = charted;
+    assert len(chart.areas) == 3;
+    load_area_portals(world, bsp, chart);
+    gates = [world->:HasAreaPortal:->][?:AreaPortal];
+    assert len(gates) == 1 and gates[0].style == 1 and not chart.connected(west, east);
+    gates[0].activation spawn Fire(emit=False);
+    world spawn AreaPortalTick();
+    assert chart.connected(west, east);
+    # Its brush is not drawn and stops nothing.
+    model = int(styled[0].fields.get("model", "*0")[1:]);
+    assert model > 0 and bsp.models[model].face_count == 0 and len(bsp.models[model].brushes) == 1;
+    assert bsp.brushes[bsp.models[model].brushes[0]].contents == 0;
+    # Kept and given to the level compiled again, it is the same.
+    first = compile_scene(scene, SwatchMaterials());
+    base = len(first.bsp.planes);
+    done = bake_planes(scene, first);
+    kept = keep_bake(first, "mark", base, 0, 0, done);
+    again = compile_scene(scene, SwatchMaterials());
+    assert give_bake(again, kept);
+    assert len(again.bsp.leaves) == len(first.bsp.leaves) and again.bsp.visibility == first.bsp.visibility;
+    assert [leaf.area for leaf in again.bsp.leaves] == [leaf.area for leaf in first.bsp.leaves];
+    assert [leaf.contents for leaf in again.bsp.leaves] == [leaf.contents for leaf in first.bsp.leaves];
+    assert len(again.bsp.areas) == 3 and len(again.portals) == done.portals;
+    assert [entity for entity in again.bsp.entities if entity.fields.get("style", "") == "1"];
+}
+
+test "a bake by planes done a slice at a time comes out as one done at once" {
+    scene = bend();
+    whole = compile_scene(scene, SwatchMaterials());
+    outcome = bake_planes(scene, whole);
+    sliced = compile_scene(scene, SwatchMaterials());
+    job = cell_job(scene, sliced, BAKE_BY_PLANES);
+    assert not job.finished() and job.share() < 0.2;
+    steps = 0;
+    last = 0.0;
+    while not job.step(3) {
+        steps += 1;
+        assert job.share() >= last;
+        last = job.share();
+    }
+    assert steps > 4 and job.share() == 1.0;
+    assert sliced.bsp.visibility == whole.bsp.visibility and job.outcome.leaves == outcome.leaves;
+    assert job.outcome.hidden == outcome.hidden and job.outcome.buried == outcome.buried;
+}

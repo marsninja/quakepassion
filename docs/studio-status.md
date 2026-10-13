@@ -175,6 +175,30 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   `ed_cells` (Play menu) draws the cells in every view: the one looked
   from in yellow (where the 3D camera is, or where a lone selected entity
   stands), the cells it sees in green, the rest in red.
+- **Baking by the brushes' own planes** (`ed_bake planes`, Play menu):
+  in place of a grid, space is cut by the planes of the world's brushes
+  (and of hint and area portal brushes) until no plane cuts a leaf, so
+  each leaf is inside a brush or empty, as a map compiler's BSP is.
+  Leaves that meet are joined by portals; the empty leaves no entity can
+  come to are filled as outside unless the level leaks (a warning says
+  so); a face that lies only in brushes or the outside is left out (the
+  union of the brushes buries it); each empty leaf is a cluster, given
+  the clusters it can see by looking from points on its own portals to
+  points on the portals the flood comes to, with the solid brushes in the
+  way. The leaves are nodes of a graph, the portals edges, and the
+  outside, the areas and what each cluster sees are walkers over it. A
+  `func_areaportal` brush (its door targeting it) divides the level into
+  areas, numbered in the level as Quake II numbers them, so a shut door
+  hides what is beyond it from sight and sound in play. A hint brush cuts
+  space where a compiler is told to. `ed_cells` draws each leaf's own
+  outline; `ed_portals` (or `ed_overlay portals`) draws the portals: the
+  looked-from cluster's in yellow, an area portal's in orange, the rest
+  green where seen and red where not. `ed_portals write [file.prt]` writes
+  them as a compiler's portal file, and `ed_portals load [file.prt]` reads
+  one (Quake's, Quake II's or Quake III's PRT1) to draw in violet. The
+  bake runs a slice a frame with `ed_build background on`, and is kept
+  with the build like a grid's. The project (`bake planes`) and each game
+  (`ed_game <game> bake planes`) can ask for it.
 - **Navigation for bots, baked** (`ed_nav bake [cell]`, Play menu): the
   games' bots route over areas and the ways between them, read from an
   arena's own file; a scene made here has none, so its floors are
@@ -2335,9 +2359,8 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
   do open, as patches of the scene); a patch mirrored keeps its control points' order, so its
   curve faces the same way round; the logic graph neither reorders nor shows signals as
   they fire in play; a scene too large for the light budget stays flat.
-- Not yet built: the rest of the bake (a partition by the brushes' own
-  planes with portals between its leaves, in place of cells of the plan;
-  bounced light); the Passion tools; user walkers.
+- Not yet built: the rest of the bake (bounced light, light styles and a
+  light grid); the Passion tools; user walkers.
 - Within the shell: generated (Passion) levels can be edited but not saved as
   they are; `ed_convert` turns one into a scene of brushes, and `ed_exp open
   <seed>` generates one and opens it so.

@@ -64,7 +64,7 @@ def swatch_texture(name: str) -> Texture {
 neither (a trigger's volume)."""
 def material_hidden(name: str) -> bool {
     last = name.lower().split("/")[-1].split(":")[-1];
-    return last in ["clip", "playerclip", "monsterclip", "caulk", "nodraw", "skip", "trigger", "hint", "origin"];
+    return last in ["clip", "playerclip", "monsterclip", "caulk", "nodraw", "skip", "trigger", "hint", "origin", "areaportal"];
 }
 
 """What a scene compiled to, with which faces came from which brush (for the
@@ -74,7 +74,12 @@ obj LiveLevel {
         # Brush serial to the faces it made.
         faces_of: dict[int, list[int]] = {},
         brushes: int = 0,
-        warnings: list[str] = [];
+        warnings: list[str] = [],
+        # A bake by planes: each leaf's outline, the portals between leaves,
+        # and the two leaves each portal joins.
+        shapes: list[list[list[Vec3]]] = [],
+        portals: list[list[Vec3]] = [],
+        portal_ends: list[int] = [];
 }
 
 """Compiles a scene: keeps the level being built and the textures in use."""
@@ -206,7 +211,9 @@ def compile_scene(scene: Scene, materials: Materials) -> LiveLevel {
         solids = scene.solids_of(item);
         if solids {
             model = compiler.begin_model();
-            volume = item.classname().startswith("trigger_");
+            # Triggers, and an area portal's brushes (a bake reads them from
+            # the scene), are not there to be bumped into or seen.
+            volume = item.classname().startswith("trigger_") or item.classname() == "func_areaportal";
             for solid in solids {
                 compiler.add(solid, model, volume);
             }

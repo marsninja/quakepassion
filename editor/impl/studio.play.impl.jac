@@ -81,11 +81,16 @@ impl Studio.build_mode_command(scene: Scene, args: list[str]) -> bool {
         if wanted == "off" {
             self.vis_cell = 0.0;
             self.say("The level is built as one, all of it drawn from anywhere");
+        } elif wanted == "planes" {
+            self.vis_cell = BAKE_BY_PLANES;
+            self.say(
+                "The level is cut by its brushes' own planes into leaves joined by portals, the outside filled and buried faces left out; each drawing what it can see"
+            );
         } elif wanted.isdigit() and int(wanted) >= 32 {
             self.vis_cell = float(int(wanted));
             self.say("The level is cut into cells up to " + wanted + " wide, each drawing what it can see");
         } else {
-            self.say("ed_bake [cell|off]: a cell is 32 units wide or more");
+            self.say("ed_bake [planes|cell|off]: a cell is 32 units wide or more");
             return True;
         }
         self.built_geometry = -1;
