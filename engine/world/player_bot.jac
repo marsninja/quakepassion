@@ -17,6 +17,7 @@ import from .level { Level }
 import from .bot_routes { NavMesh, HasNavMesh, BotRoute, AvoidReach, plan_route, build_navmesh, UNREACHED }
 import from .bot_travel { FollowRoute, TravelResult, yaw_of, gap_distance }
 import from .pickups { Pickup, HasPickup }
+import from .inventory { quantity }
 import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_for, selected_weapon }
 import from .weapons { WeaponRule }
 import from .exits { LevelExit, HasExit }
@@ -47,6 +48,10 @@ node Engage(AutoMode) {}
 """Free of where it was stuck: a new route from where it is."""
 node Unstick(AutoMode) {}
 
+"""With no exit to make for (an arena, or a level whose way on is not
+known yet): after what is worth having, else where it has not been."""
+node Roam(AutoMode) {}
+
 """Doing what lets it by: pressing a button, standing in a trigger,
 shooting a switch, fetching a key (`engine/world/objectives.jac`)."""
 node Activate(AutoMode) {}
@@ -66,7 +71,8 @@ def build_auto_mind() -> AutoMind {
     engage = Engage(name="engage");
     unstick = Unstick(name="unstick");
     activate = Activate(name="activate");
-    for mode in [seek, engage, unstick, activate] {
+    roam = Roam(name="roam");
+    for mode in [seek, engage, unstick, activate, roam] {
         mind +>:HasAutoMode:+> mode;
     }
     seek +>:Shifts:+> engage;
@@ -76,6 +82,10 @@ def build_auto_mind() -> AutoMind {
     engage +>:Shifts:+> unstick;
     unstick +>:Shifts:+> seek;
     activate +>:Shifts:+> seek;
+    seek +>:Shifts:+> roam;
+    roam +>:Shifts:+> seek;
+    roam +>:Shifts:+> engage;
+    roam +>:Shifts:+> activate;
     activate +>:Shifts:+> engage;
     engage +>:Shifts:+> activate;
     return mind;
@@ -99,6 +109,9 @@ node PlayerBot {
         waiting: list[Objective] = [],
         given_up: list[tuple[Vec3, float]] = [],
         exit_goal: Vec3 | None = None,
+        # The areas it has stood in, and when it last chose where to roam.
+        visited: set[int] = set(),
+        roam_chosen: float = -100.0,
         # Areas compiled with their mover where the level starts it (a floor
         # that drops): usable only while it is still there.
         rest_areas: set[int] = set(),
@@ -149,6 +162,12 @@ node PlayerBot {
         name = level.name if level is not None else "level";
         stamp = str(int(self.clock * 10.0));
         return self.shot_dir + "/" + name + "_" + "0" * max(0, 5 - len(stamp)) + stamp + ".png";
+    }
+
+    """Why the objective under way is being done, or ""."""
+    def objective_why -> str {
+        objective = self.objective;
+        return objective.why if objective is not None else "";
     }
 
     """The route's next waypoint and the passage it is on, for the log."""
@@ -288,6 +307,8 @@ node PlayerBot {
         self.exit_goal = None;
         self.exit_area = 0;
         self.exit_name = "";
+        self.visited = set();
+        self.roam_chosen = -100.0;
         self.lost_since = -1.0;
         self.leap = 0;
         self.best_distance = 1.0e9;
@@ -641,14 +662,44 @@ walker AutoThink {
     """Ammunition when out of it, health when hurt, as an objective set on
     top of what it is doing (not with an enemy in sight). Whether one was."""
     def resupply() -> bool {
-        if self.bot.enemy is not None {
-            return False;
-        }
-        # Only what is near by the route: fifteen seconds away at most.
+        # Out of ammunition it goes for some even with an enemy in sight:
+        # standing to fight with the axe loses.
         if self.take_objective(self.ammo_nearby(), 1500) {
             return True;
         }
-        return self.player.health < 60 and self.take_objective(self.health_nearby(), 1500);
+        if self.bot.enemy is not None {
+            return False;
+        }
+        if self.player.health < 60 and self.take_objective(self.health_nearby(), 1500) {
+            return True;
+        }
+        return self.take_objective(self.on_the_way(), 300);
+    }
+
+    """Whether it holds a weapon with ammunition (beyond the axe and the
+    blaster, which need none)."""
+    def armed() -> bool {
+        for rule in self.state.rules {
+            if rule.ammo and owns_weapon(self.player, rule) and has_ammo_for(self.player, rule) {
+                return True;
+            }
+        }
+        return False;
+    }
+
+    """Items worth a short way off the route: a weapon it lacks, ammunition
+    when short, armor or health when hurt (worth at least 25, close by)."""
+    def on_the_way() -> list[Objective] {
+        found: list[Objective] = [];
+        for item in [self.world->:HasPickup:->][?:Pickup] {
+            if not item.active or item.untouchable or item.pos.sub(self.origin).length() > 500.0 {
+                continue;
+            }
+            if self.item_worth(item) >= 25.0 {
+                found.append(Objective(kind="pickup", point=item.pos, why="supply", item=item));
+            }
+        }
+        return found;
     }
 
     """Health on the map within about fifteen seconds' travel."""
@@ -681,6 +732,10 @@ walker AutoThink {
                 return;
             }
         }
+        if bot.exit_goal is None {
+            visit self.shift(here, "roam");
+            return;
+        }
         bot.goal = bot.exit_goal;
         bot.goal_area = bot.exit_area;
         bot.goal_name = bot.exit_name;
@@ -705,6 +760,11 @@ walker AutoThink {
         bot.enemy = enemy;
         if enemy is None {
             visit self.shift(here, "seek_exit");
+            return;
+        }
+        # Nothing to shoot with: get some rather than stand and fight.
+        if not self.armed() and self.resupply() {
+            visit self.shift(here, "activate");
         }
     }
 
@@ -717,7 +777,7 @@ walker AutoThink {
             } elif objective is not None {
                 print("AUTOPLAY objective given up:", objective.kind, "for", objective.why);
                 # Supplies are passed over for longer: there are others.
-                spare = objective.why in ["ammo", "health"];
+                spare = objective.why in ["ammo", "health", "supply"];
                 bot.given_up.append((objective.point, bot.clock + (240.0 if spare else 60.0)));
             }
             # Back to what it set aside, or on to the exit.
@@ -736,7 +796,7 @@ walker AutoThink {
         if self.check_movers() {
             return;
         }
-        if objective.why not in ["ammo", "health"] and self.resupply() {
+        if objective.why not in ["ammo", "health", "supply"] and self.resupply() {
             return;
         }
         if objective.kind == "kill" {
@@ -752,6 +812,138 @@ walker AutoThink {
         bot.goal = objective.point;
         bot.goal_area = stand[0];
         bot.goal_name = objective.kind + " for " + objective.why;
+    }
+
+    """What an item is worth to the bot now, from what it gives: a weapon it
+    lacks, ammunition for one it holds, health and armor by how far short
+    it is, powerups always. 0 when nothing."""
+    def item_worth(item: Pickup) -> float {
+        rule = item.rule;
+        player = self.player;
+        if rule.kind.startswith("weapon_") {
+            for weapon in self.state.rules {
+                if "weapon_" + weapon.key == rule.kind {
+                    return 30.0 if owns_weapon(player, weapon) else 100.0;
+                }
+            }
+            return 0.0;
+        }
+        if rule.kind == "health" {
+            return max(0.0, float(100 - player.health)) * (2.0 if rule.max_health_bonus > 0 else 1.0);
+        }
+        if rule.kind == "armor" {
+            return max(0.0, float(150 - player.armor)) * 0.4;
+        }
+        if rule.kind in ["powerup", "backpack"] {
+            return 60.0;
+        }
+        for weapon in self.state.rules {
+            if weapon.ammo == rule.kind and owns_weapon(player, weapon) {
+                held = quantity(player.inventory, weapon.ammo);
+                return 25.0 if held < max(1, weapon.capacity) // 2 else 5.0;
+            }
+        }
+        return 0.0;
+    }
+
+    """Where to roam: the item worth the most for the time it takes to get
+    there, else the nearest place not stood in yet that the route reaches."""
+    def roam_goal() -> bool {
+        bot = self.bot;
+        mesh = bot.mesh;
+        if mesh is None {
+            return False;
+        }
+        here_area = mesh.locate(self.origin);
+        if here_area == 0 {
+            return False;
+        }
+        best: Vec3 | None = None;
+        best_area = 0;
+        best_score = 0.0;
+        best_name = "";
+        for item in [self.world->:HasPickup:->][?:Pickup] {
+            if not item.active or item.untouchable {
+                continue;
+            }
+            worth = self.item_worth(item);
+            if worth <= 0.0 {
+                continue;
+            }
+            area = mesh.locate(item.pos);
+            if area == 0 {
+                continue;
+            }
+            times = mesh.times_to(area, TFL_DEFAULT);
+            cost = times[here_area] if here_area < len(times) else UNREACHED;
+            if cost >= UNREACHED {
+                continue;
+            }
+            score = worth / (float(cost) * 0.01 + 1.0);
+            if score > best_score {
+                best_score = score;
+                best = item.pos;
+                best_area = area;
+                best_name = "item " + item.rule.kind;
+            }
+        }
+        if best is None {
+            # Explore: the nearest unvisited area among a few close ones.
+            nearest: list[tuple[float, int]] = [];
+            for area in range(1, len(mesh.aas.areas)) {
+                if area in bot.visited or mesh.aas.areas[area].reach_count == 0 {
+                    continue;
+                }
+                nearest.append((mesh.aas.areas[area].center.sub(self.origin).length(), area));
+            }
+            nearest = sorted(nearest)[0:12];
+            for (distance, area) in nearest {
+                times = mesh.times_to(area, TFL_DEFAULT);
+                if here_area < len(times) and times[here_area] < UNREACHED {
+                    best = mesh.aas.areas[area].center;
+                    best_area = area;
+                    best_name = "explore";
+                    break;
+                }
+            }
+        }
+        if best is None {
+            return False;
+        }
+        bot.goal = best;
+        bot.goal_area = best_area;
+        bot.goal_name = best_name;
+        bot.route.abandon();
+        bot.roam_chosen = bot.clock;
+        return True;
+    }
+
+    can roam with Roam entry {
+        bot = self.bot;
+        enemy = self.spot_enemy();
+        bot.enemy = enemy;
+        if enemy is not None {
+            visit self.shift(here, "engage");
+            return;
+        }
+        if self.resupply() {
+            visit self.shift(here, "activate");
+            return;
+        }
+        # A way out may have come to be (an exit's chain fired).
+        if bot.clock - bot.roam_chosen > 8.0 or bot.goal is None or bot.goal_area == 0 {
+            self.choose_exit();
+            if bot.exit_goal is not None {
+                visit self.shift(here, "seek_exit");
+                return;
+            }
+            self.roam_goal();
+        }
+        mesh = bot.mesh;
+        if mesh is not None and bot.goal is not None and mesh.locate(self.origin) == bot.goal_area {
+            # Arrived: choose again.
+            self.roam_goal();
+        }
     }
 
     can unstick with Unstick entry {
@@ -791,6 +983,12 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
     self.think_wait -= dt;
     if self.think_wait <= 0.0 {
         self.think_wait += AUTO_THINK;
+        if self.mesh is not None {
+            standing = self.mesh.locate(origin);
+            if standing > 0 {
+                self.visited.add(standing);
+            }
+        }
         self.mind spawn AutoThink(
             bot=self, world=world, level=level, player=player, state=state, origin=origin, eye_height=eye_height
         );
@@ -909,11 +1107,14 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
     # In a fight with an enemy near, stand and sidestep rather than run on:
     # back and forth across its line, turning about at walls and ledges.
     foe = self.enemy;
-    if foe is not None and foe.health > 0 and self.mind.current == "engage" {
+    if foe is not None and foe.health > 0 {
         toward = foe.pos.sub(player.pos);
         flat_toward = Vec3(x=toward.x, y=toward.y);
         reach = flat_toward.length();
-        if reach < 700.0 and reach > 1.0 {
+        # Fighting, it stands its ground; on its way, only an enemy close by
+        # stops it (one it is fleeing for ammunition does not).
+        fighting = self.mind.current == "engage" or (reach < 350.0 and self.objective_why() != "ammo");
+        if fighting and reach < 700.0 and reach > 1.0 {
             ahead = flat_toward.scale(1.0 / reach);
             side = Vec3(x=-ahead.y, y=ahead.x).scale(self.strafe);
             self.strafe_wait -= dt;
@@ -925,8 +1126,15 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                 side = side.scale(-1.0);
             }
             wish = side;
-            if reach < 160.0 {
-                wish = wish.sub(ahead.scale(0.7));
+            # Out of reach of claws, chainsaws and swords: back off to about
+            # two hundred units, unless a ledge is behind.
+            if reach < 220.0 {
+                behind = ahead.scale(-1.0);
+                drop = gap_distance(level.collision, origin, behind);
+                clear = level.collision.trace(origin, origin.add(behind.scale(40.0)));
+                if (drop <= 0.0 or drop > 64.0) and clear.fraction >= 1.0 {
+                    wish = behind.scale(0.9).add(side.scale(0.45));
+                }
             }
             # Badly hurt with it close: back away, still firing, unless a
             # ledge is behind.
