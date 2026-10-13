@@ -1027,6 +1027,9 @@ walker AutoThink {
             resumed = bot.objective;
             if resumed is not None {
                 resumed.started = bot.clock;
+                # Set aside is not stuck: its progress is counted afresh.
+                resumed.nearest = 1.0e9;
+                resumed.nearer_at = bot.clock;
             }
             bot.route.abandon();
             if resumed is None {
@@ -1501,6 +1504,22 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         intent.move = Vec3(
             x=world_move.dot(right_from(turned)), y=world_move.dot(forward_from(turned, 0.0)), z=intent.move.z
         );
+    }
+    # The last step of an objective: a button is pressed and an item taken
+    # by touching it, which the route's end (an area's middle, a waypoint
+    # "reached" a few units off) may leave short of. Close to it with the
+    # route done, walk straight into it.
+    task = self.objective;
+    if task is not None and task.kind in ["press", "pickup", "touch"] and len(self.route.points) <= 1 {
+        target = task.stand_point if task.kind == "touch" and task.stand > 0 else task.point;
+        closing = Vec3(x=target.x - origin.x, y=target.y - origin.y);
+        if closing.length() < 160.0 and closing.length() > 2.0 and abs(target.z - origin.z) < 96.0 {
+            closing = closing.normalized();
+            forward = forward_from(player.yaw, 0.0);
+            right = right_from(player.yaw);
+            intent.move = Vec3(x=closing.dot(right), y=closing.dot(forward), z=intent.move.z);
+            self.travel = TravelResult(direction=closing, speed=400.0);
+        }
     }
     # Out of breath under water (Quake's twelve seconds of air): up for air
     # before going on, whatever the route says.
