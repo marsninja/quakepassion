@@ -41,6 +41,36 @@ def map_names(names: list[str]) -> list[str] {
     return sorted(maps);
 }
 
+"""The map files lying loose in a folder's maps/, named as archives name
+them (maps/<name>.bsp)."""
+def loose_maps(folder: str) -> list[str] {
+    found: list[str] = [];
+    within = folder + "/maps";
+    if not os.path.isdir(within) {
+        return found;
+    }
+    for filename in sorted(os.listdir(within)) {
+        if filename.lower().endswith(".bsp") and os.path.isfile(within + "/" + filename) {
+            found.append("maps/" + filename);
+        }
+    }
+    return found;
+}
+
+"""A Quake or Quake II map file a pack lists: its name, and the title its
+worldspawn gives it. Quake's brush models for items are not levels."""
+def note_level(game: str, name: str, data: bytes, names: list[str], titles: dict[str, str]) {
+    if game == "q1" and not is_q1_level(data) {
+        return;
+    }
+    names.append(name);
+    try {
+        titles[name[5:-4]] = map_title(data, game);
+    } except ValueError {
+        titles[name[5:-4]] = "";
+    }
+}
+
 """A map file's entities: Quake's lump table follows its four-byte version,
 Quake II's follows its magic and version. Their text is bytes, not UTF-8."""
 def map_entity_text(data: bytes, game: str) -> str {
@@ -204,18 +234,16 @@ obj LevelMenu {
             for path in archive_paths(folder, ".pak") {
                 pak = open_pak(path);
                 for name in pak.names() {
-                    if not name.startswith("maps/") or not name.lower().endswith(".bsp") {
-                        continue;
+                    if name.startswith("maps/") and name.lower().endswith(".bsp") {
+                        note_level(pack.game, name, pak.read_file(name), names, titles);
                     }
-                    data = pak.read_file(name);
-                    if pack.game == "q1" and not is_q1_level(data) {
-                        continue;
-                    }
-                    names.append(name);
-                    try {
-                        titles[name[5:-4]] = map_title(data, pack.game);
-                    } except ValueError {
-                        titles[name[5:-4]] = "";
+                }
+            }
+            # Map files lying loose beside the paks (LibreQuake's deathmatch maps).
+            for name in loose_maps(folder) {
+                if name not in names {
+                    with open(folder + "/" + name, "rb") as handle {
+                        note_level(pack.game, name, handle.read(), names, titles);
                     }
                 }
             }

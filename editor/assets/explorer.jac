@@ -198,7 +198,13 @@ obj AssetIndex {
         } except Exception {
             seen = {};
         }
-        found = [name for name in seen.keys() if name and not name.endswith("/")];
+        # A name that climbs out of its folder (OpenArena's mp-pak0.pk3 holds
+        # ../COPYING) is never listed, so nothing extracts it outside the
+        # folder it is written under.
+        found = [
+            name for name in seen.keys()
+            if name and not name.endswith("/") and not name.startswith("/") and ".." not in name.split("/")
+        ];
         # A WAD is a folder of its lumps as well as a file.
         inside: list[str] = [];
         for name in found {

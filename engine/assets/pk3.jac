@@ -26,7 +26,7 @@ obj Pk3Assets {
             self.archives.append(archive);
             for name in archive.namelist() {
                 self.owners[name] = index;
-                self.canonical_names[name.lower()] = name;
+                self.canonical_names[file_key(name)] = name;
             }
         }
         for name in sorted(self.owners.keys()) {
@@ -37,11 +37,11 @@ obj Pk3Assets {
     }
 
     def exists(name: str) -> bool {
-        return self.canonical_names.get(name.lower(), name) in self.owners;
+        return self.canonical_names.get(file_key(name), name) in self.owners;
     }
 
     def read(name: str) -> bytes {
-        name = self.canonical_names.get(name.lower(), name);
+        name = self.canonical_names.get(file_key(name), name);
         if name not in self.owners {
             raise ValueError("Missing PK3 asset: " + name);
         }
@@ -49,7 +49,7 @@ obj Pk3Assets {
     }
 
     def image_name(name: str) -> str {
-        name = self.canonical_names.get(name.lower(), name);
+        name = self.canonical_names.get(file_key(name), name);
         if name in self.owners {
             return name;
         }
@@ -59,7 +59,7 @@ obj Pk3Assets {
         }
         for extension in [".tga", ".jpg", ".jpeg", ".png"] {
             candidate = self.canonical_names.get(
-                (stem + extension).lower(), stem + extension
+                file_key(stem + extension), stem + extension
             );
             if candidate in self.owners {
                 return candidate;
@@ -440,6 +440,12 @@ obj SkyParts {
     has farbox: list[Texture] = [],
         cloud_height: float = 128.0,
         clouds: list[ModelStage] = [];
+}
+
+"""The name a file is found by: files.c FS_FilenameCompare matches names
+whatever their case, and a backslash as a slash."""
+def file_key(name: str) -> str {
+    return name.lower().replace("\\", "/");
 }
 
 """tr_image.c tr.whiteImage: one opaque white texel."""

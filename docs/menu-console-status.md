@@ -16,10 +16,11 @@ cvar; every key does what its binding says. Each game starts from its own
   cursor is released, and it is restored on resume. The 1280×720 panel stays
   centred in any window size.
 - **Levels.** Tabs for Quake, Quake II, Quake III and Passion. Beside a
-  game's maps are its installed content packs (its mission packs and
-  re-release episodes; [content packs](content-packs-status.md)): a click, or
-  Left and Right, lists another pack's own maps. Maps are listed from the
-  chosen pack's archives each time it is first shown, a pack's `start` first
+  game's maps are its installed content packs (its mission packs, re-release
+  episodes and free game; [content packs](content-packs-status.md)): a click,
+  or Left and Right, lists another pack's own maps. Maps are listed from the
+  chosen pack's archives, and Quake's and Quake II's loose `maps/*.bsp`, each
+  time it is first shown, a pack's `start` first
   and the rest by name, with the title a Quake or Quake II map's worldspawn
   gives it; Quake's brush-model BSPs are left out (`is_q1_level`). Quake III
   lists its single-player ladder first, with each arena's name and best

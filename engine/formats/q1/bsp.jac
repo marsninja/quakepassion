@@ -19,7 +19,6 @@ import from ..bsp {
     require_range,
     i32_at,
     u16_at,
-    s16_at,
     f32_at,
     vec_at,
     bounds_at,
@@ -32,6 +31,16 @@ import from ..bsp {
 """A number rounded to single precision, as a C float holds it."""
 def single(value: float) -> float {
     return float(struct.unpack("<f", struct.pack("<f", value))[0]);
+}
+
+"""A BSP29 node's or clip node's child: an unsigned 16-bit number, an index
+below `count` and otherwise a leaf (nodes) or contents (clip nodes) counted
+down from 65535, as QuakeSpasm's Mod_LoadNodes_S and Mod_LoadClipnodes read
+them so a map may hold more than 32767. Within that many it is the signed
+number Quake read."""
+def bsp29_child(data: bytes, at: int, count: int) -> int {
+    child = u16_at(data, at);
+    return child if child < count else child - 65536;
 }
 
 def parse_textures(data: bytes) -> list[Texture] {
@@ -264,7 +273,8 @@ def parse_bsp(data: bytes) -> Bsp {
         }
         bsp.leaves.append(leaf);
     }
-    for i in range(records(lumps[5], node_size)) {
+    node_count = records(lumps[5], node_size);
+    for i in range(node_count) {
         p = i * node_size;
         plane = i32_at(lumps[5], p);
         check_index(plane, len(bsp.planes));
@@ -277,8 +287,8 @@ def parse_bsp(data: bytes) -> Bsp {
         bsp.branches.append(
             Branch(
                 plane=plane,
-                front=i32_at(lumps[5], p + 4) if wide else s16_at(lumps[5], p + 4),
-                back=i32_at(lumps[5], p + 8) if wide else s16_at(lumps[5], p + 6),
+                front=i32_at(lumps[5], p + 4) if wide else bsp29_child(lumps[5], p + 4, node_count),
+                back=i32_at(lumps[5], p + 8) if wide else bsp29_child(lumps[5], p + 6, node_count),
                 first_face=first,
                 face_count=count
             )
@@ -293,15 +303,16 @@ def parse_bsp(data: bytes) -> Bsp {
             }
         }
     }
-    for i in range(records(lumps[9], clip_size)) {
+    clip_count = records(lumps[9], clip_size);
+    for i in range(clip_count) {
         p = i * clip_size;
         plane = i32_at(lumps[9], p);
         check_index(plane, len(bsp.planes));
         bsp.clipnodes.append(
             Branch(
                 plane=plane,
-                front=i32_at(lumps[9], p + 4) if wide else s16_at(lumps[9], p + 4),
-                back=i32_at(lumps[9], p + 8) if wide else s16_at(lumps[9], p + 6)
+                front=i32_at(lumps[9], p + 4) if wide else bsp29_child(lumps[9], p + 4, clip_count),
+                back=i32_at(lumps[9], p + 8) if wide else bsp29_child(lumps[9], p + 6, clip_count)
             )
         );
     }

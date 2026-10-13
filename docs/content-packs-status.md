@@ -1,16 +1,18 @@
 # Content packs
 
-What QuakePassion plays beyond the three games: their mission packs and the
-2021 Quake re-release's episodes. The packs are found, listed and loaded; the
-monsters, weapons, items and map mechanics they add are not implemented yet,
-and the last section lists them pack by pack.
+What QuakePassion plays beyond the three games: their mission packs, the
+2021 Quake re-release's episodes, and two free games made for their engines,
+LibreQuake and OpenArena. The packs are found, listed and loaded; the
+monsters, weapons, items and map mechanics the mission packs add are not
+implemented yet, and the last section lists them pack by pack.
 
 ## What a pack is
 
 A pack is a body of maps and assets published on top of a game, in its own
 folder. It plays by that game's formats and rules (`q1`, `q2` or `q3`), and
 its files are searched over the files beneath it, as the original engines'
-`-game` searched a mission pack's folder before the base game's.
+`-game` searched a mission pack's folder before the base game's. A free game
+is a pack with nothing beneath it: its own data stands in for the game's.
 
 `engine/assets/content.jac` models this as a graph: a `ContentPack` node for
 each pack, an `Over` edge to the pack beneath it, and a `Layers` walker that
@@ -22,6 +24,7 @@ over earlier ones.
 | Pack id | Title | Game | Folder under the assets root | Over |
 | --- | --- | --- | --- | --- |
 | `q1` | Quake | q1 | `id1` | |
+| `librequake` | LibreQuake | q1 | `librequake/id1` | |
 | `hipnotic` | Scourge of Armagon | q1 | `quake/hipnotic` | `q1` |
 | `rogue` | Dissolution of Eternity | q1 | `quake/rogue` | `q1` |
 | `q1r` | Quake (2021 re-release) | q1 | `quake/rerelease/id1` | `q1` |
@@ -34,12 +37,48 @@ over earlier ones.
 | `groundzero` | Ground Zero | q2 | `quake2/rogue` | `q2` |
 | `q2ctf` | Capture the Flag | q2 | `quake2/ctf` | `q2` |
 | `q3` | Quake III Arena | q3 | `baseq3` | |
+| `openarena` | OpenArena | q3 | `openarena/baseoa` | |
 | `teamarena` | Team Arena | q3 | `quake3/missionpack` | `q3` |
 
 The folders are the Steam installs' own, under one assets root
 (`~/quake-assets`, or the parent of `QP_ASSETS`). A pack whose folder is
 missing is not listed. `mg3`'s title is its start map's; the episode's own
 name is not in its files.
+
+## Free games
+
+[LibreQuake](https://github.com/lavenderdotpet/LibreQuake) (v0.09-beta,
+BSD-3 data, GPL-2 QuakeC) and [OpenArena](http://openarena.ws) (0.8.8, GPL-2)
+replace the original games' data entirely, so QuakePassion plays with no id
+data installed. Each is a pack of its game with nothing beneath it:
+
+- **LibreQuake** is Quake's rules on LibreQuake's maps, models, sounds and
+  palette. Its `id1` folder from `full.zip` goes in `librequake/id1`. It opens
+  on its `start` hub; the campaign is `lq_e0m1`-`lq_e0m8` and episodes 1-4
+  (`lq_e1m1` ... `lq_e4m8`, `lq_end`), and thirteen deathmatch maps
+  (`lqdm1`-`lqdm13`) lie loose in `maps/`, outside the paks. Its maps use
+  Quake's entity classes, plus `ambient_flouro_buzz` and `ambient_light_buzz`
+  (12 and 29 placed, unplayed, as for Dimension of the Past) and the markers
+  `info_notnull` and `viewthing`.
+- **OpenArena** is Quake III's rules on OpenArena's arenas, characters and
+  bots. Its `baseoa` folder from `openarena-0.8.8.zip` goes in
+  `openarena/baseoa`. It opens on the first arena of its ladder
+  (`oa_rpg3dm2`); the menu lists the ladder of `scripts/arenas.txt` first. Its
+  `missionpack` folder holds only Team Arena-style interface and models, no
+  maps, and is not a pack. Of the classes its maps place that Quake III's do
+  not, most are Team Arena's (`weapon_nailgun`, `weapon_chaingun`,
+  `weapon_prox_launcher`, `item_guard`, `item_doubler`, `item_scout`,
+  `item_ammoregen`, `holdable_kamikaze`, `holdable_invulnerability`, the
+  obelisks and neutral flag); OpenArena's own game modes (`domination_point`,
+  `info_player_dd`) are not played either.
+
+When a game's own folder is missing, the game plays its free game instead:
+`QP_GAME=q3` with no `baseq3` opens OpenArena, and the menu lists it first.
+
+The studio's archive explorer lists neither the `../CREDITS` nor the
+`../COPYING` that OpenArena's `missionpack/mp-pak0.pk3` holds: a name that
+climbs out of its folder is never listed, so nothing extracts it outside the
+folder it writes under.
 
 Not supported: the 2023 Quake II re-release (`quake2/rerelease`, which needs
 the extended map format, MD5 models and OGV video, and mostly repeats maps
@@ -61,6 +100,31 @@ it was listed under; the console's `map` loads from the pack being played.
 
 ## Formats
 
+- **Loose maps**: Quake and Quake II levels, and the textures and palettes
+  they read, come from the paks, else from files lying loose in the pack's
+  folders, as `COM_FindFile` and `FS_FOpenFile` searched a game directory's
+  paks before its files. The menu lists a pack's loose `maps/*.bsp` beside
+  its archived ones (LibreQuake's deathmatch maps). Quake III still reads
+  only its pk3s.
+- **Large BSP29 maps** (`bsp29_child`): node and clip node children are
+  read as unsigned 16-bit numbers, an index below the count and otherwise a
+  leaf or contents counted down from 65535, as QuakeSpasm reads them. Four of
+  LibreQuake's maps (`lq_e1m4`, `lq_e2m5`, `lq_e4m4`, `lq_e4m5`) have more
+  than 32767 clip nodes.
+- **Frames by number** (`games/frame_order.jac`): QuakeC compiles `$pain1`
+  to a frame number, so Quake never looks a frame up by name. A rule names
+  its frames; a Quake model with Quake's number of frames under other names
+  (LibreQuake's are `frame1`, `frame2`, ...) is animated by their number in
+  Quake's standard order.
+- **Quake III names** (`file_key`, `material_name`): files and shaders are
+  found whatever their case and with a backslash read as a slash, as
+  `FS_FilenameCompare` and `generateHashValue` find them (OpenArena's models
+  name `models\weapons2\...`). A player skin matches surfaces whatever
+  their case, and a surface it does not name takes the default image
+  (`R_AddMD3Surfaces`). An MD3 surface with no vertices or triangles loads
+  and draws nothing, and an item's second model that the game lacks (the
+  invisibility ring) is not drawn, as `CG_RegisterItemVisuals` registers it
+  as nothing.
 - **BSP2** (`engine/formats/q1/bsp.jac`): the re-release's episodes are BSP2,
   which is BSP29 with the 16-bit counts and indices of faces, edges, leaves,
   nodes and clip nodes widened to 32 bits and leaf and node bounds held as
@@ -89,7 +153,8 @@ and BSPX lumps (`mg3` carries face normals).
 `scripts/map_sweep.jac` loads every map of every installed pack through the
 game, runs two seconds of simulation and renders a frame
 (`QP_SWEEP_PACKS=hipnotic,xatrix,...` limits it to some packs). On the eleven
-packs above other than the base games, 253 of 254 maps pass:
+packs above other than the base games, 379 of 380 maps pass (2026-10-13; with
+the base games, 500 of 501):
 
 | Pack | Maps |
 | --- | --- |
@@ -104,6 +169,8 @@ packs above other than the base games, 253 of 254 maps pass:
 | Ground Zero | 32 |
 | Capture the Flag | 5 |
 | Team Arena | 20 of 21 |
+| LibreQuake | 54 |
+| OpenArena | 72 |
 
 Team Arena's `texturegrab` does not load ("Invalid BSP table index"); it is
 a texture reference sheet, not a level.

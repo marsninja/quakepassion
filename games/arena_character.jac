@@ -1,6 +1,7 @@
 """Q3 player characters: their tagged part models, animation table and sounds,
 and the weapons they hold, loaded as the original client registers them."""
 import from engine.assets.library { AssetLibrary, ModelAsset }
+import from engine.assets.pk3 { default_texture }
 import from engine.formats.q3.model { parse_md3 }
 import from engine.formats.bsp { Texture }
 import from engine.formats.animated { AnimatedModel, AnimatedSurface }
@@ -44,22 +45,29 @@ def player_part(
     if not library.exists(skin_file) {
         skin_file = prefix + part + "_default.skin";
     }
+    # tr_image.c RE_RegisterSkin and tr_model.c R_LoadMD3 lowercase the
+    # surface names on both sides (OpenArena's neko names hers "Skirt").
     for line in library.read(skin_file).decode("utf-8").splitlines() {
         fields = line.split(",");
         if len(fields) == 2 and fields[1].strip() {
-            mappings[fields[0].strip()] = fields[1].strip();
+            mappings[fields[0].strip().lower()] = fields[1].strip();
         }
     }
     # A surface whose shader has nothing to draw (hunter's harpy feathers,
     # `surfaceparm nodraw` alone) is left out.
     model.surfaces = [
         surface for surface in model.surfaces
-        if surface.name not in mappings or not library.pk3.model_hidden(mappings[surface.name])
+        if surface.name.lower() not in mappings or not library.pk3.model_hidden(mappings[surface.name.lower()])
     ];
     skins: list[Texture] = [];
     for surface in model.surfaces {
-        if surface.name not in mappings { raise ValueError("Missing player surface skin: " + surface.name); }
-        material = mappings[surface.name];
+        # tr_mesh.c R_AddMD3Surfaces: a surface the skin does not name draws
+        # with the default shader (OpenArena's tony has no u_vest skin).
+        if surface.name.lower() not in mappings {
+            skins.append(default_texture());
+            continue;
+        }
+        material = mappings[surface.name.lower()];
         texture = Texture(name=material);
         library.pk3.texture(texture);
         if not texture.encoded { raise ValueError("Missing player skin: " + material); }
