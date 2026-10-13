@@ -257,6 +257,16 @@ obj NavGrid {
             }
             if self.level.liquid_at(to.add(Vec3(z=4.0))) == 1 {
                 found.append(to.z);
+            } elif rise > 0.0 {
+                # Out of the water before the next step up: the surface,
+                # where a swimmer climbs out.
+                top = a.z;
+                while top + 4.0 < to.z and self.level.liquid_at(Vec3(x=a.x, y=a.y, z=top + 8.0)) == 1 {
+                    top += 4.0;
+                }
+                if top > a.z + 3.0 {
+                    found.append(top);
+                }
             }
         }
         return found;
@@ -285,7 +295,8 @@ obj NavGrid {
             return None;
         }
         flight = (b + math.sqrt(disc)) / rules.gravity;
-        if flight * rules.speed < span {
+        # With room to spare: a jump taken a little slow still makes it.
+        if flight * rules.speed * 0.85 < span {
             return None;
         }
         # Along the arc as run at full speed, then straight down to land.

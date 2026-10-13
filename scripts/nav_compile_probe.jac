@@ -14,7 +14,7 @@ import from engine.world.exits { LevelExit, HasExit }
 import from engine.world.bot_routes { build_navmesh, plan_route }
 import from engine.nav.compile { compile_navigation, NavStep }
 import from engine.world.doors { Door, HasDoor }
-import from engine.formats.aas { Aas }
+import from engine.formats.aas { Aas, area_mover_model }
 
 """The areas reached from `start` over the reachabilities, breadth first."""
 def reached_from(aas: Aas, start: int) -> set[int] {
@@ -81,6 +81,32 @@ with entry {
                     ways = [str(step.kind) + ">" + str(int(grid.spots[step.target].origin.x)) + "," + str(int(grid.spots[step.target].origin.y)) + "," + str(int(grid.spots[step.target].origin.z)) for step in [edge spot->:NavStep:->]];
                     print("NAV spot", int(o.x), int(o.y), round(o.z, 1), "area", spot.area, "in", spot.area in reached, "mover", spot.mover, "liquid", spot.liquid, " ".join(ways));
                 }
+            }
+        }
+        closing = [int(word) for word in os.getenv("QP_NAV_CLOSE", "").split(",") if word];
+        for area in range(1, len(build.aas.areas)) {
+            if area_mover_model(build.aas.areas[area].contents) in closing {
+                mesh.enable_area(area, False);
+                print("NAV closed area", area, "of mover", area_mover_model(build.aas.areas[area].contents));
+            }
+        }
+        target = [float(word) for word in os.getenv("QP_NAV_GOAL", "").split(",") if word];
+        if len(target) == 3 {
+            goal = Vec3(x=target[0], y=target[1], z=target[2]);
+            route = plan_route(mesh, origin, goal, limit=4096);
+            for k in range(50) {
+                if not route.pending {
+                    break;
+                }
+                mesh.advance_tables(1000000);
+                route = plan_route(mesh, origin, goal, limit=4096);
+            }
+            print("NAV goal area", mesh.locate(goal), "found", route.found, "legs", len(route.points));
+            for k in range(len(route.points)) {
+                point = route.points[k];
+                passage = route.passages[k] if k < len(route.passages) else None;
+                kind = passage.kind if passage is not None else 0;
+                print("NAV leg", int(point.x), int(point.y), int(point.z), "kind", kind, "area", route.areas[k]);
             }
         }
         for portal in [app.world->:HasExit:->][?:LevelExit] {

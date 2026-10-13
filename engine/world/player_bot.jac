@@ -23,7 +23,7 @@ import from .exits { LevelExit, HasExit }
 import from .objectives { Objective, mover_objectives, exit_objectives, objective_mover, mover_blocked }
 import from .bot_routes { predict_mover }
 import from ..nav.compile { compile_navigation }
-import from ..formats.aas { TFL_DEFAULT, area_mover_model }
+import from ..formats.aas { TFL_DEFAULT, TRAVEL_JUMP, area_mover_model }
 import from ..input.input { Intent }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 
@@ -112,8 +112,14 @@ node PlayerBot {
         best_distance: float = 1.0e9,
         progress_time: float = 0.0,
         stuck_count: int = 0,
+        # Since when no route to the goal has been found from here.
+        lost_since: float = -1.0,
         travel: TravelResult = TravelResult(),
         jump_due: bool = False,
+        # A gap jump under way: 1 backing up to the run-up, 2 running at the
+        # edge, 3 in the air; when it began.
+        leap: int = 0,
+        leap_started: float = 0.0,
         status: str = "",
         log_wait: float = 0.0,
         compile_seconds: float = 0.0,
@@ -178,6 +184,89 @@ node PlayerBot {
             }
         }
         return None;
+    }
+
+    """The middle of the nearest area within a few hundred units that has a
+    way to the goal, or None."""
+    def way_on(origin: Vec3) -> Vec3 | None {
+        mesh = self.mesh;
+        if mesh is None or self.goal_area <= 0 {
+            return None;
+        }
+        times = mesh.times_to(self.goal_area, TFL_DEFAULT);
+        here_area = mesh.locate(origin);
+        best: Vec3 | None = None;
+        best_distance = 1.0e9;
+        reach = Vec3(x=384.0, y=384.0, z=256.0);
+        for area in mesh.aas.box_areas(origin.sub(reach), origin.add(reach), 256) {
+            if area == here_area or area >= len(times) or times[area] >= UNREACHED {
+                continue;
+            }
+            center = mesh.aas.areas[area].center;
+            distance = center.sub(origin).length();
+            if distance < best_distance {
+                best_distance = distance;
+                best = center;
+            }
+        }
+        return best;
+    }
+
+    """A running jump over a gap (the route's next passage): back up along
+    the jump's line to a run-up, run through the takeoff and jump at the
+    edge, keep on in the air, and plan again from wherever it lands. The
+    command for this frame, or None when no jump is under way."""
+    def leap_over(level: Level, player: Player, origin: Vec3) -> Intent | None {
+        route = self.route;
+        passage = route.passages[0] if route.passages else None;
+        if passage is None or passage.kind != TRAVEL_JUMP {
+            self.leap = 0;
+            return None;
+        }
+        line = Vec3(x=passage.finish.x - passage.start.x, y=passage.finish.y - passage.start.y);
+        if line.length() < 1.0 {
+            return None;
+        }
+        line = line.normalized();
+        if self.leap == 0 {
+            self.leap = 1;
+            self.leap_started = self.clock;
+        }
+        if self.clock - self.leap_started > 6.0 {
+            # It is not working out: let the route be chosen again.
+            self.leap = 0;
+            route.abandon();
+            return None;
+        }
+        aim = line;
+        if self.leap == 1 {
+            # As far back as the floor allows, up to 128 units.
+            back = level.collision.trace(passage.start, passage.start.sub(line.scale(128.0)));
+            room = max(0.0, back.fraction * 128.0 - 8.0);
+            run_up = passage.start.sub(line.scale(room));
+            gap = Vec3(x=run_up.x - origin.x, y=run_up.y - origin.y);
+            if gap.length() > 12.0 {
+                aim = gap.normalized();
+            } else {
+                self.leap = 2;
+            }
+        }
+        intent = Intent();
+        along = Vec3(x=origin.x - passage.start.x, y=origin.y - passage.start.y).dot(line);
+        if self.leap == 2 and along >= -12.0 and player.grounded {
+            intent.jump = True;
+            self.leap = 3;
+        }
+        if self.leap == 3 and player.grounded and along > 24.0 {
+            # Down again: the route goes on from here.
+            self.leap = 0;
+            route.abandon();
+        }
+        forward = forward_from(player.yaw, 0.0);
+        right = right_from(player.yaw);
+        intent.move = Vec3(x=aim.dot(right), y=aim.dot(forward));
+        self.travel = TravelResult(direction=aim, speed=400.0);
+        return intent;
     }
 
     """One frame of play: the command the player's body gets."""
@@ -542,6 +631,18 @@ walker AutoThink {
         return found;
     }
 
+    """Ammunition when out of it, health when hurt, as an objective set on
+    top of what it is doing (not with an enemy in sight). Whether one was."""
+    def resupply() -> bool {
+        if self.bot.enemy is not None {
+            return False;
+        }
+        if self.take_objective(self.ammo_nearby()) {
+            return True;
+        }
+        return self.player.health < 60 and self.take_objective(self.health_nearby());
+    }
+
     """Health on the map within about fifteen seconds' travel."""
     def health_nearby() -> list[Objective] {
         found: list[Objective] = [];
@@ -567,11 +668,7 @@ walker AutoThink {
             visit self.shift(here, "activate");
             return;
         }
-        if enemy is None and self.take_objective(self.ammo_nearby()) {
-            visit self.shift(here, "activate");
-            return;
-        }
-        if enemy is None and self.player.health < 60 and self.take_objective(self.health_nearby()) {
+        if enemy is None and self.resupply() {
             visit self.shift(here, "activate");
             return;
         }
@@ -613,8 +710,11 @@ walker AutoThink {
             }
             return;
         }
-        # A mover in the way of this objective comes first.
+        # A mover in the way of this objective comes first, then supplies.
         if self.check_movers() {
+            return;
+        }
+        if objective.why not in ["ammo", "health"] and self.resupply() {
             return;
         }
         if objective.kind == "kill" {
@@ -701,9 +801,32 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             self.replan_wait = 0.05 if planned.pending else (0.3 if planned.found else 1.0);
             if planned.found {
                 self.route = planned;
+                self.lost_since = -1.0;
+            } elif not planned.pending and self.lost_since < 0.0 {
+                self.lost_since = self.clock;
             }
         }
-        if not self.route.points and mesh.locate(origin) == 0 {
+        lost = self.lost_since >= 0.0 and self.clock - self.lost_since > 2.0;
+        if not self.route.points and lost {
+            # No way on from this area (fallen into a pit, a pool): make for
+            # the nearest area near by that has one.
+            way_on = self.way_on(origin);
+            if way_on is not None {
+                heading3 = way_on.sub(origin);
+                heading = Vec3(x=heading3.x, y=heading3.y);
+                if heading.length() > 0.001 {
+                    heading = heading.normalized();
+                    forward = forward_from(player.yaw, 0.0);
+                    right = right_from(player.yaw);
+                    intent.move = Vec3(x=heading.dot(right), y=heading.dot(forward));
+                    if player.water_depth >= 2 {
+                        intent.move.z = 1.0 if heading3.z > 0.0 else -1.0;
+                    }
+                    self.travel = TravelResult(direction=heading, speed=400.0);
+                    intent.jump = player.water_depth < 2 and self.frames % 40 == 0;
+                }
+            }
+        } elif not self.route.points and mesh.locate(origin) == 0 {
             # In no area: walk (jumping when stuck) to the nearest that is.
             way_out = self.nearest_area_point(origin);
             if way_out is not None {
@@ -718,7 +841,10 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                 }
             }
         }
-        if self.route.points {
+        leaping = self.leap_over(level, player, origin) if self.route.points else None;
+        if leaping is not None {
+            intent = leaping;
+        } elif self.route.points {
             travel = player spawn FollowRoute(
                 mesh=mesh,
                 collision=level.collision,
@@ -779,6 +905,16 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             wish = side;
             if reach < 160.0 {
                 wish = wish.sub(ahead.scale(0.7));
+            }
+            # Badly hurt with it close: back away, still firing, unless a
+            # ledge is behind.
+            if player.health < 35 and reach < 400.0 {
+                behind = ahead.scale(-1.0);
+                drop = gap_distance(level.collision, origin, behind);
+                clear = level.collision.trace(origin, origin.add(behind.scale(40.0)));
+                if (drop <= 0.0 or drop > 64.0) and clear.fraction >= 1.0 {
+                    wish = behind.add(side.scale(0.5));
+                }
             }
             wish = Vec3(x=wish.x, y=wish.y).normalized();
             forward = forward_from(player.yaw, 0.0);
