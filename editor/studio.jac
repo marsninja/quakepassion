@@ -5407,6 +5407,10 @@ obj Studio(Workbench) {
                     + " width=" + str(self.line_width)
             );
         }
+        lit_level = self.live;
+        if self.lit and lit_level is not None and lit_level.light_notes {
+            lines.append("studio: light " + lit_level.light_notes);
+        }
         # The mode's line stays the last: sessions look for it there.
         lines.append(self.mouse_words());
         lines.append(

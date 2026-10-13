@@ -21,6 +21,11 @@ obj KeptBake {
         light_places: list[int] = [],
         light_uvs: list[list[float]] = [],
         colors: list[list[int]] = [],
+        # Each face's light styles, the grid for models, and what the light
+        # bake said of itself.
+        light_styles: list[list[int]] = [],
+        light_grid: bytes = b"",
+        light_notes: str = "",
         warnings: list[str] = [],
         # Cells: the planes that cut the plan, the branches, each cell's
         # box and faces, and the rows of what sees what.
@@ -53,7 +58,10 @@ def keep_bake(
     kept.warnings = list(made.warnings[warned:]);
     if lit_samples > 0 {
         kept.lighting = bsp.lighting;
+        kept.light_grid = bsp.light_grid;
+        kept.light_notes = made.light_notes;
         for face in bsp.faces {
+            kept.light_styles.append(list(face.styles));
             kept.light_places.extend([face.light_width, face.light_height, face.light_offset]);
             kept.light_uvs.append(list(face.light_uv));
             kept.colors.append(list(face.colors));
@@ -102,13 +110,15 @@ def give_bake(made: LiveLevel, kept: KeptBake) -> bool {
                 face.light_width = kept.light_places[index * 3];
                 face.light_height = kept.light_places[index * 3 + 1];
                 face.light_offset = kept.light_places[index * 3 + 2];
-                face.styles = [0];
+                face.styles = list(kept.light_styles[index]) if index < len(kept.light_styles) else [0];
                 face.light_uv = list(kept.light_uvs[index]);
             }
             face.colors = list(kept.colors[index]);
         }
         bsp.lighting = kept.lighting;
         bsp.light_channels = 3;
+        bsp.light_grid = kept.light_grid;
+        made.light_notes = kept.light_notes;
     }
     if kept.head >= 0 {
         for index in range(len(kept.cut_planes) // 4) {

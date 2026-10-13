@@ -72,6 +72,7 @@ import from .world_mesh {
     SURFACE_ALPHA_SHIFT,
     SURFACE_EMISSION,
     SURFACE_VERTEX_COLOR,
+    SURFACE_STYLED,
     PASS_LIT,
     PASS_SKY,
     PASS_LIQUID,
@@ -416,6 +417,8 @@ obj QuakeRenderer {
     lights need no upload."""
     def upload_lightmaps(level: Level) {
         layered = level.bsp.game in ["q1", "q2"];
+        # A studio level's faces with light styles keep their layers too.
+        styled_level = level.bsp.game == "passion";
         channels = level.bsp.light_channels;
         # One block per lit face; Q3 faces share their lightmap page's.
         owners: list[int] = [];
@@ -423,6 +426,7 @@ obj QuakeRenderer {
         widths: list[int] = [];
         heights: list[int] = [];
         layer_counts: list[int] = [];
+        raw_layers: list[bool] = [];
         for face in level.bsp.faces {
             if face.light_offset < 0 {
                 owners.append(-1);
@@ -436,7 +440,9 @@ obj QuakeRenderer {
             owners.append(len(widths));
             widths.append(face.light_width);
             heights.append(face.light_height);
-            layer_counts.append(max(1, len(face.styles)) if layered else 1);
+            face_layered = layered or (styled_level and len(face.styles) > 1);
+            raw_layers.append(face_layered);
+            layer_counts.append(max(1, len(face.styles)) if face_layered else 1);
         }
         layout = fit_light_atlas(widths, heights, layer_counts);
         if not layout.fits {
@@ -466,6 +472,7 @@ obj QuakeRenderer {
             w = face.light_width;
             h = face.light_height;
             layers = layer_counts[owner];
+            face_layered = raw_layers[owner];
             x = rect.x;
             y = rect.y;
             for layer in range(layers) {
@@ -476,7 +483,7 @@ obj QuakeRenderer {
                         p = ((y + ly) * self.atlas_size + left + lx) * 4;
                         raw = [0, 0, 0];
                         for channel in range(3) {
-                            if layered {
+                            if face_layered {
                                 raw[channel] = int(
                                     level.bsp.lighting[
                                         face.light_offset
@@ -496,7 +503,7 @@ obj QuakeRenderer {
                                 );
                             }
                         }
-                        if not layered {
+                        if not face_layered {
                             shade = shift_light(self.overbright, raw[0], raw[1], raw[2]);
                             raw = [shade[0], shade[1], shade[2]];
                         }
@@ -710,6 +717,10 @@ obj QuakeRenderer {
         if lit {
             flags = SURFACE_LIGHTMAP;
         }
+        styled = self.single_pass and lit and level.bsp.game == "passion" and len(face.styles) > 1;
+        if styled {
+            flags = flags | SURFACE_STYLED;
+        }
         if self.single_pass {
             flags = flags | (face.alpha_test << SURFACE_ALPHA_SHIFT);
             if not lit and face.emission {
@@ -727,7 +738,7 @@ obj QuakeRenderer {
             rect.x,
             rect.y,
             self.atlas_size,
-            0.0 if self.single_pass else rect.layer,
+            0.0 if self.single_pass and not styled else rect.layer,
             flags,
             face.fog if 0 <= face.fog < fogs else -1,
             self.overbright,
@@ -1722,6 +1733,10 @@ obj QuakeRenderer {
         self.begin_batches(program);
         program.set_matrix("viewProjection", view_projection());
         self.set_dynamic_lights(program, level);
+        if level.bsp.game == "passion" and len(self.style_values) == 256 {
+            # A studio level's styled faces sum their layers by these.
+            program.set_vec4s("lightStyles", pack_floats(self.style_values));
+        }
         rlActiveTextureSlot(i32(1));
         rlEnableTexture(u32(self.atlas));
         rlActiveTextureSlot(i32(0));

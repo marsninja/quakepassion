@@ -67,6 +67,27 @@ def material_hidden(name: str) -> bool {
     return last in ["clip", "playerclip", "monsterclip", "caulk", "nodraw", "skip", "trigger", "hint", "origin", "areaportal"];
 }
 
+"""The light style each switched light takes, by its name: as Quake's
+light tool gives them, from 32 up (to 62) in the order the names first
+come, for lights with a `targetname` and no style of their own."""
+def switch_styles(items: list[Item]) -> dict[str, int] {
+    styles: dict[str, int] = {};
+    for item in items {
+        name = item.fields.get("targetname", "");
+        style = item.fields.get("style", "0").strip();
+        if not item.classname().startswith("light") or not name or name in styles {
+            continue;
+        }
+        if style.isdigit() and int(style) > 0 {
+            continue;
+        }
+        if 32 + len(styles) <= 62 {
+            styles[name] = 32 + len(styles);
+        }
+    }
+    return styles;
+}
+
 """What a scene compiled to, with which faces came from which brush (for the
 level view to light up a selection)."""
 obj LiveLevel {
@@ -78,6 +99,9 @@ obj LiveLevel {
         # A bake by planes: each leaf's outline, the portals between leaves,
         # and the two leaves each portal joins.
         shapes: list[list[list[Vec3]]] = [],
+        # What the light bake did beyond the lightmaps: its patches, lines
+        # of sight, grid points, faces with styles and faces that glow.
+        light_notes: str = "",
         portals: list[list[Vec3]] = [],
         portal_ends: list[int] = [];
 }
@@ -206,6 +230,7 @@ def compile_scene(scene: Scene, materials: Materials) -> LiveLevel {
     compiler.end_model(world_model);
     bsp.entities.append(MapEntity(fields=world_fields));
     starts = 0;
+    switches = switch_styles(scene.items());
     for item in others {
         fields: dict[str, str] = dict(item.fields);
         solids = scene.solids_of(item);
@@ -223,6 +248,10 @@ def compile_scene(scene: Scene, materials: Materials) -> LiveLevel {
             # A brush entity without its brushes has nothing to show.
             result.warnings.append(item.title() + " names a map model the scene does not have");
             fields.pop("model", None);
+        }
+        if item.classname().startswith("light") and item.fields.get("targetname", "") in switches {
+            # A light something switches has a style of its own to switch.
+            fields["style"] = str(switches[item.fields.get("targetname", "")]);
         }
         if item.classname() == "info_player_start" {
             starts += 1;

@@ -991,6 +991,20 @@ def prepare_level(world: World, level: Level) {
         );
     }
     styles = load_light_styles(world, level.bsp);
+    if game == "passion" and level.bsp.light_grid and level.bsp.models {
+        # A level the studio baked lights its models from a grid as Quake
+        # III's do (the world's "gridsize").
+        spacing = Vec3(x=64.0, y=64.0, z=128.0);
+        for entity in level.bsp.entities[:1] {
+            parts = entity.fields.get("gridsize", "").split();
+            if len(parts) == 3 {
+                spacing = Vec3(x=atof(parts[0]), y=atof(parts[1]), z=atof(parts[2]));
+            }
+        }
+        level.lighting.grid = load_light_grid(
+            level.bsp.light_grid, level.bsp.models[0].mins, level.bsp.models[0].maxs, spacing
+        );
+    }
     if game in ["q1", "q2"] {
         # Models take the light of the lightmaps below them (R_LightPoint),
         # under the same animated styles as the world.

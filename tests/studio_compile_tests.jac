@@ -148,6 +148,8 @@ test "a brush between a point and a lamp shadows it" {
 
 test "a scene with a light gets a lightmap on every face of the world" {
     scene = lit_yard();
+    # Direct light alone, to measure the least light in a shadow by.
+    scene.world().fields["_bounce"] = "0";
     made = compile_scene(scene, SwatchMaterials());
     # Without a light it stays as the compiler shaded it.
     assert bake_light(scene, made) == 0 and len(made.bsp.lighting) == 0;

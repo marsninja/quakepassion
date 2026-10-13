@@ -1326,6 +1326,22 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   lights only what lies within `_cone` degrees of the way it points (20
   when it does not say), and half lights a rim of four degrees about the
   cone's edge, as Quake II's and Quake III's light tools have it.
+  Light also bounces once: the world's faces are cut into patches (64
+  units or more, fewer on a large scene), each giving back what it is lit
+  by times its material's average colour, and each gathering what the
+  others give where nothing stands between them (the world's `_bounce 0`
+  turns it off). A brush side with Quake II's light flag and a value
+  glows: it lights itself and what is near it, in its material's colour,
+  about a unit of light for every 100 of its value. A light with a
+  `style` of its own (Quake's 1 to 11 flicker, pulse and the like), or
+  one with a `targetname` (given a style from 32 up, as Quake's light tool
+  does, which its uses switch off and on), lights a layer of its own on
+  each face it reaches (up to three besides the steady one), and the game
+  sums the layers by each style's current strength. A grid of light
+  through the level (Quake III's, at the world's `gridsize`, 64 64 128
+  unless it says) lights models in play. A dump's `studio: light` line
+  says how many patches, lines of sight, grid points, styled faces and
+  glowing faces the last bake had.
 - More in the Brush menu: turn about x or y (`ed_rotate 90 x`), mirror
   (`ed_mirror <x|y|z>`), stretch (`ed_resize <fx> [fy fz]`), carve the
   selection out of every brush it reaches (`ed_carve`), keep what the
@@ -2371,8 +2387,8 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
   do open, as patches of the scene); a patch mirrored keeps its control points' order, so its
   curve faces the same way round; the logic graph neither reorders nor shows signals as
   they fire in play; a scene too large for the light budget stays flat.
-- Not yet built: the rest of the bake (bounced light, light styles and a
-  light grid); the Passion tools; user walkers.
+- Not built: windows on other monitors (#95: raylib gives the studio one
+  window, so windows float inside it).
 - Within the shell: generated (Passion) levels can be edited but not saved as
   they are; `ed_convert` turns one into a scene of brushes, and `ed_exp open
   <seed>` generates one and opens it so.
