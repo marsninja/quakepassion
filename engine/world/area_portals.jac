@@ -5,6 +5,9 @@ cmodel.c CM_SetAreaPortalState): a func_areaportal entity carries a portal
 number of the map's table. A door opens the portals it targets while it
 stands open, and a relay toggles one.
 
+A level the studio bakes takes Quake II's: its bake numbers each
+func_areaportal (`style`) and lists the two areas it stands between.
+
 Quake III (g_mover.c Use_BinaryMover and Reached_BinaryMover, sv_game.c
 SV_AdjustAreaPortalState): a door whose box reaches two areas is the portal
 between them, open from the moment it leaves its rest position until it is
@@ -40,16 +43,17 @@ edge OpensPortal: Door --> AreaPortal {
 
 """CMod_LoadAreas and CMod_LoadLeafs' areas as a graph: a `MapArea` for
 each area of the map, every leaf `Within` its own. None for a game or map
-without areas."""
+without areas. A studio's baked level numbers its areas as Quake II does,
+from 1 (its solid leaves are in area 0)."""
 def chart_areas(world: World, bsp: Bsp, leaves: list[Area]) -> AreaMap | None {
-    if bsp.game not in ["q2", "q3"] {
+    if bsp.game not in ["q2", "q3", "passion"] {
         return None;
     }
     count = len(bsp.areas);
     for leaf in bsp.leaves {
         count = max(count, leaf.area + 1);
     }
-    chart = AreaMap(first=1 if bsp.game == "q2" else 0);
+    chart = AreaMap(first=0 if bsp.game == "q3" else 1);
     if count <= chart.first {
         return None;
     }
@@ -69,7 +73,7 @@ def chart_areas(world: World, bsp: Bsp, leaves: list[Area]) -> AreaMap | None {
 """The level's portals and the doors that hold them, then the first flood
 (CM_LoadMap ends with FloodAreaConnections, every portal shut)."""
 def load_area_portals(world: World, bsp: Bsp, chart: AreaMap | None = None, probe: AreaProbe | None = None) {
-    if bsp.game == "q2" {
+    if bsp.game in ["q2", "passion"] {
         load_entity_portals(world, bsp, chart);
     } elif bsp.game == "q3" and chart is not None and probe is not None {
         load_door_portals(world, bsp, chart, probe);

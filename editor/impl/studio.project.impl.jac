@@ -166,6 +166,8 @@ impl Studio.apply_game(game: str) {
     cell = self.game_setup.get(game + ".bake", "");
     if cell.isdigit() {
         self.vis_cell = float(int(cell));
+    } elif cell == "planes" {
+        self.vis_cell = BAKE_BY_PLANES;
     }
     if how or cell {
         self.built_geometry = -1;
@@ -225,7 +227,7 @@ impl Studio.open_project(folder: str) -> bool {
         self.lit = True;
         self.luxel = 16.0 if project.build == "full" else 32.0;
     }
-    if project.bake >= 32 {
+    if project.bake >= 32 or project.bake == 1 {
         self.vis_cell = float(project.bake);
     }
     self.built_geometry = -1;
@@ -305,8 +307,8 @@ impl Studio.project_command(scene: Scene, args: list[str]) -> bool {
             self.say("ed_game " + args[1] + " build <full|quick|flat>");
             return True;
         }
-        if args[2] == "bake" and value and (not value.isdigit() or int(value) < 32) {
-            self.say("ed_game " + args[1] + " bake <cell>: 32 units wide or more");
+        if args[2] == "bake" and value and value != "planes" and (not value.isdigit() or int(value) < 32) {
+            self.say("ed_game " + args[1] + " bake <planes|cell>: a cell is 32 units wide or more");
             return True;
         }
         if value {
@@ -509,8 +511,8 @@ impl Studio.project_command(scene: Scene, args: list[str]) -> bool {
                 self.luxel = 16.0 if value == "full" else 32.0;
             }
             self.built_geometry = -1;
-        } elif args[2] == "bake" and (value == "off" or (value.isdigit() and int(value) >= 32)) {
-            project.bake = 0 if value == "off" else int(value);
+        } elif args[2] == "bake" and (value in ["off", "planes"] or (value.isdigit() and int(value) >= 32)) {
+            project.bake = 0 if value == "off" else (1 if value == "planes" else int(value));
             self.vis_cell = float(project.bake);
             self.built_geometry = -1;
         } else {

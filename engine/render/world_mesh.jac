@@ -55,7 +55,10 @@ glob SURFACE_LIGHTMAP: int = 1,
      SURFACE_ALPHA_SHIFT: int = 1,
      SURFACE_EMISSION: int = 8,
      SURFACE_VERTEX_COLOR: int = 16,
-     SURFACE_QUAD: int = 32;
+     SURFACE_QUAD: int = 32,
+     # A single-pass face with light style layers (a studio level's): its
+     # layers are summed by their styles' values, as Q1 and Q2 faces' are.
+     SURFACE_STYLED: int = 64;
 
 # Surface passes, in draw order within a game. Q1/Q2: lightmapped faces,
 # the two-layer Q1 sky, opaque liquids, translucent faces. Q3: single-pass
@@ -773,12 +776,19 @@ glob BACKDROP_VERTICES: int = 768;
 # Q3 single-pass surfaces: texture times lightmap (or vertex light), the
 # shader's alphaFunc, and dynamic lights per pixel on all but emitters.
 glob BASE_VS: str = WORLD_INPUTS
-    + "uniform vec4 tint; out vec2 uv; out vec2 luv; out vec4 color; out vec3 worldPosition; flat out float flags;\n"
-    + "void main(){ int f=int(inInfo.x+0.5); vec4 w=model*vec4(inPosition,1.0); worldPosition=w.xyz; uv=inTexCoord; luv=inLightCoord; flags=inInfo.x; color=(f&16)!=0?vec4(inColor.rgb,1.0):tint; gl_Position=viewProjection*w; }\n",
-     BASE_FS: str = "#version 330\nin vec2 uv; in vec2 luv; in vec4 color; in vec3 worldPosition; flat in float flags; out vec4 finalColor;\n"
+    + "uniform vec4 tint; uniform vec4 lightStyles[64]; out vec2 uv; out vec2 luv; out vec4 color; out vec3 worldPosition; flat out float flags; flat out vec4 styleScale; flat out float layerStride;\n"
+    + "float styleValue(float s){ int i=int(s+0.5); return lightStyles[i>>2][i&3]; }\n"
+    + "void main(){ int f=int(inInfo.x+0.5); vec4 w=model*vec4(inPosition,1.0); worldPosition=w.xyz; uv=inTexCoord; luv=inLightCoord; flags=inInfo.x; color=(f&16)!=0?vec4(inColor.rgb,1.0):tint;"
+    + " styleScale=(f&64)!=0?vec4(styleValue(inStyles.x),styleValue(inStyles.y),styleValue(inStyles.z),styleValue(inStyles.w)):vec4(1.0,0.0,0.0,0.0); layerStride=(f&64)!=0?inAuxA.x:0.0; gl_Position=viewProjection*w; }\n",
+     BASE_FS: str = "#version 330\nin vec2 uv; in vec2 luv; in vec4 color; in vec3 worldPosition; flat in float flags; flat in vec4 styleScale; flat in float layerStride; out vec4 finalColor;\n"
     + "uniform sampler2D colorMap; uniform sampler2D lightMap; uniform vec4 flashPosition[8]; uniform vec4 flashColor[8];\n"
+    + "vec3 styledLight(){ vec3 light=texture(lightMap,luv).rgb*styleScale.x;"
+    + " if(styleScale.y>0.0) light+=texture(lightMap,luv+vec2(layerStride,0.0)).rgb*styleScale.y;"
+    + " if(styleScale.z>0.0) light+=texture(lightMap,luv+vec2(layerStride*2.0,0.0)).rgb*styleScale.z;"
+    + " if(styleScale.w>0.0) light+=texture(lightMap,luv+vec2(layerStride*3.0,0.0)).rgb*styleScale.w;"
+    + " return min(light*2.0,vec3(1.0)); }\n"
     + "void main(){ int f=int(flags+0.5); vec4 base=texture(colorMap,uv); int mode=(f>>1)&3; if((mode==1&&base.a<=0.0)||(mode==2&&base.a<0.5)||(mode==3&&base.a>=0.5)) discard;"
-    + " vec3 lighting=((f&1)!=0?texture(lightMap,luv).rgb:vec3(1.0))*color.rgb;"
+    + " vec3 lighting=((f&1)!=0?((f&64)!=0?styledLight():texture(lightMap,luv).rgb):vec3(1.0))*color.rgb;"
     + " if((f&8)==0){ vec3 n=normalize(cross(dFdx(worldPosition),dFdy(worldPosition))); for(int i=0;i<8;i++){ if(flashPosition[i].w<=0.0) continue; vec3 delta=flashPosition[i].xyz-worldPosition; float distance=length(delta); float a=max(0.0,1.0-distance/flashPosition[i].w); lighting+=flashColor[i].rgb*a*a*max(0.0,dot(n,delta/max(distance,0.001))); }}"
     + " finalColor=vec4(base.rgb*lighting,color.a); }\n";
 

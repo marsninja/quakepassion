@@ -198,3 +198,49 @@ def build_brush_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
     collision.reindex();
     return collision;
 }
+
+"""Bring the hulls of some of the world's brushes (model 0's) in line with
+their planes again, each in its place, for an editor that moved them: what
+each stops, and how, is as it was. False, with nothing changed, when one is
+not among the hulls the world was built with."""
+def refresh_world_hulls(collision: CollisionMap, bsp: Bsp, changed: list[int]) -> bool {
+    if not bsp.models {
+        return False;
+    }
+    width = 15.0 if bsp.game == "q3" else 16.0;
+    mask = 65537 if bsp.game == "q3" else 196611;
+    # The hull add_model gave each of the world's brushes: they come first.
+    hull_of: dict[int, int] = {};
+    for index in bsp.models[0].brushes {
+        brush = bsp.brushes[index];
+        if brush.contents & mask == 0 or not brush.planes {
+            continue;
+        }
+        hull_of[index] = len(hull_of);
+    }
+    for index in changed {
+        if index not in hull_of or hull_of[index] >= len(collision.hulls) {
+            return False;
+        }
+    }
+    for index in changed {
+        normals: list[Vec3] = [];
+        distances: list[float] = [];
+        for plane in bsp.brushes[index].planes {
+            normals.append(bsp.planes[plane].normal);
+            distances.append(bsp.planes[plane].distance);
+        }
+        scratch = CollisionMap();
+        scratch.add_brush(normals, distances, Vec3(x=-width, y=-width, z=-24.0), Vec3(x=width, y=width, z=32.0), Vec3());
+        hull = hull_of[index];
+        cell = collision.hulls[hull];
+        cell.planes = scratch.hulls[0].planes;
+        cell.distances = scratch.hulls[0].distances;
+        cell.point_distances = scratch.hulls[0].point_distances;
+        # The world stands where it was built: its hulls have no offset.
+        collision.bounds[hull] = scratch.bounds[0];
+        collision.revision.touch(hull);
+    }
+    collision.reindex();
+    return True;
+}

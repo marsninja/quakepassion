@@ -26,6 +26,14 @@ impl Studio.overlay_command(scene: Scene, args: list[str]) -> bool {
             else "The 3D view shows the level"
         );
         return True;
+    } elif what in ["portals", "leaves"] and word in ["", "on", "off"] {
+        # A bake's portal and leaf outlines (ed_portals, ed_cells).
+        if what == "portals" {
+            self.portals_command(scene, ["ed_portals"] + ([word] if word else []));
+        } else {
+            self.step_command(scene, ["ed_cells"] + ([word] if word else []));
+        }
+        return True;
     } elif what == "width" {
         if not word.isdigit() or int(word) < 1 or int(word) > WIDEST_LINE {
             self.say("ed_overlay width <1.." + str(WIDEST_LINE) + ">: how many pixels wide the studio's lines are drawn (now " + str(self.line_width) + ")");
@@ -37,7 +45,7 @@ impl Studio.overlay_command(scene: Scene, args: list[str]) -> bool {
         self.say("Lines are drawn " + str(self.line_width) + " wide");
         return True;
     } elif what {
-        self.say("ed_overlay [triggers|unseen] [on|off] | width <1.." + str(WIDEST_LINE) + ">: outline trigger volumes, or clip, hint and caulk brushes, in colours of their own; or how wide lines are drawn");
+        self.say("ed_overlay [triggers|unseen|portals|leaves] [on|off] | width <1.." + str(WIDEST_LINE) + ">: outline trigger volumes, or clip, hint and caulk brushes, in colours of their own, or a bake's portals or leaves; or how wide lines are drawn");
         return True;
     }
     # How many brushes there are of each kind, whether shown apart or not.

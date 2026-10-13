@@ -8,6 +8,7 @@ it is a fall), and a tree that says which area a point is in. The engine's
 own router then finds routes over it."""
 
 import math;
+import struct;
 import from engine.math.vec3 { Vec3 }
 import from engine.world.bot_routes { NavMesh, NavArea, Passage, Exits, Enters, UNREACHED }
 import from engine.formats.aas {
@@ -19,6 +20,9 @@ import from engine.formats.aas {
     TRAVEL_WALKOFFLEDGE,
     TRAVEL_TELEPORT,
     TRAVEL_JUMPPAD,
+    TRAVEL_LADDER,
+    TRAVEL_SWIM,
+    TRAVEL_ELEVATOR,
     TFL_DEFAULT,
     AREA_GROUNDED
 }
@@ -34,7 +38,8 @@ obj Floor {
 obj Way {
     has source: int,
         target: int,
-        kind: int = TRAVEL_WALK;
+        kind: int = TRAVEL_WALK,
+        model: int = 0;
 }
 
 """A way the level's entities make, not its floors: a teleporter from where
@@ -43,19 +48,23 @@ throws. By points in the level, and the kind of travel."""
 obj Link {
     has start: Vec3,
         finish: Vec3,
-        kind: int = TRAVEL_TELEPORT;
+        kind: int = TRAVEL_TELEPORT,
+        # A lift's model in the built level (its elevator's), else nothing.
+        model: int = 0;
 }
 
 """The floor whose middle is nearest a point: on the cell the point is over,
 or one beside it, the highest that is not above the point (where one would
-stand there). -1 when there is none."""
-def floor_under(floors: list[Floor], origin: Vec3, cell: float, point: Vec3) -> int {
+stand there), and no further below it than `reach_down`. -1 when there is
+none."""
+def floor_under(floors: list[Floor], origin: Vec3, cell: float, point: Vec3, reach_down: float = 1000000.0) -> int {
     column = int(math.floor((point.x - origin.x) / cell));
     row = int(math.floor((point.y - origin.y) / cell));
     found = -1;
     best = 0.0;
     for (index, floor) in enumerate(floors) {
-        if abs(floor.column - column) > 1 or abs(floor.row - row) > 1 or floor.z > point.z + 8.0 {
+        if abs(floor.column - column) > 1 or abs(floor.row - row) > 1 or floor.z > point.z + 8.0
+            or floor.z < point.z - reach_down {
             continue;
         }
         # Nearer cells first, then the floor nearest below.
@@ -74,9 +83,10 @@ def linked_ways(floors: list[Floor], origin: Vec3, cell: float, links: list[Link
     found: list[Way] = [];
     for link in links {
         source = floor_under(floors, origin, cell, link.start);
-        target = floor_under(floors, origin, cell, link.finish);
+        # A ladder or a lift ends at its own height: the floor there, not the one it rose from.
+        target = floor_under(floors, origin, cell, link.finish, 48.0 if link.kind in [TRAVEL_LADDER, TRAVEL_ELEVATOR] else 1000000.0);
         if source >= 0 and target >= 0 and source != target {
-            found.append(Way(source=source, target=target, kind=link.kind));
+            found.append(Way(source=source, target=target, kind=link.kind, model=link.model));
         }
     }
     return found;
@@ -231,18 +241,30 @@ def nav_data(floors: list[Floor], ways: list[Way], origin: Vec3, cell: float, ta
                 z=to_at.z + 24.0
             );
             time = 1;
-            if way.kind == TRAVEL_TELEPORT or way.kind == TRAVEL_JUMPPAD {
+            if way.kind in [TRAVEL_TELEPORT, TRAVEL_JUMPPAD, TRAVEL_LADDER, TRAVEL_ELEVATOR] {
                 # Left from the middle of the floor the trigger is over, arrived at the far one's.
                 start = Vec3(x=from_at.x, y=from_at.y, z=from_at.z + 24.0);
                 finish = Vec3(x=to_at.x, y=to_at.y, z=to_at.z + 24.0);
-                time = 5 if way.kind == TRAVEL_TELEPORT else int(to_at.sub(from_at).length() / 4.0) + 50;
+                # A teleporter at once; a ladder or a lift by how far up or down, a jump pad by how far.
+                time = 5;
+                if way.kind == TRAVEL_JUMPPAD {
+                    time = int(to_at.sub(from_at).length() / 4.0) + 50;
+                } elif way.kind == TRAVEL_LADDER {
+                    time = int(abs(to_at.z - from_at.z) / 2.0) + 10;
+                } elif way.kind == TRAVEL_ELEVATOR {
+                    time = int(abs(to_at.z - from_at.z) / 1.5) + 100;
+                }
+            } elif way.kind == TRAVEL_SWIM {
+                time = 3;
             } elif way.kind == TRAVEL_BARRIERJUMP {
                 time = 50;
             } elif way.kind == TRAVEL_WALKOFFLEDGE {
                 # As long as the fall takes, in hundredths of a second, under the games' gravity.
                 time = int(math.sqrt(2.0 * max(0.0, from_at.z - to_at.z) / 800.0) * 100.0) + 1;
             }
-            made.reaches.append(AasReach(area=way.target + 1, start=start, finish=finish, kind=way.kind, time=time));
+            made.reaches.append(
+                AasReach(area=way.target + 1, start=start, finish=finish, kind=way.kind, time=time, face_num=way.model)
+            );
         }
         area.reach_count = len(made.reaches) - area.first_reach;
     }
@@ -413,4 +435,108 @@ def legs_count(legs: list[Leg]) -> list[int] {
         }
     }
     return counts;
+}
+
+"""How high the water a point is in comes (the top of the highest of the
+liquids' boxes holding it), or far below anything when it is in none."""
+def:priv water_top(waters: list[list[Vec3]], point: Vec3) -> float {
+    top = -1000000.0;
+    for box in waters {
+        # In it, or on its top (a liquid the studio builds is stood on, as a floor is).
+        if point.x >= box[0].x and point.x <= box[1].x and point.y >= box[0].y and point.y <= box[1].y
+            and point.z >= box[0].z and point.z <= box[1].z + 8.5 {
+            top = max(top, box[1].z);
+        }
+    }
+    return top;
+}
+
+"""The ways water opens: two floors beside each other where one is under
+water (`waters`, the liquids' boxes as [low, high]) are swum between, both
+ways, when the higher of them is no further above the water than a player
+climbs out (`climb`); deep water's floors are joined to the shore so."""
+def swim_ways(floors: list[Floor], origin: Vec3, cell: float, waters: list[list[Vec3]], climb: float = 24.0) -> list[Way] {
+    found: list[Way] = [];
+    if len(waters) == 0 {
+        return found;
+    }
+    tops = [water_top(waters, floor_middle(floor, origin, cell).add(Vec3(z=8.0))) for floor in floors];
+    by_cell: dict[tuple[int, int], list[int]] = {};
+    for (index, floor) in enumerate(floors) {
+        key = (floor.column, floor.row);
+        if key not in by_cell {
+            by_cell[key] = [];
+        }
+        by_cell[key].append(index);
+    }
+    for (index, floor) in enumerate(floors) {
+        for (across, up) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            for other in by_cell.get((floor.column + across, floor.row + up), []) {
+                surface = max(tops[index], tops[other]);
+                if surface < -999999.0 {
+                    continue;
+                }
+                if max(floor.z, floors[other].z) <= surface + climb {
+                    found.append(Way(source=index, target=other, kind=TRAVEL_SWIM));
+                }
+            }
+        }
+    }
+    return found;
+}
+
+"""A navigation's data as an arena's file: Quake III's AAS (version 5, its
+header hidden as be_aas_file.c hides it), with the lumps a router reads:
+the tree's planes and nodes, the areas with their settings, and the ways
+between them. The others (faces, edges, portals, clusters) are empty."""
+def aas_bytes(aas: Aas) -> bytes {
+    planes = bytearray();
+    for (index, normal) in enumerate(aas.normals) {
+        planes.extend(struct.pack("<ffffi", normal.x, normal.y, normal.z, aas.dists[index] if index < len(aas.dists) else 0.0, 0));
+    }
+    nodes = bytearray();
+    for index in range(len(aas.node_planes)) {
+        nodes.extend(struct.pack("<iii", aas.node_planes[index], aas.front[index], aas.back[index]));
+    }
+    areas = bytearray();
+    settings = bytearray();
+    for (index, area) in enumerate(aas.areas) {
+        areas.extend(
+            struct.pack(
+                "<iiifffffffff", index, 0, 0, area.mins.x, area.mins.y, area.mins.z, area.maxs.x, area.maxs.y, area.maxs.z,
+                area.center.x, area.center.y, area.center.z
+            )
+        );
+        settings.extend(struct.pack("<iiiiiii", area.contents, area.flags, area.presence, 0, 0, area.reach_count, area.first_reach));
+    }
+    reaches = bytearray();
+    for reach in aas.reaches {
+        reaches.extend(
+            struct.pack(
+                "<iiiffffffiHH", reach.area, reach.face_num, reach.edge_num, reach.start.x, reach.start.y, reach.start.z,
+                reach.finish.x, reach.finish.y, reach.finish.z, reach.kind, reach.time & 65535, 0
+            )
+        );
+    }
+    lumps: list[bytes] = [b"" for index in range(14)];
+    lumps[2] = bytes(planes);
+    lumps[7] = bytes(areas);
+    lumps[8] = bytes(settings);
+    lumps[9] = bytes(reaches);
+    lumps[10] = bytes(nodes);
+    header = bytearray(struct.pack("<ii", aas.checksum, 0)[:4]);
+    at = 8 + 4 + 14 * 8;
+    for piece in lumps {
+        header.extend(struct.pack("<ii", at, len(piece)));
+        at += len(piece);
+    }
+    # be_aas_file.c AAS_DData: each header byte after the version XORed with its offset times 119.
+    for k in range(len(header)) {
+        header[k] = header[k] ^ ((k * 119) & 255);
+    }
+    made = bytearray(b"EAAS") + bytearray(struct.pack("<i", 5)) + header;
+    for piece in lumps {
+        made.extend(piece);
+    }
+    return bytes(made);
 }

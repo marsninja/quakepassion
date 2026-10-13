@@ -16,7 +16,7 @@ impl Studio.eye_cell(scene: Scene) -> int {
             eye = stands;
         }
     }
-    return leaf_at(made.bsp, made.bsp.models[0].head, eye);
+    return made.bsp.leaves[leaf_at(made.bsp, made.bsp.models[0].head, eye)].cluster;
 }
 
 impl Studio.cells_seen(scene: Scene) -> int {
@@ -41,20 +41,149 @@ impl Studio.draw_cells(scene: Scene) {
         return;
     }
     for (index, leaf) in enumerate(made.bsp.leaves) {
+        if leaf.cluster < 0 {
+            continue;
+        }
+        if index < len(made.shapes) {
+            # A leaf of a bake by planes: its own outline, drawn a little
+            # toward its middle so that neighbours' lines lie apart.
+            middle = leaf.mins.add(leaf.maxs).scale(0.5);
+            outline_tone = ink(0xffd166) if leaf.cluster == from_cell else (
+                ink(0x3ddc97) if cell_sees(made.bsp, from_cell, leaf.cluster) else ink(0xe5484d).faded(150)
+            );
+            for outline in made.shapes[index] {
+                drawn = [corner.add(middle.sub(corner).scale(0.03)) for corner in outline];
+                for at in range(len(drawn)) {
+                    wire_line(drawn[at], drawn[(at + 1) % len(drawn)], outline_tone);
+                }
+            }
+            continue;
+        }
         # Drawn a little inside itself, so that neighbours' lines lie apart.
         low = leaf.mins.add(Vec3(x=4.0, y=4.0, z=1.0));
         high = leaf.maxs.sub(Vec3(x=4.0, y=4.0, z=1.0));
-        if index == from_cell {
+        if leaf.cluster == from_cell {
             wire_box(low, high, ink(0xffd166));
             continue;
         }
-        tone = ink(0x3ddc97) if cell_sees(made.bsp, from_cell, index) else ink(0xe5484d).faded(150);
+        tone = ink(0x3ddc97) if cell_sees(made.bsp, from_cell, leaf.cluster) else ink(0xe5484d).faded(150);
         for level in [low.z, high.z] {
             wire_line(Vec3(x=low.x, y=low.y, z=level), Vec3(x=high.x, y=low.y, z=level), tone);
             wire_line(Vec3(x=high.x, y=low.y, z=level), Vec3(x=high.x, y=high.y, z=level), tone);
             wire_line(Vec3(x=high.x, y=high.y, z=level), Vec3(x=low.x, y=high.y, z=level), tone);
             wire_line(Vec3(x=low.x, y=high.y, z=level), Vec3(x=low.x, y=low.y, z=level), tone);
         }
+    }
+}
+
+impl Studio.draw_portals(scene: Scene) {
+    if not self.portals_shown {
+        return;
+    }
+    # A portal file's, as they were read.
+    for points in self.portal_lines {
+        for at in range(len(points)) {
+            wire_line(points[at], points[(at + 1) % len(points)], ink(0xb18cff));
+        }
+    }
+    made = self.live;
+    if made is None {
+        return;
+    }
+    from_cell = self.eye_cell(scene);
+    bsp = made.bsp;
+    for (number, points) in enumerate(made.portals) {
+        if number * 2 + 1 >= len(made.portal_ends) {
+            break;
+        }
+        first = bsp.leaves[made.portal_ends[number * 2]];
+        second = bsp.leaves[made.portal_ends[number * 2 + 1]];
+        if first.cluster < 0 or second.cluster < 0 {
+            continue;
+        }
+        # The looked-from cluster's own in yellow; between two areas (an
+        # area portal's) in orange; the rest green where in sight, else red.
+        tone = ink(0xe5484d).faded(150);
+        if from_cell >= 0 and (first.cluster == from_cell or second.cluster == from_cell) {
+            tone = ink(0xffd166);
+        } elif first.area != second.area {
+            tone = ink(0xff7a18);
+        } elif from_cell < 0 or (cell_sees(bsp, from_cell, first.cluster) and cell_sees(bsp, from_cell, second.cluster)) {
+            tone = ink(0x3ddc97);
+        }
+        for at in range(len(points)) {
+            wire_line(points[at], points[(at + 1) % len(points)], tone);
+        }
+    }
+}
+
+impl Studio.portals_command(scene: Scene, args: list[str]) {
+    how = args[1] if len(args) > 1 else "";
+    made = self.live;
+    if how in ["load", "write"] {
+        # Beside the scene's map unless told where.
+        path = args[2] if len(args) > 2 else self.scene_path(scene.name[7:] if scene.name.startswith("studio:") else scene.name)[:-4] + ".prt";
+        if how == "write" {
+            text = portal_file_text(made) if made is not None else "";
+            if not text {
+                self.say("ed_portals write: bake the level by its planes first (ed_bake planes)");
+                return;
+            }
+            try {
+                os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True);
+                with open(path, "w") as file {
+                    file.write(text);
+                }
+            } except OSError {
+                self.say("ed_portals write: could not write " + path);
+                return;
+            }
+            print("studio: portals written " + path + " portals=" + text.split("\n")[2]);
+            self.say("The bake's portals are written as a portal file: " + path);
+            return;
+        }
+        text = "";
+        try {
+            with open(path, "r") as file {
+                text = file.read();
+            }
+        } except OSError {
+            self.say("ed_portals load: could not read " + path);
+            return;
+        }
+        read = portal_file_windings(text);
+        if read is None {
+            self.say("ed_portals load: " + path + " is not a portal file");
+            return;
+        }
+        self.portal_lines = read;
+        self.portal_file = path;
+        self.portals_shown = True;
+        print("studio: portals loaded " + path + " portals=" + str(len(read)));
+        self.say(str(len(read)) + " portals read from " + path + ", drawn in violet");
+        return;
+    }
+    if how == "forget" {
+        self.portal_lines = [];
+        self.portal_file = "";
+        self.say("The portal file read is put away");
+        return;
+    }
+    self.portals_shown = not self.portals_shown;
+    if how in ["on", "off", "1", "0"] {
+        self.portals_shown = how in ["on", "1"];
+    }
+    count = len(made.portals) if made is not None else 0;
+    print("studio: portals shown=" + ("1" if self.portals_shown else "0") + " baked=" + str(count) + " read=" + str(len(self.portal_lines)));
+    if not self.portals_shown {
+        self.say("The portals are not drawn");
+    } elif count == 0 and not self.portal_lines {
+        self.say("No portals to draw: ed_bake planes cuts the level into leaves joined by portals");
+    } else {
+        self.say(
+            "Portals: the looked-from cluster's in yellow, an area portal's in orange, the rest green where seen and red where not ("
+                + str(count) + ")"
+        );
     }
 }
 
@@ -93,6 +222,10 @@ impl Studio.step_command(scene: Scene, args: list[str]) -> bool {
     name = args[0];
     app = self.app;
     stage = self.stage;
+    if name == "ed_portals" {
+        self.portals_command(scene, args);
+        return True;
+    }
     if name == "ed_cells" {
         self.cells_shown = not self.cells_shown;
         if len(args) > 1 and args[1] in ["on", "off", "1", "0"] {

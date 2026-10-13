@@ -72,6 +72,7 @@ import from .world_mesh {
     SURFACE_ALPHA_SHIFT,
     SURFACE_EMISSION,
     SURFACE_VERTEX_COLOR,
+    SURFACE_STYLED,
     PASS_LIT,
     PASS_SKY,
     PASS_LIQUID,
@@ -200,6 +201,10 @@ obj QuakeRenderer {
     # lists of recent visible sets, and the brush models' groups.
     has chunks: list[GpuMesh] = [],
         face_chunks: list[int] = [],
+        # Where each drawn face's vertices begin in its chunk, and how many
+        # it has (for faces packed again in place: refresh_faces).
+        face_bases: list[int] = [],
+        face_sizes: list[int] = [],
         face_batches: list[list[int]] = [],
         face_runs: list[bytes] = [],
         brush_face: list[bool] = [],
@@ -412,6 +417,8 @@ obj QuakeRenderer {
     lights need no upload."""
     def upload_lightmaps(level: Level) {
         layered = level.bsp.game in ["q1", "q2"];
+        # A studio level's faces with light styles keep their layers too.
+        styled_level = level.bsp.game == "passion";
         channels = level.bsp.light_channels;
         # One block per lit face; Q3 faces share their lightmap page's.
         owners: list[int] = [];
@@ -419,6 +426,7 @@ obj QuakeRenderer {
         widths: list[int] = [];
         heights: list[int] = [];
         layer_counts: list[int] = [];
+        raw_layers: list[bool] = [];
         for face in level.bsp.faces {
             if face.light_offset < 0 {
                 owners.append(-1);
@@ -432,7 +440,9 @@ obj QuakeRenderer {
             owners.append(len(widths));
             widths.append(face.light_width);
             heights.append(face.light_height);
-            layer_counts.append(max(1, len(face.styles)) if layered else 1);
+            face_layered = layered or (styled_level and len(face.styles) > 1);
+            raw_layers.append(face_layered);
+            layer_counts.append(max(1, len(face.styles)) if face_layered else 1);
         }
         layout = fit_light_atlas(widths, heights, layer_counts);
         if not layout.fits {
@@ -462,6 +472,7 @@ obj QuakeRenderer {
             w = face.light_width;
             h = face.light_height;
             layers = layer_counts[owner];
+            face_layered = raw_layers[owner];
             x = rect.x;
             y = rect.y;
             for layer in range(layers) {
@@ -472,7 +483,7 @@ obj QuakeRenderer {
                         p = ((y + ly) * self.atlas_size + left + lx) * 4;
                         raw = [0, 0, 0];
                         for channel in range(3) {
-                            if layered {
+                            if face_layered {
                                 raw[channel] = int(
                                     level.bsp.lighting[
                                         face.light_offset
@@ -492,7 +503,7 @@ obj QuakeRenderer {
                                 );
                             }
                         }
-                        if not layered {
+                        if not face_layered {
                             shade = shift_light(self.overbright, raw[0], raw[1], raw[2]);
                             raw = [shade[0], shade[1], shade[2]];
                         }
@@ -652,43 +663,15 @@ obj QuakeRenderer {
             buffers.append(bytearray(used[c] * WORLD_VERTEX_STRIDE));
         }
         self.face_runs = [b""] * count;
+        self.face_bases = placed[1];
+        self.face_sizes = counts;
         self.curve_bases = {};
         self.curve_steps = {};
         self.curve_runs = {};
-        fogs = min(len(level.bsp.fogs), WORLD_FOG_LIMIT);
         for f in drawn {
             face = faces[f];
-            rect = self.rects[f];
-            flags = 0;
-            lit = face.light_offset >= 0;
-            if lit {
-                flags = SURFACE_LIGHTMAP;
-            }
-            if self.single_pass {
-                flags = flags | (face.alpha_test << SURFACE_ALPHA_SHIFT);
-                if not lit and face.emission {
-                    flags = flags | SURFACE_EMISSION;
-                }
-                if not lit and len(face.colors) >= len(face.vertices) * 4 {
-                    flags = flags | SURFACE_VERTEX_COLOR;
-                }
-            }
             base = placed[1][f];
-            pack_world_face(
-                buffers[self.face_chunks[f]],
-                base * WORLD_VERTEX_STRIDE,
-                face,
-                rect.x,
-                rect.y,
-                self.atlas_size,
-                0.0 if self.single_pass else rect.layer,
-                flags,
-                face.fog if 0 <= face.fog < fogs else -1,
-                self.overbright,
-                sprites=self.single_pass,
-                alpha=int(face.opacity * 255.0),
-                unit=self.atlas_unit
-            );
+            self.pack_face(level, f, buffers[self.face_chunks[f]], base * WORLD_VERTEX_STRIDE);
             # AutospriteDeform rebuilds each quad as RB_AddQuadStamp's triangles.
             stamped = self.single_pass and len(face.vertices) == 4 and face.texture in level.surface_deforms
                 and any([deform.kind == "autosprite" for deform in level.surface_deforms[face.texture]]);
@@ -723,6 +706,66 @@ obj QuakeRenderer {
         self.brush_lists = IndexLists();
         self.views = [];
         self.plan_stages(level);
+    }
+
+    """Write one face's vertices into a chunk's bytes at `offset`."""
+    def pack_face(level: Level, f: int, out: bytearray, offset: int) {
+        face = level.bsp.faces[f];
+        rect = self.rects[f];
+        flags = 0;
+        lit = face.light_offset >= 0;
+        if lit {
+            flags = SURFACE_LIGHTMAP;
+        }
+        styled = self.single_pass and lit and level.bsp.game == "passion" and len(face.styles) > 1;
+        if styled {
+            flags = flags | SURFACE_STYLED;
+        }
+        if self.single_pass {
+            flags = flags | (face.alpha_test << SURFACE_ALPHA_SHIFT);
+            if not lit and face.emission {
+                flags = flags | SURFACE_EMISSION;
+            }
+            if not lit and len(face.colors) >= len(face.vertices) * 4 {
+                flags = flags | SURFACE_VERTEX_COLOR;
+            }
+        }
+        fogs = min(len(level.bsp.fogs), WORLD_FOG_LIMIT);
+        pack_world_face(
+            out,
+            offset,
+            face,
+            rect.x,
+            rect.y,
+            self.atlas_size,
+            0.0 if self.single_pass and not styled else rect.layer,
+            flags,
+            face.fog if 0 <= face.fog < fogs else -1,
+            self.overbright,
+            sprites=self.single_pass,
+            alpha=int(face.opacity * 255.0),
+            unit=self.atlas_unit
+        );
+    }
+
+    """Pack faces again in place, where only their corners, texture
+    coordinates or colours have changed (an editor moving brushes): each
+    goes where it was in its chunk. False, with nothing changed, when one
+    is not drawn or has another number of corners than it was packed with."""
+    def refresh_faces(level: Level, changed: list[int]) -> bool {
+        for f in changed {
+            if f < 0 or f >= len(self.face_chunks) or f >= len(self.face_bases) or self.face_chunks[f] < 0
+                or self.face_chunks[f] >= len(self.chunks)
+                or len(level.bsp.faces[f].vertices) != self.face_sizes[f] {
+                return False;
+            }
+        }
+        for f in changed {
+            out = bytearray(self.face_sizes[f] * WORLD_VERTEX_STRIDE);
+            self.pack_face(level, f, out, 0);
+            self.chunks[self.face_chunks[f]].set_vertices(bytes(out), self.face_bases[f] * WORLD_VERTEX_STRIDE);
+        }
+        return True;
     }
 
     """The index lists of a visible face set: reused while the same set comes
@@ -1690,6 +1733,10 @@ obj QuakeRenderer {
         self.begin_batches(program);
         program.set_matrix("viewProjection", view_projection());
         self.set_dynamic_lights(program, level);
+        if level.bsp.game == "passion" and len(self.style_values) == 256 {
+            # A studio level's styled faces sum their layers by these.
+            program.set_vec4s("lightStyles", pack_floats(self.style_values));
+        }
         rlActiveTextureSlot(i32(1));
         rlEnableTexture(u32(self.atlas));
         rlActiveTextureSlot(i32(0));

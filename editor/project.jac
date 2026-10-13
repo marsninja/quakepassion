@@ -105,6 +105,9 @@ def read_project(text: str) -> Project {
             found.build = value;
         } elif key == "bake" and value.isdigit() {
             found.bake = int(value);
+        } elif key == "bake" and value == "planes" {
+            # A bake by the brushes' own planes (editor/compile/bake.jac).
+            found.bake = 1;
         } elif key == "scene" and file_name(value) {
             if file_name(value) not in found.scenes {
                 found.scenes.append(file_name(value));
@@ -138,7 +141,7 @@ def write_project(project: Project) -> str {
         lines.append("build " + project.build);
     }
     if project.bake > 0 {
-        lines.append("bake " + str(project.bake));
+        lines.append("bake " + ("planes" if project.bake == 1 else str(project.bake)));
     }
     for scene_name in sorted(project.scenes) {
         lines.append("scene " + scene_name);

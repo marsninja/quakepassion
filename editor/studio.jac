@@ -52,8 +52,8 @@ import from .ui.input { UiSource, UiStep, script_click, script_drag }
 import from .ui.logview { log_reach, log_window, log_fitted }
 import from .ui.order { moved_before }
 import from .tools.host { ToolHost, StudioTool, PanelSpec }
-import from .ui.widget { Widget, Stage, UiEvent }
-import from .ui.controls { Combo, TextArea }
+import from .ui.widget { Widget, Stage, UiEvent, Child }
+import from .ui.controls { Combo, TextArea, DockGrip, dock_place }
 import from .ui.widgets {
     Box,
     Label,
@@ -179,7 +179,17 @@ import from engine.formats.q2.model { parse_md2 }
 import from .geometry.extrude { profile_pieces, profile_of, sweep_brushes, PROFILE_KINDS }
 import from .compile.light { bake_light, lamp_cone, light_job, LightJob }
 import from .compile.spot { Cone, cone_rim, cone_through, square_to }
-import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
+import from .compile.bake {
+    bake_cells,
+    cell_sees,
+    leaf_at,
+    VisReport,
+    cell_job,
+    CellJob,
+    BAKE_BY_PLANES,
+    portal_file_text,
+    portal_file_windings
+}
 import from .project {
     Project, MANIFEST_NAME, read_project, write_project, addon_classes, addon_folders, addon_label, file_name
 }
@@ -187,10 +197,13 @@ import from .compile.kept { KeptBake, keep_bake, give_bake }
 import from .compile.steps { Place, recipe_steps, step_line, places_named, text_mark }
 import from .compile.navigation {
     Floor, Way, Leg, Link, floor_ways, floor_middle, nav_data, ways_count, route_time, route_legs, legs_count, NAV_STEP,
-    linked_ways
+    linked_ways, swim_ways, aas_bytes
 }
 import from engine.world.bot_routes { NavMesh, HasNavMesh, build_navmesh }
-import from engine.formats.aas { Aas, TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE, TRAVEL_TELEPORT, TRAVEL_JUMPPAD }
+import from engine.formats.aas {
+    Aas, TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE, TRAVEL_TELEPORT, TRAVEL_JUMPPAD, TRAVEL_LADDER, TRAVEL_SWIM,
+    TRAVEL_ELEVATOR
+}
 import from .compile.leak { find_leak, LeakReport }
 import from .formats.bspmap { bsp_items, level_material }
 import from .document.generate {
@@ -247,7 +260,16 @@ import from engine.world.signals { Signal, Fire, HasSignal }
 import from engine.world.doors { Door, HasDoor }
 import from engine.world.pickups { Pickup, HasPickup }
 import from engine.world.combat { Opponent, HasOpponent }
-import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials, swatch_texture }
+import from .compile.live {
+    compile_scene,
+    LiveLevel,
+    Materials,
+    SwatchMaterials,
+    swatch_texture,
+    level_changes,
+    take_changes
+}
+import from engine.formats.brush_collision { refresh_world_hulls }
 import from .assets.materials { ArchiveMaterials, small_picture }
 import from engine.core.menu { game_directory }
 import from engine.assets.content { shelf, pack_folder, folders_path, set_folders, keep_folder }
@@ -335,8 +357,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_autocaulk", "ed_autocaulk [on|off]", "whether shapes are built with their inner faces caulked"),
     (
         "ed_bake",
-        "ed_bake [cell|off]",
-        "cut the built level into cells that know which others they see (256 units wide unless told), or build it as one again"
+        "ed_bake [planes|cell|off]",
+        "cut the built level into cells that know which others they see (256 units wide unless told), or by its brushes' own planes into leaves joined by portals, or build it as one again"
     ),
     (
         "ed_project",
@@ -388,7 +410,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     (
         "ed_nav",
-        "ed_nav [bake [cell] [open] | check | route <from xyz> <to xyz> | show [on|off] | clear]",
+        "ed_nav [bake [cell] [open] | check | route <from xyz> <to xyz> | show [on|off] | write [file.aas] | clear]",
         "navigation for bots: bake the built scene's floors into the areas and ways the games' bots route over, check what can be reached, and draw the ways"
     ),
     (
@@ -437,6 +459,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_reload", "ed_reload", "read the project's image files again and build the level afresh"),
     ("ed_watch", "ed_watch [on|off]", "whether image files are read again when they change on disk"),
     ("ed_cells", "ed_cells [on|off]", "draw the cells of a bake: the one looked from, what it sees and what it does not"),
+    (
+        "ed_portals",
+        "ed_portals [on|off] | load [file.prt] | write [file.prt] | forget",
+        "draw the portals of a bake by planes, read a compiler's portal file to draw, or write the bake's"
+    ),
     ("ed_recipe", "ed_recipe [name] [commands]", "keep a row of commands, apart at semicolons, under a name; forget one; or list them"),
     ("ed_make", "ed_make <name>", "run a recipe's commands"),
     ("ed_run", "ed_run <command line>", "run another program over the scene written as a map (%map%), and list what it says of entities and brushes"),
@@ -472,13 +499,15 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_bar", "ed_bar <tools|status> [show|hide] | tools <above|below>", "show or hide the row of tools and the status bar, and put the tools over or under the views"),
     ("ed_shapebox", "ed_shapebox [open|close|kind <kind>|set <w|d|h|count|thick> <value>|build|at <x> <y>]", "the shape dialog: choose a kind of shape and its sizes in a window, and build it"),
     ("ed_weights", "ed_weights [open|close]", "the weights dialog: the bone in hand, the weight it takes of the picked points, and what carries each of them"),
-    ("ed_tab", "ed_tab <doc:game/name|model|shader>", "go to an open document by its tab: a map or scene, the model being edited, or the shader script"),
+    ("ed_tab", "ed_tab <doc:game/name|model[:n]|shader[:n]|texture:game:file>", "go to an open document by its tab: a map or scene, a model being edited, a shader script or a texture"),
     ("ed_pickfile", "ed_pickfile <noise|music|model|model2>", "choose the selected entities' sound or model from the files of their game, in a list that is typed in to find one"),
     ("ed_close", "ed_close [force]", "close this document (force, when it has edits that are not saved)"),
+    ("ed_documents", "ed_documents", "list the documents open: scenes, models, shader scripts and textures"),
+    ("ed_texture", "ed_texture open <game:file> | close [game:file]", "open a picture as a document of its own, with a tab, or close one"),
     ("ed_recent", "ed_recent [number]", "list the files opened and saved lately, or open one of them"),
     ("ed_log", "ed_log [lines] | panel [on|off] [rows] | panel up|down [n] | panel end", "show the console's last lines; panel keeps them in sight along the foot of the views, and scrolls back through them"),
     ("ed_mapopts", "ed_mapopts [comments|whole] [on|off]", "how maps are written: with numbered comments, with whole coordinates only"),
-    ("ed_overlay", "ed_overlay [triggers|unseen] [on|off] | width <1..4> | overdraw [on|off]", "outline trigger volumes, or clip, hint and caulk brushes, in colours of their own; how wide the studio's lines are drawn; how many faces the renderer draws over each place; alone, count them"),
+    ("ed_overlay", "ed_overlay [triggers|unseen|portals|leaves] [on|off] | width <1..4> | overdraw [on|off]", "outline trigger volumes, or clip, hint and caulk brushes, in colours of their own, or a bake's portals or leaves; how wide the studio's lines are drawn; how many faces the renderer draws over each place; alone, count them"),
     ("ed_export", "ed_export <file.map> [valve|classic|q3]", "write the scene as a map for another tool: Valve's form, the classic one, or Quake III's brush primitives and patches"),
     ("ed_fire", "ed_fire <targetname>", "set off what has that name, in a game played from the studio"),
     ("ed_spawn", "ed_spawn <all|easy|normal|hard|deathmatch>", "show the level as it would spawn at a skill or in a mode"),
@@ -603,6 +632,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_flyover", "ed_flyover [on|off]", "whether a control's hint is shown beside the pointer when it rests there"),
     ("ed_rename", "ed_rename [name]", "name the selected entity (a group's own name, or the name it is fired by): typed over its row of the scene list (F2), or said"),
     ("ed_split", "ed_split [x|y] <percent> | even", "how the level views share the room: the left views' share of the width, the upper views' of the height"),
+    ("ed_dock", "ed_dock <tabs|inspector> <left|right|float> | <panel> at <x> <y>", "dock a side panel on the left or the right (both on one side are stacked), or float it in a window of its own; at a point: where a panel's grip was let go"),
     ("ed_sides", "ed_sides [swap|left|right]", "which side the scene list is on: the inspector takes the other"),
     ("ed_palette", "ed_palette", "open the list of every studio command, to find one by typing"),
     ("ed_grid", "ed_grid <size|up|down>", "the grid moves and resizes snap to (1 to 256)"),
@@ -1104,6 +1134,12 @@ obj Studio(Workbench) {
         split_rows: list[Box] = [],
         split_column: Box | None = None,
         sides_swapped: bool = False,
+        # Where each side panel is docked: left, right or float; the windows
+        # the floating ones are in; and each panel's width when it is docked.
+        dock_tabs: str = "left",
+        dock_inspector: str = "right",
+        dock_windows: dict[str, Floater] = {},
+        dock_widths: dict[str, int] = {"tabs": 280, "inspector": 320},
         kept_layouts: dict[str, str] = {},
         # The part of a view its overlays are drawn in, when a floating
         # window covers the rest (the whole of it when this has no size).
@@ -1365,9 +1401,16 @@ obj Studio(Workbench) {
         # light and cells of levels already built, by a mark of what they
         # were built of.
         cells_shown: bool = False,
+        # The bake's portals drawn, and those read from a portal file.
+        portals_shown: bool = False,
+        portal_lines: list[list[Vec3]] = [],
+        portal_file: str = "",
         recipes: dict[str, str] = {},
         built_copies: list[KeptBake] = [],
         built_reused: bool = False,
+        # Whether the last build was brought in line in place: only the
+        # faces and brushes an edit changed packed again (patch_built).
+        built_patched: bool = False,
         # The project open and its folder; the add-ons loaded (each file's
         # classes), those of them kept in the settings; and what each game
         # is set up with ("q1.material" and the like).
@@ -1426,6 +1469,12 @@ obj Studio(Workbench) {
         shader_now: int = -1,
         shader_broken: list[ShaderFault] = [],
         shader_dirty: bool = False,
+        # The other documents open: models and shader scripts not in hand,
+        # and the textures open as documents (by "game:file") with the one shown.
+        models_parked: list[ModelSlot] = [],
+        shaders_parked: list[ShaderSlot] = [],
+        textures_open: list[str] = [],
+        texture_now: str = "",
         plot: list[int] = [],
         plot_land: Item | None = None,
         plot_variance: float = 0.0,
@@ -2042,7 +2091,12 @@ obj Studio(Workbench) {
                     MenuItem(text="Bake navigation for bots", command="ed_nav bake"),
                     MenuItem(text="What the baked navigation cannot reach", command="ed_nav check"),
                     MenuItem(text="Draw the baked ways", command="ed_nav show"),
-                    MenuItem(text="Draw the ways bots take between camp spots", command="ed_camps routes")
+                    MenuItem(text="Draw the ways bots take between camp spots", command="ed_camps routes"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Bake by the brushes' own planes", command="ed_bake planes"),
+                    MenuItem(text="Show the bake's portals", command="ed_portals"),
+                    MenuItem(text="Load a portal file", command="ed_portals load"),
+                    MenuItem(text="Write the bake's portal file", command="ed_portals write")
                 ],
                 [
                     MenuItem(text="Next document", command="ed_doc next"),
@@ -2161,6 +2215,13 @@ obj Studio(Workbench) {
         body.adopt(left);
         side = Tabs(titles=["Scene", "Materials", "Checks", "Library", "Classes"], grow=1);
         left.adopt(side);
+        # At the panel's foot, so that what is above it stands where it did.
+        left.adopt(
+            DockGrip(
+                panel="tabs", text="Scene, materials, checks, library, classes",
+                hint="Drag to dock this panel on the other side, or let go in the middle to float it"
+            )
+        );
         scene_page = Box();
         side.adopt(scene_page);
         search_row = Box(pad=4);
@@ -2323,7 +2384,12 @@ obj Studio(Workbench) {
         right = Box(size=320, fill="panel");
         body.adopt(Splitter(target=right, after=True, low=220, high=640));
         body.adopt(right);
-        right.adopt(Header(text="Inspector"));
+        right.adopt(
+            DockGrip(
+                panel="inspector", text="Inspector", heading=True,
+                hint="Drag to dock this panel on the other side, or let go in the middle to float it"
+            )
+        );
         scroller = Scroll(grow=1);
         right.adopt(scroller);
         form = Box(pad=6, gap=4);
@@ -2468,7 +2534,7 @@ obj Studio(Workbench) {
         concealed = scene.hidden_count();
         lighting = self.light_task;
         ui.place.text = (
-            "lighting " + str(int(lighting.job.share() * 100.0)) + "%   " if lighting is not None else ""
+            "baking " + str(int(lighting.share() * 100.0)) + "%   " if lighting is not None else ""
         ) + self.dev_words(scene) + ("frozen   " if self.frozen else "")
             + (str(concealed) + " hidden   " if concealed else "")
             + (str(self.build_ms) + " ms   " if self.build_ms > 0 else "") + "grid " + str(int(self.grid)) + "   "
@@ -3742,6 +3808,7 @@ obj Studio(Workbench) {
             wire_line(self.leak[i - 1], self.leak[i], ink(0xe5484d));
         }
         self.draw_cells(scene);
+        self.draw_portals(scene);
         self.draw_plot(scene);
         self.draw_depth_lines(view);
         rlDrawRenderBatchActive();
@@ -3884,6 +3951,10 @@ obj Studio(Workbench) {
     def save_scene(path: str = "");
     """Rebuild the level when the document's brushes have changed."""
     def keep_built;
+    """Bring the level in line with the document in place, where only the
+    world's brushes moved or changed shape: False when it must be built
+    again."""
+    def patch_built(scene: Scene) -> bool;
     """Bring the brushes' outlines in line with the document."""
     def outline_solids(scene: Scene);
     """The shape of an entity made of brushes: the box around them."""
@@ -4078,6 +4149,22 @@ obj Studio(Workbench) {
     def patch_box_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Several documents of each kind (impl/studio.docset.impl.jac)
+
+    """Put the model in hand aside (with its skin) to take another, and take
+    a parked one in hand (by its place among them, -1 the last); the same
+    for shader scripts. False when there is no such one."""
+    def park_model;
+    def unpark_model(index: int) -> bool;
+    def park_shader;
+    def unpark_shader(index: int) -> bool;
+    def docset_words -> str;
+    """Run `ed_documents` or `ed_texture`. False when it is neither."""
+    def docset_command(scene: Scene, args: list[str]) -> bool;
+    """Show an open texture document in the explorer."""
+    def show_texture_doc(key: str);
+
+    # ------------------------------------------------------------------
     # The shader box and preview (impl/studio.shaderbox.impl.jac)
 
     """Make the shader box again when the shader in hand has changed; its
@@ -4270,6 +4357,8 @@ obj Studio(Workbench) {
     """How many cells that one sees, itself among them."""
     def cells_seen(scene: Scene) -> int;
     def draw_cells(scene: Scene);
+    def draw_portals(scene: Scene);
+    def portals_command(scene: Scene, args: list[str]);
     """What a level built of this scene now would be known by."""
     def build_mark(whole: Scene) -> str;
     """List what a program said of entities and brushes as findings."""
@@ -4553,6 +4642,8 @@ obj Studio(Workbench) {
     """The ways the scene's teleporters and jump pads make: from where each
     trigger is to where it sends or throws."""
     def nav_links(scene: Scene) -> list[Link];
+    """The boxes of the scene's liquids: where bots swim."""
+    def nav_waters(scene: Scene) -> list[list[Vec3]];
     def draw_nav;
     def nav_findings(scene: Scene) -> list[Finding];
     """What stops a scene being finished: what its logic can never set
@@ -4871,6 +4962,7 @@ obj Studio(Workbench) {
             and not self.modelview_command(scene, args)
             and not self.patch_box_command(scene, args)
             and not self.shader_box_command(scene, args)
+            and not self.docset_command(scene, args)
             and not self.playview_command(scene, args)
             and not self.links_command(scene, args)
             and not self.prefab_change(scene, args)
@@ -5074,7 +5166,14 @@ obj Studio(Workbench) {
                     + str(self.built_geometry)
             );
         }
-        if self.vis_cell > 0.0 {
+        if self.vis_cell == BAKE_BY_PLANES {
+            done = self.vis_done;
+            lines.append(
+                "studio: bake planes leaves=" + str(done.leaves) + " cells=" + str(done.cells) + " portals="
+                    + str(done.portals) + " areas=" + str(done.areas) + " buried=" + str(done.buried) + " hidden="
+                    + str(done.hidden) + " capped=" + ("1" if done.capped else "0") + " leaked=" + ("1" if done.leaked else "0")
+            );
+        } elif self.vis_cell > 0.0 {
             done = self.vis_done;
             lines.append(
                 "studio: bake cell=" + str(int(self.vis_cell)) + " cells=" + str(done.cells) + " hidden=" + str(done.hidden)
@@ -5092,7 +5191,7 @@ obj Studio(Workbench) {
         }
         if scene.solids() {
             lines.append(
-                "studio: build from=" + ("copy" if self.built_reused else "new") + " copies=" + str(len(self.built_copies))
+                "studio: build from=" + ("patch" if self.built_patched else ("copy" if self.built_reused else "new")) + " copies=" + str(len(self.built_copies))
             );
         }
         built_now = self.live;
@@ -5219,6 +5318,9 @@ obj Studio(Workbench) {
                     + " kept=" + ",".join(sorted(self.kept_layouts.keys()))
             );
         }
+        if self.dock_tabs != "left" or self.dock_inspector != "right" {
+            lines.append("studio: dock tabs=" + self.dock_tabs + " inspector=" + self.dock_inspector);
+        }
         if self.theme_name != "dark" or not self.tools_shown or not self.status_shown or self.tools_below
             or self.shape_box is not None {
             lines.append(
@@ -5293,6 +5395,9 @@ obj Studio(Workbench) {
         if self.patch_preview {
             lines.append(self.patch_preview_words(scene));
         }
+        if len(self.models_parked) > 0 or len(self.shaders_parked) > 0 or len(self.textures_open) > 0 {
+            lines.append(self.docset_words());
+        }
         if self.overdraw {
             lines.append("studio: overdraw faces=" + str(self.overdraw_faces));
         }
@@ -5301,6 +5406,10 @@ obj Studio(Workbench) {
                 "studio: overlays triggers=" + ("1" if self.show_triggers else "0") + " unseen=" + ("1" if self.show_unseen else "0")
                     + " width=" + str(self.line_width)
             );
+        }
+        lit_level = self.live;
+        if self.lit and lit_level is not None and lit_level.light_notes {
+            lines.append("studio: light " + lit_level.light_notes);
         }
         # The mode's line stays the last: sessions look for it there.
         lines.append(self.mouse_words());
@@ -5469,11 +5578,49 @@ def wire_line(start: Vec3, finish: Vec3, color: Ink) {
 """Light being baked while the studio goes on: the job, what it is the
 light of (the build's mark), and what the kept bake must measure."""
 obj LightTask {
-    has job: LightJob,
+    has job: LightJob | None = None,
+        # The scene and the copy being baked, how wide its cells are (none
+        # when it is not cut), and the cells' job once the light is done.
+        scene: Scene | None = None,
+        made: LiveLevel | None = None,
+        cell: float = 0.0,
+        cells: CellJob | None = None,
         mark: str = "",
         plane_base: int = 0,
         warned: int = 0,
-        began: float = 0.0;
+        began: float = 0.0,
+        # The light's samples once it is written (below zero until then).
+        samples: int = -1;
+
+    """How far the bake has got: the light, then the cells."""
+    def share -> float {
+        light = self.job;
+        lit = light.share() if light is not None else 1.0;
+        if self.cell <= 0.0 {
+            return lit;
+        }
+        cut = self.cells;
+        cells_share = cut.share() if cut is not None else 0.0;
+        return (lit + cells_share) * 0.5 if light is not None else cells_share;
+    }
+}
+
+"""A model being edited that is not in hand: the model, its skin's picture
+and the bone that was in hand."""
+obj ModelSlot {
+    has doc: ModelDoc,
+        skin: Skin | None = None,
+        bone_now: str = "";
+}
+
+"""A shader script open but not in hand: its file, its shaders, which was in
+hand, its faults as read, and whether it has been changed."""
+obj ShaderSlot {
+    has file: str,
+        shaders: list[ShaderText] = [],
+        now: int = -1,
+        broken: list[ShaderFault] = [],
+        dirty: bool = False;
 }
 
 """How the explorer's model view is laid out: one view, or four."""

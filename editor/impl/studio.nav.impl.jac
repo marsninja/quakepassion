@@ -109,6 +109,16 @@ impl Studio.nav_clear_ways(floors: list[Floor], ways: list[Way], cell: float) ->
     return kept;
 }
 
+"""What a material is to a bot: a liquid (Quake's `*` names, and those of
+water, slime and lava), a ladder, or nothing in particular ("")."""
+def:priv nav_material(material: str) -> str {
+    last = material.lower().replace(":", "/").split("/")[-1];
+    if last.startswith("*") or "water" in last or "slime" in last or "lava" in last {
+        return "liquid";
+    }
+    return "ladder" if "ladder" in last else "";
+}
+
 impl Studio.nav_words -> str {
     mesh = self.nav_mesh;
     if mesh is None {
@@ -119,14 +129,21 @@ impl Studio.nav_words -> str {
         + str(len(self.nav_ways)) + " walk=" + str(counts[0]) + " jump=" + str(counts[1]) + " drop=" + str(counts[2])
         + " areas=" + str(len(mesh.areas) - 1) + " shown=" + ("1" if self.nav_shown else "0") + " teleport="
         + str(len([way for way in self.nav_ways if way.kind == TRAVEL_TELEPORT])) + " jumppad="
-        + str(len([way for way in self.nav_ways if way.kind == TRAVEL_JUMPPAD]));
+        + str(len([way for way in self.nav_ways if way.kind == TRAVEL_JUMPPAD])) + " ladder="
+        + str(len([way for way in self.nav_ways if way.kind == TRAVEL_LADDER])) + " swim="
+        + str(len([way for way in self.nav_ways if way.kind == TRAVEL_SWIM])) + " lift="
+        + str(len([way for way in self.nav_ways if way.kind == TRAVEL_ELEVATOR]));
 }
 
 impl Studio.draw_nav {
     if not self.nav_shown or self.nav_mesh is None {
         return;
     }
-    tones = {TRAVEL_WALK: ink(0x4cc38a, 170), TRAVEL_BARRIERJUMP: ink(0xffc94d, 220), TRAVEL_WALKOFFLEDGE: ink(0xe5484d, 200)};
+    tones = {
+        TRAVEL_WALK: ink(0x4cc38a, 170), TRAVEL_BARRIERJUMP: ink(0xffc94d, 220), TRAVEL_WALKOFFLEDGE: ink(0xe5484d, 200),
+        TRAVEL_TELEPORT: ink(0xc76bff, 230), TRAVEL_JUMPPAD: ink(0xff8a3d, 230), TRAVEL_LADDER: ink(0xffffff, 230),
+        TRAVEL_SWIM: ink(0x4f8ef7, 200), TRAVEL_ELEVATOR: ink(0x3dd6d0, 230)
+    };
     drawn = 0;
     for way in self.nav_ways {
         if drawn >= 8000 {
@@ -138,7 +155,7 @@ impl Studio.draw_nav {
         }
         from_spot = floor_middle(self.nav_floors[way.source], self.nav_origin, self.nav_cell);
         to_spot = floor_middle(self.nav_floors[way.target], self.nav_origin, self.nav_cell);
-        wire_line(Vec3(x=from_spot.x, y=from_spot.y, z=from_spot.z + 4.0), Vec3(x=to_spot.x, y=to_spot.y, z=to_spot.z + 4.0), tones[way.kind]);
+        wire_line(Vec3(x=from_spot.x, y=from_spot.y, z=from_spot.z + 4.0), Vec3(x=to_spot.x, y=to_spot.y, z=to_spot.z + 4.0), tones.get(way.kind, ink(0xffffff, 200)));
         drawn += 1;
     }
 }
@@ -248,7 +265,10 @@ impl Studio.nav_command(scene: Scene, args: list[str]) -> bool {
             self.say("That is " + str(len(floors)) + " places to stand: bake with a wider cell (ed_nav bake 64)");
             return True;
         }
-        ways = self.nav_clear_ways(floors, floor_ways(floors), cell) + linked_ways(floors, self.nav_origin, cell, self.nav_links(scene));
+        self.nav_floors = floors;
+        self.nav_cell = cell;
+        ways = self.nav_clear_ways(floors, floor_ways(floors), cell) + linked_ways(floors, self.nav_origin, cell, self.nav_links(scene))
+            + swim_ways(floors, self.nav_origin, cell, self.nav_waters(scene));
         for old in [app.world->:HasNavMesh:->][?:NavMesh] {
             app.world del->:HasNavMesh:-> old;
         }
@@ -259,6 +279,27 @@ impl Studio.nav_command(scene: Scene, args: list[str]) -> bool {
         self.nav_mesh = build_navmesh(app.world, self.nav_aas, app.level.bsp);
         print(self.nav_words());
         self.say("Baked " + str(len(floors)) + " places to stand and " + str(len(ways)) + " ways between them");
+        return True;
+    }
+    if how == "write" {
+        baked = self.nav_aas;
+        if baked is None {
+            self.say("ed_nav write: bake the navigation first (ed_nav bake)");
+            return True;
+        }
+        # An arena's file, beside the scene's map unless told where.
+        path = args[2] if len(args) > 2 else self.scene_path(scene.name[7:] if scene.name.startswith("studio:") else scene.name)[:-4] + ".aas";
+        try {
+            os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True);
+            with open(path, "wb") as file {
+                file.write(aas_bytes(baked));
+            }
+        } except OSError {
+            self.say("ed_nav write: could not write " + path);
+            return True;
+        }
+        print("studio: nav written " + path + " areas=" + str(len(baked.areas) - 1) + " ways=" + str(len(baked.reaches) - 1));
+        self.say("The navigation is written as an arena's file: " + path);
         return True;
     }
     if how == "clear" {
@@ -277,7 +318,7 @@ impl Studio.nav_command(scene: Scene, args: list[str]) -> bool {
     if how == "show" {
         word = args[2] if len(args) > 2 else "";
         self.nav_shown = (not self.nav_shown) if word not in ["on", "off"] else word == "on";
-        self.say("The baked ways are drawn: walked green, jumped yellow, dropped red" if self.nav_shown else "The baked ways are not drawn");
+        self.say("The baked ways are drawn: walked green, jumped yellow, dropped red, climbed white, swum blue, lifted cyan, teleported violet, thrown orange" if self.nav_shown else "The baked ways are not drawn");
         return True;
     }
     mesh = self.nav_mesh;
@@ -391,6 +432,82 @@ impl Studio.nav_links(scene: Scene) -> list[Link] {
         }
         middle = Vec3(x=(low.x + high.x) * 0.5, y=(low.y + high.y) * 0.5, z=low.z + 24.0);
         found.append(Link(start=middle, finish=aim.add(Vec3(z=24.0)), kind=TRAVEL_TELEPORT if kind == "trigger_teleport" else TRAVEL_JUMPPAD));
+    }
+    # Ladders: a brush of a ladder's material, climbed from its foot to its top and back.
+    for brush in scene.solids() {
+        if brush.hidden or len([side for side in brush.sides if nav_material(side.material) == "ladder"]) == 0 {
+            continue;
+        }
+        box = brush.bounds();
+        if box is None {
+            continue;
+        }
+        at_x = (box[0].x + box[1].x) * 0.5;
+        at_y = (box[0].y + box[1].y) * 0.5;
+        foot = Vec3(x=at_x, y=at_y, z=box[0].z + 24.0);
+        head = Vec3(x=at_x, y=at_y, z=box[1].z + 24.0);
+        found.append(Link(start=foot, finish=head, kind=TRAVEL_LADDER));
+        found.append(Link(start=head, finish=foot, kind=TRAVEL_LADDER));
+    }
+    # Lifts: a func_plat carries what stands under it at its lowest up to its top.
+    app = self.app;
+    plat_models: list[int] = [];
+    if app is not None {
+        for held in app.level.bsp.entities {
+            shape = held.fields.get("model", "");
+            if held.fields.get("classname", "") == "func_plat" and shape.startswith("*") and shape[1:].isdigit() {
+                plat_models.append(int(shape[1:]));
+            }
+        }
+    }
+    plats = 0;
+    for item in scene.items() {
+        if item.classname() != "func_plat" {
+            continue;
+        }
+        number = plat_models[plats] if plats < len(plat_models) else 0;
+        plats += 1;
+        brushes = scene.solids_of(item);
+        boxes = [brush.bounds() for brush in brushes];
+        spans = [box for box in boxes if box is not None];
+        if len(spans) == 0 or number <= 0 {
+            continue;
+        }
+        low = spans[0][0];
+        high = spans[0][1];
+        for box in spans {
+            low = Vec3(x=min(low.x, box[0].x), y=min(low.y, box[0].y), z=min(low.z, box[0].z));
+            high = Vec3(x=max(high.x, box[1].x), y=max(high.y, box[1].y), z=max(high.z, box[1].z));
+        }
+        # How far it goes down: its `height`, else its own height less the lip it keeps.
+        travel = high.z - low.z - 8.0;
+        try {
+            travel = float(item.fields.get("height", str(travel)));
+        } except ValueError {
+            travel = high.z - low.z - 8.0;
+        }
+        at_x = (low.x + high.x) * 0.5;
+        at_y = (low.y + high.y) * 0.5;
+        found.append(
+            Link(
+                start=Vec3(x=at_x, y=at_y, z=high.z - travel + 24.0), finish=Vec3(x=at_x, y=at_y, z=high.z + 24.0),
+                kind=TRAVEL_ELEVATOR, model=number
+            )
+        );
+    }
+    return found;
+}
+
+impl Studio.nav_waters(scene: Scene) -> list[list[Vec3]] {
+    found: list[list[Vec3]] = [];
+    for brush in scene.solids() {
+        if brush.hidden or len([side for side in brush.sides if nav_material(side.material) == "liquid"]) == 0 {
+            continue;
+        }
+        box = brush.bounds();
+        if box is not None {
+            found.append([box[0], box[1]]);
+        }
     }
     return found;
 }

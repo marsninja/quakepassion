@@ -130,3 +130,61 @@ test "teleporters and jump pads join the floors under their two ends" {
     aas = nav_data(floors, floor_ways(floors) + ways, origin, 32.0);
     assert len([reach for reach in aas.reaches if reach.kind == TRAVEL_TELEPORT]) == 1;
 }
+
+import from editor.compile.navigation { swim_ways, aas_bytes }
+import from engine.formats.aas { parse_aas, TRAVEL_SWIM, TRAVEL_LADDER, TRAVEL_ELEVATOR }
+
+test "deep water's floor is swum to and from the shore" {
+    # The shore at 0, then the bottom of a pool 128 deep with water up to -8.
+    floors = [Floor(column=0, row=0, z=0.0), Floor(column=1, row=0, z=-128.0), Floor(column=2, row=0, z=-128.0)];
+    pool = [[Vec3(x=32.0, y=0.0, z=-128.0), Vec3(x=96.0, y=32.0, z=-8.0)]];
+    walked = floor_ways(floors);
+    # Without the water the bottom is only dropped into.
+    assert len([way for way in walked if way.source == 1 and way.target == 0]) == 0;
+    swum = swim_ways(floors, Vec3(), 32.0, pool);
+    kinds = [(way.source, way.target) for way in swum];
+    assert (1, 0) in kinds and (0, 1) in kinds and (1, 2) in kinds and (2, 1) in kinds;
+    assert len([way for way in swum if way.kind != TRAVEL_SWIM]) == 0 and swim_ways(floors, Vec3(), 32.0, []) == [];
+    # Water too far below the shore to climb out of: no way up.
+    low_pool = [[Vec3(x=32.0, y=0.0, z=-128.0), Vec3(x=96.0, y=32.0, z=-64.0)]];
+    assert (1, 0) not in [(way.source, way.target) for way in swim_ways(floors, Vec3(), 32.0, low_pool)];
+}
+
+test "ladders and lifts join the floors at their ends, and a lift carries its model" {
+    floors = [Floor(column=0, row=0, z=0.0), Floor(column=1, row=0, z=192.0)];
+    links = [
+        Link(start=Vec3(x=16.0, y=16.0, z=24.0), finish=Vec3(x=48.0, y=16.0, z=216.0), kind=TRAVEL_LADDER),
+        Link(start=Vec3(x=16.0, y=16.0, z=24.0), finish=Vec3(x=48.0, y=16.0, z=216.0), kind=TRAVEL_ELEVATOR, model=3)
+    ];
+    ways = linked_ways(floors, Vec3(), 32.0, links);
+    assert len(ways) == 2 and ways[1].model == 3;
+    aas = nav_data(floors, ways, Vec3(), 32.0);
+    lifts = [reach for reach in aas.reaches if reach.kind == TRAVEL_ELEVATOR];
+    assert len(lifts) == 1 and lifts[0].face_num == 3 and lifts[0].time > 100;
+}
+
+test "the navigation is written as an arena's file and reads back the same" {
+    floors = [Floor(column=column, row=row, z=0.0) for row in range(3) for column in range(3)];
+    aas = nav_data(floors, floor_ways(floors), Vec3(x=-48.0, y=-48.0), 32.0);
+    data = aas_bytes(aas);
+    assert data[:4] == b"EAAS";
+    back = parse_aas(data);
+    assert len(back.areas) == len(aas.areas) and len(back.reaches) == len(aas.reaches);
+    assert len(back.node_planes) == len(aas.node_planes) and back.front == aas.front and back.back == aas.back;
+    for (index, area) in enumerate(aas.areas) {
+        assert back.areas[index].first_reach == area.first_reach and back.areas[index].reach_count == area.reach_count;
+        assert abs(back.areas[index].center.z - area.center.z) < 0.01;
+    }
+    # The tree finds the same area for a point.
+    assert back.area_at(Vec3(x=0.0, y=0.0, z=24.0)) == aas.area_at(Vec3(x=0.0, y=0.0, z=24.0)) and back.area_at(Vec3(z=24.0)) > 0;
+}
+
+test "a lift's top is the ledge at its height, not the lift it rose on" {
+    # The lift's own cell, lowered, and the ledge beside it up high.
+    floors = [Floor(column=0, row=0, z=6.0), Floor(column=1, row=0, z=128.0), Floor(column=-1, row=0, z=0.0)];
+    up = Link(start=Vec3(x=16.0, y=16.0, z=30.0), finish=Vec3(x=16.0, y=16.0, z=152.0), kind=TRAVEL_ELEVATOR, model=1);
+    ways = linked_ways(floors, Vec3(), 32.0, [up]);
+    assert len(ways) == 1 and ways[0].source == 0 and ways[0].target == 1;
+    # With nothing at its height, no way.
+    assert linked_ways(floors[:1] + floors[2:], Vec3(), 32.0, [up]) == [];
+}

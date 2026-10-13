@@ -175,6 +175,30 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   `ed_cells` (Play menu) draws the cells in every view: the one looked
   from in yellow (where the 3D camera is, or where a lone selected entity
   stands), the cells it sees in green, the rest in red.
+- **Baking by the brushes' own planes** (`ed_bake planes`, Play menu):
+  in place of a grid, space is cut by the planes of the world's brushes
+  (and of hint and area portal brushes) until no plane cuts a leaf, so
+  each leaf is inside a brush or empty, as a map compiler's BSP is.
+  Leaves that meet are joined by portals; the empty leaves no entity can
+  come to are filled as outside unless the level leaks (a warning says
+  so); a face that lies only in brushes or the outside is left out (the
+  union of the brushes buries it); each empty leaf is a cluster, given
+  the clusters it can see by looking from points on its own portals to
+  points on the portals the flood comes to, with the solid brushes in the
+  way. The leaves are nodes of a graph, the portals edges, and the
+  outside, the areas and what each cluster sees are walkers over it. A
+  `func_areaportal` brush (its door targeting it) divides the level into
+  areas, numbered in the level as Quake II numbers them, so a shut door
+  hides what is beyond it from sight and sound in play. A hint brush cuts
+  space where a compiler is told to. `ed_cells` draws each leaf's own
+  outline; `ed_portals` (or `ed_overlay portals`) draws the portals: the
+  looked-from cluster's in yellow, an area portal's in orange, the rest
+  green where seen and red where not. `ed_portals write [file.prt]` writes
+  them as a compiler's portal file, and `ed_portals load [file.prt]` reads
+  one (Quake's, Quake II's or Quake III's PRT1) to draw in violet. The
+  bake runs a slice a frame with `ed_build background on`, and is kept
+  with the build like a grid's. The project (`bake planes`) and each game
+  (`ed_game <game> bake planes`) can ask for it.
 - **Navigation for bots, baked** (`ed_nav bake [cell]`, Play menu): the
   games' bots route over areas and the ways between them, read from an
   arena's own file; a scene made here has none, so its floors are
@@ -188,15 +212,25 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   <from> <to>` says how long the way is, or that there is none, and
   `ed_nav check` names what cannot be reached from the first player
   start (they join the Checks tab's findings). `ed_nav show` draws the
-  ways: walked green, jumped yellow, dropped red. `ed_nav clear`
+  ways: walked green, jumped yellow, dropped red, climbed white, swum
+  blue, lifted cyan, teleported violet, thrown orange. `ed_nav clear`
   forgets it. A teleporter (`trigger_teleport`) and a jump pad
   (`trigger_push`) whose target is somewhere make a way of their own,
   from the floor under the trigger to the floor under where it sends or
   throws (`teleport=` and `jumppad=` on the dump's line), so a place
-  reached only through one is reached. A game played from the scene
-  hands the baked mesh to its bots, who route over it. Not there yet: it
-  is not written as an arena's file, and it knows no ladders, water or
-  lifts.
+  reached only through one is reached. A ladder (a brush of a material
+  named for one) is climbed between the floors at its foot and its top,
+  both ways; a liquid (Quake's `*` materials, and those named for water,
+  slime or lava) is swum between a floor on or under it and the floors
+  beside it no higher than a player climbs out of it (the studio builds
+  liquids solid, so its top is a floor too); a `func_plat` carries what
+  stands on it at its lowest up to the floor beside its top, as the
+  games' elevator travel, with its model in the built level. A game
+  played from the scene hands the baked mesh to its bots, who route over
+  it, and `ed_nav write [file.aas]` writes it as an arena's file (Quake
+  III's AAS, version 5, with the lumps a router reads: the tree, the
+  areas and their settings, and the ways; beside the scene's map unless
+  told where), which the engine's AAS reader reads back as it was.
 - **A bake is worked out once**: a level is compiled afresh every time it
   is loaded, since a game played in it writes on it, but its light and its
   cells are kept apart under a mark of what it was built of (the scene's
@@ -205,15 +239,26 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   is played or stopped. The last six are kept; `ed_build fresh` forgets
   them. A dump's `build from=` line says whether the last build worked
   its bake out (`new`) or was given it (`copy`).
-- **Light baked in the background**: with `ed_build background on` (kept
-  in the settings) a level whose light is not kept is shown unlit at
-  once, and its light is baked on a copy of it a slice a frame (about a
-  hundredth of a second's worth), the studio going on meanwhile; the
-  status line says how far it has got (`lighting 45%`). When it is all
-  lit it is kept under the build's mark and the level is built again,
-  which takes it. An edit made meanwhile starts a bake of its own, and
-  `ed_build cancel` gives the one under way up. (A level cut into cells
-  is still baked at once.)
+- **Baking in the background**: with `ed_build background on` (kept in
+  the settings) a level whose bake is not kept is shown unbaked at once,
+  and its light and then its cells (`ed_bake`) are baked on a copy of it
+  a slice a frame (about a hundredth of a second's worth: a few faces lit,
+  or a few hundred lines of sight looked along), the studio going on
+  meanwhile; the status line says how far it has got (`baking 45%`).
+  When it is done it is kept under the build's mark and the level is
+  built again, which takes it. An edit made meanwhile starts a bake of
+  its own, and `ed_build cancel` gives the one under way up.
+- **Edits brought into the level in place**: where an edit only moves or
+  reshapes brushes of the world (not an entity, a material, a brush
+  model, a liquid, or the number of brushes or of a face's corners) and
+  the level is neither lit nor baked, it is not loaded again: the scene is
+  compiled, the faces and brushes that changed are found against the level
+  standing, and only those are put into it, the renderer packing just
+  their vertices again where they were and the collision taking just
+  their planes. Anything more is built again whole. A dump's `build
+  from=patch` says the last build was such, and the console says how many
+  faces and brushes were taken (on a scene of 3268 brushes, about a tenth
+  of a second for a moved brush).
 - **Recipes**: `ed_recipe <name> "<command>; <command>"` keeps a row of
   editor commands under a name (in the settings, between sessions),
   `ed_make <name>` runs them, `ed_recipe <name>` alone forgets one, and
@@ -953,10 +998,18 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   all together as one step.
 - **Tabs for the open documents**: with more than one document open,
   each has a tab beside the menu bar (a star when it has changes not
-  saved; the one shown is lit): the maps and scenes, the model being
-  edited, and the shader script. A click goes to it (`ed_tab
-  <doc:game/name|model|shader>`), and the x at the end closes the one
-  shown.
+  saved; the one shown is lit): the maps and scenes, the models being
+  edited, the shader scripts and the textures. A click goes to it
+  (`ed_tab <doc:game/name|model[:n]|shader[:n]|texture:game:file>`), and
+  the x at the end closes the one shown. Several models and scripts are
+  open at once: making, editing or opening another, or taking a script
+  from the explorer, keeps the one in hand open beside it (a model with
+  its skin's picture and its bone in hand, a script with its shader in
+  hand and whether it has changed); `ed_model close` takes the last one
+  kept back in hand. `ed_texture open <game:file>` opens a picture (of a
+  game's archives, or the project's own as `own:`) as a document of its
+  own, shown in the explorer, and `ed_texture close [game:file]` closes
+  one. `ed_documents` lists what is open.
 - **What the move arrows run along**: `ed_axes world|local|view` (alone,
   it goes to the next; it is in Settings > General and kept between
   sessions). Local is the selection's own: one brush's axes from its
@@ -1162,7 +1215,14 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   <percent>` say the left views' share of the width and the upper views'
   of the height, and `ed_split even` halves it again. `ed_sides swap`
   (or `left`, `right`) has the scene list and the inspector change
-  sides. `ed_layout save <name>` keeps the layout as it stands (how many
+  sides. Either panel is docked by dragging: the inspector by its
+  header, the scene panel by the grip at its foot. Let go within a fifth
+  of the window's width of its left or right edge, the panel docks on
+  that side (both on one side stand one over the other, the column as
+  wide as the wider of them); let go in between, it floats in a window
+  of its own over the views, whose cross docks it back. `ed_dock
+  <tabs|inspector> <left|right|float>` does the same by command, and
+  where each is docked is kept in the settings. `ed_layout save <name>` keeps the layout as it stands (how many
   views, the split, the sides, the log panel) and `ed_layout load <name>`
   brings it back; `ed_layout list` and `ed_layout drop <name>` list and
   forget them. All of it is kept between sessions. In the toolkit a
@@ -1266,6 +1326,22 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   lights only what lies within `_cone` degrees of the way it points (20
   when it does not say), and half lights a rim of four degrees about the
   cone's edge, as Quake II's and Quake III's light tools have it.
+  Light also bounces once: the world's faces are cut into patches (64
+  units or more, fewer on a large scene), each giving back what it is lit
+  by times its material's average colour, and each gathering what the
+  others give where nothing stands between them (the world's `_bounce 0`
+  turns it off). A brush side with Quake II's light flag and a value
+  glows: it lights itself and what is near it, in its material's colour,
+  about a unit of light for every 100 of its value. A light with a
+  `style` of its own (Quake's 1 to 11 flicker, pulse and the like), or
+  one with a `targetname` (given a style from 32 up, as Quake's light tool
+  does, which its uses switch off and on), lights a layer of its own on
+  each face it reaches (up to three besides the steady one), and the game
+  sums the layers by each style's current strength. A grid of light
+  through the level (Quake III's, at the world's `gridsize`, 64 64 128
+  unless it says) lights models in play. A dump's `studio: light` line
+  says how many patches, lines of sight, grid points, styled faces and
+  glowing faces the last bake had.
 - More in the Brush menu: turn about x or y (`ed_rotate 90 x`), mirror
   (`ed_mirror <x|y|z>`), stretch (`ed_resize <fx> [fy fz]`), carve the
   selection out of every brush it reaches (`ed_carve`), keep what the
@@ -1313,8 +1389,9 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   built them in and their files were left out. The class table lists
   every class the three games' own levels use (237 classes), with the
   fields those levels give them, so the Classes tab offers them all.
-- Every edit that changes the brushes rebuilds the level at once, so the
-  level view is what Play runs. Save writes the scene as a Valve 220 `.map`
+- Every edit that changes the brushes rebuilds the level at once (or,
+  where only brushes of the world moved, brings just those into it), so
+  the level view is what Play runs. Save writes the scene as a Valve 220 `.map`
   under `QP_SCENES` (default `./scenes`), which other Quake editors open.
 
 - **Copy and paste** (Ctrl+C, Ctrl+X, Ctrl+V): the selection is copied as
@@ -2310,9 +2387,8 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
   do open, as patches of the scene); a patch mirrored keeps its control points' order, so its
   curve faces the same way round; the logic graph neither reorders nor shows signals as
   they fire in play; a scene too large for the light budget stays flat.
-- Not yet built: the rest of the bake (a partition by the brushes' own
-  planes with portals between its leaves, in place of cells of the plan;
-  bounced light); the Passion tools; user walkers.
+- Not built: windows on other monitors (#95: raylib gives the studio one
+  window, so windows float inside it).
 - Within the shell: generated (Passion) levels can be edited but not saved as
   they are; `ed_convert` turns one into a scene of brushes, and `ed_exp open
   <seed>` generates one and opens it so.

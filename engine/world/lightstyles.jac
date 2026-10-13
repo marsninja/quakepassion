@@ -136,7 +136,9 @@ walker LightStyleTick {
 """The styles of a Q1 or Q2 map: the fixed animated set, plus a lamp for each
 targetable light, joined to the level's signal graph by its entity index."""
 def load_light_styles(world: World, bsp: Bsp) -> LightStyles | None {
-    if bsp.game not in ["q1", "q2"] {
+    # A level the studio bakes takes Quake's styles: its switched lights
+    # are given styles from 32 up as Quake's light tool gives them.
+    if bsp.game not in ["q1", "q2", "passion"] {
         return None;
     }
     styles = LightStyles(game=bsp.game);

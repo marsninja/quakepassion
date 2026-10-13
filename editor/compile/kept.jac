@@ -5,7 +5,7 @@ does, and are the same whenever the scene is. Kept under a mark of what the
 level was built of, they are given to a level compiled from the same thing
 again in place of being worked out again."""
 import from engine.math.vec3 { Vec3 }
-import from engine.formats.bsp { Bsp, Leaf, Branch, Plane }
+import from engine.formats.bsp { Bsp, Leaf, Branch, Plane, AreaLink }
 import from .live { LiveLevel }
 import from .bake { VisReport }
 
@@ -21,6 +21,11 @@ obj KeptBake {
         light_places: list[int] = [],
         light_uvs: list[list[float]] = [],
         colors: list[list[int]] = [],
+        # Each face's light styles, the grid for models, and what the light
+        # bake said of itself.
+        light_styles: list[list[int]] = [],
+        light_grid: bytes = b"",
+        light_notes: str = "",
         warnings: list[str] = [],
         # Cells: the planes that cut the plan, the branches, each cell's
         # box and faces, and the rows of what sees what.
@@ -33,7 +38,14 @@ obj KeptBake {
         cluster_bytes: int = 0,
         visibility: bytes = b"",
         head: int = -1,
-        vis_leaf_count: int = 0;
+        vis_leaf_count: int = 0,
+        # A bake by planes: each leaf's contents, cluster and area, the
+        # areas' portals, and the outlines of the leaves and portals.
+        leaf_marks: list[int] = [],
+        areas: list[list[AreaLink]] = [],
+        shapes: list[list[list[Vec3]]] = [],
+        portals: list[list[Vec3]] = [],
+        portal_ends: list[int] = [];
 }
 
 """Take from a level just baked what the bake gave it. `plane_base` and
@@ -46,13 +58,16 @@ def keep_bake(
     kept.warnings = list(made.warnings[warned:]);
     if lit_samples > 0 {
         kept.lighting = bsp.lighting;
+        kept.light_grid = bsp.light_grid;
+        kept.light_notes = made.light_notes;
         for face in bsp.faces {
+            kept.light_styles.append(list(face.styles));
             kept.light_places.extend([face.light_width, face.light_height, face.light_offset]);
             kept.light_uvs.append(list(face.light_uv));
             kept.colors.append(list(face.colors));
         }
     }
-    if bsp.clusters > 1 and len(bsp.models) > 0 {
+    if len(bsp.models) > 0 and bsp.models[0].head >= 0 {
         for plane in bsp.planes[plane_base:] {
             kept.cut_planes.extend([plane.normal.x, plane.normal.y, plane.normal.z, plane.distance]);
         }
@@ -62,7 +77,12 @@ def keep_bake(
         for leaf in bsp.leaves {
             kept.cell_boxes.extend([leaf.mins.x, leaf.mins.y, leaf.mins.z, leaf.maxs.x, leaf.maxs.y, leaf.maxs.z]);
             kept.cell_faces.append(list(leaf.faces));
+            kept.leaf_marks.extend([leaf.contents, leaf.cluster, leaf.area]);
         }
+        kept.areas = bsp.areas;
+        kept.shapes = made.shapes;
+        kept.portals = made.portals;
+        kept.portal_ends = made.portal_ends;
         kept.clusters = bsp.clusters;
         kept.cluster_bytes = bsp.cluster_bytes;
         kept.visibility = bsp.visibility;
@@ -90,15 +110,17 @@ def give_bake(made: LiveLevel, kept: KeptBake) -> bool {
                 face.light_width = kept.light_places[index * 3];
                 face.light_height = kept.light_places[index * 3 + 1];
                 face.light_offset = kept.light_places[index * 3 + 2];
-                face.styles = [0];
+                face.styles = list(kept.light_styles[index]) if index < len(kept.light_styles) else [0];
                 face.light_uv = list(kept.light_uvs[index]);
             }
             face.colors = list(kept.colors[index]);
         }
         bsp.lighting = kept.lighting;
         bsp.light_channels = 3;
+        bsp.light_grid = kept.light_grid;
+        made.light_notes = kept.light_notes;
     }
-    if kept.clusters > 1 {
+    if kept.head >= 0 {
         for index in range(len(kept.cut_planes) // 4) {
             bsp.planes.append(
                 Plane(
@@ -120,15 +142,30 @@ def give_bake(made: LiveLevel, kept: KeptBake) -> bool {
             at = index * 6;
             bsp.leaves.append(
                 Leaf(
-                    contents=0,
+                    contents=kept.leaf_marks[index * 3],
                     vis_offset=0,
                     mins=Vec3(x=kept.cell_boxes[at], y=kept.cell_boxes[at + 1], z=kept.cell_boxes[at + 2]),
                     maxs=Vec3(x=kept.cell_boxes[at + 3], y=kept.cell_boxes[at + 4], z=kept.cell_boxes[at + 5]),
-                    cluster=index,
+                    cluster=kept.leaf_marks[index * 3 + 1],
+                    area=kept.leaf_marks[index * 3 + 2],
                     faces=list(kept.cell_faces[index])
                 )
             );
         }
+        bsp.areas = [list(links) for links in kept.areas];
+        if kept.areas {
+            # The area portals numbered as the bake numbered them.
+            number = 0;
+            for entity in bsp.entities {
+                if entity.fields.get("classname", "") == "func_areaportal" {
+                    number += 1;
+                    entity.fields["style"] = str(number);
+                }
+            }
+        }
+        made.shapes = kept.shapes;
+        made.portals = kept.portals;
+        made.portal_ends = kept.portal_ends;
         bsp.clusters = kept.clusters;
         bsp.cluster_bytes = kept.cluster_bytes;
         bsp.visibility = kept.visibility;

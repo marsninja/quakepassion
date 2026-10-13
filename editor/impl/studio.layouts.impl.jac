@@ -42,21 +42,90 @@ impl Studio.place_sides {
     if stage is not None {
         stage.focus_on(None);
     }
-    # The same three in another order, each side panel with a bar toward the middle.
-    ui.body.clear();
-    if self.sides_swapped {
-        ui.body.adopt(ui.right);
-        ui.body.adopt(Splitter(target=ui.right, low=220, high=640));
-        ui.body.adopt(ui.center);
-        ui.body.adopt(Splitter(target=ui.left, after=True, low=160, high=600));
-        ui.body.adopt(ui.left);
-    } else {
-        ui.body.adopt(ui.left);
-        ui.body.adopt(Splitter(target=ui.left, low=160, high=600));
-        ui.body.adopt(ui.center);
-        ui.body.adopt(Splitter(target=ui.right, after=True, low=220, high=640));
-        ui.body.adopt(ui.right);
+    panels = {"tabs": ui.left, "inspector": ui.right};
+    places = {"tabs": self.dock_tabs, "inspector": self.dock_inspector};
+    # Each panel taken from wherever it was: a column, a floating window, the body.
+    for name in ["tabs", "inspector"] {
+        held = panels[name];
+        holder = held.parent();
+        if holder is not None {
+            holder del->:Child:-> held;
+        }
+        casing = self.dock_windows.get(name);
+        if casing is not None and places[name] != "float" {
+            if stage is not None {
+                stage.close(casing);
+            }
+            self.dock_windows.pop(name, None);
+        }
     }
+    ui.body.clear();
+    lefts = [name for name in ["tabs", "inspector"] if places[name] == "left"];
+    rights = [name for name in ["tabs", "inspector"] if places[name] == "right"];
+    for (names, before) in [(lefts, True), (rights, False)] {
+        if len(names) == 0 {
+            continue;
+        }
+        held_side: Widget = panels[names[0]];
+        if len(names) == 1 {
+            held_side.size = self.dock_widths.get(names[0], 300);
+            held_side.grow = 0;
+        } else {
+            # Both on one side: one over the other in a column as wide as the wider.
+            column = Box(size=max(self.dock_widths.get("tabs", 280), self.dock_widths.get("inspector", 320)));
+            for name in names {
+                panels[name].size = 0;
+                panels[name].grow = 1;
+                column.adopt(panels[name]);
+            }
+            held_side = column;
+        }
+        if before {
+            ui.body.adopt(held_side);
+            ui.body.adopt(Splitter(target=held_side, low=160, high=640));
+        } else {
+            ui.body.adopt(Splitter(target=held_side, after=True, low=160, high=640));
+            ui.body.adopt(held_side);
+        }
+        if not before {
+            continue;
+        }
+        ui.body.adopt(ui.center);
+    }
+    if len(lefts) == 0 {
+        # Nothing on the left: the views first.
+        kids = ui.body.kids();
+        ui.body.clear();
+        ui.body.adopt(ui.center);
+        for kid in kids {
+            ui.body.adopt(kid);
+        }
+    }
+    for name in ["tabs", "inspector"] {
+        if places[name] != "float" or stage is None {
+            continue;
+        }
+        held = panels[name];
+        held.size = 0;
+        held.grow = 1;
+        casing = self.dock_windows.get(name);
+        if casing is None {
+            casing = Floater(
+                title="Scene" if name == "tabs" else "Inspector", command="ed_dock " + name + (" left" if name == "tabs" else " right"),
+                least_wide=200, least_tall=200
+            );
+            casing.area = Rect(
+                x=stage.width // 2 - 160 + (0 if name == "tabs" else 40), y=90 + (0 if name == "tabs" else 40), w=320,
+                h=max(240, stage.height - 220)
+            );
+            casing.settle(stage);
+            stage.open(casing);
+            self.dock_windows[name] = casing;
+        }
+        casing.clear();
+        casing.adopt(held);
+    }
+    self.sides_swapped = self.dock_tabs == "right" and self.dock_inspector != "right";
 }
 
 impl Studio.layout_words -> str {
@@ -91,6 +160,36 @@ impl Studio.layouts_command(scene: Scene, args: list[str]) -> bool {
         }
         return True;
     }
+    if name == "ed_dock" {
+        panel = args[1] if len(args) > 1 else "";
+        place = args[2] if len(args) > 2 else "";
+        if place == "at" and len(args) > 4 and args[3].lstrip("-").isdigit() and args[4].lstrip("-").isdigit() {
+            # Where the panel's grip was let go: near an edge it docks there, else it floats.
+            stage_now = self.stage;
+            place = dock_place(int(args[3]), stage_now.width if stage_now is not None else 1280);
+        }
+        if panel not in ["tabs", "inspector"] or place not in ["left", "right", "float"] {
+            self.say("ed_dock <tabs|inspector> <left|right|float>: where a side panel is docked, or that it floats");
+            return True;
+        }
+        # Its width as docked, kept for when it is docked again.
+        held = self.ui.left if panel == "tabs" and self.ui is not None else (self.ui.right if self.ui is not None else None);
+        if held is not None and held.size > 0 and (self.dock_tabs if panel == "tabs" else self.dock_inspector) != "float" {
+            self.dock_widths[panel] = held.size;
+        }
+        if panel == "tabs" {
+            self.dock_tabs = place;
+        } else {
+            self.dock_inspector = place;
+        }
+        self.place_sides();
+        self.keep_settings();
+        print("studio: dock tabs=" + self.dock_tabs + " inspector=" + self.dock_inspector);
+        self.say(
+            ("The scene panel" if panel == "tabs" else "The inspector") + (" floats in a window of its own" if place == "float" else " is docked on the " + place)
+        );
+        return True;
+    }
     if name == "ed_sides" {
         how = args[1] if len(args) > 1 else "swap";
         if how not in ["swap", "left", "right"] {
@@ -100,6 +199,8 @@ impl Studio.layouts_command(scene: Scene, args: list[str]) -> bool {
         wanted = (not self.sides_swapped) if how == "swap" else how == "right";
         if wanted != self.sides_swapped {
             self.sides_swapped = wanted;
+            self.dock_tabs = "right" if wanted else "left";
+            self.dock_inspector = "left" if wanted else "right";
             self.place_sides();
             self.keep_settings();
             self.say("The scene list is on the " + ("right" if wanted else "left") + ", the inspector on the " + ("left" if wanted else "right"));
@@ -164,6 +265,8 @@ impl Studio.layouts_command(scene: Scene, args: list[str]) -> bool {
     self.arrange_views(5 if words[0] == "4b" else (int(words[0]) if words[0] in ["2", "3", "4"] else 1));
     if (words[3] == "right") != self.sides_swapped {
         self.sides_swapped = words[3] == "right";
+        self.dock_tabs = "right" if self.sides_swapped else "left";
+        self.dock_inspector = "left" if self.sides_swapped else "right";
         self.place_sides();
     }
     self.log_panel = words[4] == "on";
