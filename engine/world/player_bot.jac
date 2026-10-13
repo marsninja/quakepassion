@@ -286,6 +286,10 @@ node PlayerBot {
         self.waiting = [];
         self.given_up = [];
         self.exit_goal = None;
+        self.exit_area = 0;
+        self.exit_name = "";
+        self.lost_since = -1.0;
+        self.leap = 0;
         self.best_distance = 1.0e9;
         self.progress_time = self.clock;
         self.stuck_count = 0;
@@ -523,7 +527,7 @@ walker AutoThink {
             }
             if area in bot.rest_areas {
                 leader = objective_mover(self.world, model);
-                if leader is not None and leader.position > 0.01 {
+                if leader is not None and leader.position > 0.01 and area not in mesh.disabled {
                     mesh.enable_area(area, False);
                     bot.route.abandon();
                     print("AUTOPLAY mover", model, "has moved: area", area, "closed");
@@ -544,7 +548,7 @@ walker AutoThink {
                 return True;
             }
             # In the way with nothing to be done about it now: route round it.
-            if area > 0 and mover_blocked(self.world, model, self.player) {
+            if area > 0 and area not in mesh.disabled and mover_blocked(self.world, model, self.player) {
                 mesh.enable_area(area, False);
                 bot.route.abandon();
                 print("AUTOPLAY mover", model, "is shut: area", area, "closed");
@@ -556,7 +560,7 @@ walker AutoThink {
 
     """Take up the objective, of `choices`, the route reaches soonest and that
     was not given up on lately. Whether one was."""
-    def take_objective(choices: list[Objective]) -> bool {
+    def take_objective(choices: list[Objective], within: int = UNREACHED) -> bool {
         bot = self.bot;
         mesh = bot.mesh;
         if mesh is None {
@@ -584,7 +588,7 @@ walker AutoThink {
                 times = mesh.times_to(stand[0], TFL_DEFAULT);
                 cost = times[here_area] if here_area < len(times) else UNREACHED;
             }
-            if cost < best_time {
+            if cost < best_time and cost <= within {
                 best_time = cost;
                 best = choice;
             }
@@ -593,6 +597,9 @@ walker AutoThink {
             return False;
         }
         best.started = bot.clock;
+        # As long as the way there should take, twice over, and twenty seconds
+        # to do it in.
+        best.allowed = float(best_time) * 0.02 + 20.0;
         signal = best.signal;
         best.fired = signal.fired if signal is not None else 0;
         current = bot.objective;
@@ -637,10 +644,11 @@ walker AutoThink {
         if self.bot.enemy is not None {
             return False;
         }
-        if self.take_objective(self.ammo_nearby()) {
+        # Only what is near by the route: fifteen seconds away at most.
+        if self.take_objective(self.ammo_nearby(), 1500) {
             return True;
         }
-        return self.player.health < 60 and self.take_objective(self.health_nearby());
+        return self.player.health < 60 and self.take_objective(self.health_nearby(), 1500);
     }
 
     """Health on the map within about fifteen seconds' travel."""
@@ -703,12 +711,14 @@ walker AutoThink {
     can activate with Activate entry {
         bot = self.bot;
         objective = bot.objective;
-        if objective is None or objective.done(self.player) or bot.clock - objective.started > 40.0 {
+        if objective is None or objective.done(self.player) or bot.clock - objective.started > objective.allowed {
             if objective is not None and objective.done(self.player) {
                 print("AUTOPLAY objective done:", objective.kind, "for", objective.why);
             } elif objective is not None {
                 print("AUTOPLAY objective given up:", objective.kind, "for", objective.why);
-                bot.given_up.append((objective.point, bot.clock + 60.0));
+                # Supplies are passed over for longer: there are others.
+                spare = objective.why in ["ammo", "health"];
+                bot.given_up.append((objective.point, bot.clock + (240.0 if spare else 60.0)));
             }
             # Back to what it set aside, or on to the exit.
             bot.objective = bot.waiting.pop() if bot.waiting else None;

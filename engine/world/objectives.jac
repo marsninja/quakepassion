@@ -41,9 +41,11 @@ node Objective {
         item: Pickup | None = None,
         # The mover (BSP model) it is to get by, 0 for none.
         mover: int = 0,
-        # How many times its signal had fired, and when it was taken up.
+        # How many times its signal had fired, when it was taken up, and how
+        # long it is given.
         fired: int = 0,
-        started: float = 0.0;
+        started: float = 0.0,
+        allowed: float = 40.0;
 
     """Whether it is done: the signal fired since it was taken up, the
     monster dead, the item taken, the door moving."""
