@@ -173,6 +173,17 @@ node PlayerBot {
         return self.shot_dir + "/" + name + "_" + "0" * max(0, 5 - len(stamp)) + stamp + ".png";
     }
 
+    """The objectives under way, the current one first, each with why:
+    "pickup for mover 39 needs key_silver < ..." ("-" when none)."""
+    def chain -> str {
+        current = self.objective;
+        if current is None {
+            return "-";
+        }
+        held = [current] + list(reversed(self.waiting));
+        return " < ".join([step.kind + " (" + step.why + ")" for step in held]);
+    }
+
     """Why the objective under way is being done, or ""."""
     def objective_why -> str {
         objective = self.objective;
@@ -189,6 +200,32 @@ node PlayerBot {
         passage = route.passages[0] if route.passages else None;
         kind = passage.kind if passage is not None else 0;
         return str(int(point.x)) + "," + str(int(point.y)) + "," + str(int(point.z)) + "/" + str(kind);
+    }
+
+    """The area the bot is in: the one at its origin, else (stood closer to
+    a wall than the compiled floor reaches) the one a few units beside it,
+    as botlib's BotReachabilityArea probes round a bot. With the point that
+    area was found at."""
+    def area_near(origin: Vec3) -> tuple[int, Vec3] {
+        mesh = self.mesh;
+        if mesh is None {
+            return (0, origin);
+        }
+        area = mesh.locate(origin);
+        if area > 0 {
+            return (area, origin);
+        }
+        for reach in [12.0, 24.0, 36.0] {
+            for k in range(8) {
+                angle = float(k) * math.pi / 4.0;
+                spot = origin.add(Vec3(x=math.cos(angle) * reach, y=math.sin(angle) * reach));
+                found = mesh.locate(spot);
+                if found > 0 {
+                    return (found, spot);
+                }
+            }
+        }
+        return (0, origin);
     }
 
     """The nearest point to `origin` that lies in an area with ways out, at
@@ -222,7 +259,7 @@ node PlayerBot {
             return None;
         }
         times = mesh.times_to(self.goal_area, TFL_DEFAULT);
-        here_area = mesh.locate(origin);
+        here_area = self.area_near(origin)[0];
         best: Vec3 | None = None;
         best_distance = 1.0e9;
         for size in [384.0, 768.0, 1536.0] {
@@ -362,7 +399,7 @@ node PlayerBot {
             self.detours = 0;
             self.stuck_count += 1;
             mesh = self.mesh;
-            area = mesh.locate(origin) if mesh is not None else 0;
+            area = self.area_near(origin)[0] if mesh is not None else 0;
             print("AUTOPLAY blocked at", int(origin.x), int(origin.y), int(origin.z), "area", area, ": way avoided");
         }
     }
@@ -510,7 +547,7 @@ walker AutoThink {
         if mesh is None {
             return;
         }
-        here_area = mesh.locate(self.origin);
+        here_area = self.bot.area_near(self.origin)[0];
         best_time = UNREACHED;
         for portal in [self.world->:HasExit:->][?:LevelExit] {
             if not portal.volume.bounds {
@@ -568,7 +605,7 @@ walker AutoThink {
         if mesh is None or bot.exit_area == 0 {
             return 0;
         }
-        area = mesh.locate(self.origin);
+        area = self.bot.area_near(self.origin)[0];
         if area == 0 {
             return 0;
         }
@@ -589,7 +626,7 @@ walker AutoThink {
             return found;
         }
         seen: list[int] = [];
-        for area in [mesh.locate(self.origin)] + bot.route.areas {
+        for area in [self.bot.area_near(self.origin)[0]] + bot.route.areas {
             if area <= 0 or area >= len(mesh.aas.areas) {
                 continue;
             }
@@ -666,7 +703,7 @@ walker AutoThink {
         if mesh is None {
             return False;
         }
-        here_area = mesh.locate(self.origin);
+        here_area = self.bot.area_near(self.origin)[0];
         best: Objective | None = None;
         best_time = UNREACHED;
         for choice in choices {
@@ -777,6 +814,11 @@ walker AutoThink {
         if self.player.health < 60 and self.take_objective(self.health_nearby(), 1500) {
             return True;
         }
+        # Something worth a short way round, but not on top of an objective
+        # (a key, a button): those come first.
+        if self.bot.objective is not None {
+            return False;
+        }
         return self.take_objective(self.on_the_way(), 300);
     }
 
@@ -799,7 +841,7 @@ walker AutoThink {
             if not item.active or item.untouchable or item.pos.sub(self.origin).length() > 500.0 {
                 continue;
             }
-            if self.item_worth(item) >= 25.0 {
+            if self.item_worth(item) >= 50.0 {
                 found.append(Objective(kind="pickup", point=item.pos, why="supply", item=item, box=objective_item_box(item)));
             }
         }
@@ -960,7 +1002,7 @@ walker AutoThink {
         if mesh is None {
             return False;
         }
-        here_area = mesh.locate(self.origin);
+        here_area = self.bot.area_near(self.origin)[0];
         if here_area == 0 {
             return False;
         }
@@ -1046,7 +1088,7 @@ walker AutoThink {
             self.roam_goal();
         }
         mesh = bot.mesh;
-        if mesh is not None and bot.goal is not None and mesh.locate(self.origin) == bot.goal_area {
+        if mesh is not None and bot.goal is not None and self.bot.area_near(self.origin)[0] == bot.goal_area {
             # Arrived: choose again.
             self.roam_goal();
         }
@@ -1089,7 +1131,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
     if self.think_wait <= 0.0 {
         self.think_wait += AUTO_THINK;
         if self.mesh is not None {
-            standing = self.mesh.locate(origin);
+            standing = self.area_near(origin)[0];
             if standing > 0 {
                 self.visited.add(standing);
             }
@@ -1107,8 +1149,10 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
     if mesh is not None and goal is not None {
         self.replan_wait -= dt;
         if not self.route.points and self.replan_wait <= 0.0 {
+            # From the area it is effectively in (beside a wall, the one by it).
+            anchor = self.area_near(origin)[1];
             planned = plan_route(
-                mesh, origin, goal, limit=64, flags=TFL_DEFAULT, goal_area=self.goal_area, avoid=self.avoid, now=self.clock
+                mesh, anchor, goal, limit=64, flags=TFL_DEFAULT, goal_area=self.goal_area, avoid=self.avoid, now=self.clock
             );
             self.replan_wait = 0.05 if planned.pending else (0.3 if planned.found else 1.0);
             if planned.found {
@@ -1116,7 +1160,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                 self.lost_since = -1.0;
             } elif not planned.pending and self.lost_since < 0.0 {
                 self.lost_since = self.clock;
-                print("AUTOPLAY no route from area", mesh.locate(origin), "to area", self.goal_area, "for", self.goal_name);
+                print("AUTOPLAY no route from area", self.area_near(origin)[0], "to area", self.goal_area, "for", self.goal_name);
             }
         }
         lost = self.lost_since >= 0.0 and self.clock - self.lost_since > 2.0;
@@ -1139,7 +1183,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                     intent.jump = player.water_depth < 2 and self.blocked_time > 0.5;
                 }
             }
-        } elif not self.route.points and mesh.locate(origin) == 0 {
+        } elif not self.route.points and self.area_near(origin)[0] == 0 {
             # In no area: walk (jumping when stuck) to the nearest that is.
             way_out = self.nearest_area_point(origin);
             if way_out is not None {
@@ -1157,6 +1201,21 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         leaping = self.leap_over(level, player, origin) if self.route.points else None;
         if leaping is not None {
             intent = leaping;
+        } elif self.route.points and player.grounded and mesh.locate(origin) == 0 {
+            # Out of every area by a wall: the Q3 travel would call this in
+            # solid and stop; head straight for the next waypoint instead,
+            # back into the areas.
+            ahead = self.route.points[0].sub(origin);
+            flat = Vec3(x=ahead.x, y=ahead.y);
+            if flat.length() < 16.0 {
+                self.route.advance(self.clock);
+            } else {
+                flat = flat.normalized();
+                forward = forward_from(player.yaw, 0.0);
+                right = right_from(player.yaw);
+                intent.move = Vec3(x=flat.dot(right), y=flat.dot(forward));
+                self.travel = TravelResult(direction=flat, speed=400.0);
+            }
         } elif self.route.points {
             travel = player spawn FollowRoute(
                 mesh=mesh,
@@ -1311,7 +1370,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         print(
             "AUTOPLAY", level.name, "t", round(self.clock, 1), "at", int(origin.x), int(origin.y), int(origin.z), "hp",
             player.health, "mode", self.mind.current, "goal", self.goal_name, "legs", len(self.route.points),
-            "objective", objective.kind if objective is not None else "-",
+            "objective", self.chain(),
             "enemy", (enemy.rule.model.split("/")[-1] + " " + str(int(enemy.pos.sub(player.pos).length())) + " hp " + str(enemy.health)) if enemy is not None else "no",
             "fire", self.fired, "weapon", state.weapon, "next", self.next_leg()
         );
