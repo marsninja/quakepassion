@@ -251,6 +251,23 @@ impl App.host_command(args: list[str]) {
         if self.menu.opened and self.menu.message {
             self.shell.print(self.menu.message);
         }
+    } elif name == "autoplay" {
+        # The player bot (issue #88): it plays through the same commands a
+        # keyboard and mouse give, until asked again.
+        if self.autoplay is None {
+            bot = PlayerBot();
+            bot.shot_every = float(os.getenv("QP_AUTOPLAY_SHOTS", "0") or "0");
+            bot.shot_dir = os.getenv("QP_AUTOPLAY_SHOT_DIR", bot.shot_dir);
+            self.autoplay = bot;
+            self.shell.print("autoplay ON");
+        } else {
+            self.autoplay = None;
+            self.scripted = None;
+            self.shell.print("autoplay OFF");
+        }
+        if self.console.active {
+            self.toggle_console();
+        }
     } elif name == "god" {
         # Host_God_f / Cmd_God_f.
         self.host.god.assign("0" if self.host.god.on() else "1");

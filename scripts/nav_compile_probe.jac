@@ -52,6 +52,9 @@ with entry {
         build = compile_navigation(app.world, app.level);
         seconds = time.time() - started;
         print("NAV", game, name, build.summary(), "seconds", round(seconds, 2));
+        for note in build.notes {
+            print("NAV note", note);
+        }
         mesh = build_navmesh(app.world, build.aas, app.level.bsp);
         eye = app.level.collision.eye_height;
         origin = app.player.pos.sub(Vec3(z=eye));

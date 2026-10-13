@@ -108,6 +108,9 @@ obj NavGrid {
         level: Level,
         spots: list[NavSpot] = [],
         columns: dict[tuple[int, int], list[int]] = {},
+        # The BSP models of the doors and plats: a spot standing on one is
+        # that mover's.
+        mover_models: set[int] = set(),
         traces: int = 0;
 
     def column_at(x: float) -> int {
@@ -137,6 +140,12 @@ obj NavGrid {
         middle = self.middle(column, row);
         spot = NavSpot(index=len(self.spots), column=column, row=row, origin=Vec3(x=middle.x, y=middle.y, z=z));
         spot.liquid = self.level.liquid_at(spot.origin.add(Vec3(z=4.0)));
+        if self.mover_models {
+            floor = self.sweep(spot.origin.add(Vec3(z=1.0)), spot.origin.sub(Vec3(z=4.0)));
+            if floor.model in self.mover_models {
+                spot.mover = floor.model;
+            }
+        }
         self.spots.append(spot);
         key = (column, row);
         if key not in self.columns {
@@ -346,6 +355,7 @@ obj NavBuild {
         jumps: int = 0,
         teleports: int = 0,
         lifts: int = 0,
+        notes: list[str] = [],
         traces: int = 0,
         seeds: int = 0,
         seconds: float = 0.0;
@@ -478,51 +488,71 @@ def:priv nav_teleports(world: World, grid: NavGrid) -> int {
     return count;
 }
 
-"""A plat lifts from the spots under it, at the foot of its shaft, to the
-spot beside its top nearest its middle; and back down. Returns how many
-lifts were linked and the spots on top of each plat (to flood from)."""
-def:priv nav_lifts(world: World, grid: NavGrid, level: Level) -> tuple[int, list[NavSpot]] {
+"""Lifts: plats, and doors that move up or down (a floor lowered as a lift).
+Each is compiled at one end of its travel (a plat up, a door open): the spot
+on its top there is flooded from, and joined both ways to the nearest spot
+by the shaft at the other end: beside the top for a mover compiled down,
+under it for one compiled up. Returns how many were joined, the spots on
+the movers (to flood from), and a line on each that was not."""
+def:priv nav_lifts(world: World, grid: NavGrid, level: Level) -> tuple[int, list[NavSpot], list[str]] {
     count = 0;
     tops: list[NavSpot] = [];
-    for door in [world->:HasDoor:->][?:Door] {
-        if door.kind != "platform" or not door.hulls {
+    notes: list[str] = [];
+    for door in nav_movers(world) {
+        if door.kind == "button" or not door.hulls or not door.origins {
+            continue;
+        }
+        travel = door.travel;
+        if abs(travel.z) < 24.0 or abs(travel.x) + abs(travel.y) > 1.0 {
             continue;
         }
         record = level.bsp.models[door.model];
-        shift = door.origins[0].add(door.rest).add(door.travel) if door.origins else Vec3();
-        lo = record.mins.add(shift);
-        hi = record.maxs.add(shift);
-        middle = Vec3(x=(lo.x + hi.x) * 0.5, y=(lo.y + hi.y) * 0.5, z=hi.z + 24.0);
-        top_spot = nav_seed(grid, middle);
-        if top_spot is None {
+        if record.maxs.x - record.mins.x < 32.0 or record.maxs.y - record.mins.y < 32.0 {
             continue;
         }
-        tops.append(top_spot);
-        top_z = top_spot.origin.z;
-        bottom: NavSpot | None = None;
-        beside: NavSpot | None = None;
+        posed = door.origins[0].add(door.rest).add(travel);
+        other = door.origins[0].add(door.rest);
+        lo = record.mins.add(posed);
+        hi = record.maxs.add(posed);
+        middle = Vec3(x=(lo.x + hi.x) * 0.5, y=(lo.y + hi.y) * 0.5, z=hi.z + 24.0);
+        on_top = nav_seed(grid, middle);
+        if on_top is None or abs(on_top.origin.z - middle.z) > 4.0 {
+            notes.append("mover " + str(door.model) + ": no room on top");
+            continue;
+        }
+        tops.append(on_top);
+        far_z = record.maxs.z + other.z + 24.0;
+        rises = posed.z > other.z;
+        found: NavSpot | None = None;
+        under: NavSpot | None = None;
         for spot in grid.spots {
             o = spot.origin;
             inside = o.x >= lo.x and o.x <= hi.x and o.y >= lo.y and o.y <= hi.y;
             near = o.x >= lo.x - 40.0 and o.x <= hi.x + 40.0 and o.y >= lo.y - 40.0 and o.y <= hi.y + 40.0;
-            if inside and o.z < top_z - 40.0 {
-                if bottom is None or o.sub(middle).length() < bottom.origin.sub(middle).length() {
-                    bottom = spot;
+            # Beside its top where the other end of its travel leaves it;
+            # failing that, for one compiled up, at the foot of its shaft.
+            if near and not inside and abs(o.z - far_z) <= grid.rules.step {
+                if found is None or o.sub(middle).length() < found.origin.sub(middle).length() {
+                    found = spot;
                 }
-            } elif near and not inside and abs(o.z - top_z) <= grid.rules.step {
-                if beside is None or o.sub(middle).length() < beside.origin.sub(middle).length() {
-                    beside = spot;
+            } elif rises and inside and o.z < on_top.origin.z - 40.0 {
+                if under is None or o.sub(middle).length() < under.origin.sub(middle).length() {
+                    under = spot;
                 }
             }
         }
-        if bottom is None or beside is None {
+        if found is None {
+            found = under;
+        }
+        if found is None {
+            notes.append("mover " + str(door.model) + ": nothing at the far end");
             continue;
         }
-        bottom +>:NavStep(kind=TRAVEL_ELEVATOR, target=beside.index, model=door.model):+> beside;
-        top_spot +>:NavStep(kind=TRAVEL_ELEVATOR, target=bottom.index, model=door.model):+> bottom;
+        on_top +>:NavStep(kind=TRAVEL_ELEVATOR, target=found.index, model=door.model):+> found;
+        found +>:NavStep(kind=TRAVEL_ELEVATOR, target=on_top.index, model=door.model):+> on_top;
         count += 1;
     }
-    return (count, tops);
+    return (count, tops, notes);
 }
 
 """Mark the spots each door closes over (its shut box grown by the
@@ -779,6 +809,7 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
     }
     collision = nav_posed_collision(world, level.collision);
     grid = NavGrid(rules=rules, collision=collision, level=level);
+    grid.mover_models = set([door.model for door in nav_movers(world) if door.kind != "button"]);
     build = NavBuild(aas=Aas());
     seeds: list[NavSpot] = [];
     for point in nav_seed_points(world, level) {
@@ -795,6 +826,7 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
     # Plats and gap jumps open more floors; flood those too, until no more.
     lifted = nav_lifts(world, grid, level);
     build.lifts = lifted[0];
+    build.notes = lifted[2];
     for summit in lifted[1] {
         summit spawn flood;
     }
@@ -810,10 +842,6 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
         for spot in leaps.fresh {
             spot spawn flood;
         }
-    }
-    if build.lifts == 0 {
-        lifted = nav_lifts(world, grid, level);
-        build.lifts = lifted[0];
     }
     build.teleports = nav_teleports(world, grid);
     nav_mark_movers(world, grid, level);

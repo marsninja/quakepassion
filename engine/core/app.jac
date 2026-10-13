@@ -132,6 +132,7 @@ import from ..world.fixtures { FixtureTick }
 import from ..world.gibs { GibTick }
 import from ..world.patrols { PatrolTick }
 import from ..world.bot_ai { BotTactics }
+import from ..world.player_bot { PlayerBot }
 import from ..world.wading { ImmerseBots }
 import from ..world.bot_character { Q3_SKILL_NAMES }
 import from ..world.lightstyles { LightStyles, HasLightStyles, LightStyleTick }
@@ -221,7 +222,8 @@ glob HOST_COMMANDS: list[tuple[str, str, str]] = [
     ("toggleconsole", "toggleconsole", "drop or raise the console"),
     ("togglemenu", "togglemenu", "open or close the menu"),
     ("cinematic", "cinematic <name>", "play a film from video/ (Q3's RoQ, Q2's .cin)"),
-    ("levelselect", "levelselect", "open the level list (Q3's single-player menu)")
+    ("levelselect", "levelselect", "open the level list (Q3's single-player menu)"),
+    ("autoplay", "autoplay", "let the player bot play (again to take back control)")
 ];
 
 """The cvars the game loop owns: the skill of the next level, the engine's
@@ -315,6 +317,8 @@ obj App {
         capture_frame: int = 0,
         capture_path: str = "",
         scripted: Intent | None = None,
+        # The player bot playing the player's body (`autoplay`), if on.
+        autoplay: PlayerBot | None = None,
         last_think: int = 0,
         last_drawn: int = 0,
         level: Level = Level(),
