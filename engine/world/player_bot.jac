@@ -20,7 +20,7 @@ import from .pickups { Pickup, HasPickup }
 import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_for, selected_weapon }
 import from .weapons { WeaponRule }
 import from .exits { LevelExit, HasExit }
-import from .objectives { Objective, mover_objectives, exit_objectives }
+import from .objectives { Objective, mover_objectives, exit_objectives, objective_mover, mover_blocked }
 import from .bot_routes { predict_mover }
 import from ..nav.compile { compile_navigation }
 import from ..formats.aas { TFL_DEFAULT, area_mover_model }
@@ -95,8 +95,13 @@ node PlayerBot {
         # What it is doing to get by a mover, and what it gave up on (by
         # where it was, until when).
         objective: Objective | None = None,
+        # Objectives set aside for one in their way, the latest last.
+        waiting: list[Objective] = [],
         given_up: list[tuple[Vec3, float]] = [],
         exit_goal: Vec3 | None = None,
+        # Areas compiled with their mover where the level starts it (a floor
+        # that drops): usable only while it is still there.
+        rest_areas: set[int] = set(),
         exit_area: int = 0,
         exit_name: str = "",
         clock: float = 0.0,
@@ -152,6 +157,29 @@ node PlayerBot {
         return str(int(point.x)) + "," + str(int(point.y)) + "," + str(int(point.z)) + "/" + str(kind);
     }
 
+    """The nearest point to `origin` that lies in an area with ways out, at
+    about its height (out of a button's recess, off a ledge no area covers),
+    or None."""
+    def nearest_area_point(origin: Vec3) -> Vec3 | None {
+        mesh = self.mesh;
+        if mesh is None {
+            return None;
+        }
+        for reach in [16.0, 32.0, 48.0, 64.0, 96.0, 128.0] {
+            for k in range(16) {
+                angle = float(k) * math.pi / 8.0;
+                spot = origin.add(Vec3(x=math.cos(angle) * reach, y=math.sin(angle) * reach));
+                for drop in [0.0, 16.0, 32.0, 48.0, -16.0] {
+                    area = mesh.aas.area_at(spot.sub(Vec3(z=drop)));
+                    if area > 0 and mesh.aas.areas[area].reach_count > 0 {
+                        return spot;
+                    }
+                }
+            }
+        }
+        return None;
+    }
+
     """One frame of play: the command the player's body gets."""
     def drive(world: World, level: Level, player: Player, state: CombatState, dt: float) -> Intent;
 
@@ -166,12 +194,14 @@ node PlayerBot {
         self.goal_name = "";
         self.enemy = None;
         self.objective = None;
+        self.waiting = [];
         self.given_up = [];
         self.exit_goal = None;
         self.best_distance = 1.0e9;
         self.progress_time = self.clock;
         self.stuck_count = 0;
         self.mind.current = "seek_exit";
+        self.rest_areas = set();
         meshes = [world->:HasNavMesh:->][?:NavMesh];
         if meshes {
             self.mesh = meshes[0];
@@ -181,6 +211,7 @@ node PlayerBot {
             build = compile_navigation(world, level);
             self.compile_seconds = time.time() - started;
             self.mesh = build_navmesh(world, build.aas, level.bsp);
+            self.rest_areas = set(build.rest_areas);
             self.status = "navigation compiled in " + str(round(self.compile_seconds, 1)) + " s: " + build.summary();
         }
         print("AUTOPLAY", level.bsp.game, level.name, self.status);
@@ -230,6 +261,7 @@ walker AutoThink {
         world: World,
         level: Level,
         player: Player,
+        state: CombatState,
         origin: Vec3,
         eye_height: float,
         switches: int = 0;
@@ -354,6 +386,85 @@ walker AutoThink {
         return predict_mover(mesh, area, self.origin, bot.exit_area, TFL_DEFAULT, 400, 100000);
     }
 
+    """The movers the bot stands in and its route runs through, in order:
+    each mover's BSP model with the first area of it on the way."""
+    def route_movers() -> list[tuple[int, int]] {
+        bot = self.bot;
+        mesh = bot.mesh;
+        found: list[tuple[int, int]] = [];
+        if mesh is None {
+            return found;
+        }
+        seen: list[int] = [];
+        for area in [mesh.locate(self.origin)] + bot.route.areas {
+            if area <= 0 or area >= len(mesh.aas.areas) {
+                continue;
+            }
+            model = area_mover_model(mesh.aas.areas[area].contents);
+            if model > 0 and model not in seen {
+                seen.append(model);
+                found.append((model, area));
+            }
+        }
+        return found;
+    }
+
+    """Look over the movers on the way: an area compiled with its mover at
+    rest whose mover has moved away is closed to routing (and the route
+    dropped); a mover that needs something done gives an objective.
+    Whether one was taken up."""
+    def check_movers() -> bool {
+        bot = self.bot;
+        mesh = bot.mesh;
+        if mesh is None {
+            return False;
+        }
+        movers = self.route_movers();
+        if not bot.route.points {
+            model = self.blocking_mover();
+            if model > 0 {
+                movers.append((model, 0));
+            }
+        }
+        busy = [bot.objective.mover] if bot.objective is not None else [];
+        busy.extend([held.mover for held in bot.waiting]);
+        for (model, area) in movers {
+            if model in busy {
+                continue;
+            }
+            if area in bot.rest_areas {
+                leader = objective_mover(self.world, model);
+                if leader is not None and leader.position > 0.01 {
+                    mesh.enable_area(area, False);
+                    bot.route.abandon();
+                    print("AUTOPLAY mover", model, "has moved: area", area, "closed");
+                    return False;
+                }
+                continue;
+            }
+            # What it is already about (or set aside) does not count: a
+            # door opened by picking up the key behind it is in the way.
+            pending = [bot.objective] if bot.objective is not None else [];
+            pending.extend(bot.waiting);
+            choices = [
+                choice
+                for choice in mover_objectives(self.world, model, self.player)
+                if not any([held.point.sub(choice.point).length() < 8.0 for held in pending])
+            ];
+            if choices and self.take_objective(choices) {
+                return True;
+            }
+            # In the way with nothing to be done about it now: route round it.
+            if area > 0 and mover_blocked(self.world, model, self.player) {
+                mesh.enable_area(area, False);
+                bot.route.abandon();
+                print("AUTOPLAY mover", model, "is shut: area", area, "closed");
+                return False;
+            }
+        }
+        return False;
+    }
+
     """Take up the objective, of `choices`, the route reaches soonest and that
     was not given up on lately. Whether one was."""
     def take_objective(choices: list[Objective]) -> bool {
@@ -395,10 +506,40 @@ walker AutoThink {
         best.started = bot.clock;
         signal = best.signal;
         best.fired = signal.fired if signal is not None else 0;
+        current = bot.objective;
+        if current is not None {
+            bot.waiting.append(current);
+        }
         bot.objective = best;
         bot.route.abandon();
         print("AUTOPLAY objective", best.kind, "at", int(best.point.x), int(best.point.y), int(best.point.z), "for", best.why);
         return True;
+    }
+
+    """Ammunition on the map for the weapons held, within reach: wanted when
+    nothing but the axe or blaster has any left."""
+    def ammo_nearby() -> list[Objective] {
+        found: list[Objective] = [];
+        wanted: list[str] = [];
+        armed = False;
+        for rule in self.state.rules {
+            if owns_weapon(self.player, rule) and rule.ammo {
+                wanted.append(rule.ammo);
+                if has_ammo_for(self.player, rule) {
+                    armed = True;
+                }
+            }
+        }
+        if armed {
+            return found;
+        }
+        for item in [self.world->:HasPickup:->][?:Pickup] {
+            if item.active and (item.rule.kind in wanted or item.rule.ammo in wanted or item.rule.kind == "backpack")
+                and item.pos.sub(self.origin).length() < 2000.0 {
+                found.append(Objective(kind="pickup", point=item.pos, why="ammo", item=item));
+            }
+        }
+        return found;
     }
 
     """Health on the map within about fifteen seconds' travel."""
@@ -422,8 +563,11 @@ walker AutoThink {
         bot.goal = bot.exit_goal;
         bot.goal_area = bot.exit_area;
         bot.goal_name = bot.exit_name;
-        model = self.blocking_mover();
-        if model > 0 and self.take_objective(mover_objectives(self.world, model, self.player)) {
+        if self.check_movers() {
+            visit self.shift(here, "activate");
+            return;
+        }
+        if enemy is None and self.take_objective(self.ammo_nearby()) {
             visit self.shift(here, "activate");
             return;
         }
@@ -450,21 +594,27 @@ walker AutoThink {
     can activate with Activate entry {
         bot = self.bot;
         objective = bot.objective;
-        if objective is None or objective.done(self.player) {
-            if objective is not None {
+        if objective is None or objective.done(self.player) or bot.clock - objective.started > 40.0 {
+            if objective is not None and objective.done(self.player) {
                 print("AUTOPLAY objective done:", objective.kind, "for", objective.why);
+            } elif objective is not None {
+                print("AUTOPLAY objective given up:", objective.kind, "for", objective.why);
+                bot.given_up.append((objective.point, bot.clock + 60.0));
             }
-            bot.objective = None;
+            # Back to what it set aside, or on to the exit.
+            bot.objective = bot.waiting.pop() if bot.waiting else None;
+            resumed = bot.objective;
+            if resumed is not None {
+                resumed.started = bot.clock;
+            }
             bot.route.abandon();
-            visit self.shift(here, "seek_exit");
+            if resumed is None {
+                visit self.shift(here, "seek_exit");
+            }
             return;
         }
-        if bot.clock - objective.started > 25.0 {
-            print("AUTOPLAY objective given up:", objective.kind, "for", objective.why);
-            bot.given_up.append((objective.point, bot.clock + 60.0));
-            bot.objective = None;
-            bot.route.abandon();
-            visit self.shift(here, "seek_exit");
+        # A mover in the way of this objective comes first.
+        if self.check_movers() {
             return;
         }
         if objective.kind == "kill" {
@@ -508,6 +658,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         self.route.abandon();
         self.goal = None;
         self.objective = None;
+        self.waiting = [];
         self.log_wait -= dt;
         if self.log_wait <= 0.0 {
             self.log_wait = 2.0;
@@ -519,7 +670,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
     if self.think_wait <= 0.0 {
         self.think_wait += AUTO_THINK;
         self.mind spawn AutoThink(
-            bot=self, world=world, level=level, player=player, origin=origin, eye_height=eye_height
+            bot=self, world=world, level=level, player=player, state=state, origin=origin, eye_height=eye_height
         );
     }
     mesh = self.mesh;
@@ -550,6 +701,21 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             self.replan_wait = 0.05 if planned.pending else (0.3 if planned.found else 1.0);
             if planned.found {
                 self.route = planned;
+            }
+        }
+        if not self.route.points and mesh.locate(origin) == 0 {
+            # In no area: walk (jumping when stuck) to the nearest that is.
+            way_out = self.nearest_area_point(origin);
+            if way_out is not None {
+                heading = Vec3(x=way_out.x - origin.x, y=way_out.y - origin.y);
+                if heading.length() > 0.001 {
+                    heading = heading.normalized();
+                    forward = forward_from(player.yaw, 0.0);
+                    right = right_from(player.yaw);
+                    intent.move = Vec3(x=heading.dot(right), y=heading.dot(forward));
+                    self.travel = TravelResult(direction=heading, speed=400.0);
+                    intent.jump = self.stuck_count > 0 and self.frames % 40 == 0;
+                }
             }
         }
         if self.route.points {

@@ -36,6 +36,7 @@ import from ..formats.aas {
     TRAVEL_TELEPORT,
     TRAVEL_ELEVATOR,
     TRAVEL_JUMPPAD,
+    TRAVEL_SWIM,
     AREA_GROUNDED,
     AREA_LIQUID,
     AREACONTENTS_WATER,
@@ -89,7 +90,13 @@ node NavSpot {
         # (bits 1, 2, 4, 8 for +x, -x, +y, -y).
         ledge: bool = False,
         walks: int = 0,
-        expanded: bool = False;
+        expanded: bool = False,
+        # On a floor (else floating in a liquid: a place to swim).
+        grounded: bool = True,
+        # 1 when found with the movers posed for travel (doors open, plats
+        # up); 0 when found with them where the level starts them (a floor
+        # that drops, a bridge that is there until it moves).
+        pose: int = 1;
 }
 
 """A way from one spot to another and how it is taken (botlib's travel
@@ -111,7 +118,24 @@ obj NavGrid {
         # The BSP models of the doors and plats: a spot standing on one is
         # that mover's.
         mover_models: set[int] = set(),
+        # The pose new spots are found in, and where they may be (none: anywhere).
+        pose: int = 1,
+        region: list[AABB] = [],
         traces: int = 0;
+
+    """Whether a new spot may be added at `point` (inside the region)."""
+    def allowed(point: Vec3) -> bool {
+        if not self.region {
+            return True;
+        }
+        for box in self.region {
+            if box.mins.x <= point.x and point.x <= box.maxs.x and box.mins.y <= point.y and point.y <= box.maxs.y
+                and box.mins.z <= point.z and point.z <= box.maxs.z {
+                return True;
+            }
+        }
+        return False;
+    }
 
     def column_at(x: float) -> int {
         return int(math.floor(x / self.rules.cell));
@@ -138,13 +162,14 @@ obj NavGrid {
 
     def add(column: int, row: int, z: float) -> NavSpot {
         middle = self.middle(column, row);
-        spot = NavSpot(index=len(self.spots), column=column, row=row, origin=Vec3(x=middle.x, y=middle.y, z=z));
+        spot = NavSpot(
+            index=len(self.spots), column=column, row=row, origin=Vec3(x=middle.x, y=middle.y, z=z), pose=self.pose
+        );
         spot.liquid = self.level.liquid_at(spot.origin.add(Vec3(z=4.0)));
-        if self.mover_models {
-            floor = self.sweep(spot.origin.add(Vec3(z=1.0)), spot.origin.sub(Vec3(z=4.0)));
-            if floor.model in self.mover_models {
-                spot.mover = floor.model;
-            }
+        floor = self.sweep(spot.origin.add(Vec3(z=1.0)), spot.origin.sub(Vec3(z=4.0)));
+        spot.grounded = floor.fraction < 1.0 or floor.start_solid;
+        if self.mover_models and floor.model in self.mover_models {
+            spot.mover = floor.model;
         }
         self.spots.append(spot);
         key = (column, row);
@@ -175,6 +200,11 @@ obj NavGrid {
         beside = self.middle(spot.column + across, spot.row + along);
         level = Vec3(x=beside.x, y=beside.y, z=a.z);
         flat = self.sweep(a, level);
+        # In water a body swims on at its height while the water goes on.
+        if spot.liquid == 1 and not flat.start_solid and flat.fraction >= 1.0
+            and self.level.liquid_at(level.add(Vec3(z=4.0))) == 1 {
+            return [(a.z, TRAVEL_SWIM)];
+        }
         if not flat.start_solid and flat.fraction >= 1.0 {
             landing = self.ground(beside.x, beside.y, a.z, rules.drop + rules.step);
             if landing is None {
@@ -209,6 +239,27 @@ obj NavGrid {
             return [(landing, TRAVEL_WALKOFFLEDGE)];
         }
         return [];
+    }
+
+    """Up and down through the water from `spot` (a body in water swims
+    where it likes): the heights reached, 32 units each way, staying in it."""
+    def swims(spot: NavSpot) -> list[float] {
+        found: list[float] = [];
+        if spot.liquid != 1 {
+            return found;
+        }
+        a = spot.origin;
+        for rise in [32.0, -32.0] {
+            to = a.add(Vec3(z=rise));
+            move = self.sweep(a, to);
+            if move.start_solid or move.fraction < 1.0 {
+                continue;
+            }
+            if self.level.liquid_at(to.add(Vec3(z=4.0))) == 1 {
+                found.append(to.z);
+            }
+        }
+        return found;
     }
 
     """Where a running jump from `spot` along (`across`, `along`) lands
@@ -289,6 +340,9 @@ walker FloodFloors {
                 column = here.column + across;
                 row = here.row + along;
                 index = grid.find(column, row, z);
+                if index < 0 and not grid.allowed(grid.middle(column, row).add(Vec3(z=z))) {
+                    continue;
+                }
                 spot = grid.spots[index] if index >= 0 else grid.add(column, row, z);
                 if index < 0 {
                     fresh.append(spot);
@@ -297,6 +351,18 @@ walker FloodFloors {
                 here +>:NavStep(kind=kind, target=spot.index):+> spot;
             }
             bit *= 2;
+        }
+        for z in grid.swims(here) {
+            index = grid.find(here.column, here.row, z);
+            if index < 0 and not grid.allowed(here.origin.add(Vec3(z=z - here.origin.z))) {
+                continue;
+            }
+            spot = grid.spots[index] if index >= 0 else grid.add(here.column, here.row, z);
+            if index < 0 {
+                fresh.append(spot);
+                self.added += 1;
+            }
+            here +>:NavStep(kind=TRAVEL_SWIM, target=spot.index):+> spot;
         }
         visit fresh;
     }
@@ -355,13 +421,16 @@ obj NavBuild {
         jumps: int = 0,
         teleports: int = 0,
         lifts: int = 0,
+        resting: int = 0,
+        # The areas found with the movers at rest (see NavSpot.pose).
+        rest_areas: list[int] = [],
         notes: list[str] = [],
         traces: int = 0,
         seeds: int = 0,
         seconds: float = 0.0;
 
     def summary -> str {
-        return "spots=" + str(self.spots) + " steps=" + str(self.steps) + " jumps=" + str(self.jumps)
+        return "spots=" + str(self.spots) + " resting=" + str(self.resting) + " steps=" + str(self.steps) + " jumps=" + str(self.jumps)
             + " teleports=" + str(self.teleports) + " lifts=" + str(self.lifts) + " areas="
             + str(len(self.aas.areas) - 1) + " reaches=" + str(len(self.aas.reaches) - 1) + " traces="
             + str(self.traces) + " seeds=" + str(self.seeds);
@@ -569,7 +638,7 @@ def:priv nav_mark_movers(world: World, grid: NavGrid, level: Level) {
         hi = record.maxs.add(shift).add(Vec3(x=16.0, y=16.0, z=24.0));
         for spot in grid.spots {
             o = spot.origin;
-            if o.x > lo.x and o.x < hi.x and o.y > lo.y and o.y < hi.y and o.z > lo.z and o.z < hi.z {
+            if spot.pose == 1 and o.x > lo.x and o.x < hi.x and o.y > lo.y and o.y < hi.y and o.z > lo.z and o.z < hi.z {
                 spot.mover = door.model;
             }
         }
@@ -590,7 +659,7 @@ def:priv nav_mark_movers(world: World, grid: NavGrid, level: Level) {
 from it, or None."""
 def:priv nav_walk_beside(grid: NavGrid, spot: NavSpot, across: int, along: int) -> NavSpot | None {
     for step in [edge spot->:NavStep:->] {
-        if step.kind != TRAVEL_WALK {
+        if step.kind != TRAVEL_WALK and step.kind != TRAVEL_SWIM {
             continue;
         }
         other = grid.spots[step.target];
@@ -598,7 +667,7 @@ def:priv nav_walk_beside(grid: NavGrid, spot: NavSpot, across: int, along: int) 
             continue;
         }
         for back in [edge other->:NavStep:->] {
-            if back.kind == TRAVEL_WALK and back.target == spot.index {
+            if back.kind == step.kind and back.target == spot.index {
                 return other;
             }
         }
@@ -609,6 +678,8 @@ def:priv nav_walk_beside(grid: NavGrid, spot: NavSpot, across: int, along: int) 
 """Whether `other` may join the area begun at `first`."""
 def:priv nav_alike(grid: NavGrid, first: NavSpot, other: NavSpot) -> bool {
     return other.area == 0
+        and other.pose == first.pose
+        and other.grounded == first.grounded
         and other.liquid == first.liquid
         and other.mover == first.mover
         and abs(other.origin.z - first.origin.z) <= grid.rules.area_rise;
@@ -792,6 +863,9 @@ def:priv nav_step_time(kind: int, start: Vec3, finish: Vec3, rules: NavRules) ->
     if kind == TRAVEL_BARRIERJUMP {
         return run + 50;
     }
+    if kind == TRAVEL_SWIM {
+        return max(1, int(start.sub(finish).length() * 100.0 / (rules.speed * 0.7)));
+    }
     if kind == TRAVEL_JUMP {
         return run + 70;
     }
@@ -800,6 +874,48 @@ def:priv nav_step_time(kind: int, start: Vec3, finish: Vec3, rules: NavRules) ->
         return run + int(math.sqrt(2.0 * fall / rules.gravity) * 100.0) + 1;
     }
     return max(1, run);
+}
+
+"""Flood again round each mover with the movers where the level starts
+them: a floor that drops or a bridge that moves away is walked on until it
+does. Only places within reach of a mover are added (posed `0`); the spots
+already found there are expanded again in this pose. Returns how many were
+added."""
+def:priv nav_rest_flood(world: World, grid: NavGrid, level: Level, flood: FloodFloors) -> int {
+    boxes: list[AABB] = [];
+    for door in nav_movers(world) {
+        if door.kind == "button" or not door.hulls or not door.origins {
+            continue;
+        }
+        record = level.bsp.models[door.model];
+        rest = door.origins[0].add(door.rest);
+        posed = rest.add(door.travel);
+        lo = Vec3(x=min(rest.x, posed.x), y=min(rest.y, posed.y), z=min(rest.z, posed.z)).add(record.mins);
+        hi = Vec3(x=max(rest.x, posed.x), y=max(rest.y, posed.y), z=max(rest.z, posed.z)).add(record.maxs);
+        boxes.append(AABB(mins=lo.sub(Vec3(x=48.0, y=48.0, z=64.0)), maxs=hi.add(Vec3(x=48.0, y=48.0, z=96.0))));
+    }
+    if not boxes {
+        return 0;
+    }
+    before = len(grid.spots);
+    posed_collision = grid.collision;
+    grid.collision = level.collision.for_body(level.collision.eye_height);
+    grid.pose = 0;
+    grid.region = boxes;
+    near: list[NavSpot] = [];
+    for spot in list(grid.spots) {
+        if grid.allowed(spot.origin) {
+            spot.expanded = False;
+            near.append(spot);
+        }
+    }
+    for spot in near {
+        spot spawn flood;
+    }
+    grid.collision = posed_collision;
+    grid.pose = 1;
+    grid.region = [];
+    return len(grid.spots) - before;
 }
 
 """Compile the navigation of the level loaded in `world`."""
@@ -843,6 +959,7 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
             spot spawn flood;
         }
     }
+    build.resting = nav_rest_flood(world, grid, level, flood);
     build.teleports = nav_teleports(world, grid);
     nav_mark_movers(world, grid, level);
     groups = nav_group(grid);
@@ -862,7 +979,7 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
         }
         first = members[0];
         contents = 0;
-        flags = AREA_GROUNDED;
+        flags = AREA_GROUNDED if first.grounded else 0;
         if first.liquid == -1 {
             contents |= AREACONTENTS_DONOTENTER;
         } elif first.liquid > 0 {
@@ -871,6 +988,9 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
         }
         if first.mover > 0 {
             contents |= AREACONTENTS_MOVER | (first.mover << AREACONTENTS_MODELNUMSHIFT);
+        }
+        if first.pose == 0 {
+            build.rest_areas.append(len(aas.areas));
         }
         box = AABB(mins=lo.sub(Vec3(z=4.0)), maxs=hi.add(Vec3(z=8.0)));
         boxes.append(box);

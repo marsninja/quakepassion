@@ -39,6 +39,8 @@ node Objective {
         door: Door | None = None,
         body: Opponent | None = None,
         item: Pickup | None = None,
+        # The mover (BSP model) it is to get by, 0 for none.
+        mover: int = 0,
         # How many times its signal had fired, and when it was taken up.
         fired: int = 0,
         started: float = 0.0;
@@ -199,6 +201,14 @@ def mover_objectives(world: World, model: int, player: Player) -> list[Objective
     if leader is None or leader.kind == "button" {
         return [];
     }
+    found_all = mover_objectives_of(world, leader, model, player);
+    for action in found_all {
+        action.mover = model;
+    }
+    return found_all;
+}
+
+def:priv mover_objectives_of(world: World, leader: Door, model: int, player: Player) -> list[Objective] {
     why = "mover " + str(model);
     if leader.position >= 0.99 or leader.state in ["opening", "open"] {
         return [];
@@ -232,6 +242,29 @@ def mover_objectives(world: World, model: int, player: Player) -> list[Objective
         }
     }
     return search.found;
+}
+
+"""Whether the mover with BSP `model` stands in the way of a player: not
+where travel needs it and not coming by itself (shut by a key the player
+lacks, fired from elsewhere, shot open, a plat held at the top)."""
+def mover_blocked(world: World, model: int, player: Player) -> bool {
+    leader = objective_mover(world, model);
+    if leader is None or leader.kind == "button" {
+        return False;
+    }
+    if leader.position >= 0.99 or leader.state in ["opening", "open"] {
+        return False;
+    }
+    if leader.keys and not leader.unlocked {
+        return len([key for key in leader.keys if quantity(player.inventory, key) <= 0]) > 0;
+    }
+    if leader.health > 0 {
+        return True;
+    }
+    if leader.kind == "platform" {
+        return leader.state == "locked";
+    }
+    return not leader.automatic;
 }
 
 """What fires an exit that is not touched (Quake II's target_changelevel at
