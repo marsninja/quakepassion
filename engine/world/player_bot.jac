@@ -774,6 +774,8 @@ walker AutoThink {
         # As long as the way there should take, twice over, and twenty seconds
         # to do it in.
         best.allowed = float(best_time) * 0.02 + 20.0;
+        best.nearest = 1.0e9;
+        best.nearer_at = bot.clock;
         signal = best.signal;
         best.fired = signal.fired if signal is not None else 0;
         current = bot.objective;
@@ -900,6 +902,18 @@ walker AutoThink {
         bot.goal = bot.exit_goal;
         bot.goal_area = bot.exit_area;
         bot.goal_name = bot.exit_name;
+        # No way to the exit for a while: what was given up and closed is
+        # tried again (the key behind a door it set aside).
+        mesh = bot.mesh;
+        if bot.lost_since >= 0.0 and bot.clock - bot.lost_since > 5.0 and mesh is not None {
+            bot.given_up = [];
+            for area in list(mesh.disabled) {
+                mesh.enable_area(area, True);
+            }
+            bot.lost_since = -1.0;
+            bot.route.abandon();
+            print("AUTOPLAY no way to the exit: trying again what was given up");
+        }
         if self.check_movers() {
             visit self.shift(here, "activate");
             return;
@@ -932,7 +946,18 @@ walker AutoThink {
     can activate with Activate entry {
         bot = self.bot;
         objective = bot.objective;
-        if objective is None or objective.done(self.player) or bot.clock - objective.started > objective.allowed {
+        # Given up only when it stops getting nearer for a while (or after a
+        # long time all told), not while it is on its way.
+        if objective is not None {
+            gap = objective.stand_point.sub(self.origin).length() if objective.stand > 0 else objective.point.sub(self.origin).length();
+            if gap < objective.nearest - 32.0 {
+                objective.nearest = gap;
+                objective.nearer_at = bot.clock;
+            }
+        }
+        if objective is None or objective.done(self.player)
+            or bot.clock - objective.nearer_at > max(25.0, objective.allowed * 0.5)
+            or bot.clock - objective.started > max(180.0, objective.allowed * 3.0) {
             if objective is not None and objective.done(self.player) {
                 print("AUTOPLAY objective done:", objective.kind, "for", objective.why);
             } elif objective is not None {

@@ -52,7 +52,10 @@ node Objective {
         # long it is given.
         fired: int = 0,
         started: float = 0.0,
-        allowed: float = 40.0;
+        allowed: float = 40.0,
+        # How near the bot has come to it, and when it last came nearer.
+        nearest: float = 1.0e9,
+        nearer_at: float = 0.0;
 
     """Whether it is done: the signal fired since it was taken up, the
     monster dead, the item taken, the door moving."""
