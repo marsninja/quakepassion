@@ -22,6 +22,7 @@ import from .bot_trace { BotTrace, trace_text, trace_number }
 import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_for, selected_weapon, Projectile, HasProjectile }
 import from .weapons { WeaponRule }
 import from .exits { LevelExit, HasExit }
+import from .doors { Door, HasDoor }
 import from .objectives { Objective, mover_objectives, exit_objectives, objective_mover, mover_area_blocked, objective_starts_open, objective_item_box }
 import from .bot_routes { predict_mover }
 import from ..nav.compile { compile_navigation }
@@ -116,6 +117,8 @@ node PlayerBot {
         # A dodge under way: which way, until when.
         dodge_way: Vec3 = Vec3(),
         dodge_until: float = 0.0,
+        # How long it has held still on a moving lift.
+        ride_held: float = 0.0,
         # The direction the view settles on while travelling (100: none yet).
         view_yaw: float = 100.0,
         roam_nearest: float = 1.0e9,
@@ -260,6 +263,20 @@ node PlayerBot {
         for area in self.mover_areas(model) {
             self.close_area(area, model);
         }
+    }
+
+    """The lift, plat or door the bot stands on while it is still going up
+    or down, or None."""
+    def rising_under(world: World, level: Level, origin: Vec3) -> Door | None {
+        below = level.collision.trace(origin, origin.sub(Vec3(z=2.0)));
+        if below.fraction >= 1.0 or below.model <= 0 {
+            return None;
+        }
+        leader = objective_mover(world, below.model);
+        if leader is None or leader.state not in ["opening", "closing"] or abs(leader.travel.z) < 24.0 {
+            return None;
+        }
+        return leader;
     }
 
     """Close `area` to routing for a while, for the mover `model` (0: none)
@@ -673,6 +690,16 @@ def autoplay_needed(body: Opponent) -> int {
     return body.rule.pain_health_reset;
 }
 
+"""What one hit must do to knock `body` down for a while when only a blow
+big enough at once puts it down for good (Q1's zombie flinches from 9 and
+falls from a second hit while it does), else 0."""
+def autoplay_knock(body: Opponent) -> int {
+    if body.rule.pain_health_reset <= 0 {
+        return 0;
+    }
+    return max(1, body.rule.pain_threshold);
+}
+
 """Whether a weapon held could hurt `body` from `distance` (in reach, with
 ammunition, enough at once where that is what it takes)."""
 def autoplay_can_hurt(player: Player, state: CombatState, body: Opponent, distance: float) -> bool {
@@ -755,8 +782,25 @@ walker AutoThink {
             # One it holds nothing to hurt with (only the axe, out of reach;
             # nothing that does enough at once to a zombie) is not fought:
             # it keeps on its way, dodging what comes at it.
-            if autoplay_standoff(self.player, self.state, body) < 0.0 {
+            standoff = autoplay_standoff(self.player, self.state, body);
+            knock = autoplay_knock(body);
+            # One put down for good only by a blow big enough at once (Q1's
+            # zombie), lying down: left there, and walked past.
+            if knock > 0 and body.pain_down {
                 continue;
+            }
+            # Nothing held to put it down from here (none at all, or a
+            # zombie at the grenade launcher's elbow): standing to fight is
+            # only being hit. A zombie near is knocked down to get by; else
+            # it keeps on its way, and turns on it again with room to.
+            if standoff < 0.0 or (distance < standoff and not autoplay_can_hurt(self.player, self.state, body, distance)) {
+                # The one it is already on is kept a little farther (no
+                # dithering at the edge).
+                limit = 450.0 if body is self.bot.enemy else 350.0;
+                if knock <= 0 or distance > limit
+                    or autoplay_weapon(self.player, self.state, distance, self.player.water_depth >= 2, knock) <= 0 {
+                    continue;
+                }
             }
             nearest = distance;
             best = body;
@@ -880,7 +924,7 @@ walker AutoThink {
                 movers.append((model, 0));
             }
         }
-        busy = [bot.objective.mover] if bot.objective is not None else [];
+        busy = self.opened_with(bot.objective.mover) if bot.objective is not None else [];
         busy.extend([held.mover for held in bot.waiting]);
         for (model, area) in movers {
             resting = area in bot.rest_areas;
@@ -888,8 +932,11 @@ walker AutoThink {
                 # Being seen to further down the stack (not by the objective
                 # under way, which may be done from on the mover), and not yet
                 # open: no way through it meanwhile. Never the area it is in.
+                # Its own mover stays open to it only where it is done from
+                # on the mover; else it is not opened by going through it.
                 current = bot.objective;
-                its_own = current is not None and (current.mover == model or current.stand == area);
+                its_own = current is not None and current.stand > 0
+                    and (current.stand == area or area_mover_model(mesh.aas.areas[current.stand].contents) == model);
                 here_area = bot.area_near(self.origin)[0];
                 if not its_own and area > 0 and area != here_area and area not in mesh.disabled
                     and mover_area_blocked(self.world, model, self.player, resting) {
@@ -991,15 +1038,84 @@ walker AutoThink {
         return reachable;
     }
 
+    """The BSP models of the mover `model` and every mover set going with
+    it (the same targetname; none for 0)."""
+    def opened_with(model: int) -> list[int] {
+        if model <= 0 {
+            return [];
+        }
+        leader = objective_mover(self.world, model);
+        if leader is None {
+            return [model];
+        }
+        found = [model];
+        name = leader.activation.name;
+        if not name {
+            return found;
+        }
+        for other in [self.world->:HasDoor:->][?:Door] {
+            if other.activation.name == name and other.model not in found {
+                found.append(other.model);
+            }
+        }
+        return found;
+    }
+
     """Take up the objective, of `choices`, the route reaches soonest and that
     was not given up on lately. Whether one was."""
-    def take_objective(choices: list[Objective], within: int = UNREACHED) -> bool {
+    def take_objective(choices: list[Objective], within: int = UNREACHED, open_only: bool = False) -> bool {
         bot = self.bot;
         mesh = bot.mesh;
         if mesh is None {
             return False;
         }
         here_area = self.bot.area_near(self.origin)[0];
+        # Supplies are only worth what can be had now: not seen through bars
+        # or behind a door that is still shut.
+        gated = self.shut_areas(here_area) if open_only else [];
+        for a in gated {
+            mesh.enable_area(a, False);
+        }
+        taken = self.take_best(choices, within, here_area);
+        for a in gated {
+            mesh.enable_area(a, True);
+        }
+        return taken;
+    }
+
+    """Every area of a mover that is no way through now (but `keep`), open
+    to routing."""
+    def shut_areas(keep: int) -> list[int] {
+        bot = self.bot;
+        mesh = bot.mesh;
+        found: list[int] = [];
+        if mesh is None {
+            return found;
+        }
+        blocked: dict[tuple[int, bool], bool] = {};
+        for a in range(1, len(mesh.aas.areas)) {
+            model = area_mover_model(mesh.aas.areas[a].contents);
+            if model <= 0 or a == keep or a in mesh.disabled {
+                continue;
+            }
+            key = (model, a in bot.rest_areas);
+            if key not in blocked {
+                blocked[key] = mover_area_blocked(self.world, model, self.player, key[1]);
+            }
+            if blocked[key] {
+                found.append(a);
+            }
+        }
+        return found;
+    }
+
+    """take_objective's choosing, with the routing as it stands."""
+    def take_best(choices: list[Objective], within: int, here_area: int) -> bool {
+        bot = self.bot;
+        mesh = bot.mesh;
+        if mesh is None {
+            return False;
+        }
         best: Objective | None = None;
         best_time = UNREACHED;
         notes: list[str] = [];
@@ -1047,6 +1163,23 @@ walker AutoThink {
             if not spots and box is None {
                 spots.append(self.stand_area(choice.point));
             }
+            # Not reached through the mover it is to open (a plate behind
+            # the bars it lifts is for the far side).
+            # Nor through the others it opens with it (twin bars on one
+            # signal).
+            through: list[int] = [];
+            for model in self.opened_with(choice.mover) {
+                shut_open = mover_area_blocked(self.world, model, self.player, False);
+                shut_rest = mover_area_blocked(self.world, model, self.player, True);
+                through.extend([
+                    a
+                    for a in bot.mover_areas(model)
+                    if a != here_area and a not in mesh.disabled and (shut_rest if a in bot.rest_areas else shut_open)
+                ]);
+            }
+            for a in through {
+                mesh.enable_area(a, False);
+            }
             for (area, spot) in spots {
                 if area == 0 {
                     continue;
@@ -1063,6 +1196,9 @@ walker AutoThink {
                     choice.stand = area;
                     choice.stand_point = spot;
                 }
+            }
+            for a in through {
+                mesh.enable_area(a, True);
             }
             if not spots {
                 notes.append(label + ", \"result\": \"no area reaches it\"}");
@@ -1132,7 +1268,7 @@ walker AutoThink {
     def resupply() -> bool {
         # Out of ammunition it goes for some even with an enemy in sight:
         # standing to fight with the axe loses.
-        if self.take_objective(self.ammo_nearby(), 1500) {
+        if self.take_objective(self.ammo_nearby(), 1500, True) {
             return True;
         }
         if self.bot.enemy is not None {
@@ -1142,7 +1278,7 @@ walker AutoThink {
         # out), it tops up sooner.
         current = self.bot.objective;
         wary = current is not None and current.kind in ["press", "touch", "shoot"];
-        if self.player.health < (75 if wary else 60) and self.take_objective(self.health_nearby(), 1500) {
+        if self.player.health < (75 if wary else 60) and self.take_objective(self.health_nearby(), 1500, True) {
             return True;
         }
         # Something worth a short way round, but not on top of an objective
@@ -1150,7 +1286,7 @@ walker AutoThink {
         if self.bot.objective is not None {
             return False;
         }
-        return self.take_objective(self.on_the_way(), 300);
+        return self.take_objective(self.on_the_way(), 300, True);
     }
 
     """Whether it holds a weapon with ammunition (beyond the axe and the
@@ -1588,12 +1724,18 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                 self.route = planned;
                 self.lost_since = -1.0;
                 kinds = [str(passage.kind) for passage in planned.passages if passage is not None];
+                movers = [
+                    str(a) + ":" + str(area_mover_model(mesh.aas.areas[a].contents)) + ("r" if a in self.rest_areas else "")
+                    for a in planned.areas
+                    if a > 0 and a < len(mesh.aas.areas) and area_mover_model(mesh.aas.areas[a].contents) > 0
+                ];
                 self.trace.event("route", self.clock, {
                     "goal": trace_text(self.goal_name),
                     "from_area": str(self.area_near(origin)[0]),
                     "to_area": str(self.goal_area),
                     "legs": str(len(planned.points)),
-                    "kinds": trace_text(" ".join(kinds[0:24]))
+                    "kinds": trace_text(" ".join(kinds[0:24])),
+                    "movers": trace_text(" ".join(movers))
                 });
             } elif not planned.pending and self.lost_since < 0.0 {
                 self.lost_since = self.clock;
@@ -1721,6 +1863,27 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             }
         }
     }
+    # On a lift still going up or down: held still on it until it stops.
+    # Stepping off part way (the route has it at the top once it is near)
+    # drops it back down the shaft. Not for long: a mover held up by
+    # something goes back and forth.
+    riding = self.rising_under(world, level, origin) if player.grounded else None;
+    if riding is not None and self.ride_held < 6.0 {
+        self.ride_held += dt;
+        # To its middle meanwhile: near an edge the shaft's lip catches the
+        # body and turns the lift back.
+        centre = riding.bounds.center().add(riding.rest).add(riding.travel.scale(riding.position));
+        to_centre = Vec3(x=centre.x - origin.x, y=centre.y - origin.y);
+        intent.move = Vec3();
+        if to_centre.length() > 12.0 {
+            way = to_centre.normalized();
+            share = min(1.0, to_centre.length() / 64.0);
+            intent.move = Vec3(x=way.dot(right_from(player.yaw)) * share, y=way.dot(forward_from(player.yaw, 0.0)) * share);
+        }
+        intent.jump = False;
+    } elif player.grounded {
+        self.ride_held = 0.0;
+    }
     # In a fight with an enemy near, stand and sidestep rather than run on:
     # back and forth across its line, turning about at walls and ledges.
     foe = self.enemy;
@@ -1747,6 +1910,18 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             # two hundred units, or as far as its weapon needs (a grenade
             # launcher against a zombie), unless a ledge is behind.
             standoff = max(220.0, autoplay_standoff(player, state, foe) + 20.0);
+            wet = player.water_depth >= 2;
+            needed = autoplay_needed(foe);
+            # Knocking a zombie down rather than blowing it apart: near
+            # enough to hit, not off at the grenade launcher's distance.
+            if autoplay_knock(foe) > 0 and autoplay_weapon(player, state, reach, wet, needed) <= 0 {
+                standoff = 220.0;
+                needed = autoplay_knock(foe);
+            }
+            # Out of reach of all it holds: in closer, still sidestepping.
+            if reach > standoff and autoplay_weapon(player, state, reach, wet, needed) <= 0 {
+                wish = ahead.scale(0.9).add(side.scale(0.45));
+            }
             if reach < standoff {
                 behind = ahead.scale(-1.0);
                 drop = gap_distance(level.collision, origin, behind);
@@ -1798,6 +1973,10 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         want_pitch = math.atan2(aim.z, math.sqrt(aim.x * aim.x + aim.y * aim.y));
         distance = aim.length();
         slot = autoplay_weapon(player, state, distance, player.water_depth >= 2, autoplay_needed(enemy));
+        # Nothing to put it down for good from here: knocked down instead.
+        if slot <= 0 and autoplay_knock(enemy) > 0 {
+            slot = autoplay_weapon(player, state, distance, player.water_depth >= 2, autoplay_knock(enemy));
+        }
         if slot > 0 and slot != state.weapon {
             intent.weapon = slot;
         }

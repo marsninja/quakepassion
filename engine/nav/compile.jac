@@ -31,6 +31,7 @@ import from ..formats.aas {
     AasReach,
     TRAVEL_WALK,
     TRAVEL_BARRIERJUMP,
+    TRAVEL_WATERJUMP,
     TRAVEL_JUMP,
     TRAVEL_WALKOFFLEDGE,
     TRAVEL_TELEPORT,
@@ -242,7 +243,12 @@ obj NavGrid {
                 return [(landing, TRAVEL_WALK)];
             }
             if rise > rules.step {
-                return [(landing, TRAVEL_BARRIERJUMP)] if rise <= rules.barrier else [];
+                if rise > rules.barrier {
+                    return [];
+                }
+                # Out of the water onto a ledge: no jump off a floor there,
+                # but the water jump (Q1 CheckWaterJump), facing the wall.
+                return [(landing, TRAVEL_WATERJUMP if spot.liquid == 1 else TRAVEL_BARRIERJUMP)];
             }
             return [(landing, TRAVEL_WALKOFFLEDGE)];
         }
@@ -1010,7 +1016,7 @@ def:priv nav_step_time(kind: int, start: Vec3, finish: Vec3, rules: NavRules) ->
     if kind == TRAVEL_ELEVATOR {
         return int(abs(finish.z - start.z) / 1.5) + 100;
     }
-    if kind == TRAVEL_BARRIERJUMP {
+    if kind == TRAVEL_BARRIERJUMP or kind == TRAVEL_WATERJUMP {
         return run + 50;
     }
     if kind == TRAVEL_SWIM {

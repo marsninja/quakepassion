@@ -80,7 +80,14 @@ node Objective {
             return True;
         }
         door = self.door;
-        return door is not None and (door.position > 0.0 or door.state not in ["closed", "locked"]);
+        if door is None {
+            return False;
+        }
+        # A plat held at the top is there already: done once it is going.
+        if door.kind == "platform" {
+            return door.state != "locked";
+        }
+        return door.position > 0.0 or door.state not in ["closed", "locked"];
     }
 }
 
@@ -123,8 +130,14 @@ def objective_starts_open(door: Door) -> bool {
 }
 
 """Whether a door is where a traveller gets by: open, opening, or, for one
-that starts open (START_OPEN: it closes as it moves), still at rest."""
+that starts open (START_OPEN: it closes as it moves), still at rest; a plat
+once it is going."""
 def objective_door_open(door: Door) -> bool {
+    # A plat waiting where it was drawn until something sets it going (Q1
+    # func_plat with a targetname) is no way by until then.
+    if door.kind == "platform" {
+        return door.state != "locked";
+    }
     if objective_starts_open(door) {
         return door.position <= 0.01;
     }

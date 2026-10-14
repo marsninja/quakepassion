@@ -59,6 +59,21 @@ with entry {
         mesh = build_navmesh(app.world, build.aas, app.level.bsp);
         eye = app.level.collision.eye_height;
         origin = app.player.pos.sub(Vec3(z=eye));
+        # QP_NAV_BOX=x,y,z: sweep the player's box 32 units each way from
+        # there through the live level (doors as they start) and say what stops it.
+        box_at = [float(word) for word in os.getenv("QP_NAV_BOX", "").split(",") if word];
+        if len(box_at) == 3 {
+            here = Vec3(x=box_at[0], y=box_at[1], z=box_at[2]);
+            for way in [Vec3(x=32.0), Vec3(x=-32.0), Vec3(y=32.0), Vec3(y=-32.0), Vec3(z=-8.0)] {
+                swept = app.level.collision.trace(here, here.add(way));
+                print("NAV box", way.x, way.y, way.z, "fraction", round(swept.fraction, 3), "solid", swept.start_solid, swept.all_solid, "normal", swept.normal.x, swept.normal.y, swept.normal.z, "model", swept.model);
+            }
+        }
+        # QP_NAV_FROM=x,y,z: plan from there instead of the start.
+        from_point = [float(word) for word in os.getenv("QP_NAV_FROM", "").split(",") if word];
+        if len(from_point) == 3 {
+            origin = Vec3(x=from_point[0], y=from_point[1], z=from_point[2]);
+        }
         start_area = mesh.locate(origin);
         reached = reached_from(build.aas, start_area);
         print("NAV", name, "start area", start_area, "at", origin.x, origin.y, origin.z, "reaches", len(reached), "of", len(build.aas.areas) - 1);
