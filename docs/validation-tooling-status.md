@@ -43,7 +43,6 @@ differing pixels (`tests/validation_images_tests.jac`).
 | `scripts/validate_quake.jac --game q1\|q2\|q3 [maps]` | `qp` with `QP_SMOKE=1` per map: five captures (PVS on/off at spawn, a turn, PVS on/off after moving); PVS pairs differ by at most 16 pixels of the 1280×720 window (captures are the framebuffer, so on a HiDPI display they are 2560×1440 and the allowance scales with them); the turn and move change the view | `.jac/screenshots/<game>/<map>/` |
 | `scripts/validate_menu.jac` | `scripts/menu_smoke.jac` with a disposable `HOME`: console, settings, bindings, resize, level list, game switching, failed load, Quit (see [menu and console](menu-console-status.md)) | `.jac/screenshots/menu/` |
 | `scripts/validate_gameplay.jac` | The `persistence`, `gameplay`, `campaign` and `combat` smokes with isolated saves | `.jac/screenshots/gameplay/` |
-| `scripts/validate_passion.jac` | `scripts/passion_smoke.jac`: a generated route, mixed assets, saves and the menu | `.jac/screenshots/passion/` |
 
 A `QP_SMOKE` run reads no saved settings, opens the 1280×720 window whatever
 the game's `default.cfg` asks for (Quake II's sets `vid_fullscreen 1`), and
@@ -69,8 +68,17 @@ game with `QP_GAME` and a directory with `QP_ASSETS`.
 | `validate_collision_index.jac` | Indexed collision queries against exhaustive ones |
 | `validate_models.jac`, `validate_alias_models.jac` | Every Q2 MD2 and skin; Q1 MDL and Q3 MD3 archives, and how each Q3 model shader script is drawn (stages, hidden, or plain skin with the reason) |
 | `validate_patches.jac` (`QP_SUBDIVISIONS`) | Every Q3 map's patches subdivided and stitched: valid grids, normals and LOD errors, and triangle counts beside the former fixed tessellation and the coarsest level of detail |
-| `validate_generation.jac` | Passion's generator (no assets): every seed softlock-free and completable |
+| `passion_map.jac` (`QP_SEEDS`) | Passion's generator (no assets): how each seed's survey went (candidates, rejections and why, teleporters, windows, the critic's score), or one seed's map file |
+| `passion_corpus.jac` (`QP_CORPUS_GAMES`, `QP_CORPUS_MAPS`) | The yardstick's measures and texture use of every original level, or of generated expeditions (`passion`) lit with real materials |
 | `audit_campaigns.jac`, `chain_audit.jac` (Q1/Q2; `QP_AUDIT_GAMES`, `QP_AUDIT_MAPS`) | Entity inventory of the installed maps; per-map exits, disabled movers and triggers, unactivated targets |
+
+## Looking at levels
+
+`scripts/passion_look.jac` loads a level through the `App` (any game, or a
+Passion seed) and photographs it: from the standing places with the widest
+views a player can reach, along the shortest route from start to exit
+(`QP_LOOK_ROUTE=1`), or from given places (`QP_LOOK_AT`). It is how generated
+expeditions are compared with the original levels by eye.
 
 ## Whole-game sweeps and walkthroughs
 

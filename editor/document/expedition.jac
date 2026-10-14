@@ -1,37 +1,40 @@
 """A Passion expedition as the studio speaks of it: its mission's beats and
-links and its site's rooms said in a line each, which room a place in the
-world is in, and a level's brushes handed to a group for every room, so that
+links and its spaces said in a line each, which space a place in the world
+is in, and a level's world brushes handed to a group for every room, so that
 a generated level opens as rooms that can be picked, locked and kept."""
 
 import from engine.math.vec3 { Vec3 }
 import from games.passion.mission { Expedition, Beat, Link, beats_of, links_of }
-import from games.passion.layout { Site, Room, Passage, CELL, rooms_of, passages_of }
+import from games.passion.spaces { Space }
+import from games.passion.massing { CELL, LIFT }
 import from editor.formats.map { MapItem }
 import from editor.geometry.brush { Side, brush_windings }
 
-"""A cell of the blueprint is so many units of the world each way."""
-glob CELL_UNITS: float = 32.0;
-
-"""The room a place in the world is in: the one whose share of the site
-holds it. -1 for a place in no room (a corridor, the rock between)."""
-def room_at(rooms: list[Room], x: float, y: float) -> int {
-    across = int(x // (CELL_UNITS * float(CELL)));
-    down = int(y // (CELL_UNITS * float(CELL)));
-    for room in rooms {
-        if room.contains(across, down) {
-            return room.beat;
+"""The room a place in the world is in: the space whose box (grown by a
+cell, for its walls) holds it, rooms before corridors. -1 for a place in
+none (the rock between)."""
+def space_at(spaces: list[Space], x: float, y: float, z: float) -> int {
+    cx = int(x // CELL);
+    cy = int(y // CELL);
+    cz = int(z // LIFT);
+    found = -1;
+    for space in spaces {
+        if space.x - 1 <= cx < space.x + space.w + 1 and space.y - 1 <= cy < space.y + space.d + 1
+            and space.z - 1 <= cz < space.z + space.h + 1 {
+            if space.role != "corridor" {
+                return space.id;
+            }
+            if found < 0 {
+                found = space.id;
+            }
         }
     }
-    return -1;
+    return found;
 }
 
-"""Where a room's middle is, on its floor."""
-def room_middle(room: Room) -> Vec3 {
-    return Vec3(
-        x=(float(room.x) + float(room.w) / 2.0) * float(CELL) * CELL_UNITS,
-        y=(float(room.y) + float(room.h) / 2.0) * float(CELL) * CELL_UNITS,
-        z=float(room.z)
-    );
+"""Where a space's middle is, on its lowest floor."""
+def space_middle(space: Space) -> Vec3 {
+    return Vec3(x=space.middle_x() * CELL, y=space.middle_y() * CELL, z=float(space.z) * LIFT);
 }
 
 """The middle of a brush: of its corners."""
@@ -47,15 +50,18 @@ def brush_middle(sides: list[Side]) -> Vec3 {
     return total.scale(1.0 / float(count)) if count > 0 else total;
 }
 
-"""What a room is called as a group."""
-def room_name(room: Room) -> str {
-    return "room " + str(room.beat) + " " + (room.kind if room.kind != "room" else room.recipe);
+"""What a space is called as a group."""
+def space_name(space: Space) -> str {
+    if space.role == "corridor" {
+        return "way " + str(space.id);
+    }
+    return "room " + str(space.id) + " " + space.role + " " + space.kind;
 }
 
 """A level's entities with the world's brushes handed out: a group for each
-room that has any, named for it, and one for the ways between; the world
-keeps none. The other entities are as they were."""
-def room_groups(found: list[MapItem], rooms: list[Room]) -> list[MapItem] {
+space that has any, named for it; the world keeps whatever lies in none.
+The other entities are as they were."""
+def space_groups(found: list[MapItem], spaces: list[Space]) -> list[MapItem] {
     held: dict[int, list[list[Side]]] = {};
     made: list[MapItem] = [];
     for item in found {
@@ -63,23 +69,25 @@ def room_groups(found: list[MapItem], rooms: list[Room]) -> list[MapItem] {
             made.append(item);
             continue;
         }
+        kept: list[list[Side]] = [];
         for sides in item.brushes {
             at = brush_middle(sides);
-            which = room_at(rooms, at.x, at.y);
+            which = space_at(spaces, at.x, at.y, at.z);
+            if which < 0 {
+                kept.append(sides);
+                continue;
+            }
             if which not in held {
                 held[which] = [];
             }
             held[which].append(sides);
         }
-        made.append(MapItem(fields=dict(item.fields), brushes=[], patches=item.patches));
+        made.append(MapItem(fields=dict(item.fields), brushes=kept, patches=item.patches));
     }
-    for room in rooms {
-        if room.beat in held {
-            made.append(MapItem(fields={"classname": "func_group", "_group_name": room_name(room)}, brushes=held[room.beat]));
+    for space in spaces {
+        if space.id in held {
+            made.append(MapItem(fields={"classname": "func_group", "_group_name": space_name(space)}, brushes=held[space.id]));
         }
-    }
-    if -1 in held {
-        made.append(MapItem(fields={"classname": "func_group", "_group_name": "ways between"}, brushes=held[-1]));
     }
     return made;
 }
@@ -98,9 +106,10 @@ def link_words(link: Link) -> str {
         + (" needs=" + ",".join(link.needs) if link.needs else "");
 }
 
-"""A room of the site in a line."""
-def room_words(room: Room) -> str {
-    return "room " + str(room.beat) + " " + room.kind + " recipe=" + room.recipe + " at=" + str(room.x) + "," + str(room.y)
-        + " size=" + str(room.w) + "x" + str(room.h) + " floor=" + str(room.z) + " ceiling=" + str(room.ceiling)
-        + " district=" + str(room.district) + " order=" + str(room.order);
+"""A space in a line."""
+def space_words(space: Space) -> str {
+    return "space " + str(space.id) + " " + space.role + " " + space.kind + " beat=" + str(space.beat) + " at="
+        + str(space.x) + "," + str(space.y) + "," + str(space.z) + " size=" + str(space.w) + "x" + str(space.d) + "x"
+        + str(space.h) + " levels=" + ",".join([str(level) for level in space.levels]) + " district=" + str(space.district)
+        + " order=" + str(space.order);
 }

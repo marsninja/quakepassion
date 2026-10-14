@@ -1,40 +1,43 @@
-"""Generate a seeded Passion expedition by quality-diversity candidate search.
+"""Generate a seeded Passion expedition.
 
-A seed selects a niche in a descriptor space (loopiness x verticality x combat
-density x size) and an objective archetype. Several complete candidates are
-generated toward that niche: mission grammar, spatial embedding, height
-solving, interiors, corridors and the encounter director. Each candidate is
-re-proven against its own geometry by the column playtester, measured, and
-scored on quality and distance to the niche. The winner is compiled, given
-cluster visibility, checked physically and baked.
-"""
+A seed picks a niche (how much the expedition loops, how vertical it is,
+how densely it is fought over, how big it is) and an objective archetype.
+Several candidates are built toward it, each in full:
+
+1. a mission graph of beats and links, cyclic and proven free of softlocks
+   (`mission.jac`);
+2. spaces for its beats, each an archetype with height and structure of
+   its own, placed in three dimensions and joined by corridors routed
+   through the massing (`spaces.jac`, `arrange.jac`);
+3. dressing: trim, pilasters, lamps, railings, frames (`dress.jac`), in the
+   materials of districts read off the original levels (`kits.jac`);
+4. its cast: start, objectives, doors and what opens them, foes and
+   supplies (`cast.jac`).
+
+The critic scores each by how near its measures come to the original
+games' levels (`critic.jac` against `corpus.jac`), and the best becomes a
+map: brushes and entities, compiled by the studio's compiler with buried
+faces cut away, and lit by its light bake, kept on disk once baked."""
+import os;
 import math;
+import struct;
+import hashlib;
 import from .random { Stream, stream_for, mix32 }
 import from .mission { Expedition, Beat, Link, beats_of, links_of, build_mission }
-import from .layout {
-    Site,
-    Room,
-    embed,
-    rooms_of,
-    passages_of,
-    target_heights,
-    solve_heights,
-    CELL
-}
-import from .blueprint {
-    Blueprint,
-    new_blueprint,
-    carve_rooms,
-    carve_corridors,
-    carve_windows
-}
-import from .director { direct, Economy }
-import from .compile { compile_blueprint, Compiled }
-import from .visibility { cluster_visibility, visible_pairs }
-import from .playtest { progress, Proof }
-import from .lighting { bake }
-import from .materials { DISTRICTS, district_names }
-import from engine.formats.bsp { Texture }
+import from .arrange { Estate, Corridor, arrange, estate_spaces, estate_corridors, CORRIDOR_HIGH }
+import from .massing { Massing, floor_reached }
+import from .spaces { Space }
+import from .dress { Dressing, dress, frame_doorway, corridor_lamps }
+import from .cast { Casting, cast }
+import from .critic { critic_measures, critic_score }
+import from .brushwork { map_items }
+import from .kits { KITS, kit_of }
+import from editor.formats.map { MapItem, MapFile, write_map }
+import from editor.document.scene { Scene, scene_from_map }
+import from editor.compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials }
+import from editor.compile.light { light_job }
+import from editor.assets.materials { ArchiveMaterials }
+import from engine.formats.bsp { Bsp }
 import from engine.math.vec3 { Vec3 }
 import from engine.world.level { Level, prepare_level }
 import from engine.world.world { World }
@@ -42,71 +45,81 @@ import from engine.world.exits { LevelExit, HasExit }
 import from engine.world.signals { HasSignal }
 import from engine.physics.collision { CollisionMap }
 
-glob VERSION: str = "v2";
-glob CANDIDATES: int = 6;
+glob VERSION: str = "v3";
+glob CANDIDATES: int = 4;
 glob ARCHETYPES: list[str] = ["keys", "relays", "guardian", "mixed"];
 glob BINS: list[float] = [0.15, 0.5, 0.85];
+glob LUXEL: float = 32.0;
+glob BAKE_VERSION: bytes = b"passion-v3-bake-1";
 
+"""What a seed made: its niche and archetype, how many candidates were tried
+and why any were turned down, the winner's mission, estate, massing,
+dressing and cast, its map items, its measures and the critic's score."""
 node Survey {
     has seed: int = 0,
         niche: list[int] = [],
-        target: list[float] = [],
-        measured: list[float] = [],
-        quality: float = 0.0,
+        archetype: str = "",
+        briefing: str = "",
         score: float = 0.0,
         candidates: int = 0,
         valid: int = 0,
-        briefing: str = "",
-        archetype: str = "",
+        rejections: dict[str, int] = {},
+        # What turned candidates down, in a line each (for tools and tests).
+        notes: list[str] = [],
+        measures: dict[str, float] = {},
         start: list[float] = [],
         plan: Expedition | None = None,
-        site: Site | None = None,
-        bp: Blueprint | None = None,
-        economy: Economy | None = None,
-        visible_pairs: int = 0,
-        rejections: dict[str, int] = {};
+        estate: Estate | None = None,
+        mass: Massing | None = None,
+        dressing: Dressing | None = None,
+        casting: Casting | None = None,
+        items: list[MapItem] = [];
 }
 
 edge Surveys: World --> Survey {}
 
+"""The seed an expedition's name stands for: `v3-<seed>`, the seed from 1
+to 2147483646 without leading zeros."""
 def seed_from(name: str) -> int {
     if not name.startswith(VERSION + "-") {
         raise ValueError("Expected expedition " + VERSION + "-SEED");
     }
-    seed = int(name[3:]);
+    seed = int(name[len(VERSION) + 1:]);
     if seed < 1 or seed > 2147483646 or name != VERSION + "-" + str(seed) {
         raise ValueError("Seed must be 1..2147483646");
     }
     return seed;
 }
 
-# Niche coordinates: loopiness, verticality, density and size in three bins
-# each. Consecutive seeds land in unrelated niches.
+"""A seed's niche: loopiness, verticality, density and size, three bins
+each; consecutive seeds land in unrelated niches."""
 def niche_for(seed: int) -> list[int] {
     code = mix32(seed * 2654435761 % 4294967296) % 81;
     return [code % 3, (code // 3) % 3, (code // 9) % 3, (code // 27) % 3];
 }
 
-obj Candidate {
-    has plan: Expedition,
-        site: Site,
-        bp: Blueprint,
-        economy: Economy,
-        proof: Proof,
-        measured: list[float] = [],
-        quality: float = 0.0,
+"""A candidate: what was made, or why it was turned down."""
+obj Draft {
+    has reason: str = "",
+        detail: str = "",
+        plan: Expedition | None = None,
+        estate: Estate | None = None,
+        mass: Massing | None = None,
+        dressing: Dressing | None = None,
+        casting: Casting | None = None,
+        measures: dict[str, float] = {},
         score: float = 0.0;
 }
 
-def assign_districts(plan: Expedition, stream: Stream) {
-    order = stream.order(DISTRICTS);
-    count = min(DISTRICTS, max(2, plan.sections + stream.below(2)));
+"""Districts for a plan: two or three kits, a section each in turn."""
+def choose_districts(plan: Expedition, stream: Stream) {
+    order = stream.order(len(KITS));
+    count = min(len(KITS), max(2, min(3, plan.sections + stream.below(2))));
     plan.districts = order[:count];
     beats = beats_of(plan);
     for beat in beats {
         beat.district = plan.districts[beat.section % count];
     }
-    # Optional rooms borrow their parent's district.
     for beat in beats {
         if beat.optional {
             for other in [beat<-:Link:<-][?:Beat] {
@@ -116,388 +129,371 @@ def assign_districts(plan: Expedition, stream: Stream) {
     }
 }
 
-def measure(candidate: Candidate) -> list[float] {
-    rooms = rooms_of(candidate.site);
-    links = [
-        link
-        for link in links_of(candidate.plan)
-        if link.mode != "window"
-    ];
-    cycles = len(links) - len(rooms) + 1;
-    loop = min(1.0, float(max(0, cycles)) / max(1.0, 0.3 * float(len(rooms))));
-    climb = 0.0;
-    passages = [
-        p
-        for p in passages_of(candidate.site)
-        if not p.teleport and not p.window
-    ];
-    for passage in passages {
-        a = rooms[passage.tail];
-        b = rooms[passage.head];
-        climb += float(
-            abs((a.z + passage.tail_socket.offset) - (b.z + passage.head_socket.offset))
-        );
-    }
-    spread = float(max([room.z for room in rooms]) - min([room.z for room in rooms]));
-    vertical = min(
-        1.0, 0.5 * climb / max(1.0, float(len(passages))) / 96.0 + 0.5 * spread / 640.0
-    );
-    fights = len(
-        [
-            room
-            for room in rooms
-            if room.kind not in ["start", "goal", "recovery", "cache", "vista"]
-        ]
-    );
-    density = min(
-        1.0, float(candidate.economy.monsters) / max(1.0, float(fights)) / 5.0
-    );
-    size = max(0.0, min(1.0, float(len(rooms) - 12) / 26.0));
-    return [loop, vertical, density, size];
-}
-
-def judge(candidate: Candidate) -> float {
-    quality = 1.0;
-    quality -= 0.08 * float(candidate.site.teleports);
-    quality += min(0.12, 0.04 * float(candidate.site.windows));
-    low = candidate.economy.low;
-    if low < 15.0 {
-        quality -= (15.0 - low) / 60.0;
-    }
-    recipes: list[str] = [];
-    for beat in candidate.bp.interiors {
-        recipe = candidate.bp.interiors[beat].recipe;
-        if recipe not in recipes {
-            recipes.append(recipe);
+"""The rooms whose stage cannot be walked to from the start's, the doors
+all open (teleporters taken as ways from stage to stage); every room when
+there is no start."""
+def stages_missed(estate: Estate, mass: Massing, by_id: dict[int, Space]) -> list[Space] {
+    start: Space | None = None;
+    for space in by_id.values() {
+        if space.role == "start" {
+            start = space;
         }
     }
-    rooms = rooms_of(candidate.site);
-    quality += 0.25 * float(len(recipes)) / float(min(len(rooms), 11));
-    secrets = len(
-        [
-            room
-            for room in rooms
-            if room.kind == "cache"
-        ]
-    );
-    quality += 0.03 * float(min(secrets, 3));
-    # Every mandatory room should be on the proven route.
-    quality -= 0.05
-        * float(
-            len(
-                [
-                    room
-                    for room in rooms
-                    if room.beat not in candidate.proof.rooms and not room.optional
-                ]
-            )
-        );
-    return quality;
+    rooms = [space for space in by_id.values() if space.role != "corridor" and space.stage];
+    if start is None or not start.stage {
+        return rooms;
+    }
+    links: list[list[int]] = [];
+    for corridor in estate_corridors(estate) {
+        if corridor.teleport and corridor.tail in by_id and corridor.head in by_id {
+            tail = by_id[corridor.tail];
+            head = by_id[corridor.head];
+            links.append(tail.stage + head.stage);
+            if corridor.mode != "valve" {
+                links.append(head.stage + tail.stage);
+            }
+        }
+    }
+    reached = floor_reached(mass, start.stage[0], start.stage[1], start.stage[2], links);
+    missed: list[Space] = [];
+    for space in rooms {
+        if ((space.stage[2] * mass.ny + space.stage[1]) * mass.nx + space.stage[0]) not in reached {
+            missed.append(space);
+        }
+    }
+    return missed;
 }
 
-glob REJECTIONS: dict[str, int] = {};
-
-# Everything one candidate attempt produced, and why it was rejected if it was.
-obj Draft {
-    has reason: str = "",
-        plan: Expedition | None = None,
-        site: Site | None = None,
-        bp: Blueprint | None = None,
-        economy: Economy | None = None,
-        proof: Proof | None = None;
+"""Flood the pits of chasms: deep with the district's own liquid where
+nothing needs the pit floor (no doorway opens there and the objective is
+on the bridge), else a lift of water to wade through."""
+def flood_pits(estate: Estate, by_id: dict[int, Space], dice: Stream) {
+    used_levels: dict[int, list[int]] = {};
+    for corridor in estate_corridors(estate) {
+        if corridor.out_door is not None {
+            used_levels.setdefault(corridor.tail, []).append(corridor.out_door.level);
+        }
+        if corridor.in_door is not None {
+            used_levels.setdefault(corridor.head, []).append(corridor.in_door.level);
+        }
+        if corridor.teleport {
+            used_levels.setdefault(corridor.tail, []).append(-1);
+            used_levels.setdefault(corridor.head, []).append(-1);
+        }
+    }
+    for space in by_id.values() {
+        if space.kind != "chasm" or not dice.chance(0.8) {
+            continue;
+        }
+        levels = used_levels.get(space.id, []);
+        floor_used = space.z in levels or -1 in levels or (space.stage and space.stage[2] == space.z);
+        space.deadly = not floor_used;
+        space.flood = 3 if space.deadly else 1;
+    }
 }
 
-def assemble(seed: int, index: int, niche: list[int], archetype: str) -> Draft {
+"""Build one candidate in full."""
+def build_draft(seed: int, index: int, niche: list[int], archetype: str) -> Draft {
     stream = stream_for(seed, "candidate").child("k", index);
     draft = Draft();
-    target_loop = BINS[niche[0]];
-    target_vertical = BINS[niche[1]];
-    target_density = [0.3, 0.55, 0.85][niche[2]];
-    rooms = [16, 24, 32][niche[3]] + stream.between(-3, 3);
-    loopiness = max(0.0, min(1.0, target_loop + stream.uniform(-0.15, 0.15)));
-    verticality = max(0.0, min(1.0, target_vertical + stream.uniform(-0.15, 0.15)));
-    density = max(0.15, min(1.0, target_density + stream.uniform(-0.1, 0.1)));
-    sections = 1 + niche[3] + stream.below(2);
-    objectives = 1 + stream.below(3);
-    plan: Expedition | None = None;
+    loopiness = max(0.0, min(1.0, BINS[niche[0]] + stream.uniform(-0.15, 0.15)));
+    verticality = max(0.2, min(1.0, BINS[niche[1]] + 0.15 + stream.uniform(-0.1, 0.1)));
+    density = max(0.25, min(1.0, [0.35, 0.55, 0.8][niche[2]] + stream.uniform(-0.1, 0.1)));
+    rooms = [12, 16, 21][niche[3]] + stream.between(-2, 2);
+    sections = 1 + niche[3] // 2 + stream.below(2);
+    objectives = 1 + stream.below(2);
     try {
-        plan = build_mission(
-            seed,
-            stream.derive("mission"),
-            archetype,
-            objectives,
-            sections,
-            rooms,
-            loopiness
-        );
+        plan = build_mission(seed, stream.derive("mission"), archetype, objectives, sections, rooms, loopiness);
     } except (AssertionError, ValueError) {
         draft.reason = "mission";
         return draft;
     }
-    if plan is None {
-        draft.reason = "mission";
-        return draft;
-    }
-    draft.plan = plan;
     plan.verticality = verticality;
     plan.density = density;
     plan.candidate = index;
-    assign_districts(plan, stream.derive("districts"));
-    site = embed(plan, stream.derive("layout"));
-    draft.site = site;
-    if site.failures {
-        draft.reason = "layout " + site.failures;
+    choose_districts(plan, stream.derive("districts"));
+    draft.plan = plan;
+    made = arrange(plan, stream.derive("layout"));
+    estate: Estate = made[0];
+    mass: Massing = made[1];
+    draft.estate = estate;
+    draft.mass = mass;
+    if estate.failures {
+        draft.reason = "layout";
         return draft;
     }
-    target_heights(site, stream.derive("heights"), verticality);
-    if not solve_heights(site) {
-        draft.reason = "heights";
+    links = len(links_of(plan));
+    if estate.teleports > max(2, links // 4) {
+        draft.reason = "routing";
+        draft.detail = str(estate.teleports) + " of " + str(links) + " links by teleporter";
         return draft;
     }
-    for room in rooms_of(site) {
-        room.district = beats_of(plan)[room.beat].district;
+    spaces = estate_spaces(estate);
+    by_id: dict[int, Space] = {};
+    for space in spaces {
+        by_id[space.id] = space;
     }
-    bp = new_blueprint(site);
-    draft.bp = bp;
-    if not carve_rooms(bp, site, stream.derive("rooms"), verticality) {
-        draft.reason = "interior";
+    flood_pits(estate, by_id, stream.derive("pits"));
+    missed = stages_missed(estate, mass, by_id);
+    if missed {
+        draft.reason = "unreachable";
+        draft.detail = ", ".join([str(space.id) + " " + space.kind + " (" + space.role + ")" for space in missed]);
         return draft;
     }
-    if not carve_corridors(
-        bp, site, plan, stream.derive("corridors"), beats_of(plan)
-    ) {
-        draft.reason = "corridor";
-        return draft;
+    dressing = dress(mass, spaces, stream.derive("dress"));
+    for corridor in estate_corridors(estate) {
+        if corridor.air in by_id and corridor.blocks {
+            corridor_lamps(dressing, by_id[corridor.air], corridor.blocks, CORRIDOR_HIGH);
+        }
+        if corridor.out_door is not None and corridor.tail in by_id {
+            frame_doorway(dressing, by_id[corridor.tail], corridor.out_door, CORRIDOR_HIGH);
+        }
+        if corridor.in_door is not None and corridor.head in by_id and corridor.in_door.floored {
+            frame_doorway(dressing, by_id[corridor.head], corridor.in_door, CORRIDOR_HIGH);
+        }
     }
-    carve_windows(bp, site);
-    if [
-        door
-        for door in bp.doors
-        if door.kind == "invalid"
-    ] {
-        draft.reason = "doors";
-        return draft;
-    }
-    draft.economy = direct(plan, site, bp, stream.derive("director"), density);
-    starts = [
-        mark
-        for mark in bp.marks
-        if mark.kind == "info_player_start"
-    ];
-    if not starts {
+    draft.dressing = dressing;
+    casting = cast(estate, mass, plan, stream.derive("cast"), density);
+    draft.casting = casting;
+    if not casting.start {
         draft.reason = "start";
         return draft;
     }
-    proof = progress(plan, bp, site, starts[0].x, starts[0].y);
-    draft.proof = proof;
-    if not proof.reached_exit {
-        draft.reason = "proof";
+    if not casting.exit_low {
+        draft.reason = "exit";
+        return draft;
     }
+    supplies = casting.placed_health + casting.placed_armor + casting.placed_shells;
+    draft.measures = critic_measures(mass, dressing.lamps, casting.monsters, supplies);
+    draft.score = critic_score(draft.measures);
     return draft;
 }
 
-def build_candidate(
-    seed: int, index: int, niche: list[int], archetype: str
-) -> Candidate | None {
-    draft = assemble(seed, index, niche, archetype);
-    if draft.reason {
-        REJECTIONS[draft.reason] = REJECTIONS.get(draft.reason, 0) + 1;
-        return None;
-    }
-    plan = draft.plan;
-    site = draft.site;
-    bp = draft.bp;
-    economy = draft.economy;
-    proof = draft.proof;
-    if plan is None or site is None or bp is None or economy is None or proof is None {
-        return None;
-    }
-    candidate = Candidate(plan=plan, site=site, bp=bp, economy=economy, proof=proof);
-    candidate.measured = measure(candidate);
-    candidate.quality = judge(candidate);
-    return candidate;
-}
-
+"""The banner for an expedition: the districts its route crosses and what
+it asks."""
 def briefing_for(plan: Expedition) -> str {
     counts: dict[str, int] = {};
     for token in plan.objectives {
-        kind = "keys"
-            if token.startswith("key_")
-            else ("relays" if token.startswith("relay:") else "guardians");
+        kind = "keys" if token.startswith("key_") else ("relays" if token.startswith("relay:") else "guardians");
         counts[kind] = counts.get(kind, 0) + 1;
     }
     parts: list[str] = [];
     if counts.get("keys", 0) {
-        parts.append(
-            "recover "
-                + str(counts["keys"])
-                + (" keys" if counts["keys"] > 1 else " key")
-        );
+        parts.append("recover " + str(counts["keys"]) + (" keys" if counts["keys"] > 1 else " key"));
     }
     if counts.get("relays", 0) {
-        parts.append(
-            "throw "
-                + str(counts["relays"])
-                + (" relays" if counts["relays"] > 1 else " relay")
-        );
+        parts.append("throw " + str(counts["relays"]) + (" relays" if counts["relays"] > 1 else " relay"));
     }
     if counts.get("guardians", 0) {
-        parts.append(
-            "slay "
-                + str(counts["guardians"])
-                + (" guardians" if counts["guardians"] > 1 else " guardian")
-        );
+        parts.append("slay " + str(counts["guardians"]) + (" guardians" if counts["guardians"] > 1 else " guardian"));
     }
-    called = district_names();
-    route = " > ".join([called[d % len(called)] for d in plan.districts]);
+    route = " > ".join([kit_of(district).name for district in plan.districts]);
     return route + " | " + ", ".join(parts).capitalize() + ", reach extraction";
 }
 
+"""Survey a seed: build candidates toward its niche and keep the one the
+critic likes best."""
 def survey(seed: int, wanted: list[int] = []) -> Survey {
-    # The niche is the seed's own unless an editor asks for another.
-    niche = list(wanted) if len(wanted) == 4 else niche_for(seed);
-    archetype = ARCHETYPES[mix32(seed + 7919) % len(ARCHETYPES)];
-    target = [
-        BINS[niche[0]],
-        BINS[niche[1]],
-        [0.3, 0.55, 0.85][niche[2]],
-        [0.15, 0.5, 0.85][niche[3]]
-    ];
-    best: Candidate | None = None;
-    result = Survey(seed=seed, niche=niche, target=target, archetype=archetype);
-    for index in range(CANDIDATES * 3) {
-        if index >= CANDIDATES and best is not None {
-            break;
-        }
-        result.candidates += 1;
-        candidate: Candidate | None = None;
-        try {
-            candidate = build_candidate(seed, index, niche, archetype);
-        } except (AssertionError, ValueError) {
-            candidate = None;
-        }
-        if candidate is None {
+    niche = niche_for(seed) if not wanted else wanted;
+    archetype = ARCHETYPES[mix32(seed + 977) % len(ARCHETYPES)];
+    record = Survey(seed=seed, niche=niche, archetype=archetype);
+    best: Draft | None = None;
+    attempt = 0;
+    while attempt < CANDIDATES * 3 and record.valid < CANDIDATES {
+        draft = build_draft(seed, attempt, niche, archetype);
+        attempt += 1;
+        record.candidates += 1;
+        if draft.reason {
+            record.rejections[draft.reason] = record.rejections.get(draft.reason, 0) + 1;
+            record.notes.append(draft.reason + ": " + draft.detail);
             continue;
         }
-        result.valid += 1;
-        distance = 0.0;
-        for axis in range(4) {
-            distance += (candidate.measured[axis] - target[axis])
-                * (candidate.measured[axis] - target[axis]);
-        }
-        candidate.score = candidate.quality - 1.2 * math.sqrt(distance);
-        if best is None or candidate.score > best.score {
-            best = candidate;
+        record.valid += 1;
+        if best is None or draft.score > best.score {
+            best = draft;
         }
     }
     if best is None {
-        raise ValueError("No valid expedition candidate for seed " + str(seed));
+        raise ValueError("No expedition could be built for seed " + str(seed) + ": " + " | ".join(record.notes));
     }
-    result.plan = best.plan;
-    result.site = best.site;
-    result.bp = best.bp;
-    result.economy = best.economy;
-    result.measured = best.measured;
-    result.quality = best.quality;
-    result.score = best.score;
-    result.briefing = briefing_for(best.plan);
-    starts = [
-        mark
-        for mark in best.bp.marks
-        if mark.kind == "info_player_start"
-    ];
-    result.start = [starts[0].x, starts[0].y, starts[0].z];
-    return result;
+    record.plan = best.plan;
+    record.estate = best.estate;
+    record.mass = best.mass;
+    record.dressing = best.dressing;
+    record.casting = best.casting;
+    record.measures = best.measures;
+    record.score = best.score;
+    plan = best.plan;
+    mass = best.mass;
+    estate = best.estate;
+    dressing = best.dressing;
+    casting = best.casting;
+    if plan is not None and mass is not None and estate is not None and dressing is not None and casting is not None {
+        record.briefing = briefing_for(plan);
+        record.start = casting.start;
+        record.items = map_items(mass, estate_spaces(estate), dressing, casting.items, record.briefing);
+    }
+    return record;
 }
 
-def generate(
-    world: World, name: str, textures: list[Texture], cache_directory: str = ""
-) -> Level {
+"""Where an expedition's light is kept: a file named by the hash of its
+map, the bake's settings and the bake's own version."""
+def light_cache_path(directory: str, text: str) -> str {
+    digest = hashlib.sha256(BAKE_VERSION);
+    digest.update(str(LUXEL).encode());
+    digest.update(text.encode());
+    return directory + "/" + digest.hexdigest() + ".light";
+}
+
+"""A baked level's light as bytes: each face's lightmap place and layers,
+the corners of what moves, the lightmaps and the grid for models."""
+def pack_light(bsp: Bsp) -> bytes {
+    data = bytearray(b"QPL3");
+    data.extend(struct.pack("<IIII", len(bsp.faces), len(bsp.lighting), len(bsp.light_grid), bsp.light_channels));
+    for face in bsp.faces {
+        data.extend(struct.pack("<iHHB", face.light_offset, face.light_width, face.light_height, len(face.styles)));
+        for style in face.styles {
+            data.append(style & 255);
+        }
+        data.extend(struct.pack("<H", len(face.light_uv)));
+        for value in face.light_uv {
+            data.extend(struct.pack("<f", value));
+        }
+        data.extend(struct.pack("<H", len(face.colors)));
+        for value in face.colors {
+            data.append(max(0, min(255, value)));
+        }
+    }
+    data.extend(bsp.lighting);
+    data.extend(bsp.light_grid);
+    return bytes(data);
+}
+
+"""Put light read back from bytes onto a freshly compiled level; False (and
+the level untouched) when the bytes do not fit it."""
+def unpack_light(data: bytes, bsp: Bsp) -> bool {
+    if len(data) < 20 or data[:4] != b"QPL3" {
+        return False;
+    }
+    head = struct.unpack("<IIII", data[4:20]);
+    if int(head[0]) != len(bsp.faces) {
+        return False;
+    }
+    offset = 20;
+    faces: list[list[any]] = [];
+    for index in range(len(bsp.faces)) {
+        if offset + 9 > len(data) {
+            return False;
+        }
+        fixed = struct.unpack("<iHHB", data[offset:offset + 9]);
+        offset += 9;
+        styles: list[int] = [];
+        for step in range(int(fixed[3])) {
+            styles.append(int(data[offset]));
+            offset += 1;
+        }
+        count = int(struct.unpack("<H", data[offset:offset + 2])[0]);
+        offset += 2;
+        uv: list[float] = [];
+        for step in range(count) {
+            uv.append(float(struct.unpack("<f", data[offset:offset + 4])[0]));
+            offset += 4;
+        }
+        count = int(struct.unpack("<H", data[offset:offset + 2])[0]);
+        offset += 2;
+        colors: list[int] = [int(value) for value in data[offset:offset + count]];
+        offset += count;
+        faces.append([int(fixed[0]), int(fixed[1]), int(fixed[2]), styles, uv, colors]);
+    }
+    if offset + int(head[1]) + int(head[2]) != len(data) {
+        return False;
+    }
+    for (index, face) in enumerate(bsp.faces) {
+        kept = faces[index];
+        face.light_offset = kept[0];
+        face.light_width = kept[1];
+        face.light_height = kept[2];
+        face.styles = kept[3];
+        face.light_uv = kept[4];
+        face.colors = kept[5];
+    }
+    bsp.lighting = data[offset:offset + int(head[1])];
+    bsp.light_grid = data[offset + int(head[1]):offset + int(head[1]) + int(head[2])];
+    bsp.light_channels = int(head[3]);
+    return True;
+}
+
+"""Light a compiled expedition: from the cache when it holds this map's
+light, else baked (and kept there)."""
+def light_level(scene_text: str, made: LiveLevel, scene: Scene, cache_directory: str) -> bool {
+    path = light_cache_path(cache_directory, scene_text) if cache_directory else "";
+    if path and os.path.isfile(path) {
+        data = b"";
+        with open(path, "rb") as handle {
+            data = handle.read();
+        }
+        if unpack_light(data, made.bsp) {
+            return True;
+        }
+    }
+    job = light_job(scene, made, LUXEL, 4000000);
+    if job is None {
+        return False;
+    }
+    while not job.step(200) {
+        continue;
+    }
+    job.finish();
+    if path {
+        os.makedirs(cache_directory, exist_ok=True);
+        partial = path + ".part";
+        with open(partial, "wb") as handle {
+            handle.write(pack_light(made.bsp));
+        }
+        os.replace(partial, path);
+    }
+    return True;
+}
+
+"""Generate the expedition a name stands for, as a level of `world`: its
+materials read from the games under `directory`, its light kept under
+`cache_directory` ("" to bake every time)."""
+def generate(world: World, name: str, directory: str, cache_directory: str = "") -> Level {
     record = survey(seed_from(name));
-    bp = record.bp;
-    site = record.site;
-    if bp is None or site is None {
+    casting = record.casting;
+    if not record.items or casting is None {
         raise ValueError("Expedition survey is incomplete");
     }
-    compiled = compile_blueprint(bp, site);
-    bsp = compiled.bsp;
-    bsp.textures = textures;
-    bsp.clusters = len(bp.regions);
-    bsp.cluster_bytes = (bsp.clusters + 7) // 8;
-    bsp.visibility = cluster_visibility(bp);
-    record.visible_pairs = visible_pairs(bp, bsp.visibility);
+    text = write_map(record.items);
+    scene = scene_from_map("passion", name, MapFile(items=record.items));
+    materials: Materials = ArchiveMaterials(directory=directory) if directory else SwatchMaterials();
+    made = compile_scene(scene, materials, True);
+    if directory {
+        light_level(text, made, scene, cache_directory);
+    }
+    bsp = made.bsp;
     level = Level(active=True, name=name, bsp=bsp);
     level.briefing = record.briefing;
-    level.asset_manifest = "|".join([texture.name for texture in textures]);
-    if textures {
-        level.asset_manifest += "|"
-            + "|".join(
-                [
-                    ent.fields.get("asset_game", "passion")
-                        + ":"
-                        + ent.fields.get("classname", "") for ent in bsp.entities
-                ]
-            );
-    }
+    level.asset_manifest = "|".join([texture.name for texture in bsp.textures]) + "|"
+        + "|".join([entity.fields.get("asset_game", "passion") + ":" + entity.fields.get("classname", "") for entity in bsp.entities]);
     prepare_level(world, level);
     world +>:Surveys:+> record;
-    if compiled.exit_low {
-        volume = CollisionMap();
-        volume.add_box(
-            Vec3(
-                x=compiled.exit_low[0], y=compiled.exit_low[1], z=compiled.exit_low[2]
-            ),
-            Vec3(
-                x=compiled.exit_high[0],
-                y=compiled.exit_high[1],
-                z=compiled.exit_high[2]
-            ),
-            Vec3(),
-            Vec3(),
-            Vec3()
-        );
-        extraction = LevelExit(
-            destination="passion_complete", contact=True, volume=volume
-        );
-        world +>:HasExit:+> extraction;
-        world +>:HasSignal:+> extraction.activation;
-    }
+    volume = CollisionMap();
+    volume.add_box(
+        Vec3(x=casting.exit_low[0], y=casting.exit_low[1], z=casting.exit_low[2]),
+        Vec3(x=casting.exit_high[0], y=casting.exit_high[1], z=casting.exit_high[2]),
+        Vec3(),
+        Vec3(),
+        Vec3()
+    );
+    extraction = LevelExit(destination="passion_complete", contact=True, volume=volume);
+    world +>:HasExit:+> extraction;
+    world +>:HasSignal:+> extraction.activation;
     world +>:HasSignal:+> level.completion;
-    validate_geometry(level, bp);
-    if textures {
-        bake(level, bp, site, cache_directory);
-    }
     return level;
 }
 
-# Physical checks of the compiled world against the blueprint: floors support
-# every corridor waypoint and standing hulls fit along every route.
-def validate_geometry(level: Level, bp: Blueprint) {
-    movers = [
-        i
-        for i in range(len(level.collision.models))
-        if level.collision.models[i] != 0
-    ];
-    for link in bp.routes {
-        for point in bp.routes[link] {
-            top = Vec3(x=point[0], y=point[1], z=point[2] + 64.0);
-            bottom = Vec3(x=point[0], y=point[1], z=point[2] - 8.0);
-            floor = level.collision.trace_point(top, bottom, movers);
-            if floor.start_solid or floor.fraction >= 1.0 {
-                raise ValueError("Unsupported corridor waypoint on link " + str(link));
-            }
-            height = top.z + (bottom.z - top.z) * floor.fraction;
-            if abs(height - point[2]) > 0.5 {
-                raise ValueError("Corridor floor mismatch on link " + str(link));
-            }
-            standing = Vec3(x=point[0], y=point[1], z=height + 46.125);
-            if level.collision.trace(standing, standing, movers).start_solid {
-                raise ValueError("Blocked corridor waypoint on link " + str(link));
-            }
-        }
-    }
-}
-
+"""The survey a world's expedition was made from."""
 def survey_of(world: World) -> Survey | None {
     found = [world->:Surveys:->][?:Survey];
     return found[0] if found else None;
