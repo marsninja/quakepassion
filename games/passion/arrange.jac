@@ -498,6 +498,10 @@ def widen_corridor(mass: Massing, reserve: Reserve, path: list[list[int]], owner
         }
         free = True;
         for cell in cells {
+            # A cell short of the grid's edge, so its wall has room.
+            if cell[0] < 1 or cell[1] < 1 or cell[0] > mass.nx - 2 or cell[1] > mass.ny - 2 {
+                free = False;
+            }
             for z in range(block[2] - 1, top + 1) {
                 held = reserve.at(cell[0], cell[1], z);
                 if mass.air(cell[0], cell[1], z) or (held != -1 and held != owner) {

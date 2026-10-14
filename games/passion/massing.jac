@@ -71,13 +71,15 @@ obj Massing {
     }
 
     """Make a box of cells the air of space `space` (an id, or -1 to make it
-    solid again). Bounds are clipped to the grid."""
+    solid again). Air is clipped a cell inside the grid, so the shell always
+    has room for its wall; solid is clipped to the grid."""
     def carve(x0: int, y0: int, z0: int, x1: int, y1: int, z1: int, space: int) {
         value = space + 1 if space >= 0 else 0;
-        for z in range(max(0, z0), min(self.nz, z1)) {
-            for y in range(max(0, y0), min(self.ny, y1)) {
+        rim = 1 if space >= 0 else 0;
+        for z in range(max(rim, z0), min(self.nz - rim, z1)) {
+            for y in range(max(rim, y0), min(self.ny - rim, y1)) {
                 base = (z * self.ny + y) * self.nx;
-                for x in range(max(0, x0), min(self.nx, x1)) {
+                for x in range(max(rim, x0), min(self.nx - rim, x1)) {
                     self.owner[base + x] = value;
                 }
             }
