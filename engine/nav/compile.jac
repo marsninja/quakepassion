@@ -213,13 +213,15 @@ obj NavGrid {
         }
         if not flat.start_solid and flat.fraction >= 1.0 {
             landing = self.ground(beside.x, beside.y, a.z, rules.drop + rules.step);
-            if landing is None {
-                return [];
+            if landing is not None {
+                if a.z - landing <= rules.step {
+                    return [(landing, TRAVEL_WALK)];
+                }
+                return [(landing, TRAVEL_WALKOFFLEDGE)];
             }
-            if a.z - landing <= rules.step {
-                return [(landing, TRAVEL_WALK)];
-            }
-            return [(landing, TRAVEL_WALKOFFLEDGE)];
+            # Let down from its own height it starts in the floor beside (a
+            # lip a few units up that the level sweep slipped past): try it
+            # as a step up instead, below.
         }
         for lift in [rules.step, rules.barrier] {
             up = self.sweep(a, a.add(Vec3(z=lift)));
@@ -325,6 +327,32 @@ obj NavGrid {
             last = point;
         }
         return landing;
+    }
+}
+
+"""Join spots already found that the flood left apart (a spot added after
+its neighbours were expanded, as a lift's top is): each way the posed level
+allows from a spot to an existing one beside it that it has no step to
+yet. No spots are added."""
+walker StitchSpots {
+    has grid: NavGrid,
+        joined: int = 0;
+
+    can stitch with NavSpot entry {
+        grid = self.grid;
+        have = [step.target for step in [edge here->:NavStep:->]];
+        for (across, along) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            for (z, kind) in grid.moves(here, across, along) {
+                index = grid.find(here.column + across, here.row + along, z);
+                if index < 0 or index in have {
+                    continue;
+                }
+                spot = grid.spots[index];
+                here +>:NavStep(kind=kind, target=spot.index):+> spot;
+                have.append(index);
+                self.joined += 1;
+            }
+        }
     }
 }
 
@@ -504,6 +532,36 @@ def nav_starts_open(door: Door) -> bool {
     return door.kind == "door" and door.rest.length() > 0.5 and door.rest.add(door.travel).length() < 0.5;
 }
 
+"""Whether `point` is within reach of any door, plat or secret door, in
+any of its poses."""
+def nav_near_movers(world: World, level: Level, point: Vec3) -> bool {
+    for door in nav_movers(world) {
+        if door.kind == "button" or not door.origins {
+            continue;
+        }
+        record = level.bsp.models[door.model];
+        for shift in [nav_open_shift(door), nav_shut_shift(door)] {
+            lo = record.mins.add(door.origins[0]).add(shift).sub(Vec3(x=48.0, y=48.0, z=64.0));
+            hi = record.maxs.add(door.origins[0]).add(shift).add(Vec3(x=48.0, y=48.0, z=96.0));
+            if lo.x <= point.x and point.x <= hi.x and lo.y <= point.y and point.y <= hi.y and lo.z <= point.z and point.z <= hi.z {
+                return True;
+            }
+        }
+    }
+    return False;
+}
+
+"""Where a door's brush is moved to when open, and when shut, from where
+the map draws it: travelled and at rest, or the other way about for one
+that starts open."""
+def nav_open_shift(door: Door) -> Vec3 {
+    return door.rest if nav_starts_open(door) else door.rest.add(door.travel);
+}
+
+def nav_shut_shift(door: Door) -> Vec3 {
+    return door.rest.add(door.travel) if nav_starts_open(door) else door.rest;
+}
+
 """The level's collision with every mover where a traveller needs it: doors
 open, plats up, rotating doors out of the way. The live map is left as it
 is."""
@@ -642,8 +700,8 @@ def:priv nav_lifts(world: World, grid: NavGrid, level: Level) -> tuple[int, list
         if record.maxs.x - record.mins.x < 32.0 or record.maxs.y - record.mins.y < 32.0 {
             continue;
         }
-        posed = door.origins[0].add(door.rest).add(travel);
-        other = door.origins[0].add(door.rest);
+        posed = door.origins[0].add(nav_open_shift(door));
+        other = door.origins[0].add(nav_shut_shift(door));
         lo = record.mins.add(posed);
         hi = record.maxs.add(posed);
         middle = Vec3(x=(lo.x + hi.x) * 0.5, y=(lo.y + hi.y) * 0.5, z=hi.z + 24.0);
@@ -697,7 +755,7 @@ def:priv nav_mark_movers(world: World, grid: NavGrid, level: Level) {
             continue;
         }
         record = level.bsp.models[door.model];
-        shift = door.origins[0].add(door.rest) if door.origins else Vec3();
+        shift = door.origins[0].add(nav_shut_shift(door)) if door.origins else Vec3();
         lo = record.mins.add(shift).sub(Vec3(x=16.0, y=16.0, z=32.0));
         hi = record.maxs.add(shift).add(Vec3(x=16.0, y=16.0, z=24.0));
         for spot in grid.spots {
@@ -1050,9 +1108,20 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
     for summit in late[1] {
         summit spawn flood;
     }
+    # Round the movers, join what the stages left apart.
+    stitch = StitchSpots(grid=grid);
+    for spot in list(grid.spots) {
+        if nav_near_movers(world, level, spot.origin) {
+            spot spawn stitch;
+        }
+    }
+    build.notes.append("stitched " + str(stitch.joined) + " ways round movers");
     build.teleports = nav_teleports(world, grid);
     nav_mark_movers(world, grid, level);
     groups = nav_group(grid);
+    # Secret doors are ways a player does not know of: a route takes one only
+    # when there is no other (thirty seconds more to go through).
+    secret_models = set([train.model for (train, opened) in nav_secret_doors(world)]);
     aas = build.aas;
     aas.areas.append(AasArea(center=Vec3(), mins=Vec3(), maxs=Vec3()));
     boxes: list[AABB] = [AABB(mins=Vec3(), maxs=Vec3())];
@@ -1141,7 +1210,8 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
                     finish=finish,
                     kind=kind,
                     # Under water a swimmer runs out of air: dry ways first.
-                    time=nav_step_time(kind, start, finish, rules) * (3 if best[1].submerged else 1),
+                    time=nav_step_time(kind, start, finish, rules) * (3 if best[1].submerged else 1)
+                        + (3000 if best[1].mover in secret_models else 0),
                     face_num=best[2] if kind == TRAVEL_ELEVATOR else 0
                 )
             );
