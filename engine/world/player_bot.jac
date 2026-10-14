@@ -1118,6 +1118,21 @@ walker AutoThink {
         }
         here_now = bot.area_near(self.origin)[0];
         busy = self.opened_with(bot.objective.mover) if bot.objective is not None else [];
+        # The next leg rides a door that only moves when something sets it
+        # going (e1m3's rising block): what sets it going comes first.
+        if bot.route.passages {
+            first = bot.route.passages[0];
+            if first is not None and first.kind == TRAVEL_ELEVATOR and first.model not in busy {
+                lift = objective_mover(self.world, first.model);
+                if lift is not None and lift.kind == "door" and not lift.automatic and lift.state not in ["opening", "closing"] {
+                    starters = mover_objectives(self.world, first.model, self.player, objective_starts_open(lift));
+                    if starters and self.take_objective(starters) {
+                        print("AUTOPLAY lift", first.model, "is set going elsewhere");
+                        return True;
+                    }
+                }
+            }
+        }
         busy.extend([held.mover for held in bot.waiting]);
         for (model, area) in movers {
             resting = area in bot.rest_areas;
@@ -2121,8 +2136,9 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         flat_toward = Vec3(x=toward.x, y=toward.y);
         reach = flat_toward.length();
         # Fighting, it stands its ground; on its way, only an enemy close by
-        # stops it (one it is fleeing for ammunition does not).
-        fighting = self.mind.current == "engage" or (reach < 350.0 and self.objective_why() != "ammo");
+        # stops it (one it is fleeing for ammunition does not, unless it is
+        # within arm's reach).
+        fighting = self.mind.current == "engage" or reach < 120.0 or (reach < 350.0 and self.objective_why() != "ammo");
         if fighting and reach < 700.0 and reach > 1.0 {
             ahead = flat_toward.scale(1.0 / reach);
             side = Vec3(x=-ahead.y, y=ahead.x).scale(self.strafe);
@@ -2198,6 +2214,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
     enemy = self.enemy;
     objective = self.objective;
     shoot_at: Vec3 | None = None;
+    self.fired = False;
     if objective is not None and objective.kind == "shoot" {
         line = level.collision.trace_point(player.pos, objective.aim);
         if line.fraction > 0.97 or objective.aim.sub(line.end).length() < 24.0 {
