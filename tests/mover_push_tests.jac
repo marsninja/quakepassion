@@ -71,6 +71,9 @@ test "a lift carries a big monster in its own box and stops for one too tall" {
         );
         fixture.world +>:HasOpponent:+> tank;
         before = tank.pos.z;
+        # Set going as a player stepping on would: a monster does not
+        # (Touch_Plat_Center answers players only).
+        plat.state = "opening";
         for i in range(8) {
             lift(fixture, 0.25);
         }
