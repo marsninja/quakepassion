@@ -86,7 +86,9 @@ kept.
    from everything else (free runs per column make each test four reads), and
    pass over and under other spaces. Half are widened to three cells where
    the rock allows. A one-way link ends at a ledge when one can be had. A link
-   no corridor can carry becomes a pair of teleporters (0-3 an expedition).
+   no corridor can carry becomes a pair of teleporters (a candidate needing
+   more than two, or than a quarter of its links where that is more, is
+   turned down).
    Rooms facing each other across a short gap get barred windows, the
    mission's own window links first.
 4. **Pits**: a chasm's pit floods, deep with its district's lava or slime
@@ -177,7 +179,7 @@ QP_CORPUS_GAMES=passion .jac/qp-corpus
   expedition is walked from its start to its exit by the yardstick over its
   real collision.
 - `scripts/passion_map.jac`: how each seed's survey went, why candidates
-  were turned down, teleporters and windows (seeds 1-12: 0-3 teleporters,
+  were turned down, teleporters and windows (seeds 1-12: 0-2 teleporters,
   2-7 s).
 - `scripts/passion_play.jac`: each seed's logic played in the game (keys,
   switches, guardians, locked doors, the way out). Seeds 1-30 pass.

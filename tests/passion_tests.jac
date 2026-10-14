@@ -111,7 +111,16 @@ test "arrangements are deterministic and corridors join their doorways" {
         routed += 1;
         assert corridor.out_door is not None and corridor.in_door is not None;
         assert corridor.blocks[0] == doorway_block(by_id[corridor.tail], corridor.out_door);
-        assert corridor.blocks[-1] == doorway_block(by_id[corridor.head], corridor.in_door);
+        goal = doorway_block(by_id[corridor.head], corridor.in_door);
+        if len(corridor.blocks) == 1 {
+            # Wall to wall: one doorway through both walls, stepped where the
+            # floors differ by a lift or two.
+            assert corridor.blocks[0][0] == goal[0] and corridor.blocks[0][1] == goal[1];
+            assert abs(corridor.blocks[0][2] - goal[2]) <= 2;
+            assert mass.air(goal[0], goal[1], max(corridor.blocks[0][2], goal[2]));
+            continue;
+        }
+        assert corridor.blocks[-1] == goal;
         for index in range(1, len(corridor.blocks)) {
             a = corridor.blocks[index - 1];
             b = corridor.blocks[index];
