@@ -619,6 +619,10 @@ node PlayerBot {
     def dodge(world: World, origin: Vec3) -> Vec3 | None {
         best: Vec3 | None = None;
         worst = 1.0e9;
+        ground = self.level;
+        if ground is None {
+            return None;
+        }
         for missile in [world->:HasProjectile:->][?:Projectile] {
             reach = max(missile.radius, 120.0 if missile.splash > 0 else 0.0);
             if reach <= 0.0 {
@@ -640,7 +644,7 @@ node PlayerBot {
                     for k in range(8) {
                         angle = float(k) * 0.785398;
                         way = Vec3(x=math.cos(angle), y=math.sin(angle));
-                        room = self.level.collision.trace(origin, origin.add(way.scale(96.0))).fraction * 96.0;
+                        room = ground.collision.trace(origin, origin.add(way.scale(96.0))).fraction * 96.0;
                         end = origin.add(way.scale(room)).sub(missile.pos);
                         far = Vec3(x=end.x, y=end.y).length();
                         if far > best_end {
