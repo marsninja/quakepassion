@@ -21,7 +21,7 @@ import from ..formats.q3.bsp { parse_q3 }
 import from ..formats.animated { ModelStage, Deform }
 import from ..assets.pk3 { Pk3Assets }
 import from ..physics.collision { CollisionMap }
-import from ..physics.movement { MovementProfile, movement_profile }
+import from ..physics.movement { MovementProfile, movement_profile, unstick }
 import from ..formats.q1.collision { build_collision }
 import from ..formats.brush_collision { build_brush_collision }
 import from ..math.vec3 { Vec3 }
@@ -1064,26 +1064,6 @@ def prepare_level(world: World, level: Level) {
     connect_electrodes(world, level.bsp);
     load_triggers(world, level.bsp, level.collision);
     load_monster_jumps(world, level.bsp);
-}
-
-"""Q1 SV_CheckStuck: a start embedded in the floor or a wall by a unit or
-two (Q1 e2m7's is) is moved up to 17 units up and one unit sideways to the
-first free spot, as the original does for a stuck player."""
-def unstick(collision: CollisionMap, origin: Vec3) -> Vec3 {
-    if not collision.trace(origin, origin).start_solid {
-        return origin;
-    }
-    for rise in range(18) {
-        for dx in [0.0, -1.0, 1.0] {
-            for dy in [0.0, -1.0, 1.0] {
-                spot = origin.add(Vec3(x=dx, y=dy, z=float(rise)));
-                if not collision.trace(spot, spot).start_solid {
-                    return spot;
-                }
-            }
-        }
-    }
-    return origin;
 }
 
 def spawn_player(level: Level, spawnpoint: str = "", returning: bool = False) -> Player {

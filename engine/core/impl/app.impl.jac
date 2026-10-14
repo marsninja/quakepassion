@@ -977,6 +977,32 @@ impl App.step() -> bool {
         self.render_frame();
         return True;
     }
+    bot = self.autoplay;
+    if bot is not None and self.level.active and not self.workbench.active {
+        # The player bot gives this frame's command; films are skipped and
+        # stats screens passed as a player pressing fire would.
+        if self.cinematic.active {
+            self.finish_cinematic();
+        }
+        if self.menu.opened and self.menu.message and bot.menu_notice != self.menu.message {
+            bot.menu_notice = self.menu.message;
+            print("AUTOPLAY menu:", self.menu.message);
+        }
+        if self.menu.opened and not self.campaign_complete and not self.menu.message.startswith("Cannot") {
+            self.menu.opened = False;
+        }
+        if self.intermission_text or self.campaign_complete or self.stats_screen {
+            self.stats_wait = 0.0;
+            bot.frames += 1;
+            self.scripted = Intent(fire=bot.frames % 20 == 0);
+        } else {
+            self.scripted = bot.drive(self.world, self.level, self.player, self.combat, dt);
+        }
+        snapshot = bot.shot_name(dt);
+        if snapshot {
+            self.renderer.screenshot(snapshot);
+        }
+    }
     if self.workbench.active and self.level.active and not self.cinematic.active {
         # The simulation stands still while the studio has the window.
         self.jump_pending = False;
@@ -1986,6 +2012,14 @@ impl App.restart_level() {
     }
     try {
         session = unpack_campaign(self.entry_save);
+        # The level comes back at the skill it was entered on, as a loaded
+        # game does: the cvar may have moved since (a config read after the
+        # level opened, the start map's skill halls).
+        for line in session.active.splitlines() {
+            if line.startswith("SKILL ") {
+                self.host.skill.assign(str(max(0, min(4, int(line[6:])))));
+            }
+        }
         self.load_destination(
             self.level.bsp.game, self.level.name, saved=session.active, session=session
         );

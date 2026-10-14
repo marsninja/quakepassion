@@ -1140,6 +1140,9 @@ def restore(
             if int(words[1]) != level.skill {
                 raise ValueError("Save was made on another skill");
             }
+        } elif words[0] == "PACK" and len(words) == 2 {
+            # The content pack the save was made with: put in play by the
+            # loader before the level opened (play_pack).
         } elif words[0] == "MATCH" and len(words) == 7 {
             row = values(" ".join(words[1:]), 6);
             contest = match_of(world);
@@ -1601,7 +1604,7 @@ def restore(
             link.enabled = row[0] != 0.0;
             link.activations = int(row[1]);
         } else {
-            raise ValueError("Invalid save record");
+            raise ValueError("Invalid save record: " + words[0] + " (" + str(len(words)) + " fields)");
         }
     }
     if (bool(level.asset_manifest) != manifest_seen)

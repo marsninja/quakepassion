@@ -66,7 +66,7 @@ test "closing doors reverse on a living enemy they cannot push" {
     assert fixture.collision.offsets[0].z == 88.0;
 }
 
-test "platforms carry enemies up and down without requiring player contact" {
+test "platforms carry enemies up and down; only players set them going" {
     for game in ["q1", "q2", "q3"] {
         fixture = DoorFixture();
         fixture.setup(game, {"classname": "func_plat", "height": "64", "speed": "64"});
@@ -74,6 +74,14 @@ test "platforms carry enemies up and down without requiring player contact" {
         enemy = Opponent(pos=Vec3(z=56.03125 + fixture.collision.eye_height));
         fixture.world +>:HasOpponent:+> enemy;
         before = enemy.pos.z;
+        if game != "q3" {
+            # Q1 plat_center_touch and Q2 Touch_Plat_Center answer players
+            # only: a monster standing on the plat leaves it down. (Q3's
+            # Touch_PlatCenterTrigger answers clients, and its bots are.)
+            fixture.tick(Vec3(x=500.0), 0.5);
+            assert platform.position == 0.0;
+            platform.state = "opening";
+        }
         # Q2 plats ramp (Think_AccelMove) and take 1.2 s here.
         for i in range(6) {
             if platform.state != "open" {
