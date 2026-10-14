@@ -127,6 +127,8 @@ node PlayerBot {
         # Its health last think, and when it last took a hit.
         last_health: int = 0,
         hurt_at: float = -100.0,
+        # When a lift ridden was last noted in the trace.
+        lift_noted: float = -100.0,
         # Whether it is getting out of a train's way, and what that train
         # sweeps.
         escaping: bool = False,
@@ -1124,11 +1126,31 @@ walker AutoThink {
             first = bot.route.passages[0];
             if first is not None and first.kind == TRAVEL_ELEVATOR and first.model not in busy {
                 lift = objective_mover(self.world, first.model);
+                if bot.clock - bot.lift_noted > 5.0 {
+                    bot.lift_noted = bot.clock;
+                    bot.trace.event("lift_check", bot.clock, {
+                        "model": str(first.model),
+                        "found": "true" if lift is not None else "false",
+                        "kind": trace_text(lift.kind if lift is not None else ""),
+                        "automatic": "true" if lift is not None and lift.automatic else "false",
+                        "state": trace_text(lift.state if lift is not None else ""),
+                        "position": trace_number(lift.position if lift is not None else -1.0, 2)
+                    });
+                }
                 if lift is not None and lift.kind == "door" and not lift.automatic and lift.state not in ["opening", "closing"] {
                     starters = mover_objectives(self.world, first.model, self.player, objective_starts_open(lift));
                     if starters and self.take_objective(starters) {
                         print("AUTOPLAY lift", first.model, "is set going elsewhere");
                         return True;
+                    }
+                    # Nothing left to set it going (a button that stays in, a
+                    # trigger spent): no ride there; another way.
+                    ride_to = bot.route.areas[0] if bot.route.areas else 0;
+                    if not starters and ride_to > 0 and ride_to != here_now {
+                        bot.close_area(ride_to, 0, 120.0);
+                        bot.route.abandon();
+                        print("AUTOPLAY lift", first.model, "can no longer be set going: area", ride_to, "closed");
+                        return False;
                     }
                 }
             }
@@ -1502,6 +1524,11 @@ walker AutoThink {
     """Ammunition when out of it, health when hurt, as an objective set on
     top of what it is doing (not with an enemy in sight). Whether one was."""
     def resupply() -> bool {
+        # Badly hurt, health first, enemy or not: one more hit on the way to
+        # ammunition is the end.
+        if self.player.health < 40 and self.take_objective(self.health_nearby(), 1500, True) {
+            return True;
+        }
         # Out of ammunition it goes for some even with an enemy in sight:
         # standing to fight with the axe loses.
         if self.take_objective(self.ammo_nearby(), 1500, True) {

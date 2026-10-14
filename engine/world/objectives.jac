@@ -24,7 +24,7 @@ import from .combat { Opponent, HasOpponent }
 import from .pickups { Pickup, HasPickup }
 import from .inventory { quantity }
 import from .exits { LevelExit }
-import from .trains { Train, HasTrain }
+import from .trains { Train, HasTrain, TrackPoint, TrackNext }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 
@@ -267,6 +267,30 @@ def objective_secret(world: World, model: int) -> Train | None {
     return None;
 }
 
+"""Whether a secret door stands fully open: at the third point of its track
+of four (the pose the navigation is compiled in), not part way there."""
+def objective_secret_open(train: Train) -> bool {
+    # Its rest: the point of its track it sits at unmoved.
+    step = train.current;
+    for k in range(4) {
+        if step.origin.sub(train.anchor).length() < 1.0 {
+            break;
+        }
+        following = [step->:TrackNext:->][?:TrackPoint];
+        if not following {
+            break;
+        }
+        step = following[0];
+    }
+    for k in range(2) {
+        following = [step->:TrackNext:->][?:TrackPoint];
+        if following {
+            step = following[0];
+        }
+    }
+    return train.motion.sub(step.origin.sub(train.anchor)).length() < 2.0;
+}
+
 """What opens a secret door that is shut: a shot when it takes one, else
 what fires it."""
 def secret_objectives(world: World, train: Train, model: int) -> list[Objective] {
@@ -359,7 +383,7 @@ def mover_blocked(world: World, model: int, player: Player) -> bool {
     leader = objective_mover(world, model);
     if leader is None {
         secret = objective_secret(world, model);
-        return secret is not None and secret.motion.length() < 1.0;
+        return secret is not None and not objective_secret_open(secret);
     }
     if leader.kind == "button" {
         return False;
