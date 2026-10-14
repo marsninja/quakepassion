@@ -1063,20 +1063,6 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
     string before it is its help. They are gathered on every save into
     an add-on the studio loads, so they are in the Classes tab and the
     inspector at once.
-- **An expedition as graphs, its roster, and a room's own materials**:
-  `ed_exp graphs` opens a box of bars to drag: how full the expedition
-  is, what it aims at on each of its four measures (loops, height,
-  density, size, with what it measures beside), and every room's
-  tension in the order the rooms are come to. A bar let go makes that
-  part again and proves it (`ed_exp density`, `ed_exp tension <room>`,
-  and `ed_exp niche <measure> <0..1>`, which surveys the seed again for
-  the niche asked). `ed_exp roster <classes>|all` says which foes the
-  rooms are filled from, `ed_exp budget route <threat|auto>` fills every
-  room along the way the mission means to be taken, and `ed_exp slot
-  <room> <floor|wall|ceiling|trim|accent> <material|auto>` gives one
-  room a material of its own in place of its district's, kept when the
-  expedition is made again. (Tools' boxes can hold bars: a tool gives
-  each a name, a value and the command to run with the new one.)
 - **A playtest of an authored scene**: `ed_playtest` (the Window menu's
   last entry) says whether a scene of brushes can be finished. It asks
   the scene's logic first (what can never be set off, a lock with no
@@ -1096,65 +1082,21 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   seed and opens what it made as a document of brushes, saved among the
   scenes as `expedition_<seed>.map`: its entities as they are, and the
   world's brushes handed to a group for every room (`room 7 arena`, named
-  for its beat and its recipe) and one for the ways between, so a room is
+  for its beat and its archetype) and one for every corridor, so a room is
   picked, hidden, locked or copied into another scene as one thing. The
   expedition's own account of itself is kept beside the document:
-  `ed_exp` says its seed, archetype and sizes, `ed_exp mission` its beats
-  and the links between them with what each needs, `ed_exp rooms` its
-  rooms and `ed_exp ways` the ways between them, `ed_exp proof` runs the
-  generator's own playtest (whether the exit is reached, in how many
-  rounds, with which tokens), and `ed_exp show` draws the ways over the
-  level, each in the colour of its kind (open, locked, one-way, shortcut,
-  secret). It is a tool in a module of its own
-  (`editor/tools/expedition.jac`); it reads the generator's graph (beats
-  and links, rooms and passages) as the generator left it.
-- **Parts of an expedition made again**: the tool runs the generator's
-  own stages again from where something changed, proves the result with
-  its playtest, and opens it in place of the document; one that cannot
-  be made or proved is refused and the expedition stays as it was.
-  `ed_exp again rooms` rolls the dice again for every room's inside
-  except those whose group is locked in the scene list, and a locked
-  room's group is kept as it was left, hand edits and all; `again
-  population` rolls who and what is in the rooms; `again layout` where
-  the rooms lie and the ways between them. `ed_exp fill <room>
-  <recipe|any>` asks a room for one of the eleven recipes (hall, court,
-  cavern, pit, arena ...), `ed_exp district <room> <n>` gives it a
-  district's materials, `ed_exp tension <room> <0..1>` and `ed_exp
-  budget <room> <threat|auto>` say how hard it is to be, `ed_exp density
-  <0.15..1>` how full the whole is, and `ed_exp niche` prints what the
-  expedition aimed at beside what it measures, what was put in it, and
-  each room's tension as a bar. A room is a group of plain brushes:
-  picked and copied into any scene, it is edited by hand there. (The
-  generator gained three things a room may be asked: a recipe, another
-  roll of its own dice, and a budget.)
-- **An expedition's mission changed by hand**: the mission is the
-  generator's own graph of beats and the links between them, and the tool
-  changes that graph. `ed_exp link <beat> <beat> [mode] [tokens]` adds a
-  link (open, valve, locked, shortcut, secret, window or gate, with the
-  tokens it needs), `ed_exp unlink <link>` takes one away, `ed_exp mode
-  <link> <mode> [tokens]` changes one, `ed_exp grant|ungrant <beat>
-  <token>` says what a beat gives, `ed_exp beat <from beat> [kind]
-  [size]` adds a beat reached from another, and `ed_exp pattern <name>
-  <beat> <beat>` lays one of the generator's cycle patterns between two
-  beats (alternatives, lock_key, far_key, shortcut, hidden, foreshadow,
-  switch, gambit) and opens its arcs out into rooms. After every change
-  the generator's proof is run on the mission (every token granted, the
-  goal reached, no corner it can be played into, every beat reached) and
-  what it finds is said in its own words ("Mission needs an ungranted
-  token: key_blue"); a mission that is sound is laid out again, carved,
-  filled and played through by the generator's playtest. A change that
-  fails any of it is given up, and the expedition is as it was.
-- **An expedition's layout changed by hand**: `ed_exp move <room> <dx>
-  <dy>` puts a room elsewhere on the site and `ed_exp size <room> <w>
-  <h>` makes it another size (both in shares of the site, five cells of
-  32 units each way); `ed_exp floor <room> <height|auto>` says how high
-  its floor is to be; `ed_exp reroute` rolls the routing again with the
-  rooms where they are. Each lays the site out again with every room
-  where it is said to be (the generator's new `relay`), routes every way
-  between them afresh, solves the floors again so that every way can be
-  walked, and then carves, fills and proves as before. A room laid over
-  another, a size no room can be, or a way that cannot be routed is
-  refused, and the site is as it was.
+  `ed_exp` says its seed, archetype, sizes and score, `ed_exp mission` its
+  beats and the links between them with what each needs, `ed_exp rooms`
+  its rooms and `ed_exp ways` the corridors, windows and teleporters
+  between them, `ed_exp measures`
+  how it measures against the original levels' quartiles, and `ed_exp
+  show` draws the ways over the level, each in the colour of its kind
+  (open, locked, one-way, shortcut, secret). It is a tool in a module of
+  its own (`editor/tools/expedition.jac`); it reads the generator's graph
+  (beats and links, spaces and corridors) as the generator left it. The
+  v2 tools that remade parts of an expedition (`again`, `fill`, `link`,
+  `move`, `graphs` and the rest) went with the v2 generator; a room is a
+  group of plain brushes, edited by hand.
 - **Groups in groups**: `ed_nest <group's name|#number>` puts the selected
   groups in another group, and a group's row dragged onto another group's
   row in the scene list does the same; `ed_nest out`, or its row dragged

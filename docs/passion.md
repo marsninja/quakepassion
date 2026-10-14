@@ -1,12 +1,10 @@
 # Passion expeditions
 
 Passion is the fourth game mode of the shared engine (`games/passion/`). It
-generates seeded expeditions from original Quake, Quake II and Quake III
-assets: a cyclic mission of keys, switches and guardians is embedded as rooms
-and stair corridors, dressed with recipe interiors and cover, populated by an
-encounter director, lit, and chosen from several candidates by quality and
-diversity. Every expedition is proven completable in its own geometry before
-it is played. The generator version is `v2` (`generate.jac` `VERSION`).
+generates seeded expeditions, real levels of brushes in three dimensions,
+from the original Quake, Quake II and Quake III assets, and measures them
+against the original games' own levels. The generator version is `v3`
+(`generate.jac` `VERSION`).
 
 ## Run
 
@@ -17,217 +15,193 @@ With the build in the README and all three games under one asset directory
 QP_GAME=passion QP_SEED=42 DYLD_LIBRARY_PATH=vendor ./qp
 ```
 
-- `QP_SEED` picks the seed (default 1); `QP_MAP=v2-42` is the equivalent
+- `QP_SEED` picks the seed (default 1); `QP_MAP=v3-42` is the equivalent
   level name. Seeds run from 1 to 2147483646, and names with another version
   prefix are rejected (`seed_from`), so saves from an older generator do not
   load.
 - `QP_LIGHT_CACHE` sets the baked-lighting cache directory (default
-  `~/.cache/quakepassion/lighting`); an empty value disables disk caching.
-  Cache files are keyed by a hash of every bake input and verified by SHA-256
-  on load.
+  `~/.cache/quakepassion/lighting`); an empty value bakes every time. A file
+  is named by the hash of the expedition's map and the bake's settings.
 - The Escape menu lists twelve fresh seeds when Passion is selected. The HUD
   briefing names the districts the route crosses and the objectives (for
-  example "Stone Keep > Deep Mines | Recover 2 keys, slay 1 guardian, reach
-  extraction"). Enter replays after death or completion; quick save and load
-  keep the generated world.
+  example "Gothic Ruin > Strogg Works | Recover 1 key, reach extraction").
+- A seed takes 2-7 s to generate (a few candidates are built and the best
+  kept), and its light 6-12 s to bake the first time it is played.
+
+## The yardstick and the corpus
+
+`yardstick.jac` measures any level, an original or a generated one, the same
+way. Places a player can stand are sampled on a 32-unit grid over the
+world's walkable faces (nudged round crowded cells, lifted onto slopes) and
+joined by the moves the engine allows between neighbours: walking (the
+engine's own stepping slide), jumping up a ledge, dropping off one, and
+teleporters. Places gather into areas (the places of a 128-unit bin that walk
+to each other), nodes of a graph whose edges are the moves between areas;
+walkers flood it. Doors are measured open; platforms stay where they rest.
+
+Beside the traversal it measures the level's shape (extent, floor levels,
+floor over floor, height range, headroom, sightlines, distance to the
+nearest wall), detail (faces for the floor they serve, trim, textures),
+light (lamps for the floor, their spacing, the lightmaps' levels) and
+population (monsters and items for the floor), and how much of the level the
+start reaches and by what route to the exit.
+
+`scripts/passion_corpus.jac` measured 115 original levels (38 Quake, 47 Quake
+II, 30 Quake III) and how each uses its textures. `corpus.jac` keeps only the
+measures' quartiles: over Quake and Quake II's single-player levels
+(`CORPUS_SP`) and per game. For example, id's single-player levels have a
+median of six floor levels, 40% of their floor over other floor, 240 units
+of headroom, 176-unit sightlines, a lamp per 110 units, and lightmaps whose
+quartiles are 1, 35 and 109.
 
 ## Pipeline (`generate.jac`)
 
-1. Seed to niche: a seed hashes to one of 81 niches in a descriptor grid
-   (loopiness, verticality, combat density, size; three bins each) plus an
-   objective archetype: keys, relays, guardian or mixed. Consecutive seeds land
-   in unrelated niches.
-2. Candidates: six complete candidates are built toward the niche (up to
-   eighteen when some fail). Each is re-proven by the playtester, measured,
-   and scored for quality and distance to the niche; the best is compiled.
-3. Compile, visibility, physics check, bake: the winner becomes BSP data,
-   cluster visibility is computed, corridor floors and hull clearance are
-   checked against real collision, and lighting is baked or loaded from the
-   cache.
+A seed picks a niche (how much the expedition loops, how vertical it is, how
+densely it is fought over, how big it is) and an objective archetype (keys,
+relays, guardians or a mix). Up to four candidates are built in full; each is
+turned down if it cannot be laid out, needs too many teleporters, or if a
+room's stage cannot be walked to; the critic scores the rest and the best is
+kept.
 
-### Randomness (`random.jac`)
+1. **Mission** (`mission.jac`, unchanged from v2): beats and links, a cyclic
+   grammar after Dormans whose links carry tokens; an exhaustive search over
+   (beat, tokens) proves the goal reachable and no state a softlock.
+2. **Spaces** (`spaces.jac`): each beat becomes a box in a voxel massing
+   (`massing.jac`, cells 32 units across and 16 up) and takes an archetype by
+   its role: a hall (dais, pillar rows), an atrium (a balcony round its walls
+   and stairs up to it), a shaft (stairs winding up its walls, open in the
+   middle), a chasm (a pit crossed by a bridge, stairs from the pit up to a
+   ledge), an open court (an arcade round it, sky over it), terraces, a stair
+   hall, a vault (a dais for its prize), an arena (a sunken pit and steps
+   down) or a crypt (a grid of squat pillars). Doorways (`Doorway`) are found
+   from the carved cells: two cells of floor deep, headroom for a doorway, at
+   each floor level the stage can be walked to; ledges high in the walls for
+   one-way drops.
+3. **Arrangement** (`arrange.jac`): spaces are placed in progression order
+   beside one they link to, higher or lower (the expedition drifts deeper or
+   higher as it goes), a corridor's width apart, or wall to wall with a
+   doorway straight through (steps in its thickness for up to two lifts).
+   Links are routed as corridors by A* over blocks two cells square and six
+   lifts high: they climb by stairs, turn on the flat, keep a wall's thickness
+   from everything else (free runs per column make each test four reads), and
+   pass over and under other spaces. Half are widened to three cells where
+   the rock allows. A one-way link ends at a ledge when one can be had. A link
+   no corridor can carry becomes a pair of teleporters (0-3 an expedition).
+   Rooms facing each other across a short gap get barred windows, the
+   mission's own window links first.
+4. **Pits**: a chasm's pit floods, deep with its district's lava or slime
+   where nothing needs the floor (no doorway opens there and the objective is
+   on the bridge), else a lift of water.
+5. **Dressing** (`dress.jac`): a lower band of the wall in the kit's second
+   material, baseboards on walls six lifts high or more, cornices in tall
+   rooms, pilasters on plinths every three cells where the wall stands whole,
+   railings on edges over a drop (never on or beside stairs, never where they
+   leave a walk under two cells), frames round doorways, bars across windows.
+   Lamps: on every other pilaster, under ceilings where no wall lamp went,
+   along corridors every third block, hung over big rooms' floors, over the
+   middle of courts (whose sky glows), over lava and slime, and over any room
+   still unlit.
+6. **Cast** (`cast.jac`): the start; each objective on its room's stage (a
+   key; a plate set in the floor with a trigger over it for a switch; a
+   guardian whose death fires its gate); doors for what each link needs (one
+   for all its keys, one per token something else opens, a shootable wall for
+   a secret, a trigger beyond a shortcut); teleporters; foes from a roster of
+   all three games weighted toward each district's game, by a threat budget
+   from tension, size and density; health, shells and armour by what the
+   fights cost.
+7. **Critic** (`critic.jac`): the yardstick's measures taken quickly from the
+   massing, lamps and cast, each scored by how many corpus spreads it lies
+   from the corpus median.
+8. **Brushwork** (`brushwork.jac`): the massing's shell (the solid touching
+   air, diagonals included, so the world is sealed) merged into boxes that
+   hold only cells of one space exposed alike on every side, so a side faces
+   air all over or is caulked; each dressed by the kit of the space it faces.
+   Dressing boxes, liquids (their contents said on every side), lamps and the
+   cast join them as map items.
+9. **Build**: the map items become a studio scene, compiled by
+   `editor/compile/live.jac` with buried faces cut away
+   (`editor/compile/cull.jac`) and lit by the studio's light bake at 32-unit
+   luxels (bounce, a light grid for models), kept on disk once baked.
 
-A counter-based stream (`mix32(key ^ mix32(counter))`) with labelled
-substreams, so one subsystem's draws never reshuffle another's. Arithmetic
-stays in 32-bit words split into 16-bit halves, so native and interpreted
-builds produce identical levels. Bounded draws use rejection sampling.
+## Districts (`kits.jac`)
 
-### Mission grammar (`mission.jac`)
+Each district is one original level's palette, read off how that level uses
+its textures (the corpus lists, for every texture of every level, the area it
+covers on floors, walls and ceilings and on narrow trim): its floor, wall,
+ceiling, trim, supports, lower band, panels, light, door, step, sky and
+liquid, and other walls, floors and ceilings rooms may take for a variant.
 
-Missions are graphs: an `Expedition` holds `Beat` nodes joined by `Link`
-edges, `start -> sections -> gate -> goal`, each section a cycle pattern after
-Dormans' cyclic dungeon generation:
-
-| Pattern | Shape |
+| District | Read from |
 | --- | --- |
-| alternatives | Short dangerous arc and long safe arc |
-| lock_key | Key on one arc; drop back to the lock on the other |
-| far_key | Deep key, one-way drop home, lock beside the entrance |
-| shortcut | Long arc out; a door that opens only from the far side |
-| hidden | Long arc plus a shootable secret door |
-| foreshadow | The destination is seen through a window first |
-| switch | Remote switch opens a door back near the entry |
-| gambit | Optional high-danger reward room on a side loop |
+| Slipgate Base | Quake e1m1 |
+| Stone Keep | Quake e1m2 |
+| Runic Halls | Quake e3m2 |
+| Tech Complex | Quake e4m1 |
+| Strogg Outpost | Quake II base1 |
+| Deep Mines | Quake II mine1 |
+| Strogg Works | Quake II fact1 |
+| Gothic Ruin | Quake III q3dm1 |
+| Arena Works | Quake III q3dm17 |
 
-Long arcs expand into chains of rooms or nested cycles; side content adds
-secret caches, recovery rooms and vistas. Links carry the tokens they need
-and beats grant tokens, so an exhaustive search over (beat, token set) states
-proves the goal reachable and no reachable state a softlock. Beats get a
-progression order and a tension value: a rising curve with three swells and
-recovery beats after peaks.
+Materials are named as the studio names them (`q1:e1m1/tech08_1`,
+`q2:e1u1/metal2_1`, `q3:textures/...`) and load from the player's own game
+files; nothing of the games is copied into the repository.
 
-### Spatial embedding (`layout.jac`)
+## In the studio
 
-- Rooms are rectangles on a macro grid of 5×5 columns, 32 units per column,
-  sized by role and placed in progression order beside placed neighbours
-  (with a deterministic ring search when crowded).
-- Each link is an A* corridor through free macro cells with turn costs, or a
-  direct opening through a shared wall; links that cannot be routed fall back
-  to paired teleporters when their semantics allow.
-- Floor heights are difference constraints over room floors and per-socket
-  landings (stair capacity, 80-208 unit ledge drops for one-way valves,
-  interior slope limits), solved exactly by Bellman-Ford toward
-  tension-driven targets. Nearby unlinked rooms gain impassable sightline
-  slits.
-
-### Interiors (`interior.jac`)
-
-Each room picks a recipe: hall, clipped, cross, court, cavern (cellular
-automata), pit (water, slime or lava, with stairs out), balcony, terraces,
-split, arena or colonnade. Socket landings are pinned to their solved
-heights, and a geodesic Lipschitz envelope turns the desired shape into a
-heightfield whose neighbours (diagonals included) differ by at most one step.
-Lanes between sockets and the stage are locked before decoration. Objective
-rooms get a dais, large rooms sniper perches, and cover comes from a
-wave-function-collapse pass over 2×2 tiles. Connectivity is verified; a
-failing recipe falls back to a hall.
-
-### Blueprint and compile (`blueprint.jac`, `compile.jac`)
-
-The expedition is a column heightfield: each column is solid, or open with a
-floor and ceiling. Corridor floors change by at most one 16-unit step, with
-flat turn landings and ledges at valve ends. Doors:
-
-- key doors use the `key` field;
-- switch and relay doors are `targetname` doors fired by a floor-plate
-  `func_button`;
-- guardian doors open when the guardian's `target` fires on death;
-- shortcuts open from a `trigger_once` on their far side;
-- secrets open by shooting a panel beside a wall-textured door.
-
-Compilation merges equal columns greedily into brushes. Walls and pillars
-extend past every neighbouring air interval, so the world is watertight by
-construction. A face is emitted only where it faces air and is listed in
-every leaf whose air it faces. Liquids are non-solid content brushes; lamp
-fixtures are emissive panels.
-
-### Director (`director.jac`)
-
-- Room threat budgets follow tension, room size, progression and the niche's
-  density. Templates: patrol, snipers (on perches), horde, and arena for
-  large arena and guardian rooms.
-- The roster mixes Q1 and Q2 monsters and Q3 bots, weighted toward each
-  district's game. Guardians are shamblers, shalraths, tanks, tank
-  commanders or gladiators.
-- Key and switch rooms answer the objective with trigger-spawned Q2 ambushes.
-  High-tension arenas can lock down: a `trigger_once` at the arena's heart
-  closes START_OPEN doors on its free entrances and teleports in Q2
-  reinforcements; the doors reopen on their timer.
-- A resource simulation walks the intended route and places health, shells
-  and armor to keep expected health inside a band; secret caches hold
-  megahealth.
-
-### Proof, visibility and lighting (`playtest.jac`, `visibility.jac`, `lighting.jac`)
-
-- The playtester models the 32-unit hull: the agent stands on column corners
-  whose four columns are open, share a floor within one step and leave
-  headroom; it climbs one step, drops from ledges, respects door tokens, and
-  is forced through any teleporter trigger it touches. An objective counts
-  only where the hull rests on the stage column. A token-carrying flood proves
-  the mission in the real geometry; a failing candidate is rejected.
-- Cluster visibility flows through blueprint portals; a portal chain survives
-  only while some line passes through all its portals (an exact 2D stabbing
-  test). The result is conservative.
-- Lightmaps (32-unit luxels) and per-cluster probe grids gather only lamps
-  whose cluster can see the face. Shadow rays walk the column grid
-  (Amanatides-Woo) through the engine's pluggable `Occluder`
-  (`ColumnOccluder`), softened by offset samples.
-
-## Districts and assets (`materials.jac`)
-
-Six districts, each with five material slots (floor, wall, ceiling, trim,
-accent):
-
-| District | Source game |
-| --- | --- |
-| Stone Keep | Q1 |
-| Slipgate Base | Q1 |
-| Strogg Outpost | Q2 |
-| Deep Mines | Q2 |
-| Gothic Ruin | Q3 |
-| Arena Works | Q3 |
-
-Special surfaces cover liquids, the teleporter, buttons, the shootable panel,
-the key door, the extraction sign and sixteen lamp tints. Material indices do
-not depend on assets, so headless generation and tests need none. Original
-assets load locally and are never copied into the repository.
+`ed_exp open <seed>` generates an expedition and opens it as a document of
+brushes, a group a room and a group a corridor, with the way out as a
+trigger; `ed_exp mission`, `rooms`, `ways` and `measures` say its beats and
+links, spaces, corridors and how it measures against the corpus, and
+`ed_exp show` draws the ways over the level.
 
 ## Validation
 
 ```sh
-jac test -j0 tests/passion_tests.jac tests/lighting_tests.jac
-jac build scripts/validate_generation.jac --native -o .jac/qp-generation
-DYLD_LIBRARY_PATH=vendor .jac/qp-generation
-jac build scripts/lighting_smoke.jac --native -o .jac/qp-lighting-cache
-QP_LIGHT_TEST_CACHE="$(mktemp -d /tmp/qp-lighting-check-XXXXXX)" .jac/qp-lighting-cache
-jac run scripts/validate_passion.jac
+jac test tests/passion_tests.jac
+jac build scripts/passion_map.jac --native -o .jac/qp-passion-map
+QP_SEEDS="1 2 3 4 5 6 7 8 9 10 11 12" .jac/qp-passion-map
+jac build scripts/passion_play.jac --native -o .jac/qp-play
+QP_GAME=passion QP_SEEDS="1 2 3" DYLD_LIBRARY_PATH=vendor .jac/qp-play
+jac build scripts/passion_look.jac --native -o .jac/qp-look
+QP_GAME=passion QP_LOOK_GAME=passion QP_LOOK_MAP=v3-5 QP_LOOK_ROUTE=1 DYLD_LIBRARY_PATH=vendor .jac/qp-look
+jac build scripts/passion_corpus.jac --native -o .jac/qp-corpus
+QP_CORPUS_GAMES=passion .jac/qp-corpus
 ```
 
-- `tests/passion_tests.jac`: stream determinism and independence,
-  softlock-free missions across archetypes, rejection of unreachable goals,
-  embedding, deterministic proven expeditions, entity wiring, stair walking
-  under real physics, PVS soundness against sampled sightlines, shadow-ray
-  agreement with collision traces, locked key doors, niche spread and strict
-  version parsing, asset manifests in saves, and brush-seam point traces.
-- `scripts/validate_generation.jac` (headless, no assets): seeds 1-200 plus
-  104729 and 2147483646, each with a mission proof, hull playtest, corridor
-  physics and cluster culling, reporting rejections and descriptor coverage.
-  Run of 2026-09-23: all 202 passed in 76 s (0.76 s worst, candidate search
-  included); per expedition on average 27.5 rooms, 4,728 faces, 66 hostiles,
-  81% of cluster pairs culled, 2.7 sightline windows and 0.18 teleporter
-  links. 66% of candidates were valid, the chosen expeditions filled 35 of the
-  81 niches, each archetype appeared 47-56 times, and all eleven recipes were
-  used.
-- `scripts/lighting_smoke.jac`: a cold bake and a cache hit of `v2-42` into
-  an isolated directory.
-- `scripts/validate_passion.jac` builds `scripts/passion_smoke.jac` natively
-  and runs it on a desktop with the assets: a scripted player drives the real
-  game loop in god mode along playtest routes to every objective and
-  extraction, and exercises save/load, replay, menu seeds and version
-  rollback, capturing the spawn, menu, districts, tallest room, a combat flash
-  and completion (`QP_SEED`, default 42). On 2026-09-23 seeds 7, 13, 21, 42
-  and 99 passed, covering key vaults, relay switches, single and double
-  guardian gates, an arena lockdown, teleporters and liquids; a full load
-  with a cold bake took 1.1-1.8 s.
+- `tests/passion_tests.jac`: the massing's shell seals all air; every
+  archetype gives a stage and doorways and every floor level can be walked
+  to; arrangements are deterministic and corridors join their doorways;
+  names parse strictly; a survey keeps its promises (start, exit, a door for
+  each lock, a fair score); the light cache round-trips; a compiled
+  expedition is walked from its start to its exit by the yardstick over its
+  real collision.
+- `scripts/passion_map.jac`: how each seed's survey went, why candidates
+  were turned down, teleporters and windows (seeds 1-12: 0-3 teleporters,
+  2-7 s).
+- `scripts/passion_play.jac`: each seed's logic played in the game (keys,
+  switches, guardians, locked doors, the way out). Seeds 1-30 pass.
+- `scripts/passion_look.jac`: photographs from the widest views a player can
+  reach, along the route from start to exit, or from given places; the same
+  for the original levels, to compare by eye.
+- `scripts/passion_corpus.jac` with `QP_CORPUS_GAMES=passion`: generated
+  expeditions measured like the originals.
 
 Jac compiler defects found while building Passion are recorded in
 [jac native fixes](jac-native-fixes.md).
 
 ## Limitations
 
-- Space is a 2.5D heightfield of rectangular rooms on the macro grid:
-  corridors never cross over one another, and nothing overhangs walkable
-  floor except the sightline slits.
+- Rooms are boxes and their structure axis-aligned: no slopes, arches or
+  round rooms yet, and walls are a cell thick.
+- The yardstick does not swim or ride lifts, so a level's reach and routes
+  are measured as far as walking, jumping, dropping and teleporters go.
+- Generated levels are still more detailed in small faces and trim than the
+  originals (cut faces round pilasters, plinths and stair risers), and use
+  fewer textures.
 - Passion has no weapon table of its own (`weapon_rules("passion")` is
-  empty): the player has the engine's two basic weapon slots, and the
-  resource economy balances against them.
-- The director's damage model is a heuristic, not a combat simulation; the
-  smoke validates routes and objectives, not fight difficulty.
-- Niche coverage is measured, not guaranteed: the best-scoring candidate is
-  chosen even when it misses its niche.
-- Visibility ignores height and treats rooms as convex, which keeps it sound
-  but culls less than an exact volumetric solution.
-- Lighting is direct light from the lamps over a fixed ambient floor (0.12,
-  `shade` in `engine/world/lighting.jac`); there is no bounced light. Doors
-  are left out of the static shadow rays (they are lit from probes as they
-  move), and dynamic lights cast no shadows.
+  empty): the player has the engine's two basic weapon slots, and the supply
+  of health and shells balances against them.
+- The director's damage model is a heuristic, not a combat simulation.
+- The level is one cluster (no visibility culling); generated expeditions
+  draw well within the frame budget, but a bake by planes could cut them.
