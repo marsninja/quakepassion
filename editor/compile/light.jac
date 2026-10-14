@@ -12,7 +12,7 @@ import from engine.math.vec3 { Vec3 }
 import from engine.world.lighting { Lamp, Occluder, shade }
 import from ..document.scene { Scene, Item, Solid, read_vector }
 import from ..geometry.brush { Side, brush_windings, windings_bounds, ray_enters_brush, brush_holds }
-import from .live { LiveLevel, material_hidden, switch_styles }
+import from .live { LiveLevel, material_hidden, switch_styles, brush_contents, LIQUID_BITS }
 import from .cull { material_clear }
 import from .spot { Cone, spot_cone }
 
@@ -983,7 +983,7 @@ def light_job(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 
         for solid in scene.solids_of(item) {
             # Caulked sides still stand in the way; only what one sees
             # through casts no shadow.
-            if solid.sides and not material_clear(solid.sides[0].material) {
+            if solid.sides and not material_clear(solid.sides[0].material) and brush_contents(solid.sides) & LIQUID_BITS == 0 {
                 occluder.add(solid.sides);
             }
         }

@@ -68,6 +68,33 @@ def material_hidden(name: str) -> bool {
     return last in ["clip", "playerclip", "monsterclip", "caulk", "nodraw", "skip", "trigger", "hint", "origin", "areaportal"];
 }
 
+# Quake II's contents: lava 8, slime 16, water 32.
+glob LIQUID_BITS: int = 56;
+
+"""What a brush is made of: what its sides say (a map's contents field),
+else a liquid by its material's name (Quake's `*` textures, and those named
+for water, slime or lava: lava 8, slime 16, water 32), else solid (1)."""
+def brush_contents(sides: list[Side]) -> int {
+    said = 0;
+    for side in sides {
+        said = said | side.contents;
+    }
+    if said & LIQUID_BITS != 0 {
+        return said & LIQUID_BITS;
+    }
+    if said != 0 {
+        return said;
+    }
+    if sides and liquid_material(sides[0].material) {
+        lowered = sides[0].material.lower();
+        if "lava" in lowered {
+            return 8;
+        }
+        return 16 if "slime" in lowered else 32;
+    }
+    return 1;
+}
+
 """The light style each switched light takes, by its name: as Quake's
 light tool gives them, from 32 up (to 62) in the order the names first
 come, for lights with a `targetname` and no style of their own."""
@@ -135,7 +162,7 @@ obj LiveCompiler {
     def add(solid: Solid, model: int, volume: bool = False) {
         bsp = self.result.bsp;
         outlines = brush_windings(solid.sides);
-        brush = Brush(contents=0 if volume else 1);
+        brush = Brush(contents=0 if volume else brush_contents(solid.sides));
         made: list[int] = [];
         record = bsp.models[model];
         for (index, side) in enumerate(solid.sides) {
@@ -166,6 +193,11 @@ obj LiveCompiler {
                 # The renderer's faces wind the other way from a map's.
                 corners = [piece[len(piece) - 1 - i] for i in range(len(piece))];
                 face = Face(vertices=corners, normal=normal, plane_dist=side.plane.dist, texture=texture);
+                if brush.contents & LIQUID_BITS != 0 {
+                    # A liquid's surface ripples and is seen from below too.
+                    face.warp = True;
+                    face.two_sided = True;
+                }
                 for i in range(1, len(corners) - 1) {
                     face.indices.extend([0, i, i + 1]);
                 }
@@ -227,7 +259,8 @@ def compile_scene(scene: Scene, materials: Materials, cut: bool = False) -> Live
                 continue;
             }
             for solid in scene.solids_of(item) {
-                if solid.sides and not material_clear(solid.sides[0].material) {
+                # What one sees through (clip, triggers, liquids) covers nothing.
+                if solid.sides and not material_clear(solid.sides[0].material) and brush_contents(solid.sides) & LIQUID_BITS == 0 {
                     compiler.cut_index[solid.serial] = cutter.add(solid.sides, brush_windings(solid.sides));
                 }
             }
