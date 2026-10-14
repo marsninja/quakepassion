@@ -900,6 +900,16 @@ walker AutoThink {
                 for choice in mover_objectives(self.world, model, self.player)
                 if not any([held.point.sub(choice.point).length() < 8.0 for held in pending])
             ];
+            # Before working to open it: is there another way on without it?
+            # A player goes round a door that opens elsewhere when the way
+            # round is there, rather than hunting for what opens it.
+            if choices and area > 0 and area not in mesh.disabled and self.way_round(area) {
+                bot.close_area(area, model);
+                bot.route.abandon();
+                print("AUTOPLAY mover", model, "needs work; going round it");
+                bot.trace.event("go_round", bot.clock, {"mover": str(model), "area": str(area)});
+                return False;
+            }
             if choices and self.take_objective(choices) {
                 return True;
             }
@@ -912,6 +922,27 @@ walker AutoThink {
             }
         }
         return False;
+    }
+
+    """Whether the bot's goal can still be reached with `area` closed (from
+where it stands): another way on than through it."""
+    def way_round(area: int) -> bool {
+        bot = self.bot;
+        mesh = bot.mesh;
+        if mesh is None or bot.goal_area <= 0 {
+            return False;
+        }
+        here_area = bot.area_near(self.origin)[0];
+        if here_area <= 0 or here_area == area or bot.goal_area == area {
+            return False;
+        }
+        was_open = mesh.enable_area(area, False);
+        times = mesh.times_to(bot.goal_area, TFL_DEFAULT);
+        reachable = here_area < len(times) and times[here_area] < UNREACHED;
+        if was_open {
+            mesh.enable_area(area, True);
+        }
+        return reachable;
     }
 
     """Take up the objective, of `choices`, the route reaches soonest and that
