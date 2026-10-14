@@ -116,10 +116,16 @@ def objective_movers(world: World) -> list[Door] {
     return found;
 }
 
+"""Whether a door starts open (START_OPEN): stored with its rest where it is
+open and its travel closing it."""
+def objective_starts_open(door: Door) -> bool {
+    return door.kind == "door" and door.rest.length() > 0.5 and door.rest.add(door.travel).length() < 0.5;
+}
+
 """Whether a door is where a traveller gets by: open, opening, or, for one
 that starts open (START_OPEN: it closes as it moves), still at rest."""
 def objective_door_open(door: Door) -> bool {
-    if door.kind == "door" and door.rest.length() > 0.5 and door.rest.add(door.travel).length() < 0.5 {
+    if objective_starts_open(door) {
         return door.position <= 0.01;
     }
     return door.position >= 0.99 or door.state in ["opening", "open"];
@@ -271,7 +277,7 @@ def secret_objectives(world: World, train: Train, model: int) -> list[Objective]
 """What the player must do before the mover with BSP `model` lets it by:
 nothing (an empty list) when it is where it needs to be or comes by itself.
 Each choice is an objective; the caller picks the one it reaches."""
-def mover_objectives(world: World, model: int, player: Player) -> list[Objective] {
+def mover_objectives(world: World, model: int, player: Player, resting: bool = False) -> list[Objective] {
     leader = objective_mover(world, model);
     if leader is None {
         secret = objective_secret(world, model);
@@ -284,16 +290,22 @@ def mover_objectives(world: World, model: int, player: Player) -> list[Objective
     if leader.kind == "button" {
         return [];
     }
-    found_all = mover_objectives_of(world, leader, model, player);
+    found_all = mover_objectives_of(world, leader, model, player, resting);
     for action in found_all {
         action.mover = model;
     }
     return found_all;
 }
 
-def:priv mover_objectives_of(world: World, leader: Door, model: int, player: Player) -> list[Objective] {
+def:priv mover_objectives_of(world: World, leader: Door, model: int, player: Player, resting: bool) -> list[Objective] {
     why = "mover " + str(model);
-    if objective_door_open(leader) {
+    if resting and objective_starts_open(leader) {
+        # Walked on where the door closes to (a bridge drawn out): what
+        # closes it, until it has.
+        if leader.position >= 0.99 {
+            return [];
+        }
+    } elif objective_door_open(leader) {
         return [];
     }
     if leader.keys and not leader.unlocked {
@@ -352,6 +364,24 @@ def mover_blocked(world: World, model: int, player: Player) -> bool {
         return leader.state == "locked";
     }
     return not leader.automatic;
+}
+
+"""Whether an area of the mover `model` is no way through now. One
+compiled with the mover at rest (`resting`) needs it where it rests, and a
+door that starts open where it closes to (a bridge drawn out); the others
+need it open."""
+def mover_area_blocked(world: World, model: int, player: Player, resting: bool) -> bool {
+    if resting {
+        leader = objective_mover(world, model);
+        if leader is None {
+            return False;
+        }
+        if objective_starts_open(leader) {
+            return leader.position < 0.99;
+        }
+        return leader.position > 0.01;
+    }
+    return mover_blocked(world, model, player);
 }
 
 """What fires an exit that is not touched (Quake II's target_changelevel at

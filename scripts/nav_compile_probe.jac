@@ -212,7 +212,9 @@ with entry {
                 point = route.points[k];
                 passage = route.passages[k] if k < len(route.passages) else None;
                 kind = passage.kind if passage is not None else 0;
-                print("NAV leg", int(point.x), int(point.y), int(point.z), "kind", kind, "area", route.areas[k]);
+                leg_area = route.areas[k];
+                leg_mover = area_mover_model(build.aas.areas[leg_area].contents) if leg_area > 0 else 0;
+                print("NAV leg", int(point.x), int(point.y), int(point.z), "kind", kind, "area", leg_area, "mover", leg_mover);
             }
         }
         for portal in [app.world->:HasExit:->][?:LevelExit] {

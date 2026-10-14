@@ -22,7 +22,7 @@ import from .bot_trace { BotTrace, trace_text, trace_number }
 import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_for, selected_weapon, Projectile, HasProjectile }
 import from .weapons { WeaponRule }
 import from .exits { LevelExit, HasExit }
-import from .objectives { Objective, mover_objectives, exit_objectives, objective_mover, mover_blocked, objective_item_box }
+import from .objectives { Objective, mover_objectives, exit_objectives, objective_mover, mover_area_blocked, objective_starts_open, objective_item_box }
 import from .bot_routes { predict_mover }
 import from ..nav.compile { compile_navigation }
 import from ..formats.aas { TFL_DEFAULT, TRAVEL_JUMP, area_mover_model }
@@ -245,6 +245,23 @@ node PlayerBot {
         return (0, origin);
     }
 
+    """The areas of the mover with BSP `model` (all of them: a mover spans
+    several)."""
+    def mover_areas(model: int) -> list[int] {
+        mesh = self.mesh;
+        if mesh is None {
+            return [];
+        }
+        return [a for a in range(1, len(mesh.aas.areas)) if area_mover_model(mesh.aas.areas[a].contents) == model];
+    }
+
+    """Close every area of the mover `model` for a while."""
+    def close_mover(model: int) {
+        for area in self.mover_areas(model) {
+            self.close_area(area, model);
+        }
+    }
+
     """Close `area` to routing for a while, for the mover `model` (0: none)
     that makes it no way through."""
     def close_area(area: int, model: int) {
@@ -267,7 +284,7 @@ node PlayerBot {
         opened = False;
         for area in list(self.closed.keys()) {
             (model, until) = self.closed[area];
-            if self.clock > until or (model > 0 and not mover_blocked(world, model, player)) {
+            if self.clock > until or (model > 0 and not mover_area_blocked(world, model, player, area in self.rest_areas)) {
                 mesh.enable_area(area, True);
                 self.closed.pop(area);
                 opened = True;
@@ -866,6 +883,7 @@ walker AutoThink {
         busy = [bot.objective.mover] if bot.objective is not None else [];
         busy.extend([held.mover for held in bot.waiting]);
         for (model, area) in movers {
+            resting = area in bot.rest_areas;
             if model in busy {
                 # Being seen to further down the stack (not by the objective
                 # under way, which may be done from on the mover), and not yet
@@ -874,15 +892,18 @@ walker AutoThink {
                 its_own = current is not None and (current.mover == model or current.stand == area);
                 here_area = bot.area_near(self.origin)[0];
                 if not its_own and area > 0 and area != here_area and area not in mesh.disabled
-                    and mover_blocked(self.world, model, self.player) {
+                    and mover_area_blocked(self.world, model, self.player, resting) {
                     bot.close_area(area, model);
                     bot.route.abandon();
                     print("AUTOPLAY mover", model, "is still shut: area", area, "closed");
                 }
                 continue;
             }
-            if area in bot.rest_areas {
-                leader = objective_mover(self.world, model);
+            # Walked on where it rests: gone once it has moved. A door that
+            # starts open is walked on where it closes to (a bridge drawn
+            # out), which is work to do while it rests.
+            leader = objective_mover(self.world, model) if resting else None;
+            if resting and not (leader is not None and objective_starts_open(leader)) {
                 if leader is not None and leader.position > 0.01 and area not in mesh.disabled {
                     bot.close_area(area, model);
                     bot.route.abandon();
@@ -897,14 +918,14 @@ walker AutoThink {
             pending.extend(bot.waiting);
             choices = [
                 choice
-                for choice in mover_objectives(self.world, model, self.player)
+                for choice in mover_objectives(self.world, model, self.player, resting)
                 if not any([held.point.sub(choice.point).length() < 8.0 for held in pending])
             ];
             # Before working to open it: is there another way on without it?
             # A player goes round a door that opens elsewhere when the way
             # round is there, rather than hunting for what opens it.
-            if choices and area > 0 and area not in mesh.disabled and not self.near_work(choices, model) and self.way_round(area) {
-                bot.close_area(area, model);
+            if choices and area > 0 and area not in mesh.disabled and self.way_round_mover(model) {
+                bot.close_mover(model);
                 bot.route.abandon();
                 print("AUTOPLAY mover", model, "needs work; going round it");
                 bot.trace.event("go_round", bot.clock, {"mover": str(model), "area": str(area)});
@@ -914,7 +935,7 @@ walker AutoThink {
                 return True;
             }
             # In the way with nothing to be done about it now: route round it.
-            if area > 0 and area not in mesh.disabled and mover_blocked(self.world, model, self.player) {
+            if area > 0 and area not in mesh.disabled and mover_area_blocked(self.world, model, self.player, resting) {
                 bot.close_area(area, model);
                 bot.route.abandon();
                 print("AUTOPLAY mover", model, "is shut: area", area, "closed");
@@ -924,85 +945,48 @@ walker AutoThink {
         return False;
     }
 
-    """Whether one of `choices` (what opens mover `model`) is reached with no
-    other shut mover opened first: every area of a mover that is shut is
-    closed for the asking. A door whose opener is behind other doors is
-    deep work."""
-    def near_work(choices: list[Objective], model: int) -> bool {
-        bot = self.bot;
-        mesh = bot.mesh;
-        if mesh is None {
-            return False;
-        }
-        here_area = bot.area_near(self.origin)[0];
-        if here_area <= 0 {
-            return True;
-        }
-        shut: dict[int, bool] = {};
-        closed: list[int] = [];
-        for a in range(1, len(mesh.aas.areas)) {
-            other = area_mover_model(mesh.aas.areas[a].contents);
-            if other <= 0 or other == model or a in mesh.disabled {
-                continue;
-            }
-            if other not in shut {
-                shut[other] = mover_blocked(self.world, other, self.player);
-            }
-            if shut[other] {
-                mesh.enable_area(a, False);
-                closed.append(a);
-            }
-        }
-        found = False;
-        for choice in choices {
-            box = choice.box;
-            spots: list[int] = [];
-            if box is not None {
-                spots = [a for a in mesh.aas.box_areas(box.mins, box.maxs, 32) if mesh.aas.areas[a].reach_count > 0];
-            } else {
-                spots = [self.stand_area(choice.point)[0]];
-            }
-            for spot in spots {
-                if spot <= 0 {
-                    continue;
-                }
-                if spot == here_area {
-                    found = True;
-                    break;
-                }
-                times = mesh.times_to(spot, TFL_DEFAULT);
-                if here_area < len(times) and times[here_area] < UNREACHED {
-                    found = True;
-                    break;
-                }
-            }
-            if found {
-                break;
-            }
-        }
-        for a in closed {
-            mesh.enable_area(a, True);
-        }
-        return found;
-    }
-
-    """Whether the bot's goal can still be reached with `area` closed (from
-where it stands): another way on than through it."""
-    def way_round(area: int) -> bool {
+    """Whether the bot's goal can be reached with the mover `model` closed
+    and every other mover that is no way through now closed too: a way on
+    round it that needs nothing done first."""
+    def way_round_mover(model: int) -> bool {
         bot = self.bot;
         mesh = bot.mesh;
         if mesh is None or bot.goal_area <= 0 {
             return False;
         }
         here_area = bot.area_near(self.origin)[0];
-        if here_area <= 0 or here_area == area or bot.goal_area == area {
+        if here_area <= 0 {
             return False;
         }
-        was_open = mesh.enable_area(area, False);
+        blocked: dict[tuple[int, bool], bool] = {};
+        closing: list[int] = [];
+        for a in range(1, len(mesh.aas.areas)) {
+            other = area_mover_model(mesh.aas.areas[a].contents);
+            if other <= 0 or a in mesh.disabled or a == here_area {
+                continue;
+            }
+            if other == model {
+                if a == bot.goal_area {
+                    return False;
+                }
+                closing.append(a);
+                continue;
+            }
+            key = (other, a in bot.rest_areas);
+            if key not in blocked {
+                blocked[key] = mover_area_blocked(self.world, other, self.player, key[1]);
+            }
+            if blocked[key] and a != bot.goal_area {
+                closing.append(a);
+            }
+        }
+        for a in closing {
+            mesh.enable_area(a, False);
+        }
         times = mesh.times_to(bot.goal_area, TFL_DEFAULT);
         reachable = here_area < len(times) and times[here_area] < UNREACHED;
-        if was_open {
-            mesh.enable_area(area, True);
+        for a in closing {
+            mesh.enable_area(a, True);
         }
         return reachable;
     }

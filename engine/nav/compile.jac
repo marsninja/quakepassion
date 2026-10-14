@@ -597,6 +597,23 @@ def:priv nav_posed_collision(world: World, collision: CollisionMap) -> Collision
     return posed;
 }
 
+"""The level's collision with every door shut: as the level starts them,
+except a door that starts open, which is closed."""
+def:priv nav_shut_collision(world: World, collision: CollisionMap) -> CollisionMap {
+    shut = collision.for_body(collision.eye_height);
+    shut.offsets = [offset.add(Vec3()) for offset in collision.offsets];
+    shut.disabled = set(collision.disabled);
+    for door in nav_movers(world) {
+        if not nav_starts_open(door) {
+            continue;
+        }
+        for k in range(min(len(door.hulls), len(door.origins))) {
+            shut.offsets[door.hulls[k]] = door.origins[k].add(nav_shut_shift(door));
+        }
+    }
+    return shut;
+}
+
 """Where a body put at `point` comes to stand: the point raised clear of
 the floor it is on, then let down to it. None when there is no room."""
 def:priv nav_seed_height(grid: NavGrid, point: Vec3) -> float | None {
@@ -1009,9 +1026,10 @@ def:priv nav_step_time(kind: int, start: Vec3, finish: Vec3, rules: NavRules) ->
     return max(1, run);
 }
 
-"""Flood again round each mover with the movers where the level starts
-them: a floor that drops or a bridge that moves away is walked on until it
-does. Only places within reach of a mover are added (posed `0`); the spots
+"""Flood again round each mover with the movers shut: where the level
+starts them, and a door that starts open where it closes to. A floor that
+drops or a bridge that moves away is walked on until it does, and a bridge
+drawn out by a button once it is. Only places within reach of a mover are added (posed `0`); the spots
 already found there are expanded again in this pose. Returns how many were
 added."""
 def:priv nav_rest_flood(world: World, grid: NavGrid, level: Level, flood: FloodFloors) -> int {
@@ -1038,7 +1056,7 @@ def:priv nav_rest_flood(world: World, grid: NavGrid, level: Level, flood: FloodF
     }
     before = len(grid.spots);
     posed_collision = grid.collision;
-    grid.collision = level.collision.for_body(level.collision.eye_height);
+    grid.collision = nav_shut_collision(world, level.collision);
     grid.pose = 0;
     grid.region = boxes;
     near: list[NavSpot] = [];
