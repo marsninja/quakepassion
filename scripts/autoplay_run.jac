@@ -7,7 +7,8 @@ controls, a line every few seconds and one when the level changes.
 QP_KILL=<seconds> kills the player once at that time (to see a restart);
 QP_AUTOPLAY_TRACE names the decision trace (default .jac/autoplay-trace.jsonl,
 read back by scripts/autoplay_report.jac);
-QP_GOD=1 plays in god mode; QP_AUTOPLAY_SHOTS works as in qp."""
+QP_GOD=1 plays in god mode; QP_AUTOPLAY_SHOTS works as in qp; QP_WATCH_MOVER
+names a mover (BSP model) whose state is printed every two seconds."""
 import os;
 import time;
 import from engine.core.app { App }
@@ -19,6 +20,7 @@ import from engine.world.player_bot { PlayerBot }
 import from engine.core.savegame { unpack_campaign }
 import from engine.math.vec3 { Vec3 }
 import from engine.input.input { Intent }
+import from engine.world.doors { Door, HasDoor }
 
 with entry {
     renderer = Renderer();
@@ -74,6 +76,8 @@ with entry {
     if os.getenv("QP_GOD", "") {
         app.player.god_mode = True;
     }
+    watch = int(os.getenv("QP_WATCH_MOVER", "0") or "0");
+    watched = 0.0;
     started = time.time();
     level = app.level;
     killed = False;
@@ -90,6 +94,14 @@ with entry {
         if app.level is not level {
             level = app.level;
             print("RUN level", app.level.name, "at", round(played, 1), "s");
+        }
+        if watch > 0 and played - watched > 2.0 {
+            watched = played;
+            for mover in [app.world->:HasDoor:->][?:Door] {
+                if mover.model == watch {
+                    print("RUN mover", watch, "state", mover.state, "position", round(mover.position, 2), "remaining", round(mover.remaining, 2), "automatic", mover.automatic, "toggle", mover.toggle, "requested", mover.requested, "pending", mover.activation.pending);
+                }
+            }
         }
         if app.menu.opened and app.menu.message {
             print("RUN menu:", app.menu.message);

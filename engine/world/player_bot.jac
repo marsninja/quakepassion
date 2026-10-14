@@ -23,12 +23,15 @@ import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_
 import from .weapons { WeaponRule }
 import from .exits { LevelExit, HasExit }
 import from .doors { Door, HasDoor }
+import from .trains { Train, HasTrain, TrackPoint, TrackNext }
+import from .signals { Signal, HasSignal, Targets }
 import from .objectives { Objective, mover_objectives, exit_objectives, objective_mover, mover_area_blocked, objective_starts_open, objective_item_box }
 import from .bot_routes { predict_mover }
 import from ..nav.compile { compile_navigation }
-import from ..formats.aas { TFL_DEFAULT, TRAVEL_JUMP, area_mover_model }
+import from ..formats.aas { TFL_DEFAULT, TRAVEL_JUMP, TRAVEL_ELEVATOR, area_mover_model }
 import from ..input.input { Intent }
 import from ..math.vec3 { Vec3, forward_from, right_from }
+import from ..math.aabb { AABB }
 
 glob AUTO_THINK: float = 0.1,
     # How fast the bot turns its view, radians a second.
@@ -119,6 +122,10 @@ node PlayerBot {
         dodge_until: float = 0.0,
         # How long it has held still on a moving lift.
         ride_held: float = 0.0,
+        # Whether it is getting out of a train's way, and what that train
+        # sweeps.
+        escaping: bool = False,
+        swept: AABB = AABB(mins=Vec3(), maxs=Vec3()),
         # The direction the view settles on while travelling (100: none yet).
         view_yaw: float = 100.0,
         roam_nearest: float = 1.0e9,
@@ -279,15 +286,102 @@ node PlayerBot {
         return leader;
     }
 
+    """The way out of the path of a train that pins what it meets (e1m3's
+    log down its corridor), when the bot is in what it sweeps on the leg it
+    is on, or is about to set off on (what fires it has fired and waits out
+    a delay); None when out of the way, or riding it."""
+    def train_way_out(world: World, level: Level, origin: Vec3) -> Vec3 | None {
+        soon: list[Signal] = [];
+        for signal in [world->:HasSignal:->][?:Signal] {
+            if signal.queued {
+                soon.extend([fired for fired in [signal->:Targets:->][?:Signal]]);
+            }
+        }
+        for train in [world->:HasTrain:->][?:Train] {
+            if train.damage < 10 or train.kind == "secret" or train.activation.killed {
+                continue;
+            }
+            start = train.motion;
+            finish = train.motion;
+            heading = train.destination;
+            if train.running and heading is not None {
+                finish = heading.origin.sub(train.anchor);
+            } elif not train.running and any([train.activation is fired for fired in soon]) {
+                following = [train.current->:TrackNext:->][?:TrackPoint];
+                if following {
+                    finish = following[0].origin.sub(train.anchor);
+                }
+            }
+            travel = finish.sub(start);
+            if travel.length() < 1.0 {
+                continue;
+            }
+            lo = Vec3(x=min(start.x, finish.x), y=min(start.y, finish.y), z=min(start.z, finish.z))
+                .add(train.bounds.mins).sub(Vec3(x=17.0, y=17.0, z=33.0));
+            hi = Vec3(x=max(start.x, finish.x), y=max(start.y, finish.y), z=max(start.z, finish.z))
+                .add(train.bounds.maxs).add(Vec3(x=17.0, y=17.0, z=25.0));
+            if origin.x < lo.x or origin.x > hi.x or origin.y < lo.y or origin.y > hi.y or origin.z < lo.z or origin.z > hi.z {
+                continue;
+            }
+            self.swept = AABB(mins=lo, maxs=hi);
+            below = level.collision.trace(origin, origin.sub(Vec3(z=2.0)));
+            if below.fraction < 1.0 and below.model == train.model {
+                continue;
+            }
+            # Only where it is coming: behind it (under a crusher on its
+            # way up) is passed through.
+            heading_way = travel.normalized();
+            middle = train.bounds.center().add(train.motion);
+            size = train.bounds.maxs.sub(train.bounds.mins);
+            reach = (abs(size.x * heading_way.x) + abs(size.y * heading_way.y) + abs(size.z * heading_way.z)) * 0.5 + 24.0;
+            if origin.sub(middle).dot(heading_way) < -reach {
+                continue;
+            }
+            # Sideways either way, or on ahead of it: the soonest out of
+            # the swept box by a clear way, else the clearest.
+            along = Vec3(x=travel.x, y=travel.y);
+            ways: list[Vec3] = [];
+            if along.length() > 1.0 {
+                along = along.normalized();
+                ways = [Vec3(x=-along.y, y=along.x), Vec3(x=along.y, y=-along.x), along];
+            } else {
+                ways = [Vec3(x=1.0), Vec3(x=-1.0), Vec3(y=1.0), Vec3(y=-1.0)];
+            }
+            best: Vec3 | None = None;
+            best_score = 1.0e9;
+            for way in ways {
+                out = 1.0e9;
+                if way.x > 0.001 {
+                    out = min(out, (hi.x - origin.x) / way.x);
+                } elif way.x < -0.001 {
+                    out = min(out, (lo.x - origin.x) / way.x);
+                }
+                if way.y > 0.001 {
+                    out = min(out, (hi.y - origin.y) / way.y);
+                } elif way.y < -0.001 {
+                    out = min(out, (lo.y - origin.y) / way.y);
+                }
+                room = level.collision.trace(origin, origin.add(way.scale(min(out, 400.0) + 8.0))).fraction * (min(out, 400.0) + 8.0);
+                score = out if room >= out else 10000.0 - room;
+                if score < best_score {
+                    best_score = score;
+                    best = way;
+                }
+            }
+            return best;
+        }
+        return None;
+    }
+
     """Close `area` to routing for a while, for the mover `model` (0: none)
     that makes it no way through."""
-    def close_area(area: int, model: int) {
+    def close_area(area: int, model: int, hold: float = 30.0) {
         mesh = self.mesh;
         if mesh is None or area <= 0 {
             return;
         }
         mesh.enable_area(area, False);
-        self.closed[area] = (model, self.clock + 30.0);
+        self.closed[area] = (model, self.clock + hold);
     }
 
     """Open again the closed areas whose closing has lapsed or whose mover
@@ -301,7 +395,14 @@ node PlayerBot {
         opened = False;
         for area in list(self.closed.keys()) {
             (model, until) = self.closed[area];
-            if self.clock > until or (model > 0 and not mover_area_blocked(world, model, player, area in self.rest_areas)) {
+            # A plat's top closed while the plat was down (model negated):
+            # open again once it is up.
+            raised = False;
+            if model < 0 {
+                plat = objective_mover(world, -model);
+                raised = plat is None or plat.position >= 0.99;
+            }
+            if self.clock > until or raised or (model > 0 and not mover_area_blocked(world, model, player, area in self.rest_areas)) {
                 mesh.enable_area(area, True);
                 self.closed.pop(area);
                 opened = True;
@@ -690,6 +791,32 @@ def autoplay_needed(body: Opponent) -> int {
     return body.rule.pain_health_reset;
 }
 
+"""The way to back off from an enemy `ahead` (flat unit): straight back,
+back to either side, or sideways, whichever has the most room within 96
+units and no drop past a stair's depth; None when boxed in."""
+def autoplay_retreat(level: Level, origin: Vec3, ahead: Vec3) -> Vec3 | None {
+    back = ahead.scale(-1.0);
+    left = Vec3(x=-ahead.y, y=ahead.x);
+    best: Vec3 | None = None;
+    best_room = 24.0;
+    for way in [back, back.add(left).normalized(), back.sub(left).normalized(), left, left.scale(-1.0)] {
+        drop = gap_distance(level.collision, origin, way);
+        if drop > 0.0 and drop <= 64.0 {
+            continue;
+        }
+        room = level.collision.trace(origin, origin.add(way.scale(96.0))).fraction * 96.0;
+        # Straight back is worth a little more than the same room aside.
+        if way is back {
+            room += 8.0;
+        }
+        if room > best_room {
+            best_room = room;
+            best = way;
+        }
+    }
+    return best;
+}
+
 """What one hit must do to knock `body` down for a while when only a blow
 big enough at once puts it down for good (Q1's zombie flinches from 9 and
 falls from a second hit while it does), else 0."""
@@ -924,10 +1051,31 @@ walker AutoThink {
                 movers.append((model, 0));
             }
         }
+        # Areas the route rides a lift into: the lift's own travel waits for
+        # it there.
+        lifted_into: set[int] = set();
+        for k in range(min(len(bot.route.areas), len(bot.route.passages))) {
+            passage = bot.route.passages[k];
+            if passage is not None and passage.kind == TRAVEL_ELEVATOR {
+                lifted_into.add(bot.route.areas[k]);
+            }
+        }
+        here_now = bot.area_near(self.origin)[0];
         busy = self.opened_with(bot.objective.mover) if bot.objective is not None else [];
         busy.extend([held.mover for held in bot.waiting]);
         for (model, area) in movers {
             resting = area in bot.rest_areas;
+            # A plat's top is walked onto from beside it only while the plat
+            # is up there: down, it is a shaft.
+            plat = objective_mover(self.world, model);
+            if plat is not None and plat.kind == "platform" and plat.state != "locked" and not resting
+                and area not in lifted_into and area != here_now and area > 0 and area not in mesh.disabled
+                and plat.position < 0.99 {
+                bot.close_area(area, -model);
+                bot.route.abandon();
+                print("AUTOPLAY plat", model, "is not up: area", area, "closed");
+                return False;
+            }
             if model in busy {
                 # Being seen to further down the stack (not by the objective
                 # under way, which may be done from on the mover), and not yet
@@ -1113,7 +1261,9 @@ walker AutoThink {
     def take_best(choices: list[Objective], within: int, here_area: int) -> bool {
         bot = self.bot;
         mesh = bot.mesh;
-        if mesh is None {
+        # Nowhere to measure from (riding a lift, in the air): chosen once
+        # it is somewhere, not by guesswork.
+        if mesh is None or here_area <= 0 {
             return False;
         }
         best: Objective | None = None;
@@ -1922,22 +2072,12 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             if reach > standoff and autoplay_weapon(player, state, reach, wet, needed) <= 0 {
                 wish = ahead.scale(0.9).add(side.scale(0.45));
             }
-            if reach < standoff {
-                behind = ahead.scale(-1.0);
-                drop = gap_distance(level.collision, origin, behind);
-                clear = level.collision.trace(origin, origin.add(behind.scale(40.0)));
-                if (drop <= 0.0 or drop > 64.0) and clear.fraction >= 1.0 {
-                    wish = behind.scale(0.9).add(side.scale(0.45));
-                }
-            }
-            # Badly hurt with it close: back away, still firing, unless a
-            # ledge is behind.
-            if player.health < 35 and reach < 400.0 {
-                behind = ahead.scale(-1.0);
-                drop = gap_distance(level.collision, origin, behind);
-                clear = level.collision.trace(origin, origin.add(behind.scale(40.0)));
-                if (drop <= 0.0 or drop > 64.0) and clear.fraction >= 1.0 {
-                    wish = behind.add(side.scale(0.5));
+            # Backing off (too close, or badly hurt with it near): the way
+            # away from it with the most room and no drop, still firing.
+            if reach < standoff or (player.health < 35 and reach < 400.0) {
+                away = autoplay_retreat(level, origin, ahead);
+                if away is not None {
+                    wish = away;
                 }
             }
             wish = Vec3(x=wish.x, y=wish.y).normalized();
@@ -1946,6 +2086,31 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             intent.move = Vec3(x=wish.dot(right), y=wish.dot(forward));
             intent.jump = False;
         }
+    }
+    # In the path of a train that pins what it meets: out of it, first.
+    escape = self.train_way_out(world, level, origin);
+    if escape is not None {
+        if not self.escaping {
+            self.escaping = True;
+            # Routes keep out of what it sweeps for a few seconds, or the
+            # way on pulls the bot straight back in.
+            mesh = self.mesh;
+            if mesh is not None {
+                here_now = self.area_near(origin)[0];
+                for a in mesh.aas.box_areas(self.swept.mins, self.swept.maxs, 256) {
+                    if a != here_now and a not in mesh.disabled {
+                        self.close_area(a, 0, 4.0);
+                    }
+                }
+                self.route.abandon();
+            }
+            print("AUTOPLAY out of a train's way");
+            self.trace.event("train_escape", self.clock, {"at": "[" + str(int(origin.x)) + ", " + str(int(origin.y)) + "]"});
+        }
+        intent.move = Vec3(x=escape.dot(right_from(player.yaw)), y=escape.dot(forward_from(player.yaw, 0.0)));
+        intent.jump = False;
+    } else {
+        self.escaping = False;
     }
     # The view: on the enemy when there is one, else where the travel looks
     # or along the way.

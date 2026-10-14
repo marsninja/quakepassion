@@ -586,6 +586,17 @@ def board_mover(origin: Vec3, passage: Passage, box: AABB, ready: bool) -> Trave
     }
     to_start = flat_toward(origin, passage.start);
     if not ready {
+        # Waiting, clear of where it comes down: a body under its edge
+        # stops it and sends it back up (plat_crush).
+        if origin.x > box.mins.x - 17.0 and origin.x < box.maxs.x + 17.0
+            and origin.y > box.mins.y - 17.0 and origin.y < box.maxs.y + 17.0 {
+            away = flat_toward(mover_bottom_center(box, passage), origin);
+            return TravelResult(direction=away[0], speed=200.0, waiting=True);
+        }
+        if origin.x > box.mins.x - 24.0 and origin.x < box.maxs.x + 24.0
+            and origin.y > box.mins.y - 24.0 and origin.y < box.maxs.y + 24.0 {
+            return TravelResult(speed=0.0, waiting=True);
+        }
         result = TravelResult(direction=to_start[0], speed=6.0 * min(to_start[1], 60.0), waiting=True);
         if result.speed <= 5.0 {
             result.direction = Vec3();
