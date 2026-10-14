@@ -662,6 +662,17 @@ def autoplay_can_hurt(player: Player, state: CombatState, body: Opponent, distan
     return autoplay_weapon(player, state, distance, player.water_depth >= 2, autoplay_needed(body)) > 0;
 }
 
+"""The nearest distance, of a few, from which a weapon held could hurt
+`body` (a grenade launcher only from far off); -1 when none could."""
+def autoplay_standoff(player: Player, state: CombatState, body: Opponent) -> float {
+    for distance in [64.0, 220.0, 380.0, 520.0] {
+        if autoplay_can_hurt(player, state, body, distance) {
+            return distance;
+        }
+    }
+    return -1.0;
+}
+
 """The shortest turn from angle `a` to `b`, radians."""
 def autoplay_turn(a: float, b: float) -> float {
     gap = (b - a) % (2.0 * math.pi);
@@ -727,7 +738,7 @@ walker AutoThink {
             # One it holds nothing to hurt with (only the axe, out of reach;
             # nothing that does enough at once to a zombie) is not fought:
             # it keeps on its way, dodging what comes at it.
-            if not autoplay_can_hurt(self.player, self.state, body, distance) {
+            if autoplay_standoff(self.player, self.state, body) < 0.0 {
                 continue;
             }
             nearest = distance;
@@ -1656,8 +1667,10 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             }
             wish = side;
             # Out of reach of claws, chainsaws and swords: back off to about
-            # two hundred units, unless a ledge is behind.
-            if reach < 220.0 {
+            # two hundred units, or as far as its weapon needs (a grenade
+            # launcher against a zombie), unless a ledge is behind.
+            standoff = max(220.0, autoplay_standoff(player, state, foe) + 20.0);
+            if reach < standoff {
                 behind = ahead.scale(-1.0);
                 drop = gap_distance(level.collision, origin, behind);
                 clear = level.collision.trace(origin, origin.add(behind.scale(40.0)));

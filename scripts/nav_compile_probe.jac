@@ -73,6 +73,111 @@ with entry {
             c = build.aas.areas[pair[1]].center;
             print("NAV far", pair[1], c.x, c.y, c.z);
         }
+        # QP_NAV_GAP=1: where the start's part of the map comes nearest the
+        # part each exit is in (what reaches the exit backwards), to find a
+        # missing way between them.
+        if os.getenv("QP_NAV_GAP", "") {
+            backward: dict[int, list[int]] = {};
+            for a in range(1, len(build.aas.areas)) {
+                info = build.aas.areas[a];
+                for r in range(info.first_reach, info.first_reach + info.reach_count) {
+                    t = build.aas.reaches[r].area;
+                    if t not in backward {
+                        backward[t] = [];
+                    }
+                    backward[t].append(a);
+                }
+            }
+            for portal in [app.world->:HasExit:->][?:LevelExit] {
+                if not portal.volume.bounds {
+                    continue;
+                }
+                box = portal.volume.bounds[0];
+                goal_area = mesh.locate(box.mins.add(box.maxs).scale(0.5));
+                into: set[int] = set([goal_area]);
+                todo = [goal_area];
+                while todo {
+                    a = todo.pop();
+                    for b in backward.get(a, []) {
+                        if b not in into {
+                            into.add(b);
+                            todo.append(b);
+                        }
+                    }
+                }
+                pairs: list[tuple[float, int, int]] = [];
+                for a in reached {
+                    ca = build.aas.areas[a].center;
+                    for b in into {
+                        gap = build.aas.areas[b].center.sub(ca).length();
+                        if gap < 400.0 {
+                            pairs.append((gap, a, b));
+                        }
+                    }
+                }
+                # Every other island: how near it comes to what the start reaches.
+                label: dict[int, int] = {};
+                for a in range(1, len(build.aas.areas)) {
+                    if a in reached or a in label {
+                        continue;
+                    }
+                    stack = [a];
+                    label[a] = a;
+                    while stack {
+                        cur = stack.pop();
+                        cur_info = build.aas.areas[cur];
+                        neighbours = [build.aas.reaches[r].area for r in range(cur_info.first_reach, cur_info.first_reach + cur_info.reach_count)];
+                        neighbours.extend(backward.get(cur, []));
+                        for n in neighbours {
+                            if n not in reached and n not in label {
+                                label[n] = a;
+                                stack.append(n);
+                            }
+                        }
+                    }
+                }
+                islands: dict[int, list[int]] = {};
+                for (area, founder) in label.items() {
+                    if founder not in islands {
+                        islands[founder] = [];
+                    }
+                    islands[founder].append(area);
+                }
+                ranked: list[tuple[float, int, int, int]] = [];
+                for (founder, members) in islands.items() {
+                    if len(members) < 5 {
+                        continue;
+                    }
+                    best_gap = 1.0e9;
+                    pa = 0;
+                    pb = 0;
+                    for b in members {
+                        cb = build.aas.areas[b].center;
+                        for a in reached {
+                            g = build.aas.areas[a].center.sub(cb).length();
+                            if g < best_gap {
+                                best_gap = g;
+                                pa = a;
+                                pb = b;
+                            }
+                        }
+                    }
+                    ranked.append((best_gap, len(members), pa, pb));
+                }
+                for (g, size, pa, pb) in sorted(ranked)[0:8] {
+                    ca = build.aas.areas[pa].center;
+                    cb = build.aas.areas[pb].center;
+                    print("NAV island of", size, "areas, nearest", int(g), ": reached", int(ca.x), int(ca.y), int(ca.z), "island", int(cb.x), int(cb.y), int(cb.z), "exit side" if pb in into else "");
+                }
+                pairs = sorted(pairs)[0:6];
+                print("NAV gap to", portal.destination, ": exit side has", len(into), "areas");
+                for (gap, a, b) in pairs {
+                    ca = build.aas.areas[a].center;
+                    cb = build.aas.areas[b].center;
+                    print("NAV   near", int(gap), "from", int(ca.x), int(ca.y), int(ca.z), "to", int(cb.x), int(cb.y), int(cb.z));
+                }
+            }
+        }
         window = [float(word) for word in os.getenv("QP_NAV_DUMP", "").split(",") if word];
         grid = build.grid;
         if len(window) == 4 and grid is not None {

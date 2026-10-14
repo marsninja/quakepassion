@@ -116,6 +116,15 @@ def objective_movers(world: World) -> list[Door] {
     return found;
 }
 
+"""Whether a door is where a traveller gets by: open, opening, or, for one
+that starts open (START_OPEN: it closes as it moves), still at rest."""
+def objective_door_open(door: Door) -> bool {
+    if door.kind == "door" and door.rest.length() > 0.5 and door.rest.add(door.travel).length() < 0.5 {
+        return door.position <= 0.01;
+    }
+    return door.position >= 0.99 or door.state in ["opening", "open"];
+}
+
 """The leader of the team the mover with BSP `model` is in, or None."""
 def objective_mover(world: World, model: int) -> Door | None {
     for leader in [world->:HasDoor:->][?:Door] {
@@ -284,7 +293,7 @@ def mover_objectives(world: World, model: int, player: Player) -> list[Objective
 
 def:priv mover_objectives_of(world: World, leader: Door, model: int, player: Player) -> list[Objective] {
     why = "mover " + str(model);
-    if leader.position >= 0.99 or leader.state in ["opening", "open"] {
+    if objective_door_open(leader) {
         return [];
     }
     if leader.keys and not leader.unlocked {
@@ -330,7 +339,7 @@ def mover_blocked(world: World, model: int, player: Player) -> bool {
     if leader.kind == "button" {
         return False;
     }
-    if leader.position >= 0.99 or leader.state in ["opening", "open"] {
+    if objective_door_open(leader) {
         return False;
     }
     if leader.keys and not leader.unlocked {

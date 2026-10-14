@@ -498,6 +498,12 @@ def:priv nav_secret_doors(world: World) -> list[tuple[Train, Vec3]] {
     return found;
 }
 
+"""Whether a door starts open (START_OPEN): its rest is where it travels
+from and its travel brings it back, so it is open at rest."""
+def nav_starts_open(door: Door) -> bool {
+    return door.kind == "door" and door.rest.length() > 0.5 and door.rest.add(door.travel).length() < 0.5;
+}
+
 """The level's collision with every mover where a traveller needs it: doors
 open, plats up, rotating doors out of the way. The live map is left as it
 is."""
@@ -515,7 +521,10 @@ def:priv nav_posed_collision(world: World, collision: CollisionMap) -> Collision
             if turning {
                 posed.disabled.add(hull);
             } elif k < len(door.origins) {
-                posed.offsets[hull] = door.origins[k].add(door.rest).add(door.travel);
+                # Open: travelled, except a door that starts open (Q1/Q2
+                # START_OPEN), which is open at rest and closes as it moves.
+                opened = door.rest if nav_starts_open(door) else door.rest.add(door.travel);
+                posed.offsets[hull] = door.origins[k].add(opened);
             }
         }
     }
