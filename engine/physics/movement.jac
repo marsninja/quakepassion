@@ -6,6 +6,27 @@ import from ..math.vec3 { Vec3, forward_from }
 import from ..world.world { Player }
 import from ..world.powerups { empowered, speed_scale }
 
+"""Q1 SV_CheckStuck: a body embedded in the floor or a wall by a unit or two
+(Q1 e2m7's start is; a player pressed onto a mover's clip plane) is moved up
+to 17 units up and one unit sideways to the first free spot, as the
+original does for a stuck player each frame."""
+def unstick(collision: CollisionMap, origin: Vec3) -> Vec3 {
+    if not collision.trace(origin, origin).start_solid {
+        return origin;
+    }
+    for rise in range(18) {
+        for dx in [0.0, -1.0, 1.0] {
+            for dy in [0.0, -1.0, 1.0] {
+                spot = origin.add(Vec3(x=dx, y=dy, z=float(rise)));
+                if not collision.trace(spot, spot).start_solid {
+                    return spot;
+                }
+            }
+        }
+    }
+    return origin;
+}
+
 """One game's player movement rules, chosen once for a level: Q1's
 SV_ClientThink (sv_user.c) and SV_WalkMove (sv_phys.c) with QuakeC's
 PlayerJump and CheckWaterJump, Q2's Pmove (qcommon/pmove.c) and Q3's
@@ -381,6 +402,13 @@ walker MovePlayer {
             return;
         }
         pos = here.pos.sub(Vec3(z=self.collision.eye_height));
+        # Q1 SV_CheckStuck before the move: a body left inside solid (on a
+        # mover's clip plane) is put on the nearest free spot.
+        freed = unstick(self.collision, pos);
+        if freed is not pos {
+            pos = freed;
+            here.pos = pos.add(Vec3(z=self.collision.eye_height));
+        }
         # Q2 Pmove drops pm_time each move; PMF_TIME_LAND ends with it.
         here.land_time = max(0.0, here.land_time - self.dt);
         here.teleport_time = max(0.0, here.teleport_time - self.dt);

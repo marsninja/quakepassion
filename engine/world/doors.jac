@@ -454,7 +454,7 @@ walker DoorTick {
             here.message_wait = 2.0 if here.talk == "sound/misc/talk.wav" else 5.0;
         }
         # Who stands on a raised platform, each in its own box
-        # (plat_center_touch keeps it up while someone rides it).
+        # (plat_center_touch keeps it up while a player rides it).
         rider = False;
         riders: list[Opponent] = [];
         if here.kind == "platform" and here.state == "open" {
@@ -462,7 +462,8 @@ walker DoorTick {
                 standing = body.entity;
                 if standing is self.player {
                     rider = True;
-                } elif isinstance(standing, Opponent) and standing.health > 0 {
+                } elif isinstance(standing, Opponent) and standing.health > 0 and self.bsp.game == "q3" {
+                    # Q3's bots ride as players do; a monster keeps no plat up.
                     riders.append(standing);
                 }
             }
@@ -1061,6 +1062,10 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
             door.flooding = True;
         }
         if kind == "func_plat" {
+            # Only players set off a plat's centre trigger (Q1
+            # plat_center_touch, Q2 Touch_Plat_Center, Q3
+            # Touch_PlatCenterTrigger); Q3's bots are players.
+            door.monster_touch = bsp.game == "q3";
             inset = 33.0 if bsp.game == "q3" else 25.0;
             lo = bounds.mins.add(Vec3(x=inset, y=inset));
             hi = bounds.maxs.sub(Vec3(x=inset, y=inset));
@@ -1668,4 +1673,25 @@ def damage_mover(leader: Door, part: Door, amount: int) -> bool {
     }
     leader.activation.pending += 1;
     return True;
+}
+
+"""Every door, plat and button of the level: each team's leader and its
+members (a double door's other leaf)."""
+def door_parts(world: World) -> list[Door] {
+    found: list[Door] = [];
+    for leader in [world->:HasDoor:->][?:Door] {
+        found.append(leader);
+        for part in [leader->:DoorMember:->][?:Door] {
+            if part not in found {
+                found.append(part);
+            }
+        }
+    }
+    return found;
+}
+
+"""Whether a door starts open (Q1/Q2 START_OPEN): stored with its rest
+where it is open and its travel closing it."""
+def door_starts_open(door: Door) -> bool {
+    return door.kind == "door" and door.rest.length() > 0.5 and door.rest.add(door.travel).length() < 0.5;
 }

@@ -5,7 +5,6 @@ import from engine.world.world { World }
 import from engine.world.signals { HasSignal }
 import from engine.formats.bsp { Bsp }
 import from .passion.generate { generate }
-import from .passion.materials { load_materials }
 
 """Where edited entity lumps are kept: QP_OVERRIDES, else a folder beside the
 settings (QP_CONFIG_DIR, else HOME)."""
@@ -63,7 +62,7 @@ def open_level(
         cache = os.environ.get(
             "QP_LIGHT_CACHE", os.path.expanduser("~/.cache/quakepassion/lighting")
         );
-        return generate(world, name, load_materials(directory), cache);
+        return generate(world, name, directory, cache);
     }
     lump = saved_entities(game, name) if entities is None else entities;
     return load_level(world, directory, name, game, skill, subdivisions, lump);

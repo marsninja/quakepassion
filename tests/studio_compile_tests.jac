@@ -167,11 +167,12 @@ test "a scene with a light gets a lightmap on every face of the world" {
     block = made.bsp.lighting[floor_top.light_offset:floor_top.light_offset + 17 * 17 * 3];
     # Bright under the lamp, down to the scene's least light in the wall's shadow.
     assert max(block) > 80 and min(block) == 31;
-    scene.world().fields["_minlight"] = "20";
+    # The world's _minlight (of 255) is the least instead: 51 is a fifth, 25 of 127.
+    scene.world().fields["_minlight"] = "51";
     dim = compile_scene(scene, SwatchMaterials());
     assert bake_light(scene, dim) == count;
     dim_top = [face for face in dim.bsp.faces if face.normal.z > 0.5 and face.plane_dist == 0.0][0];
-    assert min(dim.bsp.lighting[dim_top.light_offset:dim_top.light_offset + 17 * 17 * 3]) == 15;
+    assert min(dim.bsp.lighting[dim_top.light_offset:dim_top.light_offset + 17 * 17 * 3]) == 25;
     scene.world().fields.pop("_minlight");
     # A scene too large for the budget is left flat, and says so.
     again = compile_scene(scene, SwatchMaterials());

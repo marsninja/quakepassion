@@ -88,7 +88,7 @@ with entry {
             map_name = pack_start_map(pack_id);
         }
         if game == "passion" {
-            map_name = "v2-" + os.getenv("QP_SEED", "1");
+            map_name = "v3-" + os.getenv("QP_SEED", "1");
         }
         opened = os.getenv("QP_MAP", map_name);
         # Q1 and Q2 play the fifth skill (Q3's Nightmare!) as Nightmare.
@@ -137,6 +137,10 @@ with entry {
     app.stuffed = command_line_text(sys.argv[1:]);
     if os.getenv("QP_EDIT", "") != "" {
         app.stuffed = "edit\n" + app.stuffed;
+    }
+    # QP_AUTOPLAY=1 hands the player's body to the player bot from the start.
+    if os.getenv("QP_AUTOPLAY", "") != "" {
+        app.stuffed = app.stuffed + "\nautoplay";
     }
     # Quake II's newgame is "map *ntro.cin+base1": the introduction first.
     if os.getenv("QP_GRAYBOX", "") == "" and os.getenv("QP_GAME", "q1") == "q2" and os.getenv("QP_MAP", "") == "" and os.getenv("QP_PACK", "") == "" {
