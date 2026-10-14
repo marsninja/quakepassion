@@ -631,11 +631,23 @@ node PlayerBot {
             }
             speed = missile.velocity.length();
             if missile.gravity or speed < 50.0 {
-                # A grenade: away from where it is, while within its reach.
+                # A grenade, while within its reach: of eight ways, the one
+                # that ends farthest from it for the room there is (straight
+                # away can be into a corner).
                 if distance < reach + 48.0 and distance < worst {
                     worst = distance;
-                    away = Vec3(x=rel.x, y=rel.y);
-                    best = away.normalized() if away.length() > 0.001 else Vec3(x=1.0);
+                    best_end = -1.0;
+                    for k in range(8) {
+                        angle = float(k) * 0.785398;
+                        way = Vec3(x=math.cos(angle), y=math.sin(angle));
+                        room = self.level.collision.trace(origin, origin.add(way.scale(96.0))).fraction * 96.0;
+                        end = origin.add(way.scale(room)).sub(missile.pos);
+                        far = Vec3(x=end.x, y=end.y).length();
+                        if far > best_end {
+                            best_end = far;
+                            best = way;
+                        }
+                    }
                 }
                 continue;
             }
