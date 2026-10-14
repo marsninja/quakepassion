@@ -119,7 +119,15 @@ def map_items(mass: Massing, spaces: list[Space], dressing: Dressing, extra: lis
         material = kit.liquid if space.deadly else kit_water(kit);
         low = Vec3(x=float(space.x) * CELL, y=float(space.y) * CELL, z=float(space.z) * LIFT);
         high = Vec3(x=float(space.x + space.w) * CELL, y=float(space.y + space.d) * CELL, z=float(space.z + space.flood) * LIFT - 4.0);
-        world.brushes.append(box_brush(low, high, [material, material, material, material, material, material], 1.0));
+        liquid = box_brush(low, high, [material, material, material, material, material, material], 1.0);
+        # Said outright in each side's contents (lava 8, slime 16, water 32),
+        # not left to the material's name.
+        lowered = material.lower();
+        contents = 8 if "lava" in lowered else (16 if "slime" in lowered else 32);
+        for side in liquid {
+            side.contents = contents;
+        }
+        world.brushes.append(liquid);
     }
     for brush in dressing.brushes {
         world.brushes.append(brush);

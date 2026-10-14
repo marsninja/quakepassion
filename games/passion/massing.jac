@@ -168,6 +168,26 @@ obj Massing {
                 }
             }
         }
+        # Each shell cell's key: its space and which of its six sides face
+        # air, so a box holds only cells alike on every side and each side
+        # of a box faces air all over or not at all.
+        for z in range(self.nz) {
+            for y in range(self.ny) {
+                for x in range(self.nx) {
+                    index = (z * self.ny + y) * self.nx + x;
+                    if mark[index] <= 0 {
+                        continue;
+                    }
+                    bits = 0;
+                    for (bit, dx, dy, dz) in [(1, 1, 0, 0), (2, -1, 0, 0), (4, 0, 1, 0), (8, 0, -1, 0), (16, 0, 0, 1), (32, 0, 0, -1)] {
+                        if self.air(x + dx, y + dy, z + dz) {
+                            bits = bits | bit;
+                        }
+                    }
+                    mark[index] = mark[index] * 64 + bits;
+                }
+            }
+        }
         boxes: list[CellBox] = [];
         for z in range(self.nz) {
             for y in range(self.ny) {
@@ -215,7 +235,7 @@ obj Massing {
                             }
                         }
                     }
-                    boxes.append(CellBox(x0=x, y0=y, z0=z, x1=x1, y1=y1, z1=z1, owner=space - 1));
+                    boxes.append(CellBox(x0=x, y0=y, z0=z, x1=x1, y1=y1, z1=z1, owner=space // 64 - 1));
                 }
             }
         }

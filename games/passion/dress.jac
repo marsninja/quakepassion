@@ -142,6 +142,7 @@ def dress(mass: Massing, spaces: list[Space], dice: Stream) -> Dressing {
     dark_rooms(mass, by_id, made);
     glowing_pits(by_id, made);
     court_lamps(by_id, made);
+    hanging_lamps(mass, by_id, made);
     railings(mass, by_id, made);
     window_bars(by_id, made);
     return made;
@@ -543,6 +544,38 @@ def court_lamps(by_id: dict[int, Space], made: Dressing) {
                     color="255 250 235"
                 )
             );
+        }
+    }
+}
+
+"""Lamps hung over the open floor of big rooms, at each of their levels, a
+grid six cells apart: what lights a hall's middle, where wall lamps do not
+reach."""
+def hanging_lamps(mass: Massing, by_id: dict[int, Space], made: Dressing) {
+    for space in by_id.values() {
+        if space.role in ["corridor", "window"] or space.sky or space.w * space.d < 110 {
+            continue;
+        }
+        kit = kit_of(space.district);
+        owner = space.id + 1;
+        for level in space.levels {
+            for cy in range(space.y + 3, space.y + space.d - 2, 6) {
+                for cx in range(space.x + 3, space.x + space.w - 2, 6) {
+                    if mass.at(cx, cy, level) != owner or not mass.standing(cx, cy, level) or mass.headroom(cx, cy, level) < 10 {
+                        continue;
+                    }
+                    made.add_lamp(
+                        space,
+                        Lamp3(
+                            x=(float(cx) + 0.5) * CELL,
+                            y=(float(cy) + 0.5) * CELL,
+                            z=float(level) * LIFT + 136.0,
+                            level=int(float(lamp_strength(kit, space)) * 0.9),
+                            color=kit.lamp_color
+                        )
+                    );
+                }
+            }
         }
     }
 }

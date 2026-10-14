@@ -357,15 +357,17 @@ def cast_objectives(director: Director3) {
                 found = key_entity(token);
                 director.put({"classname": found[0], "origin": origin_text(point[0], point[1], point[2]), "asset_game": found[1]});
             } elif token.startswith("relay:") or token.startswith("switch:") {
-                # A plate on the stage, pressed by standing on it.
+                # A plate on the stage, thrown by stepping onto it: the plate
+                # itself is set in the floor, the stepping is a trigger over it.
                 name = token_name(token);
                 director.fires[token] = name;
                 floor = float(space.stage[2]) * LIFT;
                 low = Vec3(x=point[0] - 24.0, y=point[1] - 24.0, z=floor);
-                high = Vec3(x=point[0] + 24.0, y=point[1] + 24.0, z=floor + 8.0);
+                high = Vec3(x=point[0] + 24.0, y=point[1] + 24.0, z=floor + 4.0);
+                director.put_brushed({"classname": "func_wall", "_passion": "plate"}, [plain_box(low, high, BUTTON_MATERIAL, 1.0)]);
                 director.put_brushed(
-                    {"classname": "func_button", "angle": "-2", "target": name, "wait": "-1", "lip": "4"},
-                    [plain_box(low, high, BUTTON_MATERIAL, 1.0)]
+                    {"classname": "trigger_once", "target": name, "message": "A relay is thrown"},
+                    [plain_box(Vec3(x=low.x, y=low.y, z=floor + 4.0), Vec3(x=high.x, y=high.y, z=floor + 64.0), "trigger", 1.0)]
                 );
             } elif token.startswith("guardian:") {
                 name = token_name(token);

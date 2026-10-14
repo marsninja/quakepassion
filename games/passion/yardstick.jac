@@ -513,29 +513,9 @@ def traverse(bsp: Bsp, collision: CollisionMap, cell: float = YARD_CELL) -> Walk
         here_list.append(index);
         by_column[key] = here_list;
     }
-    # Areas: places binned by AREA_SIZE across and AREA_BAND up.
-    area_of: dict[str, int] = {};
-    sums: list[list[float]] = [];
-    for place in found.places {
-        band_key = str(int(math.floor(place.x / AREA_SIZE))) + "," + str(int(math.floor(place.y / AREA_SIZE))) + ","
-            + str(int(math.floor(place.z / AREA_BAND)));
-        if band_key not in area_of {
-            area_of[band_key] = len(sums);
-            sums.append([0.0, 0.0, 0.0, 0.0]);
-        }
-        place.area = area_of[band_key];
-        total = sums[place.area];
-        total[0] += place.x;
-        total[1] += place.y;
-        total[2] += place.z;
-        total[3] += 1.0;
-    }
-    for (index, total) in enumerate(sums) {
-        count = max(1.0, total[3]);
-        found.areas.append(Ground(id=index, x=total[0] / count, y=total[1] / count, z=total[2] / count, places=int(total[3])));
-    }
-    # Moves between neighbouring places, gathered into ways between areas.
-    linked: dict[int, str] = {};
+    # Moves between neighbouring places, each counted once a direction.
+    moves: list[list[int]] = [];
+    kinds: list[str] = [];
     for (index, place) in enumerate(found.places) {
         for step_x in [-1, 0, 1] {
             for step_y in [-1, 0, 1] {
@@ -544,8 +524,7 @@ def traverse(bsp: Bsp, collision: CollisionMap, cell: float = YARD_CELL) -> Walk
                 }
                 key = (place.column + step_x) * 65536 + (place.row + step_y);
                 for other in by_column.get(key, []) {
-                    neighbour = found.places[other];
-                    kind = move_between(collision, exclude, place, neighbour);
+                    kind = move_between(collision, exclude, place, found.places[other]);
                     if not kind {
                         continue;
                     }
@@ -556,16 +535,73 @@ def traverse(bsp: Bsp, collision: CollisionMap, cell: float = YARD_CELL) -> Walk
                     } else {
                         found.drops += 1;
                     }
-                    if place.area == neighbour.area {
-                        continue;
-                    }
-                    pair = place.area * 1000003 + neighbour.area;
-                    before = linked.get(pair, "");
-                    if before == "" or (before != "walk" and kind == "walk") or (before == "drop" and kind == "jump") {
-                        linked[pair] = kind;
-                    }
+                    moves.append([index, other]);
+                    kinds.append(kind);
                 }
             }
+        }
+    }
+    # Areas: the places of one bin (AREA_SIZE across, AREA_BAND up) that walk
+    # to each other, so no area spans a wall.
+    bins: list[str] = [];
+    for place in found.places {
+        bins.append(
+            str(int(math.floor(place.x / AREA_SIZE))) + "," + str(int(math.floor(place.y / AREA_SIZE))) + ","
+                + str(int(math.floor(place.z / AREA_BAND)))
+        );
+    }
+    parent = list(range(len(found.places)));
+    for (number, move) in enumerate(moves) {
+        if kinds[number] != "walk" or bins[move[0]] != bins[move[1]] {
+            continue;
+        }
+        first_root = move[0];
+        while parent[first_root] != first_root {
+            first_root = parent[first_root];
+        }
+        second_root = move[1];
+        while parent[second_root] != second_root {
+            second_root = parent[second_root];
+        }
+        if first_root != second_root {
+            parent[max(first_root, second_root)] = min(first_root, second_root);
+        }
+    }
+    area_of: dict[int, int] = {};
+    sums: list[list[float]] = [];
+    for (index, place) in enumerate(found.places) {
+        root_index = index;
+        while parent[root_index] != root_index {
+            root_index = parent[root_index];
+        }
+        if root_index not in area_of {
+            area_of[root_index] = len(sums);
+            sums.append([0.0, 0.0, 0.0, 0.0]);
+        }
+        place.area = area_of[root_index];
+        total = sums[place.area];
+        total[0] += place.x;
+        total[1] += place.y;
+        total[2] += place.z;
+        total[3] += 1.0;
+    }
+    for (index, total) in enumerate(sums) {
+        count = max(1.0, total[3]);
+        found.areas.append(Ground(id=index, x=total[0] / count, y=total[1] / count, z=total[2] / count, places=int(total[3])));
+    }
+    # Ways between areas, the best move between each two kept.
+    linked: dict[int, str] = {};
+    for (number, move) in enumerate(moves) {
+        tail_area = found.places[move[0]].area;
+        head_area = found.places[move[1]].area;
+        if tail_area == head_area {
+            continue;
+        }
+        kind = kinds[number];
+        pair = tail_area * 1000003 + head_area;
+        before = linked.get(pair, "");
+        if before == "" or (before != "walk" and kind == "walk") or (before == "drop" and kind == "jump") {
+            linked[pair] = kind;
         }
     }
     for (pair, kind) in linked.items() {

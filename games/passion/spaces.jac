@@ -191,6 +191,8 @@ def shape_space(space: Space, mass: Massing, dice: Stream) {
         }
     }
     space.levels = kept_levels;
+    # The stage is kept clear: no railing pinches what stands on it.
+    space.kept.append([space.stage[0], space.stage[1], space.stage[2]]);
     find_sockets(space, mass);
 }
 
