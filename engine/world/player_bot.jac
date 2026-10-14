@@ -113,6 +113,8 @@ node PlayerBot {
         # Objectives set aside for one in their way, the latest last.
         waiting: list[Objective] = [],
         given_up: list[tuple[Vec3, float]] = [],
+        # Monsters given up killing, and until when (they move about).
+        given_up_bodies: list[tuple[Opponent, float]] = [],
         exit_goal: Vec3 | None = None,
         # The areas it has stood in, and when it last chose where to roam.
         visited: set[int] = set(),
@@ -122,6 +124,9 @@ node PlayerBot {
         dodge_until: float = 0.0,
         # How long it has held still on a moving lift.
         ride_held: float = 0.0,
+        # Its health last think, and when it last took a hit.
+        last_health: int = 0,
+        hurt_at: float = -100.0,
         # Whether it is getting out of a train's way, and what that train
         # sweeps.
         escaping: bool = False,
@@ -713,6 +718,7 @@ node PlayerBot {
         self.objective = None;
         self.waiting = [];
         self.given_up = [];
+        self.given_up_bodies = [];
         self.exit_goal = None;
         self.exit_area = 0;
         self.exit_name = "";
@@ -924,7 +930,13 @@ walker AutoThink {
                 # The one it is already on is kept a little farther (no
                 # dithering at the edge).
                 limit = 450.0 if body is self.bot.enemy else 350.0;
-                if knock <= 0 or distance > limit
+                # Only one in the way is knocked down: close, or by the way
+                # on. The rest are gone round, and the ammunition kept.
+                # Hitting it while it waits on a lift, or at all of late,
+                # is in the way too.
+                in_way = distance < 150.0 or self.by_the_way(body.pos, 96.0)
+                    or self.bot.travel.waiting or self.bot.clock - self.bot.hurt_at < 2.0;
+                if knock <= 0 or distance > limit or not in_way
                     or autoplay_weapon(self.player, self.state, distance, self.player.water_depth >= 2, knock) <= 0 {
                     continue;
                 }
@@ -933,6 +945,50 @@ walker AutoThink {
             best = body;
         }
         return best;
+    }
+
+    """Where `body` can be shot from: up to eight areas within 900 units of
+    it, the nearest first, with a clear line from eye height to it."""
+    def shooting_spots(body: Opponent) -> list[tuple[int, Vec3]] {
+        mesh = self.bot.mesh;
+        found: list[tuple[int, Vec3]] = [];
+        if mesh is None {
+            return found;
+        }
+        target = body.pos.sub(Vec3(z=body.eye_height * 0.5));
+        near: list[tuple[float, int]] = [];
+        for a in range(1, len(mesh.aas.areas)) {
+            info = mesh.aas.areas[a];
+            if info.reach_count == 0 or a in mesh.disabled {
+                continue;
+            }
+            gap = info.center.sub(target).length();
+            if gap < 900.0 {
+                near.append((gap, a));
+            }
+        }
+        near.sort();
+        for (gap, a) in near[0:48] {
+            eye = mesh.aas.areas[a].center.add(Vec3(z=self.eye_height));
+            if self.level.collision.trace_point(eye, target).fraction > 0.97 {
+                found.append((a, mesh.aas.areas[a].center));
+                if len(found) >= 8 {
+                    break;
+                }
+            }
+        }
+        return found;
+    }
+
+    """Whether `point` is within `room` units (across the floor) of the next
+    few waypoints of the route."""
+    def by_the_way(point: Vec3, room: float) -> bool {
+        for waypoint in self.bot.route.points[0:6] {
+            if Vec3(x=waypoint.x - point.x, y=waypoint.y - point.y).length() < room and abs(waypoint.z - point.z) < 96.0 {
+                return True;
+            }
+        }
+        return False;
     }
 
     """The level's way out the route finds soonest: an exit's trigger."""
@@ -1218,9 +1274,10 @@ walker AutoThink {
             return False;
         }
         here_area = self.bot.area_near(self.origin)[0];
-        # Supplies are only worth what can be had now: not seen through bars
-        # or behind a door that is still shut.
-        gated = self.shut_areas(here_area) if open_only else [];
+        # What can be had with every shut door left shut first: supplies
+        # only so (not seen through bars), anything else then by a way
+        # through doors still to open when there is no other.
+        gated = self.shut_areas(here_area);
         for a in gated {
             mesh.enable_area(a, False);
         }
@@ -1228,7 +1285,10 @@ walker AutoThink {
         for a in gated {
             mesh.enable_area(a, True);
         }
-        return taken;
+        if taken or open_only {
+            return taken;
+        }
+        return self.take_best(choices, within, here_area);
     }
 
     """Every area of a mover that is no way through now (but `keep`), open
@@ -1276,6 +1336,11 @@ walker AutoThink {
                     passed_over = True;
                 }
             }
+            for (quarry, until) in bot.given_up_bodies {
+                if until > bot.clock and choice.body is quarry {
+                    passed_over = True;
+                }
+            }
             where = "[" + str(int(choice.point.x)) + ", " + str(int(choice.point.y)) + ", " + str(int(choice.point.z)) + "]";
             label = "{\"kind\": " + trace_text(choice.kind) + ", \"why\": " + trace_text(choice.why) + ", \"at\": " + where;
             # Only worth having, near where it died on this map: not again.
@@ -1308,6 +1373,12 @@ walker AutoThink {
                     );
                     spots.append((area, inside));
                 }
+            }
+            # A monster to kill is shot from where it can be seen (through
+            # bars, across a pit), not walked up to.
+            prey = choice.body;
+            if choice.kind == "kill" and prey is not None {
+                spots = self.shooting_spots(prey);
             }
             # A volume no area reaches into is not done from beside it.
             if not spots and box is None {
@@ -1573,6 +1644,10 @@ walker AutoThink {
                 # Supplies are passed over for longer: there are others.
                 spare = objective.why in ["ammo", "health", "supply"];
                 bot.given_up.append((objective.point, bot.clock + (240.0 if spare else 60.0)));
+                quarry = objective.body;
+                if objective.kind == "kill" and quarry is not None {
+                    bot.given_up_bodies.append((quarry, bot.clock + 60.0));
+                }
             }
             # Back to what it set aside, or on to the exit.
             bot.objective = bot.waiting.pop() if bot.waiting else None;
@@ -1801,6 +1876,10 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
     }
     eye_height = level.collision.eye_height;
     origin = player.pos.sub(Vec3(z=eye_height));
+    if player.health < self.last_health {
+        self.hurt_at = self.clock;
+    }
+    self.last_health = player.health;
     if player.health <= 0 and not self.dead_seen {
         self.dead_seen = True;
         if self.deaths_map != level.name {

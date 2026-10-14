@@ -574,12 +574,48 @@ def travel_ladder(origin: Vec3, passage: Passage) -> TravelResult {
     );
 }
 
+"""The way out from under a mover's footprint (grown by the player's box):
+of eight ways, the one that leaves it soonest with clear room to do so,
+else the one with the most room; straight away from its middle when
+there is no collision to ask."""
+def out_of_footprint(origin: Vec3, box: AABB, passage: Passage, collision: CollisionMap | None) -> Vec3 {
+    away = flat_toward(mover_bottom_center(box, passage), origin)[0];
+    if collision is None {
+        return away;
+    }
+    best = away;
+    best_score = 1.0e9;
+    for k in range(8) {
+        angle = float(k) * 0.785398;
+        way = Vec3(x=math.cos(angle), y=math.sin(angle));
+        out = 1.0e9;
+        if way.x > 0.001 {
+            out = min(out, (box.maxs.x + 17.0 - origin.x) / way.x);
+        } elif way.x < -0.001 {
+            out = min(out, (box.mins.x - 17.0 - origin.x) / way.x);
+        }
+        if way.y > 0.001 {
+            out = min(out, (box.maxs.y + 17.0 - origin.y) / way.y);
+        } elif way.y < -0.001 {
+            out = min(out, (box.mins.y - 17.0 - origin.y) / way.y);
+        }
+        reach = min(out, 300.0) + 8.0;
+        room = collision.trace(origin, origin.add(way.scale(reach))).fraction * reach;
+        score = out if room >= out else 10000.0 - room;
+        if score < best_score {
+            best_score = score;
+            best = way;
+        }
+    }
+    return best;
+}
+
 """The approach to a mover shared by BotTravel_Elevator and
 BotTravel_FuncBobbing while the bot is not on it. Near the far end, walk
 there; while the mover is away (`ready` false), wait at the passage's
 start; otherwise step onto the middle of the mover, or first to the start
 when that is nearer."""
-def board_mover(origin: Vec3, passage: Passage, box: AABB, ready: bool) -> TravelResult {
+def board_mover(origin: Vec3, passage: Passage, box: AABB, ready: bool, collision: CollisionMap | None = None) -> TravelResult {
     near_end = passage.finish.sub(origin);
     if near_end.length() < 64.0 {
         return TravelResult(direction=near_end.normalized(), speed=6.0 * min(near_end.length(), 60.0));
@@ -590,8 +626,7 @@ def board_mover(origin: Vec3, passage: Passage, box: AABB, ready: bool) -> Trave
         # stops it and sends it back up (plat_crush).
         if origin.x > box.mins.x - 17.0 and origin.x < box.maxs.x + 17.0
             and origin.y > box.mins.y - 17.0 and origin.y < box.maxs.y + 17.0 {
-            away = flat_toward(mover_bottom_center(box, passage), origin);
-            return TravelResult(direction=away[0], speed=200.0, waiting=True);
+            return TravelResult(direction=out_of_footprint(origin, box, passage, collision), speed=200.0, waiting=True);
         }
         if origin.x > box.mins.x - 24.0 and origin.x < box.maxs.x + 24.0
             and origin.y > box.mins.y - 24.0 and origin.y < box.maxs.y + 24.0 {
@@ -643,7 +678,7 @@ def travel_elevator(mesh: NavMesh, collision: CollisionMap, origin: Vec3, ground
     if on_mover(collision, box, passage.model, origin) {
         return ride_mover(origin, passage, box, abs(origin.z - passage.finish.z) < TRAVEL_MAX_BARRIER);
     }
-    return board_mover(origin, passage, box, box.maxs.z < passage.start.z);
+    return board_mover(origin, passage, box, box.maxs.z < passage.start.z, collision);
 }
 
 """BotTravel_FuncBobbing on the ground and BotFinishTravel_FuncBobbing in
@@ -670,7 +705,7 @@ def travel_funcbob(mesh: NavMesh, collision: CollisionMap, origin: Vec3, grounde
     if on_mover(collision, box, passage.model, origin) {
         return ride_mover(origin, passage, box, abs(where - passage.far) < 24.0);
     }
-    return board_mover(origin, passage, box, abs(where - passage.near) <= 16.0);
+    return board_mover(origin, passage, box, abs(where - passage.near) <= 16.0, collision);
 }
 
 """One frame of BotMoveToGoal along an AAS route for a bot at eye `bot.pos`.
