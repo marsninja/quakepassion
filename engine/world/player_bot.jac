@@ -127,8 +127,10 @@ node PlayerBot {
         # Its health last think, and when it last took a hit.
         last_health: int = 0,
         hurt_at: float = -100.0,
-        # When a lift ridden was last noted in the trace.
+        # When a lift ridden was last noted in the trace, and since when it
+        # has stood waiting for one.
         lift_noted: float = -100.0,
+        waiting_since: float = -1.0,
         # Whether it is getting out of a train's way, and what that train
         # sweeps.
         escaping: bool = False,
@@ -2110,6 +2112,24 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             );
             self.travel = travel.result;
             heading = travel.result.direction;
+            # Waiting for a lift that does not come (held up, or turned back
+            # by something under it): after ten seconds that ride is given
+            # up for a minute and another way found.
+            if travel.result.waiting {
+                if self.waiting_since < 0.0 {
+                    self.waiting_since = self.clock;
+                } elif self.clock - self.waiting_since > 10.0 and self.route.areas {
+                    ride_to = self.route.areas[0];
+                    self.waiting_since = -1.0;
+                    if ride_to > 0 {
+                        self.close_area(ride_to, 0, 60.0);
+                        self.route.abandon();
+                        print("AUTOPLAY lift does not come: area", ride_to, "closed");
+                    }
+                }
+            } else {
+                self.waiting_since = -1.0;
+            }
             share = travel.result.speed_scale();
             if travel.launch is not None {
                 # The jump the route wants from here: off at a run.
