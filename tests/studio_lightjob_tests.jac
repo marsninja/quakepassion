@@ -79,6 +79,8 @@ test "light bounces off what it lights into the shadows" {
 test "a face whose material glows lights what is near it" {
     scene = lit_yard();
     scene.world().fields["_bounce"] = "1";
+    # In the dark, so the world's least light does not hide what the glow gives.
+    scene.world().fields["_minlight"] = "0";
     for item in list(scene.items()) {
         if item.classname() == "light" {
             item.fields["light"] = "1";

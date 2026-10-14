@@ -88,7 +88,7 @@ with entry {
             map_name = pack_start_map(pack_id);
         }
         if game == "passion" {
-            map_name = "v2-" + os.getenv("QP_SEED", "1");
+            map_name = "v3-" + os.getenv("QP_SEED", "1");
         }
         opened = os.getenv("QP_MAP", map_name);
         # Q1 and Q2 play the fifth skill (Q3's Nightmare!) as Nightmare.

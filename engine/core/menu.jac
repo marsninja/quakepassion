@@ -187,7 +187,7 @@ obj LevelMenu {
         if game == "passion" {
             seed = max(int(time.time()), self.seed_cursor + 12) % 2147483000 + 1;
             self.seed_cursor = seed;
-            self.maps = ["v2-" + str(seed + i) for i in range(12)];
+            self.maps = ["v3-" + str(seed + i) for i in range(12)];
             self.labels = list(self.maps);
             self.message = "Seeded expeditions | Click Passion for fresh seeds";
             return;

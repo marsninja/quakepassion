@@ -17,7 +17,7 @@ Quake (and games in general) is the thing that got me into programming. This pro
 - **Quake**: the full campaign, 32 maps (start, four episodes, end), with its monsters and bosses (Chthon, Shub-Niggurath), runes, secrets, intermissions and episode text.
 - **Quake II**: the full campaign, 39 maps across its units, with hub returns, the help computer, cinematics, the monster roster and the final bosses.
 - **Quake III Arena**: the single-player ladder from `arenas.txt`: free-for-all matches against botlib-driven bots (AAS routing, fuzzy item and weapon weights, chat), scoring, awards and the podium.
-- **Passion**: a fourth mode that generates seeded expeditions from all three games' assets. See [docs/passion.md](docs/passion.md).
+- **Passion**: a fourth mode that generates seeded expeditions, real three-dimensional levels built from all three games' assets and measured against the originals. See [docs/passion.md](docs/passion.md).
 
 Save/load, per-game key bindings, the console and settings work in all modes. An editing studio is being built into the engine ([docs/studio-status.md](docs/studio-status.md)). Network multiplayer and mods are out of scope. Known gaps are tracked per area in [docs/](docs/README.md).
 
