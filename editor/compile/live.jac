@@ -10,6 +10,7 @@ import from engine.formats.bsp { Bsp, Face, Brush, Plane, Leaf, Model, MapEntity
 import from engine.math.vec3 { Vec3 }
 import from ..document.scene { Scene, Item, Solid }
 import from ..geometry.brush { Side, brush_windings }
+import from .cull { FaceCutter, material_clear }
 
 """Where a material's image comes from."""
 obj Materials {
@@ -112,7 +113,12 @@ obj LiveCompiler {
         result: LiveLevel = LiveLevel(bsp=Bsp(game="passion")),
         texture_index: dict[str, int] = {},
         low: Vec3 = Vec3(x=-256.0, y=-256.0, z=-256.0),
-        high: Vec3 = Vec3(x=256.0, y=256.0, z=256.0);
+        high: Vec3 = Vec3(x=256.0, y=256.0, z=256.0),
+        # When set, the world's brush sides are cut against the brushes
+        # around them and only what shows is drawn (brush serial to its
+        # index in the cutter).
+        cutter: FaceCutter | None = None,
+        cut_index: dict[int, int] = {};
 
     def texture(name: str) -> int {
         if name not in self.texture_index {
@@ -148,24 +154,31 @@ obj LiveCompiler {
             texture = self.texture(side.material);
             image = bsp.textures[texture];
             normal = side.plane.normal;
-            # The renderer's faces wind the other way from a map's.
-            corners = [outline[len(outline) - 1 - i] for i in range(len(outline))];
-            face = Face(vertices=corners, normal=normal, plane_dist=side.plane.dist, texture=texture);
-            for i in range(1, len(corners) - 1) {
-                face.indices.extend([0, i, i + 1]);
+            pieces = [outline];
+            cutter = self.cutter;
+            if cutter is not None and model == 0 and solid.serial in self.cut_index {
+                pieces = cutter.pieces(self.cut_index[solid.serial], outline, normal, side.plane.dist);
             }
             # Full light from above, less on the sides (east and west a
             # little more than north and south), least from below.
             shade = int(205.0 + 50.0 * max(0.0, normal.z) + 15.0 * abs(normal.x) - 35.0 * max(0.0, -normal.z));
-            for corner in corners {
-                texel = side.mapping.texel(corner);
-                face.uv.extend([texel[0] / float(max(1, image.width)), texel[1] / float(max(1, image.height))]);
-                face.colors.extend([shade, shade, shade, 255]);
+            for piece in pieces {
+                # The renderer's faces wind the other way from a map's.
+                corners = [piece[len(piece) - 1 - i] for i in range(len(piece))];
+                face = Face(vertices=corners, normal=normal, plane_dist=side.plane.dist, texture=texture);
+                for i in range(1, len(corners) - 1) {
+                    face.indices.extend([0, i, i + 1]);
+                }
+                for corner in corners {
+                    texel = side.mapping.texel(corner);
+                    face.uv.extend([texel[0] / float(max(1, image.width)), texel[1] / float(max(1, image.height))]);
+                    face.colors.extend([shade, shade, shade, 255]);
+                }
+                made.append(len(bsp.faces));
+                bsp.leaves[0].faces.append(len(bsp.faces));
+                bsp.faces.append(face);
+                record.face_count += 1;
             }
-            made.append(len(bsp.faces));
-            bsp.leaves[0].faces.append(len(bsp.faces));
-            bsp.faces.append(face);
-            record.face_count += 1;
         }
         record.brushes.append(len(bsp.brushes));
         bsp.brushes.append(brush);
@@ -201,10 +214,26 @@ obj LiveCompiler {
 """Compile a scene to a level's data. The world's brushes are model 0; each
 other entity that owns brushes gets a model of its own and a `model` field
 naming it."""
-def compile_scene(scene: Scene, materials: Materials) -> LiveLevel {
+def compile_scene(scene: Scene, materials: Materials, cut: bool = False) -> LiveLevel {
     compiler = LiveCompiler(materials=materials);
     result = compiler.result;
     bsp = result.bsp;
+    if cut {
+        # The world's brushes that cover what lies in them: every brush of
+        # the world and its groups but those one sees through.
+        cutter = FaceCutter();
+        for item in scene.items() {
+            if item.classname() not in ["worldspawn", "func_group"] {
+                continue;
+            }
+            for solid in scene.solids_of(item) {
+                if solid.sides and not material_clear(solid.sides[0].material) {
+                    compiler.cut_index[solid.serial] = cutter.add(solid.sides, brush_windings(solid.sides));
+                }
+            }
+        }
+        compiler.cutter = cutter;
+    }
     bsp.leaves.append(Leaf(contents=0, vis_offset=0, mins=Vec3(), maxs=Vec3(), cluster=0));
     world_model = compiler.begin_model();
     world_fields: dict[str, str] = {"classname": "worldspawn"};

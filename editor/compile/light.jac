@@ -13,23 +13,64 @@ import from engine.world.lighting { Lamp, Occluder, shade }
 import from ..document.scene { Scene, Item, Solid, read_vector }
 import from ..geometry.brush { Side, brush_windings, windings_bounds, ray_enters_brush, brush_holds }
 import from .live { LiveLevel, material_hidden, switch_styles }
+import from .cull { material_clear }
 import from .spot { Cone, spot_cone }
 
 """Shadows cast by brushes: a sample sees a lamp when no brush stands
-between them."""
+between them. Brushes are kept in buckets of a grid `cell` units across,
+and a line of sight walks only the cells it passes through."""
 obj BrushOccluder(Occluder) {
     has brushes: list[list[Side]] = [],
         lows: list[Vec3] = [],
-        highs: list[Vec3] = [];
+        highs: list[Vec3] = [],
+        cell: float = 128.0,
+        buckets: dict[int, list[int]] = {},
+        stamps: list[int] = [],
+        tick: int = 0;
+
+    def bucket_key(ix: int, iy: int, iz: int) -> int {
+        return ((ix + 2048) * 4096 + (iy + 2048)) * 4096 + (iz + 2048);
+    }
 
     def add(sides: list[Side]) {
         box = windings_bounds(brush_windings(sides));
         if box is None {
             return;
         }
+        index = len(self.brushes);
         self.brushes.append(sides);
         self.lows.append(box[0]);
         self.highs.append(box[1]);
+        self.stamps.append(0);
+        for ix in range(int(math.floor(box[0].x / self.cell)), int(math.floor(box[1].x / self.cell)) + 1) {
+            for iy in range(int(math.floor(box[0].y / self.cell)), int(math.floor(box[1].y / self.cell)) + 1) {
+                for iz in range(int(math.floor(box[0].z / self.cell)), int(math.floor(box[1].z / self.cell)) + 1) {
+                    key = self.bucket_key(ix, iy, iz);
+                    if key not in self.buckets {
+                        self.buckets[key] = [];
+                    }
+                    self.buckets[key].append(index);
+                }
+            }
+        }
+    }
+
+    """Whether a point is inside any brush."""
+    def holds(point: Vec3) -> bool {
+        key = self.bucket_key(
+            int(math.floor(point.x / self.cell)), int(math.floor(point.y / self.cell)), int(math.floor(point.z / self.cell))
+        );
+        for index in self.buckets.get(key, []) {
+            a = self.lows[index];
+            b = self.highs[index];
+            if point.x < a.x or point.x > b.x or point.y < a.y or point.y > b.y or point.z < a.z or point.z > b.z {
+                continue;
+            }
+            if brush_holds(self.brushes[index], point) {
+                return True;
+            }
+        }
+        return False;
     }
 
     def visibility(point: Vec3, target: Vec3) -> float {
@@ -39,17 +80,57 @@ obj BrushOccluder(Occluder) {
             return 1.0;
         }
         direction = along.scale(1.0 / reach);
-        low = Vec3(x=min(point.x, target.x), y=min(point.y, target.y), z=min(point.z, target.z));
-        high = Vec3(x=max(point.x, target.x), y=max(point.y, target.y), z=max(point.z, target.z));
-        for index in range(len(self.brushes)) {
-            a = self.lows[index];
-            b = self.highs[index];
-            if a.x > high.x or b.x < low.x or a.y > high.y or b.y < low.y or a.z > high.z or b.z < low.z {
-                continue;
+        self.tick += 1;
+        far = 1000000000.0;
+        cell = self.cell;
+        ix = int(math.floor(point.x / cell));
+        iy = int(math.floor(point.y / cell));
+        iz = int(math.floor(point.z / cell));
+        step_x = 1 if direction.x > 0.0 else -1;
+        step_y = 1 if direction.y > 0.0 else -1;
+        step_z = 1 if direction.z > 0.0 else -1;
+        next_x = far;
+        next_y = far;
+        next_z = far;
+        delta_x = far;
+        delta_y = far;
+        delta_z = far;
+        if abs(direction.x) > 0.000001 {
+            next_x = ((float(ix) + (1.0 if step_x > 0 else 0.0)) * cell - point.x) / direction.x;
+            delta_x = cell / abs(direction.x);
+        }
+        if abs(direction.y) > 0.000001 {
+            next_y = ((float(iy) + (1.0 if step_y > 0 else 0.0)) * cell - point.y) / direction.y;
+            delta_y = cell / abs(direction.y);
+        }
+        if abs(direction.z) > 0.000001 {
+            next_z = ((float(iz) + (1.0 if step_z > 0 else 0.0)) * cell - point.z) / direction.z;
+            delta_z = cell / abs(direction.z);
+        }
+        travelled = 0.0;
+        while travelled <= reach {
+            for index in self.buckets.get(self.bucket_key(ix, iy, iz), []) {
+                if self.stamps[index] == self.tick {
+                    continue;
+                }
+                self.stamps[index] = self.tick;
+                entered = ray_enters_brush(self.brushes[index], point, direction);
+                if entered[1] >= 0 and entered[0] > 0.01 and entered[0] < reach - 0.5 {
+                    return 0.0;
+                }
             }
-            entered = ray_enters_brush(self.brushes[index], point, direction);
-            if entered[1] >= 0 and entered[0] > 0.01 and entered[0] < reach - 0.5 {
-                return 0.0;
+            if next_x <= next_y and next_x <= next_z {
+                travelled = next_x;
+                next_x += delta_x;
+                ix += step_x;
+            } elif next_y <= next_z {
+                travelled = next_y;
+                next_y += delta_y;
+                iy += step_y;
+            } else {
+                travelled = next_z;
+                next_z += delta_z;
+                iz += step_z;
             }
         }
         return 1.0;
@@ -278,12 +359,84 @@ obj LightJob {
         grid_points: list[Vec3] = [],
         grid: bytearray = bytearray(),
         next_point: int = 0,
-        said: float = 0.0;
+        said: float = 0.0,
+        # Lamps by the cells of a grid their reach touches, and patches by
+        # the cells they lie in, so a point asks only those near it.
+        lamp_cell: float = 256.0,
+        lamp_buckets: dict[int, list[int]] = {},
+        patch_buckets: dict[int, list[int]] = {},
+        bounce_reach: float = 512.0;
+
+    def light_key(ix: int, iy: int, iz: int) -> int {
+        return ((ix + 2048) * 4096 + (iy + 2048)) * 4096 + (iz + 2048);
+    }
+
+    """Put each lamp in the buckets of the cells its reach touches."""
+    def bucket_lamps {
+        cell = self.lamp_cell;
+        for (index, lamp) in enumerate(self.lamps) {
+            reach = lamp.radius;
+            for ix in range(int(math.floor((lamp.origin.x - reach) / cell)), int(math.floor((lamp.origin.x + reach) / cell)) + 1) {
+                for iy in range(int(math.floor((lamp.origin.y - reach) / cell)), int(math.floor((lamp.origin.y + reach) / cell)) + 1) {
+                    for iz in range(int(math.floor((lamp.origin.z - reach) / cell)), int(math.floor((lamp.origin.z + reach) / cell)) + 1) {
+                        key = self.light_key(ix, iy, iz);
+                        if key not in self.lamp_buckets {
+                            self.lamp_buckets[key] = [];
+                        }
+                        self.lamp_buckets[key].append(index);
+                    }
+                }
+            }
+        }
+    }
+
+    """The lamps (by index) whose reach may touch a point."""
+    def lamps_near(point: Vec3) -> list[int] {
+        cell = self.lamp_cell;
+        return self.lamp_buckets.get(
+            self.light_key(int(math.floor(point.x / cell)), int(math.floor(point.y / cell)), int(math.floor(point.z / cell))), []
+        );
+    }
 
     """The lamps of one style that light a point."""
     def lit_by(point: Vec3, style: int = 0) -> list[Lamp] {
+        if not self.lamp_buckets and self.lamps {
+            self.bucket_lamps();
+        }
+        return self.lit_among(point, style, self.lamps_near(point));
+    }
+
+    """The lamps (by index) that can reach a face at all: near enough for
+    their reach and in front of it."""
+    def face_lamps(index: int) -> list[int] {
+        face = self.made.bsp.faces[index];
+        middle = Vec3();
+        for vertex in face.vertices {
+            middle = middle.add(vertex);
+        }
+        middle = middle.scale(1.0 / float(max(1, len(face.vertices))));
+        span = 0.0;
+        for vertex in face.vertices {
+            span = max(span, vertex.sub(middle).length());
+        }
+        found: list[int] = [];
+        for (lamp_index, lamp) in enumerate(self.lamps) {
+            if lamp.origin.sub(middle).length() >= lamp.radius + span {
+                continue;
+            }
+            if face.normal.dot(lamp.origin) - face.plane_dist < -1.0 {
+                continue;
+            }
+            found.append(lamp_index);
+        }
+        return found;
+    }
+
+    """The lamps of one style among `candidates` (indices) that light a point."""
+    def lit_among(point: Vec3, style: int, candidates: list[int]) -> list[Lamp] {
         reaching: list[Lamp] = [];
-        for (index, lamp) in enumerate(self.lamps) {
+        for index in candidates {
+            lamp = self.lamps[index];
             if self.lamp_styles[index] != style {
                 continue;
             }
@@ -427,17 +580,20 @@ obj LightJob {
         layers: dict[int, list[float]] = {};
         others = sorted(set([style for style in self.lamp_styles if style != 0]));
         near = [style for style in others if self.style_near(index, style)];
+        candidates = self.face_lamps(index);
         for style in near {
             layers[style] = [];
         }
         for y in range(down) {
             for x in range(across) {
                 point = self.sample_point(index, x, y, across, down);
-                sample = shade(point, face.normal, self.lit_by(point), self.occluder);
-                color = sample.ambient.add(sample.directed);
+                # Only the lamps' own light: how dark it may get is the
+                # world's `_minlight` (`least`), not the shading's ambient.
+                sample = shade(point, face.normal, self.lit_among(point, 0, candidates), self.occluder);
+                color = sample.directed;
                 steady.extend([color.x, color.y, color.z]);
                 for style in near {
-                    lit = shade(point, face.normal, self.lit_by(point, style), self.occluder).directed;
+                    lit = shade(point, face.normal, self.lit_among(point, style, candidates), self.occluder).directed;
                     layers[style].extend([lit.x, lit.y, lit.z]);
                 }
             }
@@ -486,9 +642,9 @@ obj LightJob {
                     cell = row * columns + column;
                     sums[cell] = sums[cell].add(
                         Vec3(
-                            x=max(0.0, self.steady[at][p] - 0.12),
-                            y=max(0.0, self.steady[at][p + 1] - 0.12),
-                            z=max(0.0, self.steady[at][p + 2] - 0.12)
+                            x=max(0.0, self.steady[at][p]),
+                            y=max(0.0, self.steady[at][p + 1]),
+                            z=max(0.0, self.steady[at][p + 2])
                         )
                     );
                     counts[cell] += 1;
@@ -530,7 +686,36 @@ obj LightJob {
     def gather(index: int) {
         receiver = self.patches[index];
         total = Vec3();
-        for other in self.patches {
+        if not self.patch_buckets {
+            for (patch_index, patch) in enumerate(self.patches) {
+                # Only patches that give light back or off are worth asking.
+                if patch.out.x + patch.out.y + patch.out.z < 0.01 {
+                    continue;
+                }
+                key = self.light_key(
+                    int(math.floor(patch.spot.x / self.bounce_reach)),
+                    int(math.floor(patch.spot.y / self.bounce_reach)),
+                    int(math.floor(patch.spot.z / self.bounce_reach))
+                );
+                if key not in self.patch_buckets {
+                    self.patch_buckets[key] = [];
+                }
+                self.patch_buckets[key].append(patch_index);
+            }
+        }
+        nearby: list[int] = [];
+        bx = int(math.floor(receiver.spot.x / self.bounce_reach));
+        by_ = int(math.floor(receiver.spot.y / self.bounce_reach));
+        bz = int(math.floor(receiver.spot.z / self.bounce_reach));
+        for ix in [bx - 1, bx, bx + 1] {
+            for iy in [by_ - 1, by_, by_ + 1] {
+                for iz in [bz - 1, bz, bz + 1] {
+                    nearby.extend(self.patch_buckets.get(self.light_key(ix, iy, iz), []));
+                }
+            }
+        }
+        for other_index in nearby {
+            other = self.patches[other_index];
             if other.face == receiver.face or other.out.x + other.out.y + other.out.z < 0.01 {
                 continue;
             }
@@ -603,15 +788,8 @@ obj LightJob {
     def light_point(index: int) {
         point = self.grid_points[index];
         occluder = self.occluder;
-        for brush in range(len(occluder.brushes)) {
-            a = occluder.lows[brush];
-            b = occluder.highs[brush];
-            if point.x < a.x or point.x > b.x or point.y < a.y or point.y > b.y or point.z < a.z or point.z > b.z {
-                continue;
-            }
-            if brush_holds(occluder.brushes[brush], point) {
-                return;
-            }
+        if occluder.holds(point) {
+            return;
         }
         sample = shade(point, Vec3(z=1.0), self.lit_by(point), occluder, probe=True);
         at = index * 8;
@@ -803,7 +981,9 @@ def light_job(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 
             continue;
         }
         for solid in scene.solids_of(item) {
-            if not material_hidden(solid.sides[0].material) {
+            # Caulked sides still stand in the way; only what one sees
+            # through casts no shadow.
+            if solid.sides and not material_clear(solid.sides[0].material) {
                 occluder.add(solid.sides);
             }
         }
