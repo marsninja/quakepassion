@@ -783,9 +783,19 @@ def autoplay_weapon(player: Player, state: CombatState, distance: float, wet: bo
         if not owns_weapon(player, rule) or not has_ammo_for(player, rule) or rule.hand_thrown {
             continue;
         }
+        # Pellets spread: the share that lands on a body (about 20 units
+        # either side of the aim) at this distance. Fewer than a third is
+        # ammunition thrown away.
+        landing = 1.0;
+        if rule.pellets > 1 and rule.spread > 0.0 {
+            landing = min(1.0, 20.0 / max(1.0, distance * rule.spread));
+        }
+        if landing < 0.35 {
+            continue;
+        }
         # A monster whose wounds close after each hit (its pain puts its
         # health back) falls only to a shot that does `needed` at once.
-        if needed > 0 and rule.damage * max(1, rule.pellets) + rule.splash < needed {
+        if needed > 0 and float(rule.damage * max(1, rule.pellets)) * landing + float(rule.splash) < float(needed) {
             continue;
         }
         # Its own blast: splash only beyond 200 units, and grenades, which
@@ -802,7 +812,7 @@ def autoplay_weapon(player: Player, state: CombatState, distance: float, wet: bo
         if rule.reach < distance {
             continue;
         }
-        rate = float(rule.damage * max(1, rule.pellets) + rule.splash) / max(0.05, rule.interval);
+        rate = (float(rule.damage * max(1, rule.pellets)) * landing + float(rule.splash)) / max(0.05, rule.interval);
         if rate > best_rate {
             best_rate = rate;
             best = rule.slot;
