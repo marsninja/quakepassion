@@ -24,6 +24,7 @@ import from .combat { Opponent, HasOpponent }
 import from .pickups { Pickup, HasPickup }
 import from .inventory { quantity }
 import from .exits { LevelExit }
+import from .trains { Train, HasTrain }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 
@@ -38,6 +39,8 @@ node Objective {
         why: str = "",
         signal: Signal | None = None,
         door: Door | None = None,
+        # A secret door it is to open (one of the track movers).
+        train: Train | None = None,
         body: Opponent | None = None,
         item: Pickup | None = None,
         # The mover (BSP model) it is to get by, 0 for none.
@@ -70,6 +73,10 @@ node Objective {
         }
         signal = self.signal;
         if signal is not None and signal.fired > self.fired {
+            return True;
+        }
+        secret = self.train;
+        if secret is not None and secret.motion.length() > 1.0 {
             return True;
         }
         door = self.door;
@@ -222,12 +229,50 @@ def objective_key_items(world: World, key: str, why: str) -> list[Objective] {
     return found;
 }
 
+"""The secret door (a track mover of kind "secret") with BSP `model`, or None."""
+def objective_secret(world: World, model: int) -> Train | None {
+    for train in [world->:HasTrain:->][?:Train] {
+        if train.model == model and train.kind == "secret" {
+            return train;
+        }
+    }
+    return None;
+}
+
+"""What opens a secret door that is shut: a shot when it takes one, else
+what fires it."""
+def secret_objectives(world: World, train: Train, model: int) -> list[Objective] {
+    if train.motion.length() > 1.0 {
+        return [];
+    }
+    why = "secret door " + str(model);
+    middle = train.bounds.mins.add(train.bounds.maxs).scale(0.5);
+    found: list[Objective] = [];
+    if train.shootable {
+        found.append(Objective(kind="shoot", point=middle, aim=middle, why=why, train=train));
+    }
+    search = train.activation spawn FindActions(world=world, why=why);
+    for action in search.found {
+        action.train = train;
+        found.append(action);
+    }
+    return found;
+}
+
 """What the player must do before the mover with BSP `model` lets it by:
 nothing (an empty list) when it is where it needs to be or comes by itself.
 Each choice is an objective; the caller picks the one it reaches."""
 def mover_objectives(world: World, model: int, player: Player) -> list[Objective] {
     leader = objective_mover(world, model);
-    if leader is None or leader.kind == "button" {
+    if leader is None {
+        secret = objective_secret(world, model);
+        found_secret = secret_objectives(world, secret, model) if secret is not None else [];
+        for action in found_secret {
+            action.mover = model;
+        }
+        return found_secret;
+    }
+    if leader.kind == "button" {
         return [];
     }
     found_all = mover_objectives_of(world, leader, model, player);
@@ -278,7 +323,11 @@ where travel needs it and not coming by itself (shut by a key the player
 lacks, fired from elsewhere, shot open, a plat held at the top)."""
 def mover_blocked(world: World, model: int, player: Player) -> bool {
     leader = objective_mover(world, model);
-    if leader is None or leader.kind == "button" {
+    if leader is None {
+        secret = objective_secret(world, model);
+        return secret is not None and secret.motion.length() < 1.0;
+    }
+    if leader.kind == "button" {
         return False;
     }
     if leader.position >= 0.99 or leader.state in ["opening", "open"] {

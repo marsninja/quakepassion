@@ -163,6 +163,10 @@ node PlayerBot {
         shot_dir: str = ".jac/shots",
         fired: bool = False,
         trace: BotTrace = BotTrace(),
+        # Where it has died on this map (kept across restarts of the level):
+        # what is only worth having is not fetched near there again.
+        deaths_map: str = "",
+        death_spots: list[Vec3] = [],
         dead_seen: bool = False,
         menu_notice: str = "",
         # Which way it sidesteps in a fight (1 right, -1 left), and when it
@@ -611,14 +615,24 @@ node PlayerBot {
 
 """The best weapon held for an enemy `distance` away: the most damage a
 second, without splash up close or in water where it would hurt."""
-def autoplay_weapon(player: Player, state: CombatState, distance: float, wet: bool) -> int {
+def autoplay_weapon(player: Player, state: CombatState, distance: float, wet: bool, needed: int = 0) -> int {
     best = 0;
     best_rate = -1.0;
     for rule in state.rules {
         if not owns_weapon(player, rule) or not has_ammo_for(player, rule) or rule.hand_thrown {
             continue;
         }
-        if (rule.splash > 0 or rule.radius > 0.0) and distance < 160.0 {
+        # A monster whose wounds close after each hit (its pain puts its
+        # health back) falls only to a shot that does `needed` at once.
+        if needed > 0 and rule.damage * max(1, rule.pellets) + rule.splash < needed {
+            continue;
+        }
+        # Its own blast: splash only beyond 200 units, and grenades, which
+        # bounce back, beyond 350.
+        if (rule.splash > 0 or rule.radius > 0.0) and distance < 200.0 {
+            continue;
+        }
+        if rule.gravity and distance < 350.0 {
             continue;
         }
         if wet and (rule.avoid_underwater or rule.beam_damage > 0) {
@@ -634,6 +648,18 @@ def autoplay_weapon(player: Player, state: CombatState, distance: float, wet: bo
         }
     }
     return best;
+}
+
+"""What one shot must do to put `body` down: its health back after each
+pain (OpponentRule.pain_health_reset, Q1's zombie), else nothing."""
+def autoplay_needed(body: Opponent) -> int {
+    return body.rule.pain_health_reset;
+}
+
+"""Whether a weapon held could hurt `body` from `distance` (in reach, with
+ammunition, enough at once where that is what it takes)."""
+def autoplay_can_hurt(player: Player, state: CombatState, body: Opponent, distance: float) -> bool {
+    return autoplay_weapon(player, state, distance, player.water_depth >= 2, autoplay_needed(body)) > 0;
 }
 
 """The shortest turn from angle `a` to `b`, radians."""
@@ -696,6 +722,12 @@ walker AutoThink {
             }
             line = self.level.collision.trace_point(eye, target);
             if line.fraction < 0.97 {
+                continue;
+            }
+            # One it holds nothing to hurt with (only the axe, out of reach;
+            # nothing that does enough at once to a zombie) is not fought:
+            # it keeps on its way, dodging what comes at it.
+            if not autoplay_can_hurt(self.player, self.state, body, distance) {
                 continue;
             }
             nearest = distance;
@@ -892,8 +924,16 @@ walker AutoThink {
             }
             where = "[" + str(int(choice.point.x)) + ", " + str(int(choice.point.y)) + ", " + str(int(choice.point.z)) + "]";
             label = "{\"kind\": " + trace_text(choice.kind) + ", \"why\": " + trace_text(choice.why) + ", \"at\": " + where;
+            # Only worth having, near where it died on this map: not again.
+            if choice.why in ["ammo", "health", "supply"] and bot.deaths_map == self.level.name {
+                for spot in bot.death_spots {
+                    if spot.sub(choice.point).length() < 300.0 {
+                        passed_over = True;
+                    }
+                }
+            }
             if passed_over {
-                notes.append(label + ", \"result\": \"given up lately\"}");
+                notes.append(label + ", \"result\": \"given up lately, or near a death\"}");
                 continue;
             }
             cheapest = UNREACHED;
@@ -1389,6 +1429,11 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
     origin = player.pos.sub(Vec3(z=eye_height));
     if player.health <= 0 and not self.dead_seen {
         self.dead_seen = True;
+        if self.deaths_map != level.name {
+            self.deaths_map = level.name;
+            self.death_spots = [];
+        }
+        self.death_spots.append(origin);
         killer = player.killer;
         slayer = "";
         if killer is not None and isinstance(killer, Opponent) {
@@ -1662,13 +1707,14 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         want_yaw = math.atan2(aim.y, aim.x);
         want_pitch = math.atan2(aim.z, math.sqrt(aim.x * aim.x + aim.y * aim.y));
         distance = aim.length();
-        slot = autoplay_weapon(player, state, distance, player.water_depth >= 2);
+        slot = autoplay_weapon(player, state, distance, player.water_depth >= 2, autoplay_needed(enemy));
         if slot > 0 and slot != state.weapon {
             intent.weapon = slot;
         }
         yaw_gap = abs(autoplay_turn(player.yaw, want_yaw));
         pitch_gap = abs(want_pitch - player.pitch);
-        intent.fire = yaw_gap < 0.12 and pitch_gap < 0.15;
+        # Only with a weapon that reaches it: not the axe from across a room.
+        intent.fire = slot > 0 and yaw_gap < 0.12 and pitch_gap < 0.15;
         self.fired = intent.fire;
     } elif self.travel.view_set {
         want_yaw = math.radians(self.travel.yaw);

@@ -50,6 +50,7 @@ import from ..formats.aas {
 import from ..world.world { World }
 import from ..world.level { Level }
 import from ..world.doors { Door, HasDoor, DoorMember }
+import from ..world.trains { Train, HasTrain, TrackPoint, TrackNext }
 import from ..world.traversal { Traversal, HasTraversal, Destination, ArrivesAt, touches_volume }
 import from ..world.pickups { Pickup, HasPickup }
 import from ..world.hazards { Hazard, HasHazard }
@@ -123,6 +124,8 @@ obj NavGrid {
         # The pose new spots are found in, and where they may be (none: anywhere).
         pose: int = 1,
         region: list[AABB] = [],
+        # The movers already joined as lifts.
+        lifted: set[int] = set(),
         traces: int = 0;
 
     """Whether a new spot may be added at `point` (inside the region)."""
@@ -475,6 +478,26 @@ def:priv nav_movers(world: World) -> list[Door] {
     return found;
 }
 
+"""The secret doors (two-stage movers on a track of four points) and the
+motion of each fully open: its third point."""
+def:priv nav_secret_doors(world: World) -> list[tuple[Train, Vec3]] {
+    found: list[tuple[Train, Vec3]] = [];
+    for train in [world->:HasTrain:->][?:Train] {
+        if train.kind != "secret" {
+            continue;
+        }
+        step = train.current;
+        for k in range(2) {
+            following = [step->:TrackNext:->][?:TrackPoint];
+            if following {
+                step = following[0];
+            }
+        }
+        found.append((train, step.origin.sub(train.anchor)));
+    }
+    return found;
+}
+
 """The level's collision with every mover where a traveller needs it: doors
 open, plats up, rotating doors out of the way. The live map is left as it
 is."""
@@ -493,6 +516,14 @@ def:priv nav_posed_collision(world: World, collision: CollisionMap) -> Collision
                 posed.disabled.add(hull);
             } elif k < len(door.origins) {
                 posed.offsets[hull] = door.origins[k].add(door.rest).add(door.travel);
+            }
+        }
+    }
+    # Secret doors open: stepped aside and slid back.
+    for (train, opened) in nav_secret_doors(world) {
+        for k in range(len(train.hulls)) {
+            if k < len(train.origins) {
+                posed.offsets[train.hulls[k]] = train.origins[k].add(opened);
             }
         }
     }
@@ -591,7 +622,7 @@ def:priv nav_lifts(world: World, grid: NavGrid, level: Level) -> tuple[int, list
     tops: list[NavSpot] = [];
     notes: list[str] = [];
     for door in nav_movers(world) {
-        if door.kind == "button" or not door.hulls or not door.origins {
+        if door.kind == "button" or not door.hulls or not door.origins or door.model in grid.lifted {
             continue;
         }
         travel = door.travel;
@@ -640,6 +671,7 @@ def:priv nav_lifts(world: World, grid: NavGrid, level: Level) -> tuple[int, list
             notes.append("mover " + str(door.model) + ": nothing at the far end");
             continue;
         }
+        grid.lifted.add(door.model);
         on_top +>:NavStep(kind=TRAVEL_ELEVATOR, target=found.index, model=door.model):+> found;
         found +>:NavStep(kind=TRAVEL_ELEVATOR, target=on_top.index, model=door.model):+> on_top;
         count += 1;
@@ -663,6 +695,17 @@ def:priv nav_mark_movers(world: World, grid: NavGrid, level: Level) {
             o = spot.origin;
             if spot.pose == 1 and o.x > lo.x and o.x < hi.x and o.y > lo.y and o.y < hi.y and o.z > lo.z and o.z < hi.z {
                 spot.mover = door.model;
+            }
+        }
+    }
+    # A secret door's doorway is the door's, as a door's is.
+    for (train, opened) in nav_secret_doors(world) {
+        lo = train.bounds.mins.sub(Vec3(x=16.0, y=16.0, z=32.0));
+        hi = train.bounds.maxs.add(Vec3(x=16.0, y=16.0, z=24.0));
+        for spot in grid.spots {
+            o = spot.origin;
+            if spot.pose == 1 and o.x > lo.x and o.x < hi.x and o.y > lo.y and o.y < hi.y and o.z > lo.z and o.z < hi.z {
+                spot.mover = train.model;
             }
         }
     }
@@ -917,6 +960,12 @@ def:priv nav_rest_flood(world: World, grid: NavGrid, level: Level, flood: FloodF
         hi = Vec3(x=max(rest.x, posed.x), y=max(rest.y, posed.y), z=max(rest.z, posed.z)).add(record.maxs);
         boxes.append(AABB(mins=lo.sub(Vec3(x=48.0, y=48.0, z=64.0)), maxs=hi.add(Vec3(x=48.0, y=48.0, z=96.0))));
     }
+    for (train, opened) in nav_secret_doors(world) {
+        box = train.bounds;
+        lo = Vec3(x=min(0.0, opened.x), y=min(0.0, opened.y), z=min(0.0, opened.z)).add(box.mins);
+        hi = Vec3(x=max(0.0, opened.x), y=max(0.0, opened.y), z=max(0.0, opened.z)).add(box.maxs);
+        boxes.append(AABB(mins=lo.sub(Vec3(x=48.0, y=48.0, z=64.0)), maxs=hi.add(Vec3(x=48.0, y=48.0, z=96.0))));
+    }
     if not boxes {
         return 0;
     }
@@ -983,6 +1032,15 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
         }
     }
     build.resting = nav_rest_flood(world, grid, level, flood);
+    # The far end of a lift that starts at the other end of its travel (one
+    # waiting at the foot of its shaft) is only found with the movers at
+    # rest: join those lifts now, and flood from their tops.
+    late = nav_lifts(world, grid, level);
+    build.lifts += late[0];
+    build.notes = late[2];
+    for summit in late[1] {
+        summit spawn flood;
+    }
     build.teleports = nav_teleports(world, grid);
     nav_mark_movers(world, grid, level);
     groups = nav_group(grid);
