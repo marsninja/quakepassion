@@ -35,6 +35,14 @@ obj WeaponRule {
         punch_time: float = 0.0,
         raise_time: float = 0.0,
         lower_time: float = 0.0;
+    # Whose rules the weapon follows (its shots, sounds and models), the
+    # number key that takes it up where several share one (a Passion
+    # level's arsenal; 0: its slot), the inventory kind that says it is
+    # held ("": weapon_<key>), and its slot in its own game.
+    has game: str = "",
+        role: int = 0,
+        item: str = "",
+        game_slot: int = 0;
     # Where shots leave, from the eye: x units along the aim, y to the right
     # and z up in the world (Q1 weapons.qc's launch origins, Q2 p_weapon.c's
     # P_ProjectSource offsets, Q3 g_weapon.c CalcMuzzlePoint). With
@@ -94,6 +102,22 @@ obj ViewWeaponRule {
         raise_first: int = -1,
         raise_last: int = -1,
         switch_rate: float = 10.0;
+    # The game whose archive holds the model, and its slot there.
+    has game: str = "",
+        game_slot: int = 0;
+}
+
+"""Where a game's weapons are numbered in a Passion level's arsenal: each
+keeps its own slot after its game's base, so no two share a number."""
+glob PASSION_SLOT_BASE: dict[str, int] = {"q1": 10, "q2": 20, "q3": 40};
+
+def passion_slot(game: str, slot: int) -> int {
+    return PASSION_SLOT_BASE.get(game, 0) + slot;
+}
+
+"""The inventory kind that says a weapon is held."""
+def owned_kind(rule: WeaponRule) -> str {
+    return rule.item if rule.item else "weapon_" + rule.key;
 }
 
 """The frame of a weapon `elapsed` seconds into lowering (or raising), or -1

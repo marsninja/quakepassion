@@ -25,6 +25,7 @@ import from vendor.raylib {
 import from .quake { rlDrawRenderBatchActive }
 import from .models { ModelRenderer, open_model_pass, end_model_pass, MODEL_ENTITY_COLOR }
 import from ..assets.library { AssetLibrary }
+import from ..assets.catalog { AssetCatalog }
 import from ..formats.animated { AnimatedModel, AnimatedSurface }
 import from ..world.models { powerup_shaders, POWERUP_INVISIBLE, PLAYER_COLOR1 }
 import from ..world.powerups { Empowered, Powerup }
@@ -73,13 +74,14 @@ obj ViewWeapon {
         if not rules {
             return;
         }
-        library = AssetLibrary(game=game);
+        # Each gun from its own game's archive (a Passion level holds all three).
+        catalog = AssetCatalog(game=game, directory=directory);
         try {
-            library.open(directory);
-            if game == "q3" {
+            if game == "q3" or len([rule for rule in rules if rule.game == "q3"]) > 0 {
                 # The powerup shaders the gun may be drawn with.
+                arena = catalog.source("q3");
                 for shader in [POWERUP_INVISIBLE, "powerups/quadWeapon", "powerups/battleWeapon"] {
-                    stages = library.pk3.model_stages(shader);
+                    stages = arena.pk3.model_stages(shader);
                     if stages {
                         shell = ModelRenderer();
                         shell.upload(AnimatedModel(surfaces=[AnimatedSurface(name=shader, stages=stages)]), [stages[0].texture]);
@@ -88,6 +90,7 @@ obj ViewWeapon {
                 }
             }
             for rule in rules {
+                library = catalog.source(rule.game if rule.game else game);
                 renderer = ModelRenderer();
                 asset = ViewAsset(rule=rule, drawing=renderer);
                 self.assets[rule.slot] = asset;
@@ -116,7 +119,7 @@ obj ViewWeapon {
             self.close();
             raise;
         } finally {
-            library.close();
+            catalog.close();
         }
     }
 
@@ -190,7 +193,8 @@ obj ViewWeapon {
         frame = self.animation.frame;
         before = self.animation.previous;
         share = self.animation.share(rule, seconds);
-        if state.game == "q2" and shown == 11 {
+        held = self.assets[shown].rule if shown in self.assets else rule;
+        if (held.game if held.game else state.game) == "q2" and (held.game_slot if held.game_slot else shown) == 11 {
             cooked = grenade_frame(
                 state.grenade_phase, state.grenade_clock, seconds - self.fired_at
             );
@@ -263,7 +267,7 @@ obj ViewWeapon {
         # CG_AddPlayerWeapon: the view gun's shaderRGBA is white, but a railgun
         # between shots (WEAPON_FIRING, weaponTime running down from 1500 ms)
         # glows from black back to magenta; its flash takes the player's color1.
-        railgun = state.game == "q3" and "railgun" in asset.rule.model;
+        railgun = (asset.rule.game if asset.rule.game else state.game) == "q3" and "railgun" in asset.rule.model;
         gun_color = [1.0, 1.0, 1.0, 1.0];
         recharge = (seconds - self.fired_at) / RAILGUN_REFIRE;
         if railgun and 0.0 <= recharge < 1.0 {
@@ -325,7 +329,7 @@ obj ViewWeapon {
             }
             # The muzzle flash on tag_flash: MUZZLE_FLASH_TIME after a shot,
             # or all the while the lightning gun or gauntlet fires.
-            continuous = shown in [1, 6] and firing and not (lowering or raising);
+            continuous = (asset.rule.game_slot if asset.rule.game_slot else shown) in [1, 6] and firing and not (lowering or raising);
             if asset.flash.stages and asset.drawing.model.tags
                 and (seconds - self.fired_at < 0.03 or continuous) {
                 for tag in asset.drawing.model.tags[0].tags {

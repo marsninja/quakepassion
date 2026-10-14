@@ -33,3 +33,14 @@ obj EffectRule {
         # The looping sound it makes in flight (Q2 s.sound, Q3 missileSound).
         sound: str = "";
 }
+
+"""The game an effect is drawn from: its key's prefix (q1_, q2_, q3_);
+Quake III's medals and the rest are Quake III's."""
+def effect_game(key: str) -> str {
+    for game in ["q1", "q2", "q3"] {
+        if key.startswith(game + "_") {
+            return game;
+        }
+    }
+    return "q3";
+}

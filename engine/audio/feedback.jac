@@ -1,9 +1,10 @@
 """Archive-backed gameplay sound palette with explicit native audio ownership."""
 import from engine.formats.wav { streamable_wav }
 import from ..assets.library { AssetLibrary }
+import from ..assets.catalog { AssetCatalog }
 import from ..world.world { World, Player }
 import from ..world.speakers { Speaker, HasSpeaker }
-import from ..world.combat { CombatState, Projectile, HasProjectile, selected_weapon }
+import from ..world.combat { CombatState, Projectile, HasProjectile, selected_weapon, shot_game, weapon_cue }
 import from ..math.vec3 { Vec3, right_from }
 import from .streams { RawStream, BackgroundTrack, cd_track_names }
 import from ..console.cvar { Cvar, CVAR_ARCHIVE }
@@ -94,18 +95,37 @@ obj FlightAudio {
         voice: EmitterAudio;
 }
 
+"""The game a sound path names before a colon (q2:sound/...), or ""."""
+def named_game(path: str) -> str {
+    return path[:2] if len(path) > 3 and path[2] == ":" and path[:2] in ["q1", "q2", "q3"] else "";
+}
+
+"""A sound path without the game it names."""
+def unnamed(path: str) -> str {
+    return path[3:] if named_game(path) else path;
+}
+
 """p_view.c G_SetClientSound: the Quake II player's own looping sound
 (ent->s.sound) — frying in slime or lava, the railgun's and BFG's hum, or
 the held weapon's (client->weapon_sound: the hyperblaster firing, the
 chaingun spinning, a hand grenade cooking)."""
 def q2_client_sound(player: Player, state: CombatState) -> str {
-    if state.game != "q2" or player.health <= 0 {
+    if player.health <= 0 {
         return "";
     }
-    if player.water_depth > 0 and player.liquid_kind in [2, 3] {
+    if state.game == "q2" and player.water_depth > 0 and player.liquid_kind in [2, 3] {
         return "sound/player/fry.wav";
     }
-    key = selected_weapon(state).key;
+    # A Quake II gun's own hum, held in any level.
+    held = selected_weapon(state);
+    if shot_game(state, held) != "q2" {
+        return "";
+    }
+    hum = q2_weapon_hum(state, held.key);
+    return weapon_cue(state, "q2", hum) if hum else "";
+}
+
+def q2_weapon_hum(state: CombatState, key: str) -> str {
     if key == "railgun" {
         return "sound/weapons/rg_hum.wav";
     }
@@ -140,6 +160,10 @@ obj Feedback {
             description="sound effects volume"
         ),
         library: AssetLibrary | None = None,
+        # A Passion level's archives, one for each game; the library is
+        # Quake's among them. Paths that name a game (q2:sound/...) are read
+        # from that game's.
+        catalog: AssetCatalog | None = None,
         emitters: dict[int, EmitterAudio] = {},
         missing: set[int] = set(),
         named: dict[str, Sound] = {},
@@ -191,8 +215,14 @@ obj Feedback {
         if not self.ready {
             return;
         }
-        library = AssetLibrary(game="q1" if game == "passion" else game);
-        library.open(directory + "/id1" if game == "passion" else directory);
+        if game == "passion" {
+            catalog = AssetCatalog(game=game, directory=directory);
+            self.catalog = catalog;
+            library = catalog.source("q1");
+        } else {
+            library = AssetLibrary(game=game);
+            library.open(directory);
+        }
         self.library = library;
         self.game = game;
         self.missiles = missiles;
@@ -218,7 +248,7 @@ obj Feedback {
         names.extend(weapons);
         try {
             for name in names {
-                data = library.read(name);
+                data = self.read(name);
                 wave = LoadWaveFromMemory(".wav", data, i32(len(data)));
                 if wave.data == u64(0) {
                     raise ValueError("Cannot decode sound: " + name);
@@ -230,6 +260,39 @@ obj Feedback {
             self.close();
             raise;
         }
+    }
+
+    """A sound file's bytes: from the game a path names (q2:sound/...), else
+    from the level's own archive."""
+    def read(path: str) -> bytes {
+        archive = self.archive_of(path);
+        if archive is None {
+            raise ValueError("No sounds are open");
+        }
+        return archive.read(unnamed(path));
+    }
+
+    def exists(path: str) -> bool {
+        archive = self.archive_of(path);
+        return archive is not None and archive.exists(unnamed(path));
+    }
+
+    def archive_of(path: str) -> AssetLibrary | None {
+        catalog = self.catalog;
+        if catalog is not None {
+            if named_game(path) {
+                return catalog.source(named_game(path));
+            }
+            # A path that names no game (a wall hit, a blast): Quake's, else
+            # the first game that has it.
+            for game in ["q1", "q2", "q3"] {
+                library = catalog.source(game);
+                if library.exists(path) {
+                    return library;
+                }
+            }
+        }
+        return self.library;
     }
 
     def play(kind: int, gain: float = 1.0) {
@@ -250,7 +313,7 @@ obj Feedback {
         }
         if path not in self.named {
             try {
-                data = library.read(path);
+                data = self.read(path);
                 wave = LoadWaveFromMemory(".wav", data, i32(len(data)));
                 if wave.data == u64(0) {
                     raise ValueError("Cannot decode sound: " + path);
@@ -291,7 +354,7 @@ obj Feedback {
             }
             try {
                 if path not in self.clips {
-                    self.clips[path] = streamable_wav(library.read(path));
+                    self.clips[path] = streamable_wav(self.read(path));
                 }
                 data = self.clips[path];
                 music = LoadMusicStreamFromMemory(".wav", data, i32(len(data)));
@@ -362,7 +425,7 @@ obj Feedback {
                 try {
                     if speaker.path not in self.clips {
                         self.clips[speaker.path] = streamable_wav(
-                            library.read(speaker.path)
+                            self.read(speaker.path)
                         );
                     }
                     data = self.clips[speaker.path];
@@ -425,7 +488,7 @@ obj Feedback {
         }
         try {
             if path not in self.clips {
-                self.clips[path] = streamable_wav(library.read(path));
+                self.clips[path] = streamable_wav(self.read(path));
             }
             data = self.clips[path];
             music = LoadMusicStreamFromMemory(".wav", data, i32(len(data)));
@@ -553,11 +616,11 @@ obj Feedback {
             return;
         }
         for name in cd_track_names(track) {
-            if name in self.unavailable or not library.exists(name) {
+            if name in self.unavailable or not self.exists(name) {
                 continue;
             }
             try {
-                data = library.read(name);
+                data = self.read(name);
                 music = LoadMusicStreamFromMemory(
                     "." + name.split(".")[-1], data, i32(len(data))
                 );
@@ -662,11 +725,16 @@ obj Feedback {
         self.ambience = {};
         self.ambient_levels = {};
         self.clips = {};
+        catalog = self.catalog;
         library = self.library;
-        if library is not None {
+        if catalog is not None {
+            # Quake's library is the catalog's own.
+            catalog.close();
+            self.catalog = None;
+        } elif library is not None {
             library.close();
-            self.library = None;
         }
+        self.library = None;
         for sound in self.sounds {
             UnloadSound(sound);
         }

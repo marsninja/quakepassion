@@ -1,8 +1,31 @@
 """Original first-person asset and animation ranges, independent of damage rules."""
-import from engine.world.weapons { ViewWeaponRule }
+import from engine.world.weapons { ViewWeaponRule, passion_slot }
 import from .weapons { weapon_rules }
 
+"""A game's guns as held in view; a Passion level's are all three games',
+numbered as its arsenal is (passion_slot)."""
 def view_weapons(game: str) -> list[ViewWeaponRule] {
+    if game == "passion" {
+        held: list[ViewWeaponRule] = [];
+        for source in ["q1", "q2", "q3"] {
+            for rule in game_view_weapons(source) {
+                rule.game = source;
+                rule.game_slot = rule.slot;
+                rule.slot = passion_slot(source, rule.slot);
+                held.append(rule);
+            }
+        }
+        return held;
+    }
+    rules = game_view_weapons(game);
+    for rule in rules {
+        rule.game = game;
+        rule.game_slot = rule.slot;
+    }
+    return rules;
+}
+
+def game_view_weapons(game: str) -> list[ViewWeaponRule] {
     result: list[ViewWeaponRule] = [];
     if game == "q1" {
         # player.qc's weaponframes: the axe swings through 1-4 (player_axe,

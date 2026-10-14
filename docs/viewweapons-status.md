@@ -80,4 +80,5 @@ References: [Q1 weapons.qc](https://github.com/id-Software/Quake/blob/master/QW/
 
 ## Limitations
 
-- Passion has no view models.
+- A Passion level's guns sway and kick as Passion's view does (not at all):
+  each gun's own game's bob and Quake II's kick are not carried over.

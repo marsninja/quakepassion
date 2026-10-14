@@ -22,7 +22,7 @@ import from ..world.speakers { SpeakerTick }
 import from ..world.brushes { BrushTick, ShootBrush, BlastBrush }
 
 import os;
-import from games.weapons { equip_player, weapon_sounds, weapon_effects, missile_sounds }
+import from games.weapons { equip_player, weapon_sounds, weapon_effects, missile_sounds, lead_game, fire_sound }
 import from .campaign { Campaign, Remember, Recall, pack_campaign, unpack_campaign }
 import from .preferences { Preferences }
 import from ..audio.feedback { Feedback, sound_falloff, q2_client_sound }
@@ -101,6 +101,7 @@ import from ..world.inventory {
     AdjustInventory
 }
 import from ..assets.library { AssetLibrary }
+import from ..world.weapons { owned_kind }
 import from ..world.combat {
     CombatState,
     CombatTick,

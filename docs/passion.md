@@ -157,6 +157,40 @@ trigger; `ed_exp mission`, `rooms`, `ways` and `measures` say its beats and
 links, spaces, corridors and how it measures against the corpus, and
 `ed_exp show` draws the ways over the level.
 
+## The arsenal
+
+A Passion level, generated or a studio scene, holds every weapon of the
+three games (`passion_arsenal` in `games/weapons.jac`), each by its own
+game's rules: its shots, missiles, blasts and knockback, its muzzle flash,
+its sounds and its model in view come from its own game (`shot_game`,
+`Projectile.game`, the per-game archives of `AssetCatalog` in the view
+weapon, effects and audio).
+
+- **Held by name**: a weapon is owned as `weapon_<game>:<key>`, so Quake's
+  shotgun and Quake II's are two; a pickup in a Passion level is renamed so
+  (`passion_pickup` in `games/items.jac`), and its sounds come from its
+  game's archive.
+- **Number keys by role**, each pressed again stepping to the next held
+  weapon of the role (`change_role`): 1 the axe and the gauntlet, 2 the
+  blaster and the machine guns, 3 the shotguns, 4 the nailguns and the
+  chaingun, 5 the grenade launchers and the hand grenade, 6 the rocket
+  launchers, 7 the lightning guns, hyperblaster and plasma gun, 8 the
+  railguns, 9 the BFGs (`PASSION_ROLES`; the 9 key is bound to `weapon 9`).
+  Each weapon has a number of its own (`passion_slot`: its game's slot after
+  10, 20 or 40), which saves and the view use.
+- **Ammunition is shared by kind**: one pool of shells, nails, bullets,
+  grenades, rockets, cells, slugs, lightning and BFG charge, each gun
+  spending what its own game spends, up to `PASSION_AMMO_CAPS`.
+- **Armor** is the one value every game's pickups already share; each
+  pickup sets how much it absorbs by its own game's rule.
+- **The start**: the melee weapon and first gun of the game the level's
+  things come from most (`lead_game`): Quake's axe and shotgun with 25
+  shells, Quake II's blaster, or Quake III's gauntlet and machine gun with
+  100 bullets.
+- **Sounds** in a Passion level are read from the game a path names
+  (`q2:sound/...`), else Quake's archive, else the first game that has the
+  file; monsters are heard from their own game's archive.
+
 ## Validation
 
 ```sh
@@ -201,9 +235,8 @@ Jac compiler defects found while building Passion are recorded in
 - Generated levels are still more detailed in small faces and trim than the
   originals (cut faces round pilasters, plinths and stair risers), and use
   fewer textures.
-- Passion has no weapon table of its own (`weapon_rules("passion")` is
-  empty): the player has the engine's two basic weapon slots, and the supply
-  of health and shells balances against them.
+- The generator's supplies (health, shells, armor) still balance against
+  the shotguns alone: it places no weapons, and no ammunition but shells.
 - The director's damage model is a heuristic, not a combat simulation.
 - The level is one cluster (no visibility culling); generated expeditions
   draw well within the frame budget, but a bake by planes could cut them.
