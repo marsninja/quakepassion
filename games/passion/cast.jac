@@ -611,7 +611,7 @@ def cast_population(director: Director3) {
         # Supplies: keep the expected health above a floor, shells for the
         # fights, armour now and then.
         names = supply_names(district_source(space));
-        while health < 70.0 {
+        while health < 90.0 {
             point = director.take(space);
             if not point {
                 break;
@@ -627,7 +627,7 @@ def cast_population(director: Director3) {
             director.made.placed_health += 1;
         }
         director.made.low = min(director.made.low, health);
-        if spent > 0.0 {
+        for box_index in range(1 + int(spent / 6.0) if spent > 0.0 else 0) {
             point = director.take(space);
             if point {
                 pick = names["shells"];
@@ -635,7 +635,7 @@ def cast_population(director: Director3) {
                 director.made.placed_shells += 1;
             }
         }
-        if director.dice.chance(0.18) {
+        if director.dice.chance(0.3) {
             point = director.take(space, True);
             if point {
                 pick = names["armor"];

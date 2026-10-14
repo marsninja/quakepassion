@@ -61,7 +61,7 @@ glob KITS: list[Kit] = [
              floors=["q1:e1m1/ground1_2", "q1:e1m1/ground1_6"],
              ceilings=["q1:e1m1/tech04_1", "q1:e1m1/tech01_1"],
              lamp_color="255 236 214",
-             lamp_level=180
+             lamp_level=154
          ),
          Kit(
              name="Stone Keep",
@@ -83,7 +83,7 @@ glob KITS: list[Kit] = [
              floors=["q1:e1m2/wswamp1_2", "q1:e1m2/woodflr1_4"],
              ceilings=["q1:e1m2/wizwood1_4", "q1:e1m2/wizmet1_2"],
              lamp_color="255 214 160",
-             lamp_level=188
+             lamp_level=162
          ),
          Kit(
              name="Runic Halls",
@@ -105,7 +105,7 @@ glob KITS: list[Kit] = [
              floors=["q1:e3m2/metal5_3", "q1:e3m2/cop1_6"],
              ceilings=["q1:e3m2/metal4_7", "q1:e3m2/metal5_4"],
              lamp_color="255 220 190",
-             lamp_level=172
+             lamp_level=147
          ),
          Kit(
              name="Tech Complex",
@@ -127,7 +127,7 @@ glob KITS: list[Kit] = [
              floors=["q1:e4m1/sfloor4_6", "q1:e4m1/sfloor4_7"],
              ceilings=["q1:e4m1/twall5_2", "q1:e4m1/ecop1_8"],
              lamp_color="230 240 255",
-             lamp_level=180
+             lamp_level=154
          ),
          Kit(
              name="Strogg Outpost",
@@ -149,7 +149,7 @@ glob KITS: list[Kit] = [
              floors=["q2:e1u1/metal3_5", "q2:e1u1/metal1_8"],
              ceilings=["q2:e1u1/grate1_3", "q2:e1u1/metal1_5"],
              lamp_color="235 245 255",
-             lamp_level=180
+             lamp_level=154
          ),
          Kit(
              name="Deep Mines",
@@ -171,7 +171,7 @@ glob KITS: list[Kit] = [
              floors=["q2:e2u1/mmtl16_6", "q2:e2u1/rocks19_1"],
              ceilings=["q2:e2u1/rrock1_2", "q2:e2u1/rocks24_2"],
              lamp_color="255 210 150",
-             lamp_level=188
+             lamp_level=162
          ),
          Kit(
              name="Strogg Works",
@@ -193,7 +193,7 @@ glob KITS: list[Kit] = [
              floors=["q2:e2u2/flr1_2", "q2:e2u2/floor1_5"],
              ceilings=["q2:e2u2/metal28_1", "q2:e2u2/flr1_3"],
              lamp_color="255 235 200",
-             lamp_level=180
+             lamp_level=154
          ),
          Kit(
              name="Gothic Ruin",
@@ -216,7 +216,7 @@ glob KITS: list[Kit] = [
              floors=["q3:textures/gothic_floor/metalbridge06"],
              ceilings=["q3:textures/gothic_ceiling/woodceiling1b_dark"],
              lamp_color="255 200 150",
-             lamp_level=188
+             lamp_level=162
          ),
          Kit(
              name="Arena Works",
@@ -239,7 +239,7 @@ glob KITS: list[Kit] = [
              floors=["q3:textures/base_wall/metfloor_block_3"],
              ceilings=["q3:textures/base_wall/c_met7_2"],
              lamp_color="220 235 255",
-             lamp_level=180
+             lamp_level=154
          )
      ];
 

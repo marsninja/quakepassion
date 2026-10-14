@@ -25,8 +25,11 @@ def shell_brushes(mass: Massing, spaces: dict[int, Space]) -> list[list[Side]] {
         kit = kit_of(space.district);
         looks = kit_surfaces(kit, space.variant);
         ceiling = looks[2];
+        glowing: list[int] = [];
         if space.sky and box.z0 >= space.z + space.h {
+            # Open sky lights the court beneath it, as Quake II's does.
             ceiling = kit.sky;
+            glowing = [5];
         }
         wall = looks[0];
         floor = looks[1];
@@ -38,7 +41,7 @@ def shell_brushes(mass: Massing, spaces: dict[int, Space]) -> list[list[Side]] {
                 materials[side] = "caulk";
             }
         }
-        found.append(box_brush(box.low(), box.high(), materials, kit.scale));
+        found.append(box_brush(box.low(), box.high(), materials, kit.scale, [side for side in glowing if materials[side] != "caulk"]));
     }
     return found;
 }

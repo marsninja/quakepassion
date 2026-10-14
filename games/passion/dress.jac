@@ -141,6 +141,7 @@ def dress(mass: Massing, spaces: list[Space], dice: Stream) -> Dressing {
     ceiling_lamps(mass, by_id, made, dice);
     dark_rooms(mass, by_id, made);
     glowing_pits(by_id, made);
+    court_lamps(by_id, made);
     railings(mass, by_id, made);
     window_bars(by_id, made);
     return made;
@@ -171,6 +172,13 @@ def tall_room(by_id: dict[int, Space], owner: int) -> bool {
     return space is not None and space.role not in ["corridor", "window"] and space.h >= 12;
 }
 
+"""Whether the space whose air a cell is (by owner number) is a room, not a
+corridor or a window."""
+def in_room(by_id: dict[int, Space], owner: int) -> bool {
+    space = owner_space(by_id, owner);
+    return space is not None and space.role not in ["corridor", "window"];
+}
+
 """Baseboards and cornices: runs of cells along a wall, at a floor (solid
 below) or under a ceiling (solid above)."""
 def edge_trims(mass: Massing, by_id: dict[int, Space], made: Dressing) {
@@ -190,7 +198,8 @@ def edge_trims(mass: Massing, by_id: dict[int, Space], made: Dressing) {
                             cx = cell[0];
                             cy = cell[1];
                             here = mass.at(cx, cy, z);
-                            if here > 0 and wall_stands(mass, cx + step[0], cy + step[1], z, top) and (not top or tall_room(by_id, here)) {
+                            if here > 0 and wall_stands(mass, cx + step[0], cy + step[1], z, top) and (not top or tall_room(by_id, here))
+                                and in_room(by_id, here) {
                                 if (not top and not mass.air(cx, cy, z - 1)) or (top and not mass.air(cx, cy, z + 1)) {
                                     owner = here;
                                 }
@@ -216,8 +225,6 @@ def edge_trims(mass: Massing, by_id: dict[int, Space], made: Dressing) {
                                         # material, and a rail along its top.
                                         band = wall_strip(direction, line, run_start, along - 1, low, low + WAINSCOT_HIGH, 3.0);
                                         made.brushes.append(plain_box(band[0], band[1], kit.lower, kit.scale));
-                                        rail = wall_strip(direction, line, run_start, along - 1, low + WAINSCOT_HIGH, low + WAINSCOT_HIGH + 8.0, TRIM_DEPTH);
-                                        made.brushes.append(plain_box(rail[0], rail[1], kit.trim, kit.scale));
                                     }
                                 }
                             }
@@ -241,7 +248,7 @@ def pilasters(mass: Massing, by_id: dict[int, Space], made: Dressing, dice: Stre
         }
         kit = kit_of(space.district);
         owner = space.id + 1;
-        gap = 4 if space.w * space.d > 120 else 3;
+        gap = 3;
         lamp_every = 2;
         for direction in range(4) {
             step = direction_step(direction);
@@ -304,10 +311,9 @@ def pilasters(mass: Massing, by_id: dict[int, Space], made: Dressing, dice: Stre
                     made.brushes.append(plain_box(shaft[0], shaft[1], kit.support, kit.scale));
                     plinth = pilaster_box(direction, line, middle - half - 4.0, middle + half + 4.0, low, low + 24.0, PILASTER_DEEP + 4.0);
                     made.brushes.append(plain_box(plinth[0], plinth[1], kit.trim, kit.scale));
-                    capital = pilaster_box(direction, line, middle - half - 4.0, middle + half + 4.0, high - 16.0, high, PILASTER_DEEP + 4.0);
-                    made.brushes.append(plain_box(capital[0], capital[1], kit.trim, kit.scale));
+
                     placed += 1;
-                    if placed % lamp_every == 1 {
+                    if (placed - 1) % lamp_every == 0 {
                         height = low + min(112.0, max(80.0, (high - low) * 0.45));
                         add_wall_lamp(made, kit, direction, line, middle, height, PILASTER_DEEP, space);
                     }
@@ -383,7 +389,7 @@ def add_wall_lamp(made: Dressing, kit: Kit, direction: int, line: int, middle: f
 """How bright a space's lamps burn: the kit's level, dimmer where tension
 runs high."""
 def lamp_strength(kit: Kit, space: Space) -> int {
-    return int(float(kit.lamp_level) * (1.1 - 0.35 * max(0.0, min(1.0, space.tension))));
+    return int(float(kit.lamp_level) * (1.0 - 0.3 * max(0.0, min(1.0, space.tension))));
 }
 
 """Lamps hung under the ceiling of rooms whose ceiling is in reach, in a
@@ -438,7 +444,7 @@ def ceiling_lamps(mass: Massing, by_id: dict[int, Space], made: Dressing, dice: 
 def corridor_lamps(made: Dressing, space: Space, blocks: list[list[int]], high: int) {
     kit = kit_of(space.district);
     for (index, block) in enumerate(blocks) {
-        if index % 4 != 2 or index + 1 >= len(blocks) {
+        if index % 3 != 1 or index + 1 >= len(blocks) {
             continue;
         }
         x = float(block[0] + 1) * CELL;
@@ -516,6 +522,29 @@ def kept_cell(space: Space, x: int, y: int, z: int) -> bool {
         }
     }
     return False;
+}
+
+"""Lamps over the open middle of a court, a grid of four, at a man's height
+and more, as though the day came in."""
+def court_lamps(by_id: dict[int, Space], made: Dressing) {
+    for space in by_id.values() {
+        if not space.sky {
+            continue;
+        }
+        kit = kit_of(space.district);
+        for (fx, fy) in [(0.35, 0.35), (0.65, 0.65), (0.35, 0.65), (0.65, 0.35)] {
+            made.add_lamp(
+                space,
+                Lamp3(
+                    x=(float(space.x) + float(space.w) * fx) * CELL,
+                    y=(float(space.y) + float(space.d) * fy) * CELL,
+                    z=float(space.z) * LIFT + 160.0,
+                    level=lamp_strength(kit, space) + 40,
+                    color="255 250 235"
+                )
+            );
+        }
+    }
 }
 
 """A low warm light over a pit of lava or slime, so the liquid glows."""

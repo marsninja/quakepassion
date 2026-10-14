@@ -11,7 +11,9 @@ samples where a player can stand; QP_LOOK_SHOTS views (default 8) are taken
 from the standing places with the longest sightlines, at least 640 units
 apart, each looking along its longest line of sight, saved as
 <prefix>_<n>.png in the working directory (QP_LOOK_PREFIX, default
-look_<game>_<map>)."""
+look_<game>_<map>). QP_LOOK_ROUTE=1 photographs the shortest route from the
+start to the way out instead; QP_LOOK_AT="x y z yaw [pitch]; ..." views from
+given places (feet height, degrees)."""
 import os;
 import math;
 import time;
@@ -20,7 +22,7 @@ import from engine.core.clock { Clock }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
 import from engine.math.vec3 { Vec3 }
-import from games.passion.yardstick { traverse, mover_hulls, Footing, STAND_Z, EYE_RISE, area_path, level_start, level_exit }
+import from games.passion.yardstick { traverse, mover_hulls, Footing, STAND_Z, EYE_RISE, area_path, level_start, level_exit, Spread }
 import from games.passion.generate { survey_of }
 
 def capture_view(app: App, renderer: Renderer, name: str) {
@@ -50,11 +52,25 @@ with entry {
     collision = level.collision;
     walk = traverse(level.bsp, collision, 32.0);
     exclude = mover_hulls(collision, level.bsp);
+    # Only places a player can get to, out of any liquid.
+    entry_point = level_start(level.bsp);
+    if entry_point is not None {
+        first_place = walk.nearest(entry_point);
+        if first_place >= 0 {
+            walk.areas[walk.places[first_place].area] spawn Spread();
+        }
+    }
     # Each standing place's longest line of sight at eye height.
     scored: list[list[float]] = [];
     stride = max(1, len(walk.places) // 2500);
     for index in range(0, len(walk.places), stride) {
         place = walk.places[index];
+        if entry_point is not None and not walk.areas[place.area].reached {
+            continue;
+        }
+        if level.liquid_at(Vec3(x=place.x, y=place.y, z=place.z + EYE_RISE)) != 0 {
+            continue;
+        }
         eye = Vec3(x=place.x, y=place.y, z=place.z + EYE_RISE);
         best = 0.0;
         best_angle = 0.0;
@@ -93,6 +109,23 @@ with entry {
         }
         chosen.append(scored[pick]);
         scored.pop(pick);
+    }
+    at_words = os.environ.get("QP_LOOK_AT", "").replace(",", " ").split();
+    if len(at_words) >= 4 {
+        # Views from given places: "x y z yaw [pitch]" (feet, degrees), ;-separated.
+        for (number, spec) in enumerate(os.environ.get("QP_LOOK_AT", "").split(";")) {
+            words = spec.replace(",", " ").split();
+            if len(words) < 4 {
+                continue;
+            }
+            app.player.pos = Vec3(x=float(words[0]), y=float(words[1]), z=float(words[2]) + collision.eye_height + 24.0);
+            app.player.yaw = math.radians(float(words[3]));
+            app.player.pitch = math.radians(float(words[4])) if len(words) > 4 else 0.0;
+            name = prefix + "_at_" + str(number) + ".png";
+            capture_view(app, renderer, name);
+            print("LOOK at " + spec + " file=" + name);
+        }
+        return;
     }
     if os.environ.get("QP_LOOK_ROUTE", "") {
         # A walk from the start to the way out: frames along the shortest

@@ -102,7 +102,7 @@ def space_size(kind: str, size: int, dice: Stream) -> list[int] {
     grow = max(0, min(3, size));
     if kind == "atrium" {
         side = dice.between(13, 15) + grow;
-        return [side, dice.between(13, 15) + grow, dice.between(26, 30)];
+        return [side, dice.between(13, 15) + grow, dice.between(28, 34)];
     }
     if kind == "shaft" {
         side = dice.between(8, 9);
@@ -112,25 +112,25 @@ def space_size(kind: str, size: int, dice: Stream) -> list[int] {
         return [dice.between(10, 13) + grow, dice.between(13, 17) + grow, dice.between(22, 28)];
     }
     if kind == "court" {
-        return [dice.between(14, 17) + grow, dice.between(14, 17) + grow, dice.between(18, 22)];
+        return [dice.between(14, 17) + grow, dice.between(14, 17) + grow, dice.between(22, 28)];
     }
     if kind == "terraces" {
-        return [dice.between(10, 13) + grow, dice.between(13, 16) + grow, dice.between(14, 18)];
+        return [dice.between(10, 13) + grow, dice.between(13, 16) + grow, dice.between(16, 22)];
     }
     if kind == "stairhall" {
-        return [dice.between(10, 13) + grow, dice.between(14, 18) + grow, dice.between(16, 20)];
+        return [dice.between(10, 13) + grow, dice.between(14, 18) + grow, dice.between(18, 24)];
     }
     if kind == "vault" {
         return [dice.between(7, 9), dice.between(7, 9), dice.between(10, 12)];
     }
     if kind == "arena" {
         side = dice.between(15, 18) + grow;
-        return [side, dice.between(15, 18) + grow, dice.between(14, 18)];
+        return [side, dice.between(15, 18) + grow, dice.between(18, 24)];
     }
     if kind == "crypt" {
-        return [dice.between(10, 13) + grow, dice.between(12, 16) + grow, dice.between(9, 11)];
+        return [dice.between(10, 13) + grow, dice.between(12, 16) + grow, dice.between(10, 12)];
     }
-    return [dice.between(8, 12) + grow * 2, dice.between(9, 13) + grow * 2, dice.between(10, 14) + grow];
+    return [dice.between(8, 12) + grow * 2, dice.between(9, 13) + grow * 2, dice.between(12, 18) + grow];
 }
 
 """An archetype for a beat's kind."""

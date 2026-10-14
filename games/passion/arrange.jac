@@ -26,7 +26,7 @@ glob CORRIDOR_HIGH: int = 6,
      GAP_HIGH: int = 9,
      # Cells kept clear between boxes: a wall each and a corridor's width.
      CLEARANCE: int = 4,
-     ABUT_CHANCE: float = 0.35,
+     ABUT_CHANCE: float = 0.25,
      MARGIN: int = 4,
      SEARCH_LIMIT: int = 120000;
 
@@ -105,7 +105,9 @@ def boxes_meet(a: Space, b: Space, margin: int, rise: int) -> bool {
 """Place a space beside `anchor`: tried at many spots off its sides, the
 nearest that keeps clear of everything placed (and nearest to the other
 placed spaces it links to) taken. False when none fits."""
-def place_beside(space: Space, anchor: Space, placed: list[Space], friends: list[Space], dice: Stream, verticality: float) -> bool {
+def place_beside(
+    space: Space, anchor: Space, placed: list[Space], friends: list[Space], dice: Stream, verticality: float, drift: int = 0
+) -> bool {
     best_score = -1.0;
     best: list[int] = [];
     for attempt in range(48) {
@@ -133,14 +135,16 @@ def place_beside(space: Space, anchor: Space, placed: list[Space], friends: list
         }
         # Higher or lower than the anchor: onto one of its floor levels
         # often, otherwise by as much as the verticality wants.
-        reach = int(4.0 + 12.0 * verticality);
+        reach = int(8.0 + 20.0 * verticality);
         if abut {
             z = anchor.z;
-        } elif anchor.levels and dice.chance(0.45) {
+        } elif anchor.levels and dice.chance(0.3) {
             level = anchor.levels[dice.below(len(anchor.levels))];
             z = level + dice.between(-1, 1) * (0 if dice.chance(0.6) else dice.between(2, 4));
         } else {
-            z = anchor.z + dice.between(-reach, reach);
+            # The expedition drifts one way as it goes (deeper, or up), each
+            # room a little further than the last.
+            z = anchor.z + drift + dice.between(-reach, reach);
         }
         space.x = x;
         space.y = y;
@@ -469,6 +473,47 @@ def carve_through(mass: Massing, block: list[int], side: int, from_level: int, t
     }
 }
 
+"""Widen a corridor to three cells along its straight runs (not its two
+end blocks in the walls), on one side, wherever the extra cells are rock
+held by nothing: no other air comes nearer than a wall."""
+def widen_corridor(mass: Massing, reserve: Reserve, path: list[list[int]], owner: int, far_side: bool) {
+    for index in range(1, len(path) - 1) {
+        before = path[index - 1];
+        block = path[index];
+        after = path[index + 1];
+        along_x = before[1] == block[1] and after[1] == block[1];
+        along_y = before[0] == block[0] and after[0] == block[0];
+        if not along_x and not along_y {
+            continue;
+        }
+        low = min(before[2], min(block[2], after[2]));
+        top = block[2] + CORRIDOR_HIGH;
+        cells: list[list[int]] = [];
+        for offset in range(2) {
+            if along_x {
+                cells.append([block[0] + offset, block[1] + 2 if far_side else block[1] - 1]);
+            } else {
+                cells.append([block[0] + 2 if far_side else block[0] - 1, block[1] + offset]);
+            }
+        }
+        free = True;
+        for cell in cells {
+            for z in range(block[2] - 1, top + 1) {
+                held = reserve.at(cell[0], cell[1], z);
+                if mass.air(cell[0], cell[1], z) or (held != -1 and held != owner) {
+                    free = False;
+                }
+            }
+        }
+        if not free {
+            continue;
+        }
+        for cell in cells {
+            mass.carve(cell[0], cell[1], block[2], cell[0] + 1, cell[1] + 1, top, owner);
+        }
+    }
+}
+
 """The cells of a doorway's block that its own space holds (its wall),
 which a corridor may cut through."""
 def doorway_allowed(mass: Massing, block: list[int]) -> dict[int, bool] {
@@ -529,6 +574,7 @@ def arrange(plan: Expedition, dice: Stream) -> list[any] {
     links = links_of(plan);
     spaces: dict[int, Space] = {};
     placed: list[Space] = [];
+    drift_sign = -1 if dice.chance(0.6) else 1;
     for beat in beats {
         kind = pick_archetype(beat.kind, dice);
         dims = space_size(kind, beat.size, dice);
@@ -563,7 +609,8 @@ def arrange(plan: Expedition, dice: Stream) -> list[any] {
                 }
             }
             anchor = friends[0] if friends else placed[-1];
-            placed_ok = place_beside(space, anchor, placed, friends[1:], dice.child("place", beat.id), plan.verticality);
+            drift = drift_sign * int(2.0 + 6.0 * plan.verticality);
+            placed_ok = place_beside(space, anchor, placed, friends[1:], dice.child("place", beat.id), plan.verticality, drift);
             if not placed_ok {
                 # Further out, anywhere round the last placed space.
                 for spread in range(1, 4) {
@@ -619,7 +666,9 @@ def arrange(plan: Expedition, dice: Stream) -> list[any] {
         }
         tail = spaces[link.tail];
         head = spaces[link.head];
-        corridor_space = Space(id=len(placed), role="corridor", kind="corridor", district=tail.district, tension=tail.tension);
+        corridor_space = Space(
+            id=len(placed), role="corridor", kind="corridor", district=tail.district, tension=tail.tension, variant=dice.below(24)
+        );
         corridor_space.levels = [];
         made = False;
         if link.mode == "window" {
@@ -687,6 +736,9 @@ def arrange(plan: Expedition, dice: Stream) -> list[any] {
             into.used = True;
             for block in path {
                 mass.carve(block[0], block[1], block[2], block[0] + 2, block[1] + 2, block[2] + CORRIDOR_HIGH, corridor_space.id);
+            }
+            if dice.chance(0.5) {
+                widen_corridor(mass, reserve, path, corridor_space.id, dice.chance(0.5));
             }
             for block in path {
                 reserve.hold_box(block[0], block[1], block[2], block[0] + 2, block[1] + 2, block[2] + CORRIDOR_HIGH, corridor_space.id);
