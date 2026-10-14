@@ -1791,6 +1791,64 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
 A scene is a "passion" level: it plays by the rules generated expeditions do
 and may hold any game's entities.
 
+### Driven from outside
+
+A program (an agent, a script, a level generator) can drive an open studio
+and get an answer for everything it asks, while the window shows the work
+being done (`editor/tools/control.jac`, `scripts/qpctl`).
+
+```sh
+scripts/qpctl start                      # ./qp in the studio, taking requests
+scripts/qpctl 'ed_scene keep' 'ed_box_at -256 -256 -16 256 256 0 q1:e1m1/tech04_1' 'ed_query made'
+scripts/qpctl < build.cfg                # a file of console lines
+scripts/qpctl stop
+```
+
+- **Requests are files**: a file of console lines put in `<folder>/in` as
+  `<number>.cmd` (`QP_CONTROL` names the folder when the program starts;
+  `ed_control listen <folder>` starts taking them in a studio already open,
+  `ed_control stop` stops). The studio takes them about ten times a second,
+  oldest name first, and runs each in its own console: `wait` lets a frame
+  pass as anywhere else, and each other line is echoed in the console as
+  `> <line>` as it runs, so the log panel (`ed_log panel on`, which
+  `qpctl start` opens) shows what is being done. A request keeps running
+  while a game is played from the studio (`ed_play`, then `ed_played`,
+  `ed_stop`), but new ones are only taken while the studio is shown.
+- **Each is answered** as `<folder>/out/<number>.json` once its last line
+  has run: `ok` (false when a command was unknown or refused), `faults`,
+  what the console `said` meanwhile, what was `made` (each new entity with
+  its fields, each new brush with its box, owner and materials; nothing when
+  the request opened or started another document, which the scene's
+  `switched` says), `data` (one
+  entry for each `ed_query`), a summary of the `scene`, the `camera` (x, y,
+  z, yaw, pitch) and whether a game is `playing`. `qpctl` writes the file
+  name's number, waits for the answer, prints it and exits 1 when it is not
+  ok; `-n` hands a request over without waiting.
+- **Put by coordinates**, not where the camera looks: `ed_box_at <x0 y0 z0>
+  <x1 y1 z1> [material]`, `ed_cylinder_at ... [material] [sides]` and
+  `ed_wedge_at ...` fill the box between two corners (the material in hand
+  when none is named; quote a name with `/*` in it, `"q1:e1m7/*lava1"`, or
+  the console takes it for a comment), and `ed_put <classname> <x y z> [key
+  value ...]` adds an entity there with its fields as one step (its game,
+  `asset_game`, as `ed_new` gives it). What is made is left selected, so
+  `ed_class func_door` or `ed_set` carries on from it.
+- **Read back**: `ed_query scene` (every entity and brush), `entities
+  [class]`, `brushes [part of a material's name]`, `selection`, `made`
+  (what this request has made so far), `camera`, `findings` (runs the check
+  and gives each finding's words, the serial of the entity or brush it is
+  about, for `ed_select <serial>`, and whether it would stop the level
+  playing). `ed_playtest` before it adds what cannot be reached. The scene's graph is walked by a walker
+  (`Survey`), as the document's own tools walk it.
+- **Paced to be watched**: `ed_fly <x y z> [<yaw pitch> | at <x y z>]
+  [seconds]` flies the level view's camera there over real seconds (1.5
+  unless told), easing in and out, looking a way or at a point; `ed_sleep
+  <seconds>` holds the console still with the window going on; both hold
+  the rest of the request until they are done. `ed_note <words>` puts a
+  line in the status bar and the log to say what is being done. A
+  screenshot to look at goes where it is told: `screenshot /abs/path.png`.
+- Only one studio takes a folder's requests: it writes its process number
+  to `<folder>/studio.pid` and `qpctl start` will not start another.
+
 ### Saving a shipped map's entities
 
 Save writes the map's entities to

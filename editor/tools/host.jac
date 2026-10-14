@@ -10,7 +10,7 @@ The methods are abstract so that what is defined in other modules is reached
 through the bases (see Workbench)."""
 import from engine.math.vec3 { Vec3 }
 import from engine.world.bot_routes { NavMesh }
-import from editor.document.scene { Scene }
+import from editor.document.scene { Scene, Finding }
 import from editor.ui.canvas { Ink }
 import from engine.formats.bsp { Texture }
 
@@ -93,6 +93,30 @@ obj ToolHost {
     have fired in it so far, in order."""
     def playing -> bool abst;
     def fired_log -> list[str] abst;
+
+    """Hand the console lines to run: after what it holds already, or ahead
+    of it (what a command asks to run next)."""
+    def queue(text: str) abst;
+    def queue_first(text: str) abst;
+
+    """How many lines the console has printed since the program began, and
+    those printed after the first `mark` of them that it still keeps."""
+    def heard -> int abst;
+    def heard_since(mark: int) -> list[str] abst;
+
+    """Print a line in the console alone, not the status bar."""
+    def echo(line: str) abst;
+
+    """The level view's camera: where it is and which way it looks, yaw and
+    pitch in degrees; and put it somewhere."""
+    def camera -> list[float] abst;
+    def aim(eye: Vec3, yaw: float, pitch: float) abst;
+
+    """The material new brushes are made of."""
+    def material_in_hand -> str abst;
+
+    """What the last check found."""
+    def findings -> list[Finding] abst;
 }
 
 """A tool: the studio asks its tools each command before its own, lets them

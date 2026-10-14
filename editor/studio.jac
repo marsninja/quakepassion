@@ -1028,6 +1028,63 @@ obj StudioHost(ToolHost) {
     def scene_now -> Scene | None {
         return self.studio.scene;
     }
+
+    def queue(text: str) {
+        app = self.studio.app;
+        if app is not None {
+            app.shell.add_text(text);
+        }
+    }
+
+    def queue_first(text: str) {
+        app = self.studio.app;
+        if app is not None {
+            app.shell.insert_text(text);
+        }
+    }
+
+    def heard -> int {
+        app = self.studio.app;
+        return app.shell.log.printed if app is not None else 0;
+    }
+
+    def heard_since(mark: int) -> list[str] {
+        app = self.studio.app;
+        if app is None {
+            return [];
+        }
+        kept = app.shell.log.lines;
+        # The log keeps its last lines only: those printed before them are gone.
+        fresh = max(0, min(len(kept), app.shell.log.printed - mark));
+        return list(kept[len(kept) - fresh:]) if fresh > 0 else [];
+    }
+
+    def echo(line: str) {
+        app = self.studio.app;
+        if app is not None {
+            app.shell.print(line);
+        }
+    }
+
+    def camera -> list[float] {
+        view = self.studio.main;
+        return [view.eye.x, view.eye.y, view.eye.z, math.degrees(view.yaw), math.degrees(view.pitch)];
+    }
+
+    def aim(eye: Vec3, yaw: float, pitch: float) {
+        view = self.studio.main;
+        view.eye = eye;
+        view.yaw = math.radians(yaw);
+        view.pitch = math.radians(pitch);
+    }
+
+    def material_in_hand -> str {
+        return self.studio.material;
+    }
+
+    def findings -> list[Finding] {
+        return list(self.studio.findings);
+    }
 }
 
 obj Studio(Workbench) {
@@ -4796,6 +4853,13 @@ obj Studio(Workbench) {
         if name == "ed_pause" or name == "ed_tick" or name == "ed_played" or name == "ed_fire" {
             # These are for a game being played from here.
             self.play_command(args);
+            return;
+        }
+        if name == "ed_control" {
+            # The steps of a request from outside (editor/tools/control.jac)
+            # run whatever the studio is doing, a game played from it too.
+            held = self.scene;
+            self.plugin_command(held if held is not None else Scene(), args);
             return;
         }
         if name == "ed_break" or name == "ed_trace" or name == "ed_fired" or name == "ed_live" {
