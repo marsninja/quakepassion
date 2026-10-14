@@ -10,6 +10,7 @@ reading a run back (scripts/autoplay_report.jac).
   and its enemy), written out when it dies, is blocked or gives up.
 
 QP_AUTOPLAY_TRACE names the file; without it nothing is written."""
+import from ..math.vec3 { Vec3 }
 
 """A string as a JSON string."""
 def trace_text(value: str) -> str {
@@ -22,11 +23,15 @@ def trace_number(value: float, places: int = 1) -> str {
     return str(round(value, places));
 }
 
+"""A point as a JSON list of whole units."""
+def trace_point(point: Vec3) -> str {
+    return "[" + str(int(point.x)) + ", " + str(int(point.y)) + ", " + str(int(point.z)) + "]";
+}
+
 obj BotTrace {
     has path: str = "",
         samples: list[str] = [],
-        sample_wait: float = 0.0,
-        written: int = 0;
+        sample_wait: float = 0.0;
 
     def on -> bool {
         return self.path != "";
@@ -46,7 +51,6 @@ obj BotTrace {
             with open(self.path, "a") as out {
                 out.write("{" + ", ".join(parts) + "}\n");
             }
-            self.written += 1;
         } except Exception as error {
             print("AUTOPLAY trace not written:", error);
             self.path = "";

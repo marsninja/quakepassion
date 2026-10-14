@@ -574,6 +574,54 @@ def travel_ladder(origin: Vec3, passage: Passage) -> TravelResult {
     );
 }
 
+# How far a brush grown by the player's box (and a unit more) reaches round
+# it: an origin inside the grown box touches the brush. Below and beside,
+# and above.
+glob BODY_REACH_BELOW: Vec3 = Vec3(x=17.0, y=17.0, z=33.0),
+    BODY_REACH_ABOVE: Vec3 = Vec3(x=17.0, y=17.0, z=25.0);
+
+"""`count` flat directions evenly round, the first along x."""
+def compass(count: int) -> list[Vec3] {
+    return [
+        Vec3(x=math.cos(float(k) * 2.0 * math.pi / float(count)), y=math.sin(float(k) * 2.0 * math.pi / float(count)))
+        for k in range(count)
+    ];
+}
+
+"""Whether `origin` is over the flat footprint `lo`..`hi`."""
+def over_footprint(origin: Vec3, lo: Vec3, hi: Vec3) -> bool {
+    return origin.x > lo.x and origin.x < hi.x and origin.y > lo.y and origin.y < hi.y;
+}
+
+"""Of `ways` (flat directions), the one that leaves the flat box `lo`..`hi`
+soonest by a clear way (room traced out to at most `cap`), else the one with
+the most room; None when there are no ways."""
+def soonest_out(collision: CollisionMap, origin: Vec3, lo: Vec3, hi: Vec3, ways: list[Vec3], cap: float) -> Vec3 | None {
+    best: Vec3 | None = None;
+    best_score = 1.0e9;
+    for way in ways {
+        out = 1.0e9;
+        if way.x > 0.001 {
+            out = min(out, (hi.x - origin.x) / way.x);
+        } elif way.x < -0.001 {
+            out = min(out, (lo.x - origin.x) / way.x);
+        }
+        if way.y > 0.001 {
+            out = min(out, (hi.y - origin.y) / way.y);
+        } elif way.y < -0.001 {
+            out = min(out, (lo.y - origin.y) / way.y);
+        }
+        reach = min(out, cap) + 8.0;
+        room = collision.trace(origin, origin.add(way.scale(reach))).fraction * reach;
+        score = out if room >= out else 10000.0 - room;
+        if score < best_score {
+            best_score = score;
+            best = way;
+        }
+    }
+    return best;
+}
+
 """The way out from under a mover's footprint (grown by the player's box):
 of eight ways, the one that leaves it soonest with clear room to do so,
 else the one with the most room; straight away from its middle when
@@ -583,31 +631,8 @@ def out_of_footprint(origin: Vec3, box: AABB, passage: Passage, collision: Colli
     if collision is None {
         return away;
     }
-    best = away;
-    best_score = 1.0e9;
-    for k in range(8) {
-        angle = float(k) * 0.785398;
-        way = Vec3(x=math.cos(angle), y=math.sin(angle));
-        out = 1.0e9;
-        if way.x > 0.001 {
-            out = min(out, (box.maxs.x + 17.0 - origin.x) / way.x);
-        } elif way.x < -0.001 {
-            out = min(out, (box.mins.x - 17.0 - origin.x) / way.x);
-        }
-        if way.y > 0.001 {
-            out = min(out, (box.maxs.y + 17.0 - origin.y) / way.y);
-        } elif way.y < -0.001 {
-            out = min(out, (box.mins.y - 17.0 - origin.y) / way.y);
-        }
-        reach = min(out, 300.0) + 8.0;
-        room = collision.trace(origin, origin.add(way.scale(reach))).fraction * reach;
-        score = out if room >= out else 10000.0 - room;
-        if score < best_score {
-            best_score = score;
-            best = way;
-        }
-    }
-    return best;
+    way = soonest_out(collision, origin, box.mins.sub(BODY_REACH_BELOW), box.maxs.add(BODY_REACH_ABOVE), compass(8), 300.0);
+    return way if way is not None else away;
 }
 
 """The approach to a mover shared by BotTravel_Elevator and
@@ -624,12 +649,12 @@ def board_mover(origin: Vec3, passage: Passage, box: AABB, ready: bool, collisio
     if not ready {
         # Waiting, clear of where it comes down: a body under its edge
         # stops it and sends it back up (plat_crush).
-        if origin.x > box.mins.x - 17.0 and origin.x < box.maxs.x + 17.0
-            and origin.y > box.mins.y - 17.0 and origin.y < box.maxs.y + 17.0 {
+        if over_footprint(origin, box.mins.sub(BODY_REACH_BELOW), box.maxs.add(BODY_REACH_ABOVE)) {
             return TravelResult(direction=out_of_footprint(origin, box, passage, collision), speed=200.0, waiting=True);
         }
-        if origin.x > box.mins.x - 24.0 and origin.x < box.maxs.x + 24.0
-            and origin.y > box.mins.y - 24.0 and origin.y < box.maxs.y + 24.0 {
+        # A margin past that, held still: stepping back in turns it back.
+        margin = Vec3(x=24.0, y=24.0);
+        if over_footprint(origin, box.mins.sub(margin), box.maxs.add(margin)) {
             return TravelResult(speed=0.0, waiting=True);
         }
         result = TravelResult(direction=to_start[0], speed=6.0 * min(to_start[1], 60.0), waiting=True);

@@ -17,14 +17,15 @@ bot needs an objective first:
 
 An exit fired by its chain rather than touched is planned the same way."""
 import from .world { World, Player }
-import from .doors { Door, HasDoor, DoorMember }
+import from .doors { Door, HasDoor, DoorMember, door_parts, door_starts_open }
 import from .signals { Signal, Targets }
 import from .triggers { TouchTrigger, HasTrigger, Activates }
 import from .combat { Opponent, HasOpponent }
 import from .pickups { Pickup, HasPickup }
 import from .inventory { quantity }
 import from .exits { LevelExit }
-import from .trains { Train, HasTrain, TrackPoint, TrackNext }
+import from .trains { Train, HasTrain, secret_open_motion }
+import from .bot_travel { BODY_REACH_BELOW, BODY_REACH_ABOVE }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 
@@ -91,8 +92,6 @@ node Objective {
     }
 }
 
-edge Requires: Objective --> Objective {}
-
 """Where a player's origin picks an item up: its box (16 a side, 56 tall
 from the item's origin) touching the player's (16 a side, 24 below and 32
 above the origin)."""
@@ -109,26 +108,6 @@ def objective_volume_center(trigger: TouchTrigger) -> Vec3 | None {
     return box.mins.add(box.maxs).scale(0.5);
 }
 
-"""Every door, plat and button, members of teams included."""
-def objective_movers(world: World) -> list[Door] {
-    found: list[Door] = [];
-    for leader in [world->:HasDoor:->][?:Door] {
-        found.append(leader);
-        for part in [leader->:DoorMember:->][?:Door] {
-            if part not in found {
-                found.append(part);
-            }
-        }
-    }
-    return found;
-}
-
-"""Whether a door starts open (START_OPEN): stored with its rest where it is
-open and its travel closing it."""
-def objective_starts_open(door: Door) -> bool {
-    return door.kind == "door" and door.rest.length() > 0.5 and door.rest.add(door.travel).length() < 0.5;
-}
-
 """Whether a door is where a traveller gets by: open, opening, or, for one
 that starts open (START_OPEN: it closes as it moves), still at rest; a plat
 once it is going."""
@@ -138,7 +117,7 @@ def objective_door_open(door: Door) -> bool {
     if door.kind == "platform" {
         return door.state != "locked";
     }
-    if objective_starts_open(door) {
+    if door_starts_open(door) {
         return door.position <= 0.01;
     }
     return door.position >= 0.99 or door.state in ["opening", "open"];
@@ -180,7 +159,7 @@ def objective_owner_actions(world: World, source: Signal, why: str) -> list[Obje
             found.append(Objective(kind="touch", point=middle, why=why, signal=source, box=box));
         }
     }
-    for part in objective_movers(world) {
+    for part in door_parts(world) {
         # A button already in (one that stays in, or not yet back out) has
         # done what it does; a counter it feeds wants the others.
         if part.activation is not source or part.kind != "button" or part.position > 0.0 or part.state != "closed" {
@@ -192,8 +171,8 @@ def objective_owner_actions(world: World, source: Signal, why: str) -> list[Obje
         # Pressed by the player's box touching it: its origin within the
         # button's box grown by the player's.
         reach = AABB(
-            mins=box.mins.add(part.rest).sub(Vec3(x=17.0, y=17.0, z=33.0)),
-            maxs=box.maxs.add(part.rest).add(Vec3(x=17.0, y=17.0, z=25.0))
+            mins=box.mins.add(part.rest).sub(BODY_REACH_BELOW),
+            maxs=box.maxs.add(part.rest).add(BODY_REACH_ABOVE)
         );
         found.append(
             Objective(kind=kind, point=middle, aim=middle, why=why, signal=source, door=part, box=reach if kind == "press" else None)
@@ -270,25 +249,7 @@ def objective_secret(world: World, model: int) -> Train | None {
 """Whether a secret door stands fully open: at the third point of its track
 of four (the pose the navigation is compiled in), not part way there."""
 def objective_secret_open(train: Train) -> bool {
-    # Its rest: the point of its track it sits at unmoved.
-    step = train.current;
-    for k in range(4) {
-        if step.origin.sub(train.anchor).length() < 1.0 {
-            break;
-        }
-        following = [step->:TrackNext:->][?:TrackPoint];
-        if not following {
-            break;
-        }
-        step = following[0];
-    }
-    for k in range(2) {
-        following = [step->:TrackNext:->][?:TrackPoint];
-        if following {
-            step = following[0];
-        }
-    }
-    return train.motion.sub(step.origin.sub(train.anchor)).length() < 2.0;
+    return train.motion.sub(secret_open_motion(train)).length() < 2.0;
 }
 
 """What opens a secret door that is shut: a shot when it takes one, else
@@ -336,7 +297,7 @@ def mover_objectives(world: World, model: int, player: Player, resting: bool = F
 
 def:priv mover_objectives_of(world: World, leader: Door, model: int, player: Player, resting: bool) -> list[Objective] {
     why = "mover " + str(model);
-    if resting and objective_starts_open(leader) {
+    if resting and door_starts_open(leader) {
         # Walked on where the door closes to (a bridge drawn out): what
         # closes it, until it has.
         if leader.position >= 0.99 {
@@ -413,7 +374,7 @@ def mover_area_blocked(world: World, model: int, player: Player, resting: bool) 
         if leader is None {
             return False;
         }
-        if objective_starts_open(leader) {
+        if door_starts_open(leader) {
             return leader.position < 0.99;
         }
         return leader.position > 0.01;

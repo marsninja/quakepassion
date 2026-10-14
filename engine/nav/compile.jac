@@ -36,7 +36,6 @@ import from ..formats.aas {
     TRAVEL_WALKOFFLEDGE,
     TRAVEL_TELEPORT,
     TRAVEL_ELEVATOR,
-    TRAVEL_JUMPPAD,
     TRAVEL_SWIM,
     AREA_GROUNDED,
     AREA_LIQUID,
@@ -50,8 +49,8 @@ import from ..formats.aas {
 }
 import from ..world.world { World }
 import from ..world.level { Level }
-import from ..world.doors { Door, HasDoor, DoorMember }
-import from ..world.trains { Train, HasTrain, TrackPoint, TrackNext }
+import from ..world.doors { Door, HasDoor, DoorMember, door_parts, door_starts_open }
+import from ..world.trains { Train, HasTrain, TrackPoint, TrackNext, secret_open_motion }
 import from ..world.traversal { Traversal, HasTraversal, Destination, ArrivesAt, touches_volume }
 import from ..world.pickups { Pickup, HasPickup }
 import from ..world.hazards { Hazard, HasHazard }
@@ -472,7 +471,7 @@ walker FindJumps {
     }
 }
 
-"""What the compiler made of a level, and how long each stage took."""
+"""What the compiler made of a level."""
 obj NavBuild {
     has aas: Aas,
         grid: NavGrid | None = None,
@@ -486,8 +485,7 @@ obj NavBuild {
         rest_areas: list[int] = [],
         notes: list[str] = [],
         traces: int = 0,
-        seeds: int = 0,
-        seconds: float = 0.0;
+        seeds: int = 0;
 
     def summary -> str {
         return "spots=" + str(self.spots) + " resting=" + str(self.resting) + " steps=" + str(self.steps) + " jumps=" + str(self.jumps)
@@ -497,61 +495,50 @@ obj NavBuild {
     }
 }
 
-"""Every door, plat and button of the level: each team's leader and its
-members (a double door's other leaf)."""
-def:priv nav_movers(world: World) -> list[Door] {
-    found: list[Door] = [];
-    for leader in [world->:HasDoor:->][?:Door] {
-        found.append(leader);
-        for part in [leader->:DoorMember:->][?:Door] {
-            if part not in found {
-                found.append(part);
-            }
-        }
-    }
-    return found;
-}
-
 """The secret doors (two-stage movers on a track of four points) and the
-motion of each fully open: its third point."""
+motion of each fully open (secret_open_motion)."""
 def:priv nav_secret_doors(world: World) -> list[tuple[Train, Vec3]] {
     found: list[tuple[Train, Vec3]] = [];
     for train in [world->:HasTrain:->][?:Train] {
-        if train.kind != "secret" {
-            continue;
+        if train.kind == "secret" {
+            found.append((train, secret_open_motion(train)));
         }
-        step = train.current;
-        for k in range(2) {
-            following = [step->:TrackNext:->][?:TrackPoint];
-            if following {
-                step = following[0];
-            }
-        }
-        found.append((train, step.origin.sub(train.anchor)));
     }
     return found;
 }
 
-"""Whether a door starts open (START_OPEN): its rest is where it travels
-from and its travel brings it back, so it is open at rest."""
-def nav_starts_open(door: Door) -> bool {
-    return door.kind == "door" and door.rest.length() > 0.5 and door.rest.add(door.travel).length() < 0.5;
-}
+# How far round a mover's brush a body is within its reach (below and
+# beside, and above), and how far the player's box reaches round a point
+# (its origin): a brush grown by it is where an origin touches it.
+glob NAV_MOVER_REACH_BELOW: Vec3 = Vec3(x=48.0, y=48.0, z=64.0),
+    NAV_MOVER_REACH_ABOVE: Vec3 = Vec3(x=48.0, y=48.0, z=96.0),
+    NAV_BODY_BELOW: Vec3 = Vec3(x=16.0, y=16.0, z=32.0),
+    NAV_BODY_ABOVE: Vec3 = Vec3(x=16.0, y=16.0, z=24.0);
 
-"""Whether `point` is within reach of any door, plat or secret door, in
-any of its poses."""
-def nav_near_movers(world: World, level: Level, point: Vec3) -> bool {
-    for door in nav_movers(world) {
+"""The boxes within reach of each door and plat, open and shut."""
+def nav_mover_reach(world: World, level: Level) -> list[AABB] {
+    boxes: list[AABB] = [];
+    for door in door_parts(world) {
         if door.kind == "button" or not door.origins {
             continue;
         }
         record = level.bsp.models[door.model];
         for shift in [nav_open_shift(door), nav_shut_shift(door)] {
-            lo = record.mins.add(door.origins[0]).add(shift).sub(Vec3(x=48.0, y=48.0, z=64.0));
-            hi = record.maxs.add(door.origins[0]).add(shift).add(Vec3(x=48.0, y=48.0, z=96.0));
-            if lo.x <= point.x and point.x <= hi.x and lo.y <= point.y and point.y <= hi.y and lo.z <= point.z and point.z <= hi.z {
-                return True;
-            }
+            boxes.append(AABB(
+                mins=record.mins.add(door.origins[0]).add(shift).sub(NAV_MOVER_REACH_BELOW),
+                maxs=record.maxs.add(door.origins[0]).add(shift).add(NAV_MOVER_REACH_ABOVE)
+            ));
+        }
+    }
+    return boxes;
+}
+
+"""Whether `point` lies in any of `boxes`."""
+def nav_in_any(boxes: list[AABB], point: Vec3) -> bool {
+    for box in boxes {
+        if box.mins.x <= point.x and point.x <= box.maxs.x and box.mins.y <= point.y and point.y <= box.maxs.y
+            and box.mins.z <= point.z and point.z <= box.maxs.z {
+            return True;
         }
     }
     return False;
@@ -561,11 +548,11 @@ def nav_near_movers(world: World, level: Level, point: Vec3) -> bool {
 the map draws it: travelled and at rest, or the other way about for one
 that starts open."""
 def nav_open_shift(door: Door) -> Vec3 {
-    return door.rest if nav_starts_open(door) else door.rest.add(door.travel);
+    return door.rest if door_starts_open(door) else door.rest.add(door.travel);
 }
 
 def nav_shut_shift(door: Door) -> Vec3 {
-    return door.rest.add(door.travel) if nav_starts_open(door) else door.rest;
+    return door.rest.add(door.travel) if door_starts_open(door) else door.rest;
 }
 
 """The level's collision with every mover where a traveller needs it: doors
@@ -575,7 +562,7 @@ def:priv nav_posed_collision(world: World, collision: CollisionMap) -> Collision
     posed = collision.for_body(collision.eye_height);
     posed.offsets = [offset.add(Vec3()) for offset in collision.offsets];
     posed.disabled = set(collision.disabled);
-    for door in nav_movers(world) {
+    for door in door_parts(world) {
         if door.kind == "button" {
             continue;
         }
@@ -587,8 +574,7 @@ def:priv nav_posed_collision(world: World, collision: CollisionMap) -> Collision
             } elif k < len(door.origins) {
                 # Open: travelled, except a door that starts open (Q1/Q2
                 # START_OPEN), which is open at rest and closes as it moves.
-                opened = door.rest if nav_starts_open(door) else door.rest.add(door.travel);
-                posed.offsets[hull] = door.origins[k].add(opened);
+                posed.offsets[hull] = door.origins[k].add(nav_open_shift(door));
             }
         }
     }
@@ -609,8 +595,8 @@ def:priv nav_shut_collision(world: World, collision: CollisionMap) -> CollisionM
     shut = collision.for_body(collision.eye_height);
     shut.offsets = [offset.add(Vec3()) for offset in collision.offsets];
     shut.disabled = set(collision.disabled);
-    for door in nav_movers(world) {
-        if not nav_starts_open(door) {
+    for door in door_parts(world) {
+        if not door_starts_open(door) {
             continue;
         }
         for k in range(min(len(door.hulls), len(door.origins))) {
@@ -711,7 +697,7 @@ def:priv nav_lifts(world: World, grid: NavGrid, level: Level) -> tuple[int, list
     count = 0;
     tops: list[NavSpot] = [];
     notes: list[str] = [];
-    for door in nav_movers(world) {
+    for door in door_parts(world) {
         if door.kind == "button" or not door.hulls or not door.origins or door.model in grid.lifted {
             continue;
         }
@@ -773,14 +759,14 @@ def:priv nav_lifts(world: World, grid: NavGrid, level: Level) -> tuple[int, list
 player's), so the areas there are the door's, and the spots in damaging
 volumes as places not to go."""
 def:priv nav_mark_movers(world: World, grid: NavGrid, level: Level) {
-    for door in nav_movers(world) {
+    for door in door_parts(world) {
         if door.kind != "door" or not door.hulls {
             continue;
         }
         record = level.bsp.models[door.model];
         shift = door.origins[0].add(nav_shut_shift(door)) if door.origins else Vec3();
-        lo = record.mins.add(shift).sub(Vec3(x=16.0, y=16.0, z=32.0));
-        hi = record.maxs.add(shift).add(Vec3(x=16.0, y=16.0, z=24.0));
+        lo = record.mins.add(shift).sub(NAV_BODY_BELOW);
+        hi = record.maxs.add(shift).add(NAV_BODY_ABOVE);
         for spot in grid.spots {
             o = spot.origin;
             if spot.pose == 1 and o.x > lo.x and o.x < hi.x and o.y > lo.y and o.y < hi.y and o.z > lo.z and o.z < hi.z {
@@ -790,8 +776,8 @@ def:priv nav_mark_movers(world: World, grid: NavGrid, level: Level) {
     }
     # A secret door's doorway is the door's, as a door's is.
     for (train, opened) in nav_secret_doors(world) {
-        lo = train.bounds.mins.sub(Vec3(x=16.0, y=16.0, z=32.0));
-        hi = train.bounds.maxs.add(Vec3(x=16.0, y=16.0, z=24.0));
+        lo = train.bounds.mins.sub(NAV_BODY_BELOW);
+        hi = train.bounds.maxs.add(NAV_BODY_ABOVE);
         for spot in grid.spots {
             o = spot.origin;
             if spot.pose == 1 and o.x > lo.x and o.x < hi.x and o.y > lo.y and o.y < hi.y and o.z > lo.z and o.z < hi.z {
@@ -1035,12 +1021,12 @@ def:priv nav_step_time(kind: int, start: Vec3, finish: Vec3, rules: NavRules) ->
 """Flood again round each mover with the movers shut: where the level
 starts them, and a door that starts open where it closes to. A floor that
 drops or a bridge that moves away is walked on until it does, and a bridge
-drawn out by a button once it is. Only places within reach of a mover are added (posed `0`); the spots
-already found there are expanded again in this pose. Returns how many were
-added."""
+drawn out by a button once it is. Only places within reach of a mover are
+added (posed `0`); the spots already found there are expanded again in this
+pose. Returns how many were added."""
 def:priv nav_rest_flood(world: World, grid: NavGrid, level: Level, flood: FloodFloors) -> int {
     boxes: list[AABB] = [];
-    for door in nav_movers(world) {
+    for door in door_parts(world) {
         if door.kind == "button" or not door.hulls or not door.origins {
             continue;
         }
@@ -1049,13 +1035,13 @@ def:priv nav_rest_flood(world: World, grid: NavGrid, level: Level, flood: FloodF
         posed = rest.add(door.travel);
         lo = Vec3(x=min(rest.x, posed.x), y=min(rest.y, posed.y), z=min(rest.z, posed.z)).add(record.mins);
         hi = Vec3(x=max(rest.x, posed.x), y=max(rest.y, posed.y), z=max(rest.z, posed.z)).add(record.maxs);
-        boxes.append(AABB(mins=lo.sub(Vec3(x=48.0, y=48.0, z=64.0)), maxs=hi.add(Vec3(x=48.0, y=48.0, z=96.0))));
+        boxes.append(AABB(mins=lo.sub(NAV_MOVER_REACH_BELOW), maxs=hi.add(NAV_MOVER_REACH_ABOVE)));
     }
     for (train, opened) in nav_secret_doors(world) {
         box = train.bounds;
         lo = Vec3(x=min(0.0, opened.x), y=min(0.0, opened.y), z=min(0.0, opened.z)).add(box.mins);
         hi = Vec3(x=max(0.0, opened.x), y=max(0.0, opened.y), z=max(0.0, opened.z)).add(box.maxs);
-        boxes.append(AABB(mins=lo.sub(Vec3(x=48.0, y=48.0, z=64.0)), maxs=hi.add(Vec3(x=48.0, y=48.0, z=96.0))));
+        boxes.append(AABB(mins=lo.sub(NAV_MOVER_REACH_BELOW), maxs=hi.add(NAV_MOVER_REACH_ABOVE)));
     }
     if not boxes {
         return 0;
@@ -1088,7 +1074,7 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
     }
     collision = nav_posed_collision(world, level.collision);
     grid = NavGrid(rules=rules, collision=collision, level=level);
-    grid.mover_models = set([door.model for door in nav_movers(world) if door.kind != "button"]);
+    grid.mover_models = set([door.model for door in door_parts(world) if door.kind != "button"]);
     build = NavBuild(aas=Aas());
     seeds: list[NavSpot] = [];
     for point in nav_seed_points(world, level) {
@@ -1109,7 +1095,7 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
     for summit in lifted[1] {
         summit spawn flood;
     }
-    for round in range(3) {
+    for jump_round in range(3) {
         leaps = FindJumps(grid=grid);
         for spot in list(grid.spots) {
             spot spawn leaps;
@@ -1128,14 +1114,15 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
     # rest: join those lifts now, and flood from their tops.
     late = nav_lifts(world, grid, level);
     build.lifts += late[0];
-    build.notes = late[2];
+    build.notes.extend(late[2]);
     for summit in late[1] {
         summit spawn flood;
     }
     # Round the movers, join what the stages left apart.
     stitch = StitchSpots(grid=grid);
+    reach = nav_mover_reach(world, level);
     for spot in list(grid.spots) {
-        if nav_near_movers(world, level, spot.origin) {
+        if nav_in_any(reach, spot.origin) {
             spot spawn stitch;
         }
     }

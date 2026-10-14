@@ -658,3 +658,26 @@ walker BlastMover {
         }
     }
 }
+
+"""A secret door's motion fully open: the third point of its track of four,
+counted from its rest (the point it sits at unmoved), wherever it is now."""
+def secret_open_motion(train: Train) -> Vec3 {
+    step = train.current;
+    for k in range(4) {
+        if step.origin.sub(train.anchor).length() < 1.0 {
+            break;
+        }
+        following = [step->:TrackNext:->][?:TrackPoint];
+        if not following {
+            break;
+        }
+        step = following[0];
+    }
+    for k in range(2) {
+        following = [step->:TrackNext:->][?:TrackPoint];
+        if following {
+            step = following[0];
+        }
+    }
+    return step.origin.sub(train.anchor);
+}

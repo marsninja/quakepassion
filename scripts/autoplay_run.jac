@@ -4,11 +4,15 @@ controls, a line every few seconds and one when the level changes.
     jac build scripts/autoplay_run.jac --native -o .jac/autoplay
     QP_RUN=q1:e1m1 QP_SECONDS=120 DYLD_LIBRARY_PATH=vendor .jac/autoplay
 
-QP_KILL=<seconds> kills the player once at that time (to see a restart);
-QP_AUTOPLAY_TRACE names the decision trace (default .jac/autoplay-trace.jsonl,
-read back by scripts/autoplay_report.jac);
-QP_GOD=1 plays in god mode; QP_AUTOPLAY_SHOTS works as in qp; QP_WATCH_MOVER
-names a mover (BSP model) whose state is printed every two seconds."""
+- QP_KILL=<seconds> kills the player once at that time (to see a restart).
+- QP_AUTOPLAY_TRACE names the decision trace (default
+  .jac/autoplay-trace.jsonl, read back by scripts/autoplay_report.jac).
+- QP_GOD=1 plays in god mode; QP_NOBOT=1 leaves the player to no one.
+- QP_AUTOPLAY_SHOTS=<seconds> saves a screenshot that often, into
+  QP_AUTOPLAY_SHOT_DIR (default .jac/shots), as in qp.
+- QP_LOOK=x,y,z,yaw stands there and saves .jac/look.png (a place the bot
+  struggles, seen without it).
+- QP_WATCH_MOVER=<model> prints that mover's state every two seconds."""
 import os;
 import time;
 import from engine.core.app { App }
@@ -17,7 +21,6 @@ import from engine.core.menu { game_directory }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
 import from engine.world.player_bot { PlayerBot }
-import from engine.core.savegame { unpack_campaign }
 import from engine.math.vec3 { Vec3 }
 import from engine.input.input { Intent }
 import from engine.world.doors { Door, HasDoor }
@@ -38,6 +41,7 @@ with entry {
     app.walking = True;
     bot = PlayerBot();
     bot.shot_every = float(os.getenv("QP_AUTOPLAY_SHOTS", "0") or "0");
+    bot.shot_dir = os.getenv("QP_AUTOPLAY_SHOT_DIR", bot.shot_dir);
     # The decision trace (scripts/autoplay_report.jac reads it).
     bot.trace.path = os.getenv("QP_AUTOPLAY_TRACE", ".jac/autoplay-trace.jsonl");
     if os.path.exists(bot.trace.path) {
@@ -45,16 +49,6 @@ with entry {
     }
     if not os.getenv("QP_NOBOT", "") {
         app.autoplay = bot;
-    }
-    if os.getenv("QP_SAVEDUMP", "") {
-        tags: dict[str, int] = {};
-        for line in unpack_campaign(app.entry_save).active.splitlines() {
-            word = line.split(" ")[0] if line else "";
-            tags[word] = tags.get(word, 0) + 1;
-        }
-        print("RUN entry save records", tags);
-        app.restart_level();
-        print("RUN restart without play:", app.menu.message if app.menu.opened else "ok");
     }
     # QP_LOOK=x,y,z,yaw: stand there (eye), look along yaw (degrees), and
     # save a screenshot a second later (to see a place the bot struggles).

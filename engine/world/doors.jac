@@ -1674,3 +1674,24 @@ def damage_mover(leader: Door, part: Door, amount: int) -> bool {
     leader.activation.pending += 1;
     return True;
 }
+
+"""Every door, plat and button of the level: each team's leader and its
+members (a double door's other leaf)."""
+def door_parts(world: World) -> list[Door] {
+    found: list[Door] = [];
+    for leader in [world->:HasDoor:->][?:Door] {
+        found.append(leader);
+        for part in [leader->:DoorMember:->][?:Door] {
+            if part not in found {
+                found.append(part);
+            }
+        }
+    }
+    return found;
+}
+
+"""Whether a door starts open (Q1/Q2 START_OPEN): stored with its rest
+where it is open and its travel closing it."""
+def door_starts_open(door: Door) -> bool {
+    return door.kind == "door" and door.rest.length() > 0.5 and door.rest.add(door.travel).length() < 0.5;
+}

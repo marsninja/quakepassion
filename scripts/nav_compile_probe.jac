@@ -3,7 +3,14 @@ out: spots, ways, areas, reachabilities, how long it took, and whether the
 router finds a way from the player's start to each exit.
 
     jac build scripts/nav_compile_probe.jac --native -o .jac/navprobe
-    QP_MAPS=q1:e1m1,q2:base1 DYLD_LIBRARY_PATH=vendor .jac/navprobe"""
+    QP_MAPS=q1:e1m1,q2:base1 DYLD_LIBRARY_PATH=vendor .jac/navprobe
+
+- QP_NAV_GAP=1 lists the islands the start cannot reach.
+- QP_NAV_DUMP=x0,y0,x1,y1 prints the spots in that window.
+- QP_NAV_BOX=x,y,z sweeps the player's box from there and says what stops it.
+- QP_NAV_FROM=x,y,z plans from there instead of the start.
+- QP_NAV_CLOSE=m,n,... closes the areas of those movers (BSP models).
+- QP_NAV_GOAL=x,y,z plans a route there and prints its legs."""
 import os;
 import time;
 import from engine.core.app { App }
@@ -16,6 +23,7 @@ import from engine.nav.compile { compile_navigation, NavStep }
 import from engine.world.objectives { exit_objectives }
 import from engine.world.doors { Door, HasDoor }
 import from engine.formats.aas { Aas, area_mover_model }
+import from engine.math.vec3 { Vec3 }
 
 """The areas reached from `start` over the reachabilities, breadth first."""
 def reached_from(aas: Aas, start: int) -> set[int] {
@@ -37,7 +45,6 @@ def reached_from(aas: Aas, start: int) -> set[int] {
     }
     return seen;
 }
-import from engine.math.vec3 { Vec3 }
 
 with entry {
     renderer = Renderer();
