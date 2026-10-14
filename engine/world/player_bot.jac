@@ -989,15 +989,14 @@ walker AutoThink {
         return best;
     }
 
-    """Where `body` can be shot from: up to eight areas within 900 units of
-    it, the nearest first, with a clear line from eye height to it."""
-    def shooting_spots(body: Opponent) -> list[tuple[int, Vec3]] {
+    """Where `target` can be shot from: up to eight areas within 900 units
+    of it, the nearest first, with a clear line from eye height to it."""
+    def shooting_spots(target: Vec3) -> list[tuple[int, Vec3]] {
         mesh = self.bot.mesh;
         found: list[tuple[int, Vec3]] = [];
         if mesh is None {
             return found;
         }
-        target = body.pos.sub(Vec3(z=body.eye_height * 0.5));
         near: list[tuple[float, int]] = [];
         for a in range(1, len(mesh.aas.areas)) {
             info = mesh.aas.areas[a];
@@ -1164,12 +1163,13 @@ walker AutoThink {
                         return True;
                     }
                     # Nothing left to set it going (a button that stays in, a
-                    # trigger spent): no ride there; another way.
+                    # trigger spent), or nothing of it within reach: no ride
+                    # there; another way.
                     ride_to = bot.route.areas[0] if bot.route.areas else 0;
-                    if not starters and ride_to > 0 and ride_to != here_now {
+                    if ride_to > 0 and ride_to != here_now {
                         bot.close_area(ride_to, 0, 120.0);
                         bot.route.abandon();
-                        print("AUTOPLAY lift", first.model, "can no longer be set going: area", ride_to, "closed");
+                        print("AUTOPLAY lift", first.model, "cannot be set going from here: area", ride_to, "closed");
                         return False;
                     }
                 }
@@ -1406,11 +1406,14 @@ walker AutoThink {
                     spots.append((area, inside));
                 }
             }
-            # A monster to kill is shot from where it can be seen (through
-            # bars, across a pit), not walked up to.
+            # A monster to kill, or a switch, a door or a target to shoot
+            # (e1m1's planet on its pillar), is shot from where it can be
+            # seen (through bars, across a pit), not walked up to.
             prey = choice.body;
             if choice.kind == "kill" and prey is not None {
-                spots = self.shooting_spots(prey);
+                spots = self.shooting_spots(prey.pos.sub(Vec3(z=prey.eye_height * 0.5)));
+            } elif choice.kind == "shoot" {
+                spots = self.shooting_spots(choice.aim);
             }
             # A volume no area reaches into is not done from beside it.
             if not spots and box is None {
@@ -2077,7 +2080,8 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             # Waiting for a lift that does not come (held up, or turned back
             # by something under it): after ten seconds that ride is given
             # up for a minute and another way found.
-            if travel.result.waiting {
+            # (Not while the lift is on its way: that is the ride.)
+            if travel.result.waiting and self.rising_under(world, level, origin) is None {
                 if self.waiting_since < 0.0 {
                     self.waiting_since = self.clock;
                 } elif self.clock - self.waiting_since > 10.0 and self.route.areas {

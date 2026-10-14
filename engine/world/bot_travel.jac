@@ -683,7 +683,8 @@ def ride_mover(origin: Vec3, passage: Passage, box: AABB, arrived: bool) -> Trav
     if to_center[1] > 10.0 {
         return TravelResult(direction=to_center[0], speed=4.0 * min(to_center[1], 100.0));
     }
-    return TravelResult(speed=0.0);
+    # On its middle, waiting to be carried there.
+    return TravelResult(speed=0.0, waiting=True);
 }
 
 """BotTravel_Elevator on the ground and BotFinishTravel_Elevator in the air.
