@@ -749,7 +749,7 @@ def restore(
         or player.health > 10000
         or combat.weapon < 1
         or combat.weapon
-            > {"q1": 8, "q2": 11, "q3": 9, "passion": 2}.get(level.bsp.game, 2)
+            > {"q1": 8, "q2": 11, "q3": 9, "passion": 49}.get(level.bsp.game, 2)
         or stats[10] != float(combat.weapon) {
         raise ValueError("Invalid saved player");
     }
@@ -771,7 +771,8 @@ def restore(
         or stats[26] > 1.0
         or stats[27] < 0.0
         or stats[27] > 3.2
-        or (stats[25] > 0.0 and (level.bsp.game != "q2" or combat.weapon != 11)) {
+        or (stats[25] > 0.0 and not ((level.bsp.game == "q2" and combat.weapon == 11)
+            or (level.bsp.game == "passion" and combat.weapon == 31))) {
         raise ValueError("Invalid saved grenade state");
     }
     combat.grenade_phase = int(stats[25]);

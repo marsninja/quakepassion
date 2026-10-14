@@ -3,14 +3,141 @@
 Animation timing, charged hand grenades and the Q2 BFG secondary laser phase
 remain separate fidelity work; ballistic effects use the common simulation.
 """
-import from engine.formats.sprite { EffectRule }
+import from engine.formats.sprite { EffectRule, effect_game }
 import from engine.math.vec3 { Vec3 }
-import from engine.world.weapons { WeaponRule }
+import from engine.world.weapons { WeaponRule, passion_slot, owned_kind }
 import from engine.world.world { Player }
 import from engine.world.combat { CombatState }
 import from engine.world.inventory { AdjustInventory }
 
+"""A game's weapons, each knowing its game and its own slot; a Passion
+level's are all three games' together (passion_arsenal)."""
 def weapon_rules(game: str) -> list[WeaponRule] {
+    if game == "passion" {
+        return passion_arsenal();
+    }
+    rules = game_weapon_rules(game);
+    for rule in rules {
+        rule.game = game;
+        rule.game_slot = rule.slot;
+    }
+    return rules;
+}
+
+"""Which number key takes up each game's weapon in a Passion level, in the
+order a key steps through them: 1 melee, 2 the blaster and machine guns,
+3 shotguns, 4 nail and chain guns, 5 grenades, 6 rockets, 7 energy, 8 rail,
+9 the BFG."""
+glob PASSION_ROLES: list[tuple[str, str, int]] = [
+    ("q1", "axe", 1),
+    ("q3", "gauntlet", 1),
+    ("q2", "blaster", 2),
+    ("q2", "machinegun", 2),
+    ("q3", "machinegun", 2),
+    ("q1", "shotgun", 3),
+    ("q2", "shotgun", 3),
+    ("q3", "shotgun", 3),
+    ("q1", "supershotgun", 3),
+    ("q2", "supershotgun", 3),
+    ("q1", "nailgun", 4),
+    ("q1", "supernailgun", 4),
+    ("q2", "chaingun", 4),
+    ("q1", "grenadelauncher", 5),
+    ("q2", "grenadelauncher", 5),
+    ("q3", "grenadelauncher", 5),
+    ("q2", "handgrenade", 5),
+    ("q1", "rocketlauncher", 6),
+    ("q2", "rocketlauncher", 6),
+    ("q3", "rocketlauncher", 6),
+    ("q1", "lightning", 7),
+    ("q3", "lightning", 7),
+    ("q2", "hyperblaster", 7),
+    ("q3", "plasmagun", 7),
+    ("q2", "railgun", 8),
+    ("q3", "railgun", 8),
+    ("q2", "bfg", 9),
+    ("q3", "bfg", 9)
+];
+
+"""How much of each kind of ammunition a Passion player can carry: one pool
+for each kind, whichever game's guns spend it."""
+glob PASSION_AMMO_CAPS: dict[str, int] = {
+    "shells": 100,
+    "nails": 200,
+    "bullets": 200,
+    "grenades": 50,
+    "rockets": 100,
+    "cells": 200,
+    "slugs": 50,
+    "lightning": 200,
+    "bfg": 100
+};
+
+"""A Passion level's arsenal: every weapon of the three games, each with
+its own game's rules, numbered apart (passion_slot), held as
+weapon_<game>:<key> and taken up by its role's number key."""
+def passion_arsenal -> list[WeaponRule] {
+    arsenal: list[WeaponRule] = [];
+    for (game, key, role) in PASSION_ROLES {
+        for rule in game_weapon_rules(game) {
+            if rule.key == key and rule.slot > 0 {
+                rule.game = game;
+                rule.game_slot = rule.slot;
+                rule.slot = passion_slot(game, rule.slot);
+                rule.role = role;
+                rule.item = "weapon_" + game + ":" + key;
+                if rule.ammo in PASSION_AMMO_CAPS {
+                    rule.capacity = PASSION_AMMO_CAPS[rule.ammo];
+                }
+                arsenal.append(rule);
+            }
+        }
+    }
+    return arsenal;
+}
+
+"""The game a level's things come from most (their asset_game), which a
+Passion player starts out armed for; Quake's when none says."""
+def lead_game(sources: list[str]) -> str {
+    counts: dict[str, int] = {"q1": 0, "q2": 0, "q3": 0};
+    for source in sources {
+        if source in counts {
+            counts[source] += 1;
+        }
+    }
+    lead = "q1";
+    for game in ["q2", "q3"] {
+        if counts[game] > counts[lead] {
+            lead = game;
+        }
+    }
+    return lead;
+}
+
+"""What a Passion player starts with: the weapons held, the one taken up,
+and its ammunition."""
+obj PassionKit {
+    has weapons: list[str] = [],
+        held: int = 0,
+        ammo: str = "",
+        rounds: int = 0;
+}
+
+"""The start when the level draws most on `lead`: that game's melee weapon
+(Quake II has none) and its first gun, and the gun's own ammunition."""
+def passion_start(lead: str) -> PassionKit {
+    if lead == "q2" {
+        return PassionKit(weapons=["weapon_q2:blaster"], held=passion_slot("q2", 1));
+    }
+    if lead == "q3" {
+        return PassionKit(
+            weapons=["weapon_q3:gauntlet", "weapon_q3:machinegun"], held=passion_slot("q3", 2), ammo="bullets", rounds=100
+        );
+    }
+    return PassionKit(weapons=["weapon_q1:axe", "weapon_q1:shotgun"], held=passion_slot("q1", 2), ammo="shells", rounds=25);
+}
+
+def game_weapon_rules(game: str) -> list[WeaponRule] {
     if game == "q1" {
         return [
             WeaponRule(
@@ -528,13 +655,29 @@ def weapon_rules(game: str) -> list[WeaponRule] {
     return [];
 }
 
-def equip_player(player: Player, state: CombatState, game: str, fresh: bool = True) {
+def equip_player(player: Player, state: CombatState, game: str, fresh: bool = True, lead: str = "q1") {
     state.rules = weapon_rules(game);
     state.game = game;
     state.fallback = [8, 5, 3, 4, 2, 1]
         if game == "q1"
         else ([9, 8, 5, 4, 3, 2, 1] if game == "q2" else [9, 8, 7, 6, 5, 4, 3, 2, 1]);
+    if game == "passion" {
+        # Out of ammunition, the strongest held weapon first, by role.
+        ranked = sorted([(-rule.role, rule.slot) for rule in state.rules]);
+        state.fallback = [pair[1] for pair in ranked];
+    }
     if not state.rules or not fresh {
+        return;
+    }
+    if game == "passion" {
+        kit = passion_start(lead);
+        for kind in kit.weapons {
+            player.inventory spawn AdjustInventory(kind=kind, amount=1, capacity=1);
+        }
+        if kit.ammo {
+            player.inventory spawn AdjustInventory(kind=kit.ammo, amount=kit.rounds, capacity=PASSION_AMMO_CAPS[kit.ammo]);
+        }
+        state.weapon = kit.held;
         return;
     }
     for rule in state.rules {
@@ -555,6 +698,17 @@ def equip_player(player: Player, state: CombatState, game: str, fresh: bool = Tr
     } else {
         state.weapon = 1;
     }
+}
+
+"""A weapon's shot as heard: in a Passion level its own game's sound
+(game:path), "" when it has none."""
+def fire_sound(rule: WeaponRule) -> str {
+    sounds = weapon_sounds(rule.game);
+    index = rule.game_slot - 1;
+    if index < 0 or index >= len(sounds) {
+        return "";
+    }
+    return rule.game + ":" + sounds[index];
 }
 
 # Archive spelling is preserved: original Q2 PAK filenames are case-sensitive.
@@ -602,18 +756,28 @@ def weapon_sounds(game: str) -> list[str] {
 }
 
 
-"""Each missile effect's looping flight sound."""
+"""Each missile effect's looping flight sound; in a Passion level from its
+own game's archive (game:path)."""
 def missile_sounds(game: str) -> dict[str, str] {
     sounds: dict[str, str] = {};
     for rule in weapon_effects(game) {
         if rule.sound {
-            sounds[rule.key] = rule.sound;
+            sounds[rule.key] = (effect_game(rule.key) + ":" + rule.sound) if game == "passion" else rule.sound;
         }
     }
     return sounds;
 }
 
+"""Missiles, explosions and the like: a game's own, or in a Passion level
+every game's (their keys never meet)."""
 def weapon_effects(game: str) -> list[EffectRule] {
+    if game == "passion" {
+        return game_effects("q1") + game_effects("q2") + game_effects("q3");
+    }
+    return game_effects(game);
+}
+
+def game_effects(game: str) -> list[EffectRule] {
     if game == "q1" {
         return [
             EffectRule(key="q1_nail", flight="progs/spike.mdl"),

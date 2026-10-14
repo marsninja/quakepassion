@@ -435,7 +435,7 @@ impl App.give(args: list[str]) {
     if everything or item == "weapons" {
         for rule in self.combat.rules {
             if not rule.hand_thrown {
-                p.inventory spawn AdjustInventory(kind="weapon_" + rule.key, amount=1, capacity=1);
+                p.inventory spawn AdjustInventory(kind=owned_kind(rule), amount=1, capacity=1);
             }
         }
         given = True;
@@ -464,7 +464,7 @@ impl App.give(args: list[str]) {
         } elif item.isdigit() {
             for rule in self.combat.rules {
                 if rule.slot == int(item) {
-                    p.inventory spawn AdjustInventory(kind="weapon_" + rule.key, amount=1, capacity=1);
+                    p.inventory spawn AdjustInventory(kind=owned_kind(rule), amount=1, capacity=1);
                     given = True;
                 }
             }
@@ -474,7 +474,7 @@ impl App.give(args: list[str]) {
         # A weapon by name, an ammo kind or a stored item by name or kind.
         for rule in self.combat.rules {
             if rule.name.lower() == item or rule.key == item {
-                p.inventory spawn AdjustInventory(kind="weapon_" + rule.key, amount=1, capacity=1);
+                p.inventory spawn AdjustInventory(kind=owned_kind(rule), amount=1, capacity=1);
                 if rule.ammo and rule.hand_thrown {
                     p.inventory spawn AdjustInventory(kind=rule.ammo, amount=max(1, count), capacity=rule.capacity);
                 }

@@ -20,6 +20,8 @@ import from ..formats.q2.sprite { parse_sp2 }
 import from ..formats.q2.model { parse_pcx }
 import from ..formats.q1.sprite { parse_spr }
 import from ..assets.library { AssetLibrary }
+import from ..assets.catalog { AssetCatalog }
+import from ..formats.sprite { effect_game }
 import from ..world.world { World }
 import from ..world.combat { Projectile, HasProjectile, Opponent, HasOpponent }
 import from ..world.particles {
@@ -702,21 +704,25 @@ obj EffectScene {
         if not rules {
             return;
         }
-        library = AssetLibrary(game=game);
+        # Each effect from its own game's archive (a Passion level draws all
+        # three games' missiles and blasts).
+        catalog = AssetCatalog(game=game, directory=directory);
         try {
-            library.open(directory);
+            library = catalog.source("q1" if game == "passion" else game);
             # The palette particle colours index: Q1 gfx/palette.lmp, Q2
-            # the one pics/colormap.pcx carries. Q1 particles write depth.
+            # the one pics/colormap.pcx carries. Q1 particles write depth;
+            # a Passion level's particles are Quake's.
             palette = b"";
-            if game == "q1" {
+            if game in ["q1", "passion"] {
                 palette = library.read("gfx/palette.lmp");
             } elif game == "q2" {
                 colormap = library.read("pics/colormap.pcx");
                 palette = colormap[len(colormap) - 768:] if len(colormap) >= 769 else b"";
             }
-            self.particles.open(palette, game == "q1");
+            self.particles.open(palette, game in ["q1", "passion"]);
             self.palette = palette;
             for rule in rules {
+                library = catalog.source(effect_game(rule.key) if game == "passion" else game);
                 self.rules[rule.key] = rule;
                 model_path = rule.flight.lower().endswith((".mdl", ".md2", ".md3"));
                 if rule.explosion and rule.shader {
@@ -757,7 +763,7 @@ obj EffectScene {
             self.close();
             raise;
         } finally {
-            library.close();
+            catalog.close();
         }
     }
 

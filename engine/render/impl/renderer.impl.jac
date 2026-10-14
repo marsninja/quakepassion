@@ -387,9 +387,11 @@ impl Renderer.draw_combat(state: CombatState, arena: bool, ammo: int = -1, score
             + "    "
             + (
                 "["
-                + ("G" if rule.hand_thrown else str(state.weapon % 10))
+                + ("G" if rule.hand_thrown else (str(rule.role) if rule.role > 0 else str(state.weapon % 10)))
                 + "] "
                 + rule.name
+                # A Passion player's gun says whose it is.
+                + (" (" + {"q1": "Quake", "q2": "Quake II", "q3": "Quake III"}.get(rule.game, rule.game) + ")" if rule.role > 0 else "")
                 + " / "
                 + (str(ammo) + " " + rule.ammo if ammo >= 0 else "unlimited")
             )

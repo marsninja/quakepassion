@@ -142,7 +142,7 @@ def register_speaker(world: World, enemy: Opponent, path: str) -> Speaker | None
             return enemy.speakers[i];
         }
     }
-    speaker = Speaker(path=path, origin=enemy.pos.add(Vec3()));
+    speaker = Speaker(path=enemy.sound_prefix + path, origin=enemy.pos.add(Vec3()));
     world +>:HasSpeaker:+> speaker;
     enemy.speakers.append(speaker);
     enemy.speaker_paths.append(path);
@@ -404,6 +404,8 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 support_wait=float(count % 6) / 120.0,
                 yaw=atof(fields.get("angle", "0")) * math.pi / 180.0,
                 game=source,
+                # A Passion level's monsters are heard from their own archive.
+                sound_prefix=source + ":" if level.bsp.game == "passion" and source in ["q1", "q2", "q3"] else "",
                 skill=level.skill,
                 ambush=source in ["q1", "q2"] and flags & 1 != 0 and kind != "arena_bot",
                 kind=kind,

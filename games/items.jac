@@ -1,7 +1,7 @@
 """Original campaign/arena pickups adapted to shared engine item behavior."""
 import from engine.formats.numbers { atof, atoi }
 import math;
-import from .weapons { weapon_rules }
+import from .weapons { weapon_rules, PASSION_AMMO_CAPS }
 import from engine.world.signals { Signal, HasSignal }
 import from engine.world.pickups {
     PickupRule,
@@ -729,6 +729,30 @@ def item_light_flags(game: str, spawnflags: int = 0) -> int {
     return 0;
 }
 
+"""A pickup in a Passion level: its weapon held as its own game's
+(weapon_<game>:<key>, so Quake's shotgun and Quake II's are two), its
+ammunition in the pools every game's guns share (PASSION_AMMO_CAPS), and
+its sounds from its own game's archive."""
+def passion_pickup(rule: PickupRule, source: str) {
+    if rule.kind.startswith("weapon_") and ":" not in rule.kind and source in ["q1", "q2", "q3"] {
+        rule.kind = "weapon_" + source + ":" + rule.kind[7:];
+    }
+    if rule.kind in PASSION_AMMO_CAPS {
+        rule.capacity = PASSION_AMMO_CAPS[rule.kind];
+    }
+    if rule.ammo in PASSION_AMMO_CAPS {
+        rule.ammo_capacity = PASSION_AMMO_CAPS[rule.ammo];
+    }
+    if source in ["q1", "q2", "q3"] {
+        if rule.sound and ":" not in rule.sound {
+            rule.sound = source + ":" + rule.sound;
+        }
+        if rule.respawn_sound and ":" not in rule.respawn_sound {
+            rule.respawn_sound = source + ":" + rule.respawn_sound;
+        }
+    }
+}
+
 def populate_pickups(world: World, level: Level, directory: str) -> int {
     catalog = AssetCatalog(game=level.bsp.game, directory=directory);
     resources: dict[str, ModelResource] = {};
@@ -759,6 +783,9 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
             );
             if rule is None {
                 continue;
+            }
+            if level.bsp.game == "passion" {
+                passion_pickup(rule, source);
             }
             flags = atoi(fields.get("spawnflags", "0"));
             if level.bsp.game == "q1" and flags & 512 {

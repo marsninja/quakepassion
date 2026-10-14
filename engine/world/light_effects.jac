@@ -26,7 +26,7 @@ import from .combat {
     Projectile,
     HasProjectile,
     muzzle_flash_age,
-    selected_weapon
+    selected_weapon, shot_game
 }
 import from .particles { Explosion, HasExplosion, impact_roll }
 import from .models { PlayerRig, WeaponKit, Holds, RIG_FLASH_TIME }
@@ -113,7 +113,8 @@ def player_flash(player: Player, state: CombatState, at: Vec3) -> FlashLight | N
     if state.flash <= 0.0 {
         return None;
     }
-    game = state.game;
+    # The flash of the gun held: a Passion player's is its own game's.
+    game = shot_game(state, selected_weapon(state));
     forward = forward_from(player.yaw, 0.0);
     weapon = selected_weapon(state).key;
     if game == "q1" {

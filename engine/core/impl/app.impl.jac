@@ -17,7 +17,12 @@ impl App.run() {
     self.renderer.open_window();
 
     if self.level.active {
-        equip_player(self.player, self.combat, self.level.bsp.game);
+        equip_player(
+            self.player,
+            self.combat,
+            self.level.bsp.game,
+            lead=lead_game([entity.fields.get("asset_game", "") for entity in self.level.bsp.entities])
+        );
         populate_pickups(self.world, self.level, game_directory(self.level.bsp.game));
         populate_fixtures(self.world, self.level, game_directory(self.level.bsp.game));
         populate_opponents(self.world, self.level, game_directory(self.level.bsp.game));
@@ -786,7 +791,13 @@ impl App.load_destination(
         if started is not None {
             self.host.timelimit.assign(str(started.timelimit));
         }
-        equip_player(player, combat, game, fresh=not carrying);
+        equip_player(
+            player,
+            combat,
+            game,
+            fresh=not carrying,
+            lead=lead_game([entity.fields.get("asset_game", "") for entity in level.bsp.entities])
+        );
         if carrying {
             select_weapon(player, combat, self.combat.weapon);
             combat.cooldown = self.combat.cooldown;
@@ -1634,9 +1645,14 @@ impl App.step() -> bool {
                     }
                 }
                 if not self.combat.quiet {
-                    self.audio.play(
-                        2 + self.combat.weapon if self.combat.rules else 0, gain
-                    );
+                    if self.level.bsp.game == "passion" {
+                        # The gun's own shot, from its own game's archive.
+                        self.audio.play_path(fire_sound(selected_weapon(self.combat)), gain);
+                    } else {
+                        self.audio.play(
+                            2 + self.combat.weapon if self.combat.rules else 0, gain
+                        );
+                    }
                 }
                 # Q1 throttles the quad cue to once a second; Q2/Q3 play it per shot.
                 if empowered(self.player, "quad") and self.quad_sound_wait <= 0.0 {
@@ -2612,7 +2628,12 @@ impl App.respawn_arena_player() {
     }
     stand_again(player, self.level.collision, self.level.movement);
     player.inventory = Inventory();
-    equip_player(player, self.combat, self.level.bsp.game);
+    equip_player(
+        player,
+        self.combat,
+        self.level.bsp.game,
+        lead=lead_game([entity.fields.get("asset_game", "") for entity in self.level.bsp.entities])
+    );
     player.health = player.max_health + 25;
     player.armor = 0;
     player.killer = None;
