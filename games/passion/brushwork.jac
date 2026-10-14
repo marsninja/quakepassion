@@ -10,7 +10,7 @@ import from editor.formats.map { MapItem }
 import from editor.geometry.brush { Side }
 import from .massing { Massing, CellBox, CELL, LIFT }
 import from .spaces { Space }
-import from .kits { Kit, kit_of }
+import from .kits { Kit, kit_of, kit_surfaces, kit_water }
 import from .dress { Dressing, Lamp3, box_brush }
 
 """The structural brushes: the shell's boxes with the materials of the
@@ -23,12 +23,13 @@ def shell_brushes(mass: Massing, spaces: dict[int, Space]) -> list[list[Side]] {
             continue;
         }
         kit = kit_of(space.district);
-        ceiling = kit.ceiling;
+        looks = kit_surfaces(kit, space.variant);
+        ceiling = looks[2];
         if space.sky and box.z0 >= space.z + space.h {
             ceiling = kit.sky;
         }
-        wall = kit.wall;
-        floor = kit.floor;
+        wall = looks[0];
+        floor = looks[1];
         materials = [wall, wall, wall, wall, floor, ceiling];
         # A side with no air across it faces only solid or the void outside:
         # never seen, so never drawn.
@@ -102,9 +103,21 @@ def map_items(mass: Massing, spaces: list[Space], dressing: Dressing, extra: lis
         by_id[space.id] = space;
     }
     world = MapItem(
-        fields={"classname": "worldspawn", "message": message, "_minlight": "6", "_bounce": "1", "generator": "passion-v3"}
+        fields={"classname": "worldspawn", "message": message, "_minlight": "8", "_bounce": "1", "generator": "passion-v3"}
     );
     world.brushes = shell_brushes(mass, by_id);
+    for space in spaces {
+        if space.flood <= 0 {
+            continue;
+        }
+        # The liquid fills the room's lowest floor across its whole box;
+        # inside the solid it is nothing.
+        kit = kit_of(space.district);
+        material = kit.liquid if space.deadly else kit_water(kit);
+        low = Vec3(x=float(space.x) * CELL, y=float(space.y) * CELL, z=float(space.z) * LIFT);
+        high = Vec3(x=float(space.x + space.w) * CELL, y=float(space.y + space.d) * CELL, z=float(space.z + space.flood) * LIFT - 4.0);
+        world.brushes.append(box_brush(low, high, [material, material, material, material, material, material], 1.0));
+    }
     for brush in dressing.brushes {
         world.brushes.append(brush);
     }

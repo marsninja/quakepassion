@@ -20,7 +20,8 @@ import from engine.core.clock { Clock }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
 import from engine.math.vec3 { Vec3 }
-import from games.passion.yardstick { traverse, mover_hulls, Footing, STAND_Z, EYE_RISE }
+import from games.passion.yardstick { traverse, mover_hulls, Footing, STAND_Z, EYE_RISE, area_path, level_start, level_exit }
+import from games.passion.generate { survey_of }
 
 def capture_view(app: App, renderer: Renderer, name: str) {
     for frame in range(3) {
@@ -92,6 +93,58 @@ with entry {
         }
         chosen.append(scored[pick]);
         scored.pop(pick);
+    }
+    if os.environ.get("QP_LOOK_ROUTE", "") {
+        # A walk from the start to the way out: frames along the shortest
+        # route, each looking ahead along it.
+        start = level_start(level.bsp);
+        finish = level_exit(level.bsp);
+        record = survey_of(app.world);
+        if record is not None and record.casting is not None and record.casting.exit_low {
+            low = record.casting.exit_low;
+            high = record.casting.exit_high;
+            finish = Vec3(x=(low[0] + high[0]) * 0.5, y=(low[1] + high[1]) * 0.5, z=low[2] + 24.0);
+        }
+        if start is None or finish is None {
+            print("LOOK route: no start or no way out");
+            return;
+        }
+        first = walk.nearest(start);
+        last = walk.nearest(finish, 256.0);
+        if first < 0 or last < 0 {
+            print("LOOK route: start or way out has nowhere to stand");
+            return;
+        }
+        path = area_path(walk.areas, walk.places[first].area, walk.places[last].area);
+        print("LOOK route areas=" + str(len(path)));
+        middles: dict[int, Footing] = {};
+        for place in walk.places {
+            area = walk.areas[place.area];
+            if place.area not in middles {
+                middles[place.area] = place;
+                continue;
+            }
+            kept = middles[place.area];
+            if abs(place.x - area.x) + abs(place.y - area.y) < abs(kept.x - area.x) + abs(kept.y - area.y) {
+                middles[place.area] = place;
+            }
+        }
+        frames = max(1, shots);
+        for number in range(frames) {
+            at = (len(path) - 1) * number // max(1, frames - 1) if frames > 1 else 0;
+            ahead = min(len(path) - 1, at + 3);
+            here_place = middles[path[at]];
+            there = walk.areas[path[ahead]];
+            app.player.pos = Vec3(x=here_place.x, y=here_place.y, z=here_place.z + collision.eye_height);
+            if ahead != at {
+                app.player.yaw = math.atan2(there.y - here_place.y, there.x - here_place.x);
+            }
+            app.player.pitch = max(-0.5, min(0.5, math.atan2(there.z - here_place.z, max(64.0, Vec3(x=there.x - here_place.x, y=there.y - here_place.y).length()))));
+            name = prefix + "_route_" + str(number) + ".png";
+            capture_view(app, renderer, name);
+            print("LOOK route " + str(number) + " area " + str(at) + "/" + str(len(path)) + " at " + str(int(here_place.x)) + " " + str(int(here_place.y)) + " " + str(int(here_place.z)) + " file=" + name);
+        }
+        return;
     }
     for (number, item) in enumerate(chosen) {
         place = walk.places[int(item[1])];

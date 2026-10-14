@@ -27,7 +27,7 @@ import from .mission { Expedition, Beat, Link, beats_of, links_of, build_mission
 import from .arrange { Estate, Corridor, arrange, estate_spaces, estate_corridors, CORRIDOR_HIGH }
 import from .massing { Massing, floor_reached }
 import from .spaces { Space }
-import from .dress { Dressing, dress, frame_doorway }
+import from .dress { Dressing, dress, frame_doorway, corridor_lamps }
 import from .cast { Casting, cast }
 import from .critic { critic_measures, critic_score }
 import from .brushwork { map_items }
@@ -164,6 +164,34 @@ def stages_missed(estate: Estate, mass: Massing, by_id: dict[int, Space]) -> lis
     return missed;
 }
 
+"""Flood the pits of chasms: deep with the district's own liquid where
+nothing needs the pit floor (no doorway opens there and the objective is
+on the bridge), else a lift of water to wade through."""
+def flood_pits(estate: Estate, by_id: dict[int, Space], dice: Stream) {
+    used_levels: dict[int, list[int]] = {};
+    for corridor in estate_corridors(estate) {
+        if corridor.out_door is not None {
+            used_levels.setdefault(corridor.tail, []).append(corridor.out_door.level);
+        }
+        if corridor.in_door is not None {
+            used_levels.setdefault(corridor.head, []).append(corridor.in_door.level);
+        }
+        if corridor.teleport {
+            used_levels.setdefault(corridor.tail, []).append(-1);
+            used_levels.setdefault(corridor.head, []).append(-1);
+        }
+    }
+    for space in by_id.values() {
+        if space.kind != "chasm" or not dice.chance(0.8) {
+            continue;
+        }
+        levels = used_levels.get(space.id, []);
+        floor_used = space.z in levels or -1 in levels or (space.stage and space.stage[2] == space.z);
+        space.deadly = not floor_used;
+        space.flood = 3 if space.deadly else 1;
+    }
+}
+
 """Build one candidate in full."""
 def build_draft(seed: int, index: int, niche: list[int], archetype: str) -> Draft {
     stream = stream_for(seed, "candidate").child("k", index);
@@ -171,7 +199,7 @@ def build_draft(seed: int, index: int, niche: list[int], archetype: str) -> Draf
     loopiness = max(0.0, min(1.0, BINS[niche[0]] + stream.uniform(-0.15, 0.15)));
     verticality = max(0.2, min(1.0, BINS[niche[1]] + 0.15 + stream.uniform(-0.1, 0.1)));
     density = max(0.25, min(1.0, [0.35, 0.55, 0.8][niche[2]] + stream.uniform(-0.1, 0.1)));
-    rooms = [14, 19, 25][niche[3]] + stream.between(-2, 2);
+    rooms = [12, 16, 21][niche[3]] + stream.between(-2, 2);
     sections = 1 + niche[3] // 2 + stream.below(2);
     objectives = 1 + stream.below(2);
     try {
@@ -205,6 +233,7 @@ def build_draft(seed: int, index: int, niche: list[int], archetype: str) -> Draf
     for space in spaces {
         by_id[space.id] = space;
     }
+    flood_pits(estate, by_id, stream.derive("pits"));
     missed = stages_missed(estate, mass, by_id);
     if missed {
         draft.reason = "unreachable";
@@ -213,6 +242,9 @@ def build_draft(seed: int, index: int, niche: list[int], archetype: str) -> Draf
     }
     dressing = dress(mass, spaces, stream.derive("dress"));
     for corridor in estate_corridors(estate) {
+        if corridor.air in by_id and corridor.blocks {
+            corridor_lamps(dressing, by_id[corridor.air], corridor.blocks, CORRIDOR_HIGH);
+        }
         if corridor.out_door is not None and corridor.tail in by_id {
             frame_doorway(dressing, by_id[corridor.tail], corridor.out_door, CORRIDOR_HIGH);
         }

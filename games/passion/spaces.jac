@@ -71,6 +71,12 @@ node Space {
         order: int = 0,
         size: int = 1,
         sky: bool = False,
+        # Which of its district's looks the room takes (0 the district's own).
+        variant: int = 0,
+        # How many lifts of liquid stand in its lowest floor, and whether
+        # that liquid kills (nothing then stands down there).
+        flood: int = 0,
+        deadly: bool = False,
         levels: list[int] = [],
         sockets: list[Doorway] = [],
         # A cell to stand an objective on: [x, y, z].
@@ -391,7 +397,7 @@ def shape_chasm(space: Space, mass: Massing, dice: Stream) {
     ];
     # Stairs from the floor of the pit up to the first ledge, along the far
     # wall, their top step beside the ledge.
-    lay_stairs(space, mass, x0 + rise, y0 + space.d - 2, -1, 0, rise - 1, 1, z0);
+    lay_stairs(space, mass, x0 + rise, y0 + space.d - 2, -1, 0, rise - 1, 2, z0);
 }
 
 """An open court under the sky, with a covered arcade round its walls."""
@@ -555,8 +561,12 @@ def find_sockets(space: Space, mass: Massing) {
             for level in space.levels {
                 cells = socket_cells(space, side, along, 2);
                 good = True;
+                # Floor two cells deep inside, so a doorway never opens into a
+                # slot too narrow to walk once its walls are trimmed.
+                inward = [[-1, 0], [1, 0], [0, -1], [0, 1]][side];
                 for cell in cells {
-                    if not mass.standing(cell[2], cell[3], level) or mass.headroom(cell[2], cell[3], level) < OPEN_HIGH {
+                    if not mass.standing(cell[2], cell[3], level) or mass.headroom(cell[2], cell[3], level) < OPEN_HIGH
+                        or not mass.standing(cell[2] + inward[0], cell[3] + inward[1], level) {
                         good = False;
                     }
                 }

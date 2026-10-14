@@ -134,11 +134,36 @@ obj Massing {
     def shell -> list[CellBox] {
         count = self.nx * self.ny * self.nz;
         mark = [0 for _ in range(count)];
-        for z in range(self.nz) {
-            for y in range(self.ny) {
-                for x in range(self.nx) {
-                    if self.owner[(z * self.ny + y) * self.nx + x] == 0 {
-                        mark[(z * self.ny + y) * self.nx + x] = self.facing(x, y, z);
+        # Every solid cell beside air (diagonals too) is shell: grown out from
+        # the air, the solid a face away taking that air's space first.
+        for pass_index in range(2) {
+            for z in range(self.nz) {
+                for y in range(self.ny) {
+                    for x in range(self.nx) {
+                        space = self.owner[(z * self.ny + y) * self.nx + x];
+                        if space == 0 {
+                            continue;
+                        }
+                        for dz in [-1, 0, 1] {
+                            for dy in [-1, 0, 1] {
+                                for dx in [-1, 0, 1] {
+                                    face = abs(dx) + abs(dy) + abs(dz) == 1;
+                                    if face != (pass_index == 0) {
+                                        continue;
+                                    }
+                                    cx = x + dx;
+                                    cy = y + dy;
+                                    cz = z + dz;
+                                    if cx < 0 or cy < 0 or cz < 0 or cx >= self.nx or cy >= self.ny or cz >= self.nz {
+                                        continue;
+                                    }
+                                    index = (cz * self.ny + cy) * self.nx + cx;
+                                    if self.owner[index] == 0 and mark[index] == 0 {
+                                        mark[index] = space;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -30,6 +30,11 @@ obj Kit {
         sky: str,
         liquid: str,
         scale: float = 1.0,
+        # Other walls, floors and ceilings the level uses, for rooms that
+        # take a variant of the district's look.
+        walls: list[str] = [],
+        floors: list[str] = [],
+        ceilings: list[str] = [],
         lamp_color: str = "255 255 255",
         lamp_level: int = 200,
         ambient: float = 0.08;
@@ -52,6 +57,9 @@ glob KITS: list[Kit] = [
              step="q1:e1m1/tech01_9",
              sky="q1:e1m1/sky4",
              liquid="q1:e1m1/*slime0",
+             walls=["q1:e1m1/uwall1_2", "q1:e1m1/twall5_1", "q1:e1m1/tech07_2"],
+             floors=["q1:e1m1/ground1_2", "q1:e1m1/ground1_6"],
+             ceilings=["q1:e1m1/tech04_1", "q1:e1m1/tech01_1"],
              lamp_color="255 236 214",
              lamp_level=180
          ),
@@ -71,6 +79,9 @@ glob KITS: list[Kit] = [
              step="q1:e1m2/wiz1_1",
              sky="q1:e1m2/sky1",
              liquid="q1:e1m2/*04water1",
+             walls=["q1:e1m2/wizmet1_2", "q1:e1m2/wiz1_4"],
+             floors=["q1:e1m2/wswamp1_2", "q1:e1m2/woodflr1_4"],
+             ceilings=["q1:e1m2/wizwood1_4", "q1:e1m2/wizmet1_2"],
              lamp_color="255 214 160",
              lamp_level=188
          ),
@@ -90,6 +101,9 @@ glob KITS: list[Kit] = [
              step="q1:e3m2/metal5_3",
              sky="q1:e3m2/sky4",
              liquid="q1:e3m2/*lava1",
+             walls=["q1:e3m2/metal4_2", "q1:e3m2/metalt1_1"],
+             floors=["q1:e3m2/metal5_3", "q1:e3m2/cop1_6"],
+             ceilings=["q1:e3m2/metal4_7", "q1:e3m2/metal5_4"],
              lamp_color="255 220 190",
              lamp_level=172
          ),
@@ -109,6 +123,9 @@ glob KITS: list[Kit] = [
              step="q1:e4m1/tech04_7",
              sky="q1:e4m1/sky4",
              liquid="q1:e4m1/*water1",
+             walls=["q1:e4m1/tech06_1", "q1:e4m1/tech05_1", "q1:e4m1/tech13_2"],
+             floors=["q1:e4m1/sfloor4_6", "q1:e4m1/sfloor4_7"],
+             ceilings=["q1:e4m1/twall5_2", "q1:e4m1/ecop1_8"],
              lamp_color="230 240 255",
              lamp_level=180
          ),
@@ -128,6 +145,9 @@ glob KITS: list[Kit] = [
              step="q2:e1u1/metal3_5",
              sky="q2:e1u1/grate2_1",
              liquid="q2:e1u1/bluwter",
+             walls=["q2:e1u1/ggrat4_2", "q2:e1u1/rocks19_1"],
+             floors=["q2:e1u1/metal3_5", "q2:e1u1/metal1_8"],
+             ceilings=["q2:e1u1/grate1_3", "q2:e1u1/metal1_5"],
              lamp_color="235 245 255",
              lamp_level=180
          ),
@@ -147,6 +167,9 @@ glob KITS: list[Kit] = [
              step="q2:e2u1/mmtl15_5",
              sky="q2:e2u1/metal3_1",
              liquid="q2:e2u1/lava",
+             walls=["q2:e2u1/metal3_1", "q2:e2u1/mmtl15_5"],
+             floors=["q2:e2u1/mmtl16_6", "q2:e2u1/rocks19_1"],
+             ceilings=["q2:e2u1/rrock1_2", "q2:e2u1/rocks24_2"],
              lamp_color="255 210 150",
              lamp_level=188
          ),
@@ -166,6 +189,9 @@ glob KITS: list[Kit] = [
              step="q2:e2u2/metal18_2",
              sky="q2:e2u2/metal25_2",
              liquid="q2:e2u2/lava",
+             walls=["q2:e2u2/support1_1", "q2:e2u2/metal25_2"],
+             floors=["q2:e2u2/flr1_2", "q2:e2u2/floor1_5"],
+             ceilings=["q2:e2u2/metal28_1", "q2:e2u2/flr1_3"],
              lamp_color="255 235 200",
              lamp_level=180
          ),
@@ -184,8 +210,11 @@ glob KITS: list[Kit] = [
              door="q3:textures/gothic_door/skull_door_a",
              step="q3:textures/gothic_floor/xstepborder3",
              sky="q3:textures/skies/toxicsky",
-             liquid="q3:textures/gothic_trim/pitted_rust3",
+             liquid="q1:e3m2/*lava1",
              scale=0.5,
+             walls=["q3:textures/gothic_block/blocks15", "q3:textures/gothic_trim/pitted_rust3"],
+             floors=["q3:textures/gothic_floor/metalbridge06"],
+             ceilings=["q3:textures/gothic_ceiling/woodceiling1b_dark"],
              lamp_color="255 200 150",
              lamp_level=188
          ),
@@ -204,12 +233,37 @@ glob KITS: list[Kit] = [
              door="q3:textures/base_wall/metalblack03",
              step="q3:textures/base_trim/pewter",
              sky="q3:textures/skies/toxicsky",
-             liquid="q3:textures/base_floor/clangdark",
+             liquid="q1:e4m1/*water1",
              scale=0.5,
+             walls=["q3:textures/base_wall/metalblack03"],
+             floors=["q3:textures/base_wall/metfloor_block_3"],
+             ceilings=["q3:textures/base_wall/c_met7_2"],
              lamp_color="220 235 255",
              lamp_level=180
          )
      ];
+
+"""A room's wall, floor and ceiling: the kit's own, or for a room taking a
+variant (`variant` above 0) one of the others the level uses."""
+def kit_surfaces(kit: Kit, variant: int) -> list[str] {
+    if variant <= 0 {
+        return [kit.wall, kit.floor, kit.ceiling];
+    }
+    walls = [kit.wall] + kit.walls;
+    floors = [kit.floor] + kit.floors;
+    ceilings = [kit.ceiling] + kit.ceilings;
+    return [walls[variant % len(walls)], floors[(variant // 3) % len(floors)], ceilings[(variant // 7) % len(ceilings)]];
+}
+
+"""A water a kit's game has, for a pit that must stay wadeable when the
+kit's own liquid would kill."""
+def kit_water(kit: Kit) -> str {
+    lowered = kit.liquid.lower();
+    if "lava" not in lowered and "slime" not in lowered {
+        return kit.liquid;
+    }
+    return "q2:e1u1/bluwter" if kit.game == "q2" else "q1:e1m2/*04water1";
+}
 
 """The kit of a district (districts past the last kit wrap round)."""
 def kit_of(district: int) -> Kit {

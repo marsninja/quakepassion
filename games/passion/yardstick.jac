@@ -728,6 +728,55 @@ def area_route(areas: list[Ground], start: int, finish: int) -> list[float] | No
     return None;
 }
 
+"""The areas along the shortest way through the area graph from one area
+to another, in order (empty when there is none)."""
+def area_path(areas: list[Ground], start: int, finish: int) -> list[int] {
+    count = len(areas);
+    if start < 0 or finish < 0 or start >= count or finish >= count {
+        return [];
+    }
+    best = [-1.0 for _ in range(count)];
+    came = [-1 for _ in range(count)];
+    done = [False for _ in range(count)];
+    best[start] = 0.0;
+    frontier: list[int] = [start];
+    while frontier {
+        pick = 0;
+        for index in range(1, len(frontier)) {
+            if best[frontier[index]] < best[frontier[pick]] {
+                pick = index;
+            }
+        }
+        current = frontier.pop(pick);
+        if done[current] {
+            continue;
+        }
+        done[current] = True;
+        if current == finish {
+            path: list[int] = [finish];
+            while path[-1] != start {
+                path.append(came[path[-1]]);
+            }
+            path.reverse();
+            return path;
+        }
+        here_area = areas[current];
+        for other in [here_area->:Passway:->][?:Ground] {
+            if done[other.id] {
+                continue;
+            }
+            gap = Vec3(x=other.x - here_area.x, y=other.y - here_area.y, z=other.z - here_area.z).length();
+            total = best[current] + gap;
+            if best[other.id] < 0.0 or total < best[other.id] {
+                best[other.id] = total;
+                came[other.id] = current;
+                frontier.append(other.id);
+            }
+        }
+    }
+    return [];
+}
+
 """Where a level is entered: its first player start."""
 def level_start(bsp: Bsp) -> Vec3 | None {
     for entity in bsp.entities {

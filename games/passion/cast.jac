@@ -244,6 +244,10 @@ obj Director3 {
                     if key in kept or key in self.mouths or self.mass.headroom(cx, cy, cz) < 5 {
                         continue;
                     }
+                    if space.flood > 0 and cz < space.z + space.flood {
+                        # Nothing is left standing in a pit's liquid.
+                        continue;
+                    }
                     # Room for a body: floor beside it on at least three sides.
                     near = 0;
                     for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
@@ -320,7 +324,7 @@ obj Director3 {
 """The start, the objectives' stages, and the exit."""
 def cast_objectives(director: Director3) {
     for space in director.spaces.values() {
-        if space.role == "corridor" or not space.stage {
+        if space.role in ["corridor", "window"] or not space.stage {
             continue;
         }
         point = director.stage_point(space);
@@ -393,7 +397,7 @@ switch, a guardian, a trigger beyond a shortcut). Doors stand on flat blocks
 counted back from the head; a secret link's door is the wall itself, opened
 by a shot."""
 def cast_doors(director: Director3, corridor: Corridor) {
-    if corridor.teleport or corridor.window or len(corridor.blocks) < 2 {
+    if corridor.teleport or corridor.window or not corridor.blocks {
         return;
     }
     head = director.spaces.get(corridor.head, None);
@@ -412,6 +416,39 @@ def cast_doors(director: Director3, corridor: Corridor) {
     }
     if corridor.mode == "secret" {
         plans.append({"health": "1", "_secret": "1"});
+    }
+    if len(corridor.blocks) == 1 and corridor.in_door is not None and corridor.out_door is not None and plans {
+        # A doorway through two walls: one door in the plane between them,
+        # from the lower floor to above the higher (only one fits).
+        block = corridor.blocks[0];
+        door_plan = plans[0];
+        low_level = min(corridor.in_door.level, corridor.out_door.level);
+        high_level = max(corridor.in_door.level, corridor.out_door.level);
+        floor = float(low_level) * LIFT;
+        roof = float(high_level + CORRIDOR_HIGH) * LIFT;
+        middle = block_middle(block);
+        if corridor.in_door.side < 2 {
+            low = Vec3(x=middle[0] - 8.0, y=float(block[1]) * CELL, z=floor);
+            high = Vec3(x=middle[0] + 8.0, y=float(block[1] + 2) * CELL, z=roof);
+        } else {
+            low = Vec3(x=float(block[0]) * CELL, y=middle[1] - 8.0, z=floor);
+            high = Vec3(x=float(block[0] + 2) * CELL, y=middle[1] + 8.0, z=roof);
+        }
+        secret = "_secret" in door_plan;
+        door = {"classname": "func_door", "angle": "-1", "speed": "60" if secret else "160", "wait": "-1", "lip": "8"};
+        for (key, value) in door_plan.items() {
+            door[key] = value;
+        }
+        director.put_brushed(door, [plain_box(low, high, kit.wall if secret else kit.door, kit.scale)]);
+        director.made.doors += 1;
+        if "targetname" in door_plan and corridor.mode == "shortcut" {
+            spot = director.stage_point(head);
+            director.put_brushed(
+                {"classname": "trigger_once", "target": door_plan["targetname"]},
+                [plain_box(Vec3(x=spot[0] - 48.0, y=spot[1] - 48.0, z=spot[2] - 24.0), Vec3(x=spot[0] + 48.0, y=spot[1] + 48.0, z=spot[2] + 40.0), "trigger", 1.0)]
+            );
+        }
+        return;
     }
     # Flat blocks, from the head back, two apart.
     count = len(corridor.blocks);
@@ -526,7 +563,7 @@ def pick_foe(director: Director3, space: Space, budget: float, rank_cap: int) ->
 expedition's density), on perches when they fight from afar; and supplies
 by what the fights cost, walking the rooms in the order they are reached."""
 def cast_population(director: Director3) {
-    rooms = [space for space in director.spaces.values() if space.role not in ["corridor", "start"]];
+    rooms = [space for space in director.spaces.values() if space.role not in ["corridor", "window", "start"]];
     order: list[float] = [float(space.order if space.order >= 0 else 999) for space in rooms];
     ranked: list[int] = [];
     for index in range(len(rooms)) {
@@ -615,7 +652,7 @@ def cast(estate: Estate, mass: Massing, plan: Expedition, dice: Stream, density:
     director = Director3(estate=estate, mass=mass, plan=plan, dice=dice, density=density, only=only);
     for space in estate_spaces(estate) {
         director.spaces[space.id] = space;
-        if space.role != "corridor" {
+        if space.role not in ["corridor", "window"] {
             director.by_beat[space.beat] = space;
         }
     }

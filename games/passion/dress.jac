@@ -140,7 +140,9 @@ def dress(mass: Massing, spaces: list[Space], dice: Stream) -> Dressing {
     pilasters(mass, by_id, made, dice);
     ceiling_lamps(mass, by_id, made, dice);
     dark_rooms(mass, by_id, made);
+    glowing_pits(by_id, made);
     railings(mass, by_id, made);
+    window_bars(by_id, made);
     return made;
 }
 
@@ -166,7 +168,7 @@ def wall_stands(mass: Massing, x: int, y: int, z: int, down: bool) -> bool {
 enough for a cornice."""
 def tall_room(by_id: dict[int, Space], owner: int) -> bool {
     space = owner_space(by_id, owner);
-    return space is not None and space.role != "corridor" and space.h >= 12;
+    return space is not None and space.role not in ["corridor", "window"] and space.h >= 12;
 }
 
 """Baseboards and cornices: runs of cells along a wall, at a floor (solid
@@ -234,7 +236,7 @@ stands whole from floor to ceiling, every few cells, with a lamp on every
 other one."""
 def pilasters(mass: Massing, by_id: dict[int, Space], made: Dressing, dice: Stream) {
     for space in by_id.values() {
-        if space.role == "corridor" or space.kind in ["shaft", "vault"] {
+        if space.role in ["corridor", "window"] or space.kind in ["shaft", "vault"] {
             continue;
         }
         kit = kit_of(space.district);
@@ -391,7 +393,7 @@ def ceiling_lamps(mass: Massing, by_id: dict[int, Space], made: Dressing, dice: 
         kit = kit_of(space.district);
         owner = space.id + 1;
         corridor = space.role == "corridor";
-        if not corridor and made.lit.get(space.id, 0) > 0 {
+        if corridor or space.role == "window" or made.lit.get(space.id, 0) > 0 {
             continue;
         }
         gap = 4 if corridor else 5;
@@ -432,11 +434,28 @@ def ceiling_lamps(mass: Massing, by_id: dict[int, Space], made: Dressing, dice: 
     }
 }
 
+"""Lamps along a corridor: under its ceiling every few blocks of its way."""
+def corridor_lamps(made: Dressing, space: Space, blocks: list[list[int]], high: int) {
+    kit = kit_of(space.district);
+    for (index, block) in enumerate(blocks) {
+        if index % 4 != 2 or index + 1 >= len(blocks) {
+            continue;
+        }
+        x = float(block[0] + 1) * CELL;
+        y = float(block[1] + 1) * CELL;
+        top = float(block[2] + high) * LIFT;
+        made.brushes.append(
+            box_brush(Vec3(x=x - 12.0, y=y - 12.0, z=top - 6.0), Vec3(x=x + 12.0, y=y + 12.0, z=top), [kit.trim, kit.trim, kit.trim, kit.trim, kit.trim, kit.light], kit.scale, [5])
+        );
+        made.add_lamp(space, Lamp3(x=x, y=y, z=top - 28.0, level=int(float(lamp_strength(kit, space)) * 0.85), color=kit.lamp_color));
+    }
+}
+
 """A lamp hung over each floor level of a room nothing else lit (a shaft,
 a vault): over its stage, and at the middle of each upper level."""
 def dark_rooms(mass: Massing, by_id: dict[int, Space], made: Dressing) {
     for space in by_id.values() {
-        if space.role == "corridor" or made.lit.get(space.id, 0) > 0 {
+        if space.role in ["corridor", "window"] or made.lit.get(space.id, 0) > 0 {
             continue;
         }
         kit = kit_of(space.district);
@@ -448,6 +467,77 @@ def dark_rooms(mass: Massing, by_id: dict[int, Space], made: Dressing) {
                 y = (float(space.stage[1]) + 0.5) * CELL;
             }
             made.add_lamp(space, Lamp3(x=x, y=y, z=float(level) * LIFT + 96.0, level=lamp_strength(kit, space), color=kit.lamp_color));
+        }
+    }
+}
+
+"""Bars across the middle of each window: uprights a hand apart, too close
+for a body to pass, so a window lets through sight and nothing else."""
+def window_bars(by_id: dict[int, Space], made: Dressing) {
+    for space in by_id.values() {
+        if space.role != "window" {
+            continue;
+        }
+        kit = kit_of(space.district);
+        low = float(space.z) * LIFT;
+        high = float(space.z + space.h) * LIFT;
+        # A window through walls that face along x has its bars across y.
+        along_x = space.kind == "window_x";
+        if along_x {
+            middle = (float(space.x) + float(space.w) * 0.5) * CELL;
+            start = float(space.y) * CELL;
+            finish = float(space.y + space.d) * CELL;
+            at = start + 12.0;
+            while at < finish - 4.0 {
+                made.brushes.append(plain_box(Vec3(x=middle - 3.0, y=at - 3.0, z=low), Vec3(x=middle + 3.0, y=at + 3.0, z=high), kit.support, kit.scale));
+                at += 22.0;
+            }
+            made.brushes.append(plain_box(Vec3(x=middle - 4.0, y=start, z=low), Vec3(x=middle + 4.0, y=finish, z=low + 6.0), kit.trim, kit.scale));
+        } else {
+            middle = (float(space.y) + float(space.d) * 0.5) * CELL;
+            start = float(space.x) * CELL;
+            finish = float(space.x + space.w) * CELL;
+            at = start + 12.0;
+            while at < finish - 4.0 {
+                made.brushes.append(plain_box(Vec3(x=at - 3.0, y=middle - 3.0, z=low), Vec3(x=at + 3.0, y=middle + 3.0, z=high), kit.support, kit.scale));
+                at += 22.0;
+            }
+            made.brushes.append(plain_box(Vec3(x=start, y=middle - 4.0, z=low), Vec3(x=finish, y=middle + 4.0, z=low + 6.0), kit.trim, kit.scale));
+        }
+    }
+}
+
+"""Whether a cell is one a space keeps clear (its stairs, its stage) or is
+beside one, so a railing never pinches the way onto a stair."""
+def kept_cell(space: Space, x: int, y: int, z: int) -> bool {
+    for cell in space.kept {
+        if abs(cell[0] - x) <= 1 and abs(cell[1] - y) <= 1 and abs(cell[2] - z) <= 1 {
+            return True;
+        }
+    }
+    return False;
+}
+
+"""A low warm light over a pit of lava or slime, so the liquid glows."""
+def glowing_pits(by_id: dict[int, Space], made: Dressing) {
+    for space in by_id.values() {
+        if not space.deadly or space.flood <= 0 {
+            continue;
+        }
+        kit = kit_of(space.district);
+        hot = "lava" in kit.liquid.lower();
+        color = "255 140 60" if hot else "150 255 120";
+        for (fx, fy) in [(0.3, 0.3), (0.7, 0.7), (0.3, 0.7), (0.7, 0.3)] {
+            made.add_lamp(
+                space,
+                Lamp3(
+                    x=(float(space.x) + float(space.w) * fx) * CELL,
+                    y=(float(space.y) + float(space.d) * fy) * CELL,
+                    z=float(space.z + space.flood) * LIFT + 40.0,
+                    level=160,
+                    color=color
+                )
+            );
         }
     }
 }
@@ -470,7 +560,10 @@ def railings(mass: Massing, by_id: dict[int, Space], made: Dressing) {
                         cy = cell[1];
                         here = mass.at(cx, cy, z);
                         space = owner_space(by_id, here);
-                        if space is not None and space.role != "corridor" and mass.standing(cx, cy, z) {
+                        # Not on stairs, and only where the walk stays two
+                        # cells wide behind the railing.
+                        if space is not None and space.role not in ["corridor", "window"] and mass.standing(cx, cy, z)
+                            and mass.standing(cx - step[0], cy - step[1], z) and not kept_cell(space, cx, cy, z) {
                             nx_ = cx + step[0];
                             ny_ = cy + step[1];
                             if mass.air(nx_, ny_, z) and mass.air(nx_, ny_, z - 1) and mass.air(nx_, ny_, z - 2)

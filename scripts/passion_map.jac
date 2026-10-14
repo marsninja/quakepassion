@@ -20,7 +20,9 @@ def:priv survey_words(record: Survey, seconds: float) -> str {
     rooms = 0;
     corridors = 0;
     teleports = 0;
+    windows = 0;
     if estate is not None {
+        windows = estate.windows;
         spaces = estate_spaces(estate);
         rooms = len([space for space in spaces if space.role != "corridor"]);
         corridors = len(spaces) - rooms;
@@ -28,7 +30,7 @@ def:priv survey_words(record: Survey, seconds: float) -> str {
     }
     return "passion-map seed=" + str(record.seed) + " score=" + str(round(record.score, 2)) + " tried=" + str(record.candidates)
         + " valid=" + str(record.valid) + " rooms=" + str(rooms) + " corridors=" + str(corridors) + " teleports="
-        + str(teleports) + " rejected=[" + rejected + "] seconds=" + str(round(seconds, 2));
+        + str(teleports) + " windows=" + str(windows) + " rejected=[" + rejected + "] seconds=" + str(round(seconds, 2));
 }
 
 with entry {
