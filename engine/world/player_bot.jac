@@ -825,15 +825,22 @@ def autoplay_retreat(level: Level, origin: Vec3, ahead: Vec3) -> Vec3 | None {
     left = Vec3(x=-ahead.y, y=ahead.x);
     best: Vec3 | None = None;
     best_room = 24.0;
-    for way in [back, back.add(left).normalized(), back.sub(left).normalized(), left, left.scale(-1.0)] {
+    # Past it on a slant, last of all: boxed in, a player circles it.
+    past_left = left.add(ahead.scale(0.6)).normalized();
+    past_right = left.scale(-1.0).add(ahead.scale(0.6)).normalized();
+    for way in [back, back.add(left).normalized(), back.sub(left).normalized(), left, left.scale(-1.0), past_left, past_right] {
         drop = gap_distance(level.collision, origin, way);
         if drop > 0.0 and drop <= 64.0 {
             continue;
         }
         room = level.collision.trace(origin, origin.add(way.scale(96.0))).fraction * 96.0;
-        # Straight back is worth a little more than the same room aside.
+        # Straight back is worth a little more than the same room aside, and
+        # going past it a good deal less.
         if way is back {
             room += 8.0;
+        }
+        if way is past_left or way is past_right {
+            room -= 40.0;
         }
         if room > best_room {
             best_room = room;
