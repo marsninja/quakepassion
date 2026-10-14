@@ -903,7 +903,7 @@ walker AutoThink {
             # Before working to open it: is there another way on without it?
             # A player goes round a door that opens elsewhere when the way
             # round is there, rather than hunting for what opens it.
-            if choices and area > 0 and area not in mesh.disabled and self.way_round(area) {
+            if choices and area > 0 and area not in mesh.disabled and not self.near_work(choices, model) and self.way_round(area) {
                 bot.close_area(area, model);
                 bot.route.abandon();
                 print("AUTOPLAY mover", model, "needs work; going round it");
@@ -922,6 +922,68 @@ walker AutoThink {
             }
         }
         return False;
+    }
+
+    """Whether one of `choices` (what opens mover `model`) is reached with no
+    other shut mover opened first: every area of a mover that is shut is
+    closed for the asking. A door whose opener is behind other doors is
+    deep work."""
+    def near_work(choices: list[Objective], model: int) -> bool {
+        bot = self.bot;
+        mesh = bot.mesh;
+        if mesh is None {
+            return False;
+        }
+        here_area = bot.area_near(self.origin)[0];
+        if here_area <= 0 {
+            return True;
+        }
+        shut: dict[int, bool] = {};
+        closed: list[int] = [];
+        for a in range(1, len(mesh.aas.areas)) {
+            other = area_mover_model(mesh.aas.areas[a].contents);
+            if other <= 0 or other == model or a in mesh.disabled {
+                continue;
+            }
+            if other not in shut {
+                shut[other] = mover_blocked(self.world, other, self.player);
+            }
+            if shut[other] {
+                mesh.enable_area(a, False);
+                closed.append(a);
+            }
+        }
+        found = False;
+        for choice in choices {
+            box = choice.box;
+            spots: list[int] = [];
+            if box is not None {
+                spots = [a for a in mesh.aas.box_areas(box.mins, box.maxs, 32) if mesh.aas.areas[a].reach_count > 0];
+            } else {
+                spots = [self.stand_area(choice.point)[0]];
+            }
+            for spot in spots {
+                if spot <= 0 {
+                    continue;
+                }
+                if spot == here_area {
+                    found = True;
+                    break;
+                }
+                times = mesh.times_to(spot, TFL_DEFAULT);
+                if here_area < len(times) and times[here_area] < UNREACHED {
+                    found = True;
+                    break;
+                }
+            }
+            if found {
+                break;
+            }
+        }
+        for a in closed {
+            mesh.enable_area(a, True);
+        }
+        return found;
     }
 
     """Whether the bot's goal can still be reached with `area` closed (from
