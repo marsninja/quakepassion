@@ -265,6 +265,25 @@ def kit_water(kit: Kit) -> str {
     return "q2:e1u1/bluwter" if kit.game == "q2" else "q1:e1m2/*04water1";
 }
 
+"""The liquid a pit of `kit`'s district holds: what kills (a theme's lava or
+slime, else the district's own) when `deadly`, else water."""
+def kit_liquid(kit: Kit, deadly: bool, kind: str = "") -> str {
+    if not deadly {
+        return kit_water(kit);
+    }
+    if kind == "lava" {
+        return "q2:e2u1/lava" if kit.game == "q2" else "q1:e3m2/*lava1";
+    }
+    if kind == "slime" {
+        return "q1:e1m1/*slime0";
+    }
+    lowered = kit.liquid.lower();
+    if "lava" in lowered or "slime" in lowered {
+        return kit.liquid;
+    }
+    return "q1:e3m2/*lava1";
+}
+
 """The kit of a district (districts past the last kit wrap round)."""
 def kit_of(district: int) -> Kit {
     return KITS[district % len(KITS)];

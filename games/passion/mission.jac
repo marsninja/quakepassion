@@ -23,7 +23,9 @@ node Expedition {
         verticality: float = 0.5,
         density: float = 0.5,
         loopiness: float = 0.5,
-        districts: list[int] = [];
+        districts: list[int] = [],
+        # The theme the level is made in (themes.jac), by key.
+        theme: str = "";
 }
 
 node Beat {

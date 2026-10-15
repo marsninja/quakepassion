@@ -18,7 +18,8 @@ between spaces, which are spaces themselves for their air)."""
 import math;
 import from .random { Stream }
 import from .massing { Massing }
-import from .spaces { Space, Doorway, OPEN_HIGH, space_size, pick_archetype, shape_space, socket_cells }
+import from .spaces { Space, Doorway, OPEN_HIGH, ARCHETYPES, space_size, pick_archetype, shape_space, socket_cells }
+import from .themes { Theme, theme_named }
 import from .mission { Expedition, Beat, Link, beats_of, links_of }
 
 glob CORRIDOR_HIGH: int = 6,
@@ -43,7 +44,17 @@ node Estate {
         nz: int = 0,
         failures: list[str] = [],
         teleports: int = 0,
-        windows: int = 0;
+        windows: int = 0,
+        # Teleporters a theme asked for, and rooms joined straight up or down.
+        gates: int = 0,
+        connectors: int = 0,
+        # How stacking went: rooms tried over or under, placed so, and the
+        # links among them that were then joined up or down.
+        stack_tries: int = 0,
+        stack_placed: int = 0,
+        stack_joined: int = 0,
+        # Why stacked rooms were not joined up or down, a line each.
+        stack_notes: list[str] = [];
 }
 
 edge Encloses: Estate --> Space {}
@@ -63,7 +74,17 @@ edge Corridor: Space --> Space {
         blocks: list[list[int]] = [],
         air: int = -1,
         teleport: bool = False,
-        window: bool = False;
+        window: bool = False,
+        # A way straight up or down between rooms one over the other: lift,
+        # drop, water or jumppad; the column's low corner, the floors it joins
+        # (the lower room's and the upper's, in lifts), which room is lower,
+        # and where a jump pad lands on the upper floor.
+        connector: str = "",
+        column: list[int] = [],
+        low: int = 0,
+        high: int = 0,
+        lower: int = -1,
+        landing: list[int] = [];
 }
 
 """The indices of `scores` from lowest score to highest, ties kept in
@@ -178,6 +199,293 @@ def place_beside(
     space.y = best[1];
     space.z = best[2];
     return True;
+}
+
+"""Place a space straight above (or below) `anchor`, their boxes overlapping
+by nine cells or more each way and a slab of two lifts between: tried at a
+few spots, the first clear of everything else placed taken."""
+def place_stacked(space: Space, anchor: Space, placed: list[Space], dice: Stream, above: bool) -> bool {
+    for attempt in range(24) {
+        x = anchor.x - space.w + 9 + dice.below(max(1, anchor.w + space.w - 18));
+        y = anchor.y - space.d + 9 + dice.below(max(1, anchor.d + space.d - 18));
+        z = anchor.z + anchor.h + 2 if above else anchor.z - 2 - space.h;
+        space.x = x;
+        space.y = y;
+        space.z = z;
+        across = min(x + space.w, anchor.x + anchor.w) - max(x, anchor.x);
+        along = min(y + space.d, anchor.y + anchor.d) - max(y, anchor.y);
+        # Room for a column two cells square with floor round it in both.
+        if across < 9 or along < 9 {
+            continue;
+        }
+        clear = True;
+        for other in placed {
+            if other is not anchor and boxes_meet(space, other, CLEARANCE, 2) {
+                clear = False;
+                break;
+            }
+        }
+        if clear {
+            return True;
+        }
+    }
+    return False;
+}
+
+"""How a theme joins two rooms one over the other for a link of `mode`: a
+stair (a corridor that climbs), lift, water, drop or jump pad; "" when it
+does not. Both ways for an open link, one way for a valve, and only a
+stair for the links that need doors."""
+def choose_connector(theme: Theme, mode: str, dice: Stream) -> str {
+    kinds = ["stair", "lift", "water"] if mode == "open" else (["drop", "jumppad"] if mode == "valve" else ["stair"]);
+    weights = [theme.connectors.get(kind, 0.0) for kind in kinds];
+    if mode not in ["open", "valve", "window"] {
+        weights = [theme.connectors.get("stair", 0.0) + 0.5];
+    }
+    if mode == "window" or max(weights) <= 0.0 {
+        return "";
+    }
+    return kinds[dice.weighted(weights)];
+}
+
+"""Join two rooms one over the other by a column two cells square through
+the slab between: where both floors run all round it, nothing of either is
+kept clear there (stairs, stage) and the lower room is open from its floor
+to its ceiling over it. Answers [x, y, low floor, high floor, landing x,
+landing y] (the landing beside the hole on the upper floor, -1 when there
+is none), or nothing when no column will do."""
+def build_connector(lower: Space, upper: Space, mass: Massing, reserve: Reserve, owner: Space, dice: Stream, notes: list[str] = []) -> list[int] {
+    if upper.flood > 0 or lower.flood > 0 {
+        notes.append("flooded " + lower.kind + "/" + upper.kind);
+        return [];
+    }
+    ring_fail = 0;
+    floor_fail = 0;
+    high = upper.z;
+    x0 = max(lower.x, upper.x) + 2;
+    x1 = min(lower.x + lower.w, upper.x + upper.w) - 4;
+    y0 = max(lower.y, upper.y) + 2;
+    y1 = min(lower.y + lower.d, upper.y + upper.d) - 4;
+    upper_kept: dict[int, bool] = {};
+    for cell in upper.kept {
+        upper_kept[(cell[2] * mass.ny + cell[1]) * mass.nx + cell[0]] = True;
+    }
+    lower_kept: dict[int, bool] = {};
+    for cell in lower.kept {
+        lower_kept[(cell[2] * mass.ny + cell[1]) * mass.nx + cell[0]] = True;
+    }
+    found: list[list[int]] = [];
+    for cy in range(y0, y1) {
+        for cx in range(x0, x1) {
+            # The column's own cells floor of the upper room, kept clear of
+            # nothing; and floor on at least half the ring round it.
+            good = True;
+            ring = 0;
+            for ny in range(cy - 1, cy + 3) {
+                for nx in range(cx - 1, cx + 3) {
+                    inner = cx <= nx and nx < cx + 2 and cy <= ny and ny < cy + 2;
+                    open_floor = mass.standing(nx, ny, high) and mass.at(nx, ny, high) == upper.id + 1
+                        and ((high * mass.ny + ny) * mass.nx + nx) not in upper_kept;
+                    if inner and not open_floor {
+                        good = False;
+                    }
+                    if not inner and open_floor {
+                        ring += 1;
+                    }
+                }
+            }
+            if ring < 6 {
+                good = False;
+            }
+            if not good {
+                ring_fail += 1;
+                continue;
+            }
+            floor = -1;
+            for level in sorted(lower.levels) {
+                if floor >= 0 {
+                    break;
+                }
+                open_column = True;
+                around = 0;
+                for ny in range(cy - 1, cy + 3) {
+                    for nx in range(cx - 1, cx + 3) {
+                        inner = cx <= nx and nx < cx + 2 and cy <= ny and ny < cy + 2;
+                        open_floor = mass.standing(nx, ny, level) and ((level * mass.ny + ny) * mass.nx + nx) not in lower_kept;
+                        if inner and not open_floor {
+                            open_column = False;
+                        }
+                        if not inner and open_floor {
+                            around += 1;
+                        }
+                    }
+                }
+                if around < 6 {
+                    open_column = False;
+                }
+                for ny in range(cy, cy + 2) {
+                    for nx in range(cx, cx + 2) {
+                        for cz in range(level, lower.z + lower.h) {
+                            if mass.at(nx, ny, cz) != lower.id + 1 {
+                                open_column = False;
+                            }
+                        }
+                    }
+                }
+                if open_column {
+                    floor = level;
+                }
+            }
+            if floor >= 0 {
+                found.append([cx, cy, floor]);
+            } else {
+                floor_fail += 1;
+            }
+        }
+    }
+    if not found {
+        notes.append("no column " + lower.kind + "<" + upper.kind + " span " + str(x1 - x0) + "x" + str(y1 - y0) + " upper " + str(ring_fail) + " lower " + str(floor_fail));
+        return [];
+    }
+    pick = found[dice.below(len(found))];
+    cx = pick[0];
+    cy = pick[1];
+    mass.carve(cx, cy, lower.z + lower.h, cx + 2, cy + 2, high, owner.id);
+    reserve.hold_box(cx, cy, lower.z + lower.h, cx + 2, cy + 2, high, owner.id);
+    # Where a jump pad sets the body down: two cells of floor beside the hole.
+    landing = [-1, -1];
+    for way in dice.order(4) {
+        step = [[3, 0], [-3, 0], [0, 3], [0, -3]][way];
+        lx = cx + step[0];
+        ly = cy + step[1];
+        good = True;
+        for ny in range(ly, ly + 2) {
+            for nx in range(lx, lx + 2) {
+                if not mass.standing(nx, ny, high) or ((high * mass.ny + ny) * mass.nx + nx) in upper_kept {
+                    good = False;
+                }
+            }
+        }
+        # And open floor between, with room overhead, for the flight across.
+        gap_x = cx + 2 if step[0] > 0 else (cx - 1 if step[0] < 0 else -1);
+        gap_y = cy + 2 if step[1] > 0 else (cy - 1 if step[1] < 0 else -1);
+        for offset in range(2) {
+            nx = gap_x if gap_x >= 0 else cx + offset;
+            ny = gap_y if gap_y >= 0 else cy + offset;
+            if not mass.standing(nx, ny, high) or mass.headroom(nx, ny, high) < 8 {
+                good = False;
+            }
+        }
+        for ny in range(ly, ly + 2) {
+            for nx in range(lx, lx + 2) {
+                if mass.headroom(nx, ny, high) < 8 {
+                    good = False;
+                }
+            }
+        }
+        if good and landing[0] < 0 {
+            landing = [lx, ly];
+        }
+    }
+    # Nothing is set down, nor railed off, on the column or round it.
+    for ny in range(cy - 1, cy + 3) {
+        for nx in range(cx - 1, cx + 3) {
+            upper.kept.append([nx, ny, high]);
+            lower.kept.append([nx, ny, pick[2]]);
+        }
+    }
+    return [cx, cy, pick[2], high, landing[0], landing[1]];
+}
+
+"""Between two rooms one over the other that are already joined both ways,
+a quicker way down (a hole to drop through) or up (a jump pad), as the
+theme likes: it skips nothing, the rooms being open to each other already.
+True when one was made."""
+def add_shortcut(theme: Theme, link: Link, tail: Space, head: Space, mass: Massing, reserve: Reserve, placed: list[Space], estate: Estate, dice: Stream) -> bool {
+    weights = [theme.connectors.get("drop", 0.0), theme.connectors.get("jumppad", 0.0)];
+    if max(weights) <= 0.0 or not dice.chance(0.6) {
+        return False;
+    }
+    kind = ["drop", "jumppad"][dice.weighted(weights)];
+    lower = tail if tail.z < head.z else head;
+    upper = head if lower is tail else tail;
+    if lower.z + lower.h >= upper.z {
+        return False;
+    }
+    owner = Space(id=len(placed), role="corridor", kind="corridor", district=upper.district, tension=upper.tension);
+    owner.levels = [];
+    joined = build_connector(lower, upper, mass, reserve, owner, dice.child("shortcut", link.id), estate.stack_notes);
+    if not joined or (kind == "jumppad" and joined[4] < 0) {
+        return False;
+    }
+    reserve.refresh(joined[0] - 1, joined[1] - 1, joined[0] + 3, joined[1] + 3);
+    owner.x = joined[0];
+    owner.y = joined[1];
+    owner.z = lower.z + lower.h;
+    owner.w = 2;
+    owner.d = 2;
+    owner.h = upper.z - owner.z;
+    placed.append(owner);
+    estate +>:Encloses:+> owner;
+    estate.connectors += 1;
+    source = upper if kind == "drop" else lower;
+    target = lower if kind == "drop" else upper;
+    source +>:Corridor(
+        link=link.id,
+        mode="valve",
+        tail=source.id,
+        head=target.id,
+        air=owner.id,
+        connector=kind,
+        column=[joined[0], joined[1]],
+        low=joined[2],
+        high=joined[3],
+        lower=lower.id,
+        landing=[joined[4], joined[5]] if joined[4] >= 0 else []
+    ):+> target;
+    return True;
+}
+
+"""Wall a flooded shaft round in the lower room, from its floor to its
+ceiling, but for a way in two cells wide at the floor on the side with the
+most floor before it, so the water stands in a shaft, not in the open."""
+def enclose_shaft(lower: Space, column: list[int], level: int, mass: Massing) {
+    cx = column[0];
+    cy = column[1];
+    top = lower.z + lower.h;
+    best = -1;
+    best_floor = -1;
+    for side in range(4) {
+        cells = [[cx + 2, cy], [cx + 2, cy + 1]] if side == 0 else (
+            [[cx - 1, cy], [cx - 1, cy + 1]] if side == 1 else ([[cx, cy + 2], [cx + 1, cy + 2]] if side == 2 else [[cx, cy - 1], [cx + 1, cy - 1]])
+        );
+        step = [[1, 0], [-1, 0], [0, 1], [0, -1]][side];
+        floor = 0;
+        for cell in cells {
+            if mass.standing(cell[0], cell[1], level) and mass.standing(cell[0] + step[0], cell[1] + step[1], level) {
+                floor += 1;
+            }
+        }
+        if floor > best_floor {
+            best_floor = floor;
+            best = side;
+        }
+    }
+    for ny in range(cy - 1, cy + 3) {
+        for nx in range(cx - 1, cx + 3) {
+            if cx <= nx and nx < cx + 2 and cy <= ny and ny < cy + 2 {
+                continue;
+            }
+            corner = (nx == cx - 1 or nx == cx + 2) and (ny == cy - 1 or ny == cy + 2);
+            opening = not corner and (
+                (best == 0 and nx == cx + 2) or (best == 1 and nx == cx - 1) or (best == 2 and ny == cy + 2) or (best == 3 and ny == cy - 1)
+            );
+            if mass.at(nx, ny, level) != lower.id + 1 {
+                continue;
+            }
+            mass.fill(nx, ny, level + (5 if opening else 0), nx + 1, ny + 1, top);
+        }
+    }
 }
 
 """What each cell is reserved by: -1 nothing, otherwise the id of the space
@@ -637,10 +945,32 @@ def arrange_steps(plan: Expedition, dice: Stream, held: Layout) -> Iterator[str]
     links = links_of(plan);
     spaces: dict[int, Space] = {};
     placed: list[Space] = [];
+    theme = theme_named(plan.theme);
+    leaning: dict[str, float] = theme.kinds if theme is not None else {};
     drift_sign = -1 if dice.chance(0.6) else 1;
+    if theme is not None and theme.drift != 0 {
+        drift_sign = theme.drift;
+    }
+    # The centrepiece: the hub (or arena, or the goal) takes the theme's great
+    # room, grown.
+    centre_beat = -1;
+    for role in ["hub", "arena", "goal"] {
+        for beat in beats {
+            if centre_beat < 0 and beat.kind == role {
+                centre_beat = beat.id;
+            }
+        }
+    }
+    # The links whose rooms are set one over the other, and how each is joined.
+    stacked: dict[int, str] = {};
     for beat in beats {
-        kind = pick_archetype(beat.kind, dice);
-        dims = space_size(kind, beat.size, dice);
+        kind = pick_archetype(beat.kind, dice, leaning);
+        grow = 0;
+        if theme is not None and beat.id == centre_beat and theme.centre in ARCHETYPES {
+            kind = theme.centre;
+            grow = theme.centre_grow;
+        }
+        dims = space_size(kind, beat.size + grow, dice);
         space = Space(
             id=len(placed),
             beat=beat.id,
@@ -656,6 +986,15 @@ def arrange_steps(plan: Expedition, dice: Stream, held: Layout) -> Iterator[str]
             size=beat.size,
             variant=dice.below(24) if dice.chance(0.55) else 0
         );
+        space.centre = beat.id == centre_beat and grow > 0;
+        if theme is not None {
+            space.light = theme.light;
+            space.tint = theme.tint;
+            space.liquid = theme.liquid;
+            if space.h >= 18 and kind not in ["shaft", "towerhub", "maze"] and dice.chance(theme.sky) {
+                space.sky = True;
+            }
+        }
         # Placeholder levels for placement: the archetype's are known once
         # shaped, so a guess from the kind.
         space.levels = [0];
@@ -673,7 +1012,39 @@ def arrange_steps(plan: Expedition, dice: Stream, held: Layout) -> Iterator[str]
             }
             anchor = friends[0] if friends else placed[-1];
             drift = drift_sign * int(2.0 + 6.0 * plan.verticality);
-            placed_ok = place_beside(space, anchor, placed, friends[1:], dice.child("place", beat.id), plan.verticality, drift);
+            placed_ok = False;
+            # Straight over or under the room it links to, as the theme likes:
+            # the link is then joined up or down rather than by a corridor.
+            between: Link | None = None;
+            for link in links {
+                if (link.tail == beat.id and link.head == anchor.beat) or (link.head == beat.id and link.tail == anchor.beat) {
+                    between = link;
+                }
+            }
+            if theme is not None and between is not None and dice.chance(theme.stack) {
+                connector = choose_connector(theme, between.mode, dice);
+                if connector {
+                    estate.stack_tries += 1;
+                    above = dice.chance(0.5);
+                    if connector == "drop" {
+                        above = between.tail == beat.id;
+                    } elif connector == "jumppad" {
+                        above = between.head == beat.id;
+                    } elif drift_sign > 0 and dice.chance(0.75) {
+                        above = True;
+                    } elif drift_sign < 0 and dice.chance(0.75) {
+                        above = False;
+                    }
+                    placed_ok = place_stacked(space, anchor, placed, dice.child("stack", beat.id), above);
+                    if placed_ok {
+                        stacked[between.id] = connector;
+                        estate.stack_placed += 1;
+                    }
+                }
+            }
+            if not placed_ok {
+                placed_ok = place_beside(space, anchor, placed, friends[1:], dice.child("place", beat.id), plan.verticality, drift);
+            }
             if not placed_ok {
                 # Further out, anywhere round the last placed space.
                 for spread in range(1, 4) {
@@ -710,9 +1081,19 @@ def arrange_steps(plan: Expedition, dice: Stream, held: Layout) -> Iterator[str]
     mass = Massing(nx=estate.nx, ny=estate.ny, nz=estate.nz);
     held.mass = mass;
     reserve = Reserve(mass=mass);
+    deadly_liquid = theme is not None and theme.liquid in ["lava", "slime"];
     for space in placed {
         shape_space(space, mass, dice.child("shape", space.beat));
         reserve.hold_box(space.x, space.y, space.z, space.x + space.w, space.y + space.d, space.z + space.h, space.id);
+        # A bridge over a void floods with what kills, often; a cistern's pool
+        # with the theme's poison when it has one.
+        if space.kind == "bridgespan" and (deadly_liquid or dice.chance(0.4)) {
+            space.flood = 3;
+            space.deadly = True;
+        }
+        if space.kind == "cistern" and deadly_liquid {
+            space.deadly = True;
+        }
         yield "shape";
     }
     reserve.refresh(0, 0, mass.nx, mass.ny);
@@ -741,6 +1122,60 @@ def arrange_steps(plan: Expedition, dice: Stream, held: Layout) -> Iterator[str]
             wanted_windows.append([tail.id, head.id]);
             tail +>:Corridor(link=link.id, mode=link.mode, needs=link.needs, tail=tail.id, head=head.id, window=True):+> head;
             continue;
+        }
+        # A theme of gates joins open links by teleporter on purpose.
+        if theme is not None and link.mode == "open" and theme.gates > 0.0 and dice.chance(theme.gates) {
+            estate.gates += 1;
+            tail +>:Corridor(link=link.id, mode=link.mode, needs=link.needs, tail=tail.id, head=head.id, teleport=True):+> head;
+            yield "link";
+            continue;
+        }
+        # Rooms one over the other: a lift, a hole, a flooded shaft or a jump
+        # pad through the slab between (a stair is a corridor that climbs).
+        connector = stacked.get(link.id, "");
+        if connector and connector != "stair" {
+            lower = tail if tail.z < head.z else head;
+            upper = head if lower is tail else tail;
+            joined = build_connector(lower, upper, mass, reserve, corridor_space, dice.child("connector", link.id), estate.stack_notes);
+            if joined and connector == "jumppad" and joined[4] < 0 {
+                joined = [];
+            }
+            if joined {
+                if connector == "water" {
+                    enclose_shaft(lower, [joined[0], joined[1]], joined[2], mass);
+                }
+                reserve.refresh(joined[0] - 1, joined[1] - 1, joined[0] + 3, joined[1] + 3);
+                corridor_space.x = joined[0];
+                corridor_space.y = joined[1];
+                corridor_space.z = lower.z + lower.h;
+                corridor_space.w = 2;
+                corridor_space.d = 2;
+                corridor_space.h = upper.z - corridor_space.z;
+                corridor_space.district = upper.district;
+                placed.append(corridor_space);
+                estate +>:Encloses:+> corridor_space;
+                estate.connectors += 1;
+                estate.stack_joined += 1;
+                tail +>:Corridor(
+                    link=link.id,
+                    mode=link.mode,
+                    needs=link.needs,
+                    tail=tail.id,
+                    head=head.id,
+                    air=corridor_space.id,
+                    connector=connector,
+                    column=[joined[0], joined[1]],
+                    low=joined[2],
+                    high=joined[3],
+                    lower=lower.id,
+                    landing=[joined[4], joined[5]] if joined[4] >= 0 else []
+                ):+> head;
+                if theme is not None and link.mode == "open" {
+                    add_shortcut(theme, link, tail, head, mass, reserve, placed, estate, dice.child("extra", link.id));
+                }
+                yield "link";
+                continue;
+            }
         }
         one_way = link.mode == "valve";
         tries = 0;
@@ -807,7 +1242,7 @@ def arrange_steps(plan: Expedition, dice: Stream, held: Layout) -> Iterator[str]
             for block in path {
                 mass.carve(block[0], block[1], block[2], block[0] + 2, block[1] + 2, block[2] + CORRIDOR_HIGH, corridor_space.id);
             }
-            if dice.chance(0.5) {
+            if dice.chance(theme.wide if theme is not None else 0.5) {
                 widen_corridor(mass, reserve, path, corridor_space.id, dice.chance(0.5));
             }
             for block in path {
@@ -839,6 +1274,11 @@ def arrange_steps(plan: Expedition, dice: Stream, held: Layout) -> Iterator[str]
                 air=corridor_space.id
             ):+> head;
             made = True;
+        }
+        # Rooms set one over the other and joined by a corridor that climbs
+        # may have a quicker way between them too.
+        if made and theme is not None and link.mode == "open" and stacked.get(link.id, "") == "stair" {
+            add_shortcut(theme, link, tail, head, mass, reserve, placed, estate, dice.child("extra", link.id));
         }
         if not made {
             estate.teleports += 1;

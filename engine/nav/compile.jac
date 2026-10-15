@@ -35,6 +35,7 @@ import from ..formats.aas {
     TRAVEL_JUMP,
     TRAVEL_WALKOFFLEDGE,
     TRAVEL_TELEPORT,
+    TRAVEL_JUMPPAD,
     TRAVEL_ELEVATOR,
     TRAVEL_SWIM,
     AREA_GROUNDED,
@@ -706,6 +707,40 @@ def:priv nav_teleports(world: World, grid: NavGrid) -> int {
     return count;
 }
 
+"""Jump pads that say where they land (a `_land` point on the push, as a
+generated level's do): each spot inside the push leads to the spot there."""
+def:priv nav_pushes(world: World, grid: NavGrid, level: Level) -> int {
+    count = 0;
+    for traversal in [world->:HasTraversal:->][?:Traversal] {
+        if traversal.kind != "push" or not traversal.volume.bounds or not traversal.activation.entities {
+            continue;
+        }
+        index = traversal.activation.entities[0];
+        if index < 0 or index >= len(level.bsp.entities) {
+            continue;
+        }
+        words = level.bsp.entities[index].fields.get("_land", "").split();
+        if len(words) != 3 {
+            continue;
+        }
+        point = Vec3(x=float(words[0]), y=float(words[1]), z=float(words[2]));
+        arrival = nav_seed(grid, point);
+        if arrival is None {
+            arrival = nav_nearest_spot(grid, point, 64.0);
+        }
+        if arrival is None {
+            continue;
+        }
+        for spot in grid.spots {
+            if spot.index != arrival.index and touches_volume(traversal.volume, spot.origin) {
+                spot +>:NavStep(kind=TRAVEL_JUMPPAD, target=arrival.index):+> arrival;
+                count += 1;
+            }
+        }
+    }
+    return count;
+}
+
 """Lifts: plats, and doors that move up or down (a floor lowered as a lift).
 Each is compiled at one end of its travel (a plat up, a door open): the spot
 on its top there is flooded from, and joined both ways to the nearest spot
@@ -1018,6 +1053,9 @@ def:priv nav_step_time(kind: int, start: Vec3, finish: Vec3, rules: NavRules) ->
     if kind == TRAVEL_TELEPORT {
         return 5;
     }
+    if kind == TRAVEL_JUMPPAD {
+        return int(abs(finish.z - start.z) / 3.0) + run + 30;
+    }
     if kind == TRAVEL_ELEVATOR {
         return int(abs(finish.z - start.z) / 1.5) + 100;
     }
@@ -1146,7 +1184,7 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
         }
     }
     build.notes.append("stitched " + str(stitch.joined) + " ways round movers");
-    build.teleports = nav_teleports(world, grid);
+    build.teleports = nav_teleports(world, grid) + nav_pushes(world, grid, level);
     nav_mark_movers(world, grid, level);
     groups = nav_group(grid);
     # Secret doors are ways a player does not know of: a route takes one only

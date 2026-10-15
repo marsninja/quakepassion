@@ -500,7 +500,7 @@ def convert_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
     counts: dict[str, int] = {};
     skipped = "";
     for (game, level, least, marker) in [
-        ("q2", "base1", 1000, " q2:e1u1/"), ("q3", "q3dm1", 500, " q3:textures/"), ("passion", "v3-42", 200, "")
+        ("q2", "base1", 1000, " q2:e1u1/"), ("q3", "q3dm1", 500, " q3:textures/"), ("passion", "v4-42", 200, "")
     ] {
         with tempfile.TemporaryDirectory(prefix="qp-convert-") as home {
             env["QP_CONFIG_DIR"] = home;

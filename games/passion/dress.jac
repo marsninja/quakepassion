@@ -403,13 +403,18 @@ def add_wall_lamp(made: Dressing, kit: Kit, direction: int, line: int, middle: f
         x = middle;
         y = face - float(step[1]) * out;
     }
-    made.add_lamp(space, Lamp3(x=x, y=y, z=height, level=lamp_strength(kit, space), color=kit.lamp_color));
+    made.add_lamp(space, Lamp3(x=x, y=y, z=height, level=lamp_strength(kit, space), color=lamp_tint(kit, space)));
 }
 
 """How bright a space's lamps burn: the kit's level, dimmer where tension
 runs high."""
 def lamp_strength(kit: Kit, space: Space) -> int {
-    return int(float(kit.lamp_level) * (1.0 - 0.3 * max(0.0, min(1.0, space.tension))));
+    return int(float(kit.lamp_level) * space.light * (1.0 - 0.3 * max(0.0, min(1.0, space.tension))));
+}
+
+"""The colour of a space's lamps: its theme's, else its district's."""
+def lamp_tint(kit: Kit, space: Space) -> str {
+    return space.tint if space.tint else kit.lamp_color;
 }
 
 """Lamps hung under the ceiling of rooms whose ceiling is in reach, in a
@@ -453,7 +458,7 @@ def ceiling_lamps(mass: Massing, by_id: dict[int, Space], made: Dressing, dice: 
                     made.brushes.append(
                         box_brush(panel_low, panel_high, [kit.trim, kit.trim, kit.trim, kit.trim, kit.trim, kit.light], kit.scale, [5])
                     );
-                    made.add_lamp(space, Lamp3(x=x, y=y, z=top - 28.0, level=int(float(lamp_strength(kit, space)) * (0.8 if corridor else 1.0)), color=kit.lamp_color));
+                    made.add_lamp(space, Lamp3(x=x, y=y, z=top - 28.0, level=int(float(lamp_strength(kit, space)) * (0.8 if corridor else 1.0)), color=lamp_tint(kit, space)));
                 }
             }
         }
@@ -473,7 +478,7 @@ def corridor_lamps(made: Dressing, space: Space, blocks: list[list[int]], high: 
         made.brushes.append(
             box_brush(Vec3(x=x - 12.0, y=y - 12.0, z=top - 6.0), Vec3(x=x + 12.0, y=y + 12.0, z=top), [kit.trim, kit.trim, kit.trim, kit.trim, kit.trim, kit.light], kit.scale, [5])
         );
-        made.add_lamp(space, Lamp3(x=x, y=y, z=top - 28.0, level=int(float(lamp_strength(kit, space)) * 0.85), color=kit.lamp_color));
+        made.add_lamp(space, Lamp3(x=x, y=y, z=top - 28.0, level=int(float(lamp_strength(kit, space)) * 0.85), color=lamp_tint(kit, space)));
     }
 }
 
@@ -492,7 +497,7 @@ def dark_rooms(mass: Massing, by_id: dict[int, Space], made: Dressing) {
                 x = (float(space.stage[0]) + 0.5) * CELL;
                 y = (float(space.stage[1]) + 0.5) * CELL;
             }
-            made.add_lamp(space, Lamp3(x=x, y=y, z=float(level) * LIFT + 96.0, level=lamp_strength(kit, space), color=kit.lamp_color));
+            made.add_lamp(space, Lamp3(x=x, y=y, z=float(level) * LIFT + 96.0, level=lamp_strength(kit, space), color=lamp_tint(kit, space)));
         }
     }
 }
@@ -590,7 +595,7 @@ def hanging_lamps(mass: Massing, by_id: dict[int, Space], made: Dressing) {
                             y=(float(cy) + 0.5) * CELL,
                             z=float(level) * LIFT + 136.0,
                             level=int(float(lamp_strength(kit, space)) * 0.9),
-                            color=kit.lamp_color
+                            color=lamp_tint(kit, space)
                         )
                     );
                 }

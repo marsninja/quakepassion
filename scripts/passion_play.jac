@@ -87,7 +87,7 @@ def:priv slay_for(app: App, name: str) -> int {
 
 """Play one seed; the reason it failed, or ""."""
 def:priv play_seed(app: App, renderer: Renderer, seed: int) -> str {
-    app.load_destination("passion", "v3-" + str(seed));
+    app.load_destination("passion", "v4-" + str(seed));
     if app.menu.opened {
         return "load: " + app.menu.message;
     }

@@ -30,13 +30,14 @@ import time;
 import from .random { Stream, stream_for, mix32 }
 import from .mission { Expedition, Beat, Link, beats_of, links_of, build_mission }
 import from .arrange { Estate, Corridor, Layout, arrange_steps, estate_spaces, estate_corridors, CORRIDOR_HIGH }
-import from .massing { Massing, floor_reached }
+import from .massing { Massing, floor_reached, CELL, LIFT }
 import from .spaces { Space }
-import from .dress { Dressing, dress_steps, frame_doorway, corridor_lamps }
+import from .dress { Dressing, dress_steps, frame_doorway, corridor_lamps, box_brush }
 import from .cast { Casting, cast }
 import from .critic { critic_measures, critic_score }
 import from .brushwork { map_item_steps }
-import from .kits { KITS, kit_of }
+import from .kits { KITS, kit_of, kit_water }
+import from .themes { Theme, THEMES, theme_for, theme_named }
 import from editor.formats.map { MapItem, MapFile }
 import from editor.document.scene { Scene, scene_from_map }
 import from editor.compile.live { Compiling, compile_steps, LiveLevel, Materials, SwatchMaterials }
@@ -50,7 +51,7 @@ import from engine.world.exits { LevelExit, HasExit }
 import from engine.world.signals { HasSignal }
 import from engine.physics.collision { CollisionMap }
 
-glob VERSION: str = "v3";
+glob VERSION: str = "v4";
 glob CANDIDATES: int = 4;
 glob ARCHETYPES: list[str] = ["keys", "relays", "guardian", "mixed"];
 glob BINS: list[float] = [0.15, 0.5, 0.85];
@@ -64,6 +65,8 @@ and why any were turned down, the winner's mission, estate, massing,
 dressing and cast, its map items, its measures and the critic's score."""
 node Survey {
     has seed: int = 0,
+        # The theme the level was made in, by key.
+        theme: str = "",
         # The run it belongs to and how deep in it it lies.
         run: int = 0,
         depth: int = 1,
@@ -156,8 +159,25 @@ obj Draft {
 }
 
 """Districts for a plan: two or three kits, a section each in turn."""
-def choose_districts(plan: Expedition, stream: Stream) {
+def choose_districts(plan: Expedition, stream: Stream, theme: Theme | None = None) {
     order = stream.order(len(KITS));
+    # A theme's own districts first, in its order of liking (one shuffled to
+    # the front now and then).
+    if theme is not None and theme.kits {
+        liked: list[int] = [];
+        for name in theme.kits {
+            for (index, kit) in enumerate(KITS) {
+                if kit.name == name and index not in liked {
+                    liked.append(index);
+                }
+            }
+        }
+        if len(liked) > 1 and stream.chance(0.5) {
+            first = liked.pop(stream.below(len(liked)));
+            liked.insert(0, first);
+        }
+        order = liked + [index for index in order if index not in liked];
+    }
     count = min(len(KITS), max(2, min(3, plan.sections + stream.below(2))));
     plan.districts = order[:count];
     beats = beats_of(plan);
@@ -197,6 +217,15 @@ def stages_missed(estate: Estate, mass: Massing, by_id: dict[int, Space]) -> lis
                 links.append(head.stage + tail.stage);
             }
         }
+        # Up a lift, a flooded shaft or a jump pad (down is a fall through the
+        # column, which the floors already know).
+        if corridor.connector in ["lift", "water", "jumppad"] and len(corridor.column) == 2 {
+            up = [corridor.column[0] - 1, corridor.column[1], corridor.high];
+            if corridor.connector == "jumppad" and len(corridor.landing) == 2 {
+                up = [corridor.landing[0], corridor.landing[1], corridor.high];
+            }
+            links.append([corridor.column[0], corridor.column[1], corridor.low] + up);
+        }
     }
     reached = floor_reached(mass, start.stage[0], start.stage[1], start.stage[2], links);
     missed: list[Space] = [];
@@ -224,6 +253,11 @@ def flood_pits(estate: Estate, by_id: dict[int, Space], dice: Stream) {
             used_levels.setdefault(corridor.tail, []).append(-1);
             used_levels.setdefault(corridor.head, []).append(-1);
         }
+        if corridor.connector {
+            upper = corridor.head if corridor.lower == corridor.tail else corridor.tail;
+            used_levels.setdefault(corridor.lower, []).append(corridor.low);
+            used_levels.setdefault(upper, []).append(corridor.high);
+        }
     }
     for space in by_id.values() {
         if space.kind != "chasm" or not dice.chance(0.8) {
@@ -237,9 +271,13 @@ def flood_pits(estate: Estate, by_id: dict[int, Space], dice: Stream) {
 }
 
 """Build one candidate in full."""
-def build_draft(seed: int, index: int, niche: list[int], archetype: str, depth: int = 1) -> Draft {
+def build_draft(seed: int, index: int, niche: list[int], archetype: str, depth: int = 1, theme_key: str = "") -> Draft {
     made = Draft();
-    for label in draft_steps(seed, index, niche, archetype, depth, made) {
+    theme = theme_named(theme_key);
+    if theme is None {
+        theme = theme_for(seed);
+    }
+    for label in draft_steps(seed, index, niche, archetype, depth, made, theme) {
         continue;
     }
     return made;
@@ -247,13 +285,13 @@ def build_draft(seed: int, index: int, niche: list[int], archetype: str, depth: 
 
 """`build_draft` a step at a time, into `draft`. A level deeper in its run
 is fought over more densely and has a room or two more."""
-def draft_steps(seed: int, index: int, niche: list[int], archetype: str, depth: int, draft: Draft) -> Iterator[str] {
+def draft_steps(seed: int, index: int, niche: list[int], archetype: str, depth: int, draft: Draft, theme: Theme) -> Iterator[str] {
     stream = stream_for(seed, "candidate").child("k", index);
     deeper = min(10, depth - 1);
-    loopiness = max(0.0, min(1.0, BINS[niche[0]] + stream.uniform(-0.15, 0.15)));
-    verticality = max(0.2, min(1.0, BINS[niche[1]] + 0.15 + stream.uniform(-0.1, 0.1)));
-    density = max(0.25, min(1.0, [0.35, 0.55, 0.8][niche[2]] + stream.uniform(-0.1, 0.1) + 0.04 * float(deeper)));
-    rooms = [12, 16, 21][niche[3]] + stream.between(-2, 2) + deeper // 3;
+    loopiness = max(0.0, min(1.0, BINS[niche[0]] + stream.uniform(-0.15, 0.15) + theme.loop));
+    verticality = max(0.2, min(1.0, BINS[niche[1]] + 0.15 + stream.uniform(-0.1, 0.1) + theme.vertical));
+    density = max(0.25, min(1.0, [0.35, 0.55, 0.8][niche[2]] + stream.uniform(-0.1, 0.1) + 0.04 * float(deeper) + theme.dense));
+    rooms = max(8, [12, 16, 21][niche[3]] + stream.between(-2, 2) + deeper // 3 + theme.rooms);
     sections = 1 + niche[3] // 2 + stream.below(2);
     objectives = 1 + stream.below(2);
     try {
@@ -265,7 +303,8 @@ def draft_steps(seed: int, index: int, niche: list[int], archetype: str, depth: 
     plan.verticality = verticality;
     plan.density = density;
     plan.candidate = index;
-    choose_districts(plan, stream.derive("districts"));
+    plan.theme = theme.key;
+    choose_districts(plan, stream.derive("districts"), theme);
     draft.plan = plan;
     yield "mission";
     layout = Layout();
@@ -315,6 +354,21 @@ def draft_steps(seed: int, index: int, niche: list[int], archetype: str, depth: 
             frame_doorway(dressing, by_id[corridor.head], corridor.in_door, CORRIDOR_HIGH);
         }
     }
+    # Flooded shafts: water from the lower room's floor to just under the
+    # upper's, swum up or dropped down.
+    for corridor in estate_corridors(estate) {
+        if corridor.connector == "water" and len(corridor.column) == 2 and corridor.air in by_id {
+            kit = kit_of(by_id[corridor.air].district);
+            material = kit_water(kit);
+            low = Vec3(x=float(corridor.column[0]) * CELL, y=float(corridor.column[1]) * CELL, z=float(corridor.low) * LIFT);
+            high = Vec3(x=float(corridor.column[0] + 2) * CELL, y=float(corridor.column[1] + 2) * CELL, z=float(corridor.high) * LIFT - 6.0);
+            shaft = box_brush(low, high, [material, material, material, material, material, material], 1.0);
+            for side in shaft {
+                side.contents = 32;
+            }
+            dressing.brushes.append(shaft);
+        }
+    }
     draft.dressing = dressing;
     yield "frames";
     casting = cast(estate, mass, plan, stream.derive("cast"), density);
@@ -353,14 +407,18 @@ def briefing_for(plan: Expedition) -> str {
         parts.append("slay " + str(counts["guardians"]) + (" guardians" if counts["guardians"] > 1 else " guardian"));
     }
     route = " > ".join([kit_of(district).name for district in plan.districts]);
+    theme = theme_named(plan.theme);
+    if theme is not None {
+        route = theme.title + ": " + route;
+    }
     return route + " | " + ", ".join(parts).capitalize() + ", reach extraction";
 }
 
 """Survey a seed: build candidates toward its niche and keep the one the
 critic likes best."""
-def survey(seed: int, wanted: list[int] = [], depth: int = 1) -> Survey {
+def survey(seed: int, wanted: list[int] = [], depth: int = 1, theme_key: str = "") -> Survey {
     forge = Forge();
-    for label in survey_steps(seed, wanted, depth, forge) {
+    for label in survey_steps(seed, wanted, depth, forge, theme_key) {
         continue;
     }
     record = forge.survey;
@@ -372,17 +430,24 @@ def survey(seed: int, wanted: list[int] = [], depth: int = 1) -> Survey {
 
 """`survey` a step at a time: the survey, and the candidate being built,
 are the forge's to show while it goes."""
-def survey_steps(seed: int, wanted: list[int], depth: int, forge: Forge) -> Iterator[str] {
+def survey_steps(seed: int, wanted: list[int], depth: int, forge: Forge, theme_key: str = "") -> Iterator[str] {
     niche = niche_for(seed) if not wanted else wanted;
+    theme = theme_named(theme_key);
+    if theme is None {
+        theme = theme_for(seed);
+    }
     archetype = ARCHETYPES[mix32(seed + 977) % len(ARCHETYPES)];
-    record = Survey(seed=seed, niche=niche, archetype=archetype, depth=depth);
+    if theme.missions {
+        archetype = theme.missions[mix32(seed + 1301) % len(theme.missions)];
+    }
+    record = Survey(seed=seed, niche=niche, archetype=archetype, depth=depth, theme=theme.key);
     forge.survey = record;
     best: Draft | None = None;
     attempt = 0;
     while attempt < CANDIDATES * 3 and record.valid < CANDIDATES {
         draft = Draft();
         forge.draft = draft;
-        yield from draft_steps(seed, attempt, niche, archetype, depth, draft);
+        yield from draft_steps(seed, attempt, niche, archetype, depth, draft, theme);
         attempt += 1;
         record.candidates += 1;
         if draft.reason {

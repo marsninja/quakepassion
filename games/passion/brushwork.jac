@@ -10,7 +10,7 @@ import from editor.formats.map { MapItem }
 import from editor.geometry.brush { Side }
 import from .massing { Massing, CellBox, CELL, LIFT, shell_steps }
 import from .spaces { Space }
-import from .kits { Kit, kit_of, kit_surfaces, kit_water }
+import from .kits { Kit, kit_of, kit_surfaces, kit_water, kit_liquid }
 import from .dress { Dressing, Lamp3, box_brush }
 
 """The structural brushes: the shell's boxes with the materials of the
@@ -139,7 +139,7 @@ def map_item_steps(mass: Massing, spaces: list[Space], dressing: Dressing, extra
         # The liquid fills the room's lowest floor across its whole box;
         # inside the solid it is nothing.
         kit = kit_of(space.district);
-        material = kit.liquid if space.deadly else kit_water(kit);
+        material = kit_liquid(kit, space.deadly, space.liquid);
         low = Vec3(x=float(space.x) * CELL, y=float(space.y) * CELL, z=float(space.z) * LIFT);
         high = Vec3(x=float(space.x + space.w) * CELL, y=float(space.y + space.d) * CELL, z=float(space.z + space.flood) * LIFT - 4.0);
         liquid = box_brush(low, high, [material, material, material, material, material, material], 1.0);

@@ -185,7 +185,7 @@ test "a compiled expedition is walked from its start to its exit" {
     record = survey(3);
     casting = record.casting;
     assert casting is not None;
-    scene = scene_from_map("passion", "v3-3", MapFile(items=record.items));
+    scene = scene_from_map("passion", "v4-3", MapFile(items=record.items));
     made = compile_scene(scene, SwatchMaterials(), True);
     collision = build_brush_collision(made.bsp);
     walk = traverse(made.bsp, collision, 32.0);

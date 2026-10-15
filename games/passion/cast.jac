@@ -19,6 +19,7 @@ import from .spaces { Space, Doorway, OPEN_HIGH }
 import from .arrange { Estate, Corridor, estate_spaces, estate_corridors, CORRIDOR_HIGH }
 import from .mission { Expedition, Beat, beats_of }
 import from .kits { Kit, kit_of }
+import from .themes { theme_named }
 import from .dress { box_brush, plain_box }
 
 obj Foe {
@@ -27,37 +28,40 @@ obj Foe {
         health: int,
         cost: float,
         role: str = "melee",
-        rank: int = 1;
+        rank: int = 1,
+        # What kind of foe it is, for a theme to lean toward: soldier,
+        # beast, undead, arcane, strogg, q3.
+        tags: list[str] = [];
 }
 
 glob CAST_ROSTER: list[Foe] = [
-         Foe(kind="monster_army", source="q1", health=30, cost=1.0, role="ranged"),
-         Foe(kind="monster_dog", source="q1", health=25, cost=0.8, role="melee"),
-         Foe(kind="monster_knight", source="q1", health=75, cost=1.8, role="melee"),
-         Foe(kind="monster_enforcer", source="q1", health=80, cost=2.6, role="ranged", rank=2),
-         Foe(kind="monster_wizard", source="q1", health=80, cost=2.6, role="fly", rank=2),
-         Foe(kind="monster_ogre", source="q1", health=200, cost=5.0, role="ranged", rank=3),
-         Foe(kind="monster_demon1", source="q1", health=300, cost=6.0, role="melee", rank=3),
-         Foe(kind="monster_hell_knight", source="q1", health=250, cost=6.0, role="ranged", rank=3),
-         Foe(kind="monster_shalrath", source="q1", health=400, cost=8.0, role="ranged", rank=4),
-         Foe(kind="monster_shambler", source="q1", health=600, cost=12.0, role="ranged", rank=5),
-         Foe(kind="monster_soldier_light", source="q2", health=20, cost=0.8, role="ranged"),
-         Foe(kind="monster_soldier", source="q2", health=30, cost=1.0, role="ranged"),
-         Foe(kind="monster_soldier_ss", source="q2", health=40, cost=1.4, role="ranged"),
-         Foe(kind="monster_infantry", source="q2", health=100, cost=2.8, role="ranged", rank=2),
-         Foe(kind="monster_flyer", source="q2", health=50, cost=1.6, role="fly", rank=2),
-         Foe(kind="monster_parasite", source="q2", health=175, cost=4.0, role="melee", rank=3),
-         Foe(kind="monster_gunner", source="q2", health=175, cost=4.5, role="ranged", rank=3),
-         Foe(kind="monster_chick", source="q2", health=175, cost=4.5, role="ranged", rank=3),
-         Foe(kind="monster_berserk", source="q2", health=240, cost=4.8, role="melee", rank=3),
-         Foe(kind="monster_floater", source="q2", health=200, cost=5.0, role="fly", rank=3),
-         Foe(kind="monster_mutant", source="q2", health=300, cost=6.0, role="melee", rank=4),
-         Foe(kind="monster_brain", source="q2", health=300, cost=6.0, role="melee", rank=4),
-         Foe(kind="monster_hover", source="q2", health=240, cost=6.0, role="fly", rank=4),
-         Foe(kind="monster_gladiator", source="q2", health=400, cost=8.0, role="ranged", rank=4),
-         Foe(kind="monster_tank", source="q2", health=750, cost=14.0, role="ranged", rank=5),
-         Foe(kind="monster_tank_commander", source="q2", health=1000, cost=18.0, role="ranged", rank=6),
-         Foe(kind="info_player_deathmatch", source="q3", health=60, cost=2.2, role="ranged", rank=2)
+         Foe(kind="monster_army", source="q1", health=30, cost=1.0, role="ranged", tags=["soldier"]),
+         Foe(kind="monster_dog", source="q1", health=25, cost=0.8, role="melee", tags=["beast"]),
+         Foe(kind="monster_knight", source="q1", health=75, cost=1.8, role="melee", tags=["undead"]),
+         Foe(kind="monster_enforcer", source="q1", health=80, cost=2.6, role="ranged", rank=2, tags=["soldier"]),
+         Foe(kind="monster_wizard", source="q1", health=80, cost=2.6, role="fly", rank=2, tags=["arcane", "undead"]),
+         Foe(kind="monster_ogre", source="q1", health=200, cost=5.0, role="ranged", rank=3, tags=["beast"]),
+         Foe(kind="monster_demon1", source="q1", health=300, cost=6.0, role="melee", rank=3, tags=["beast"]),
+         Foe(kind="monster_hell_knight", source="q1", health=250, cost=6.0, role="ranged", rank=3, tags=["undead", "arcane"]),
+         Foe(kind="monster_shalrath", source="q1", health=400, cost=8.0, role="ranged", rank=4, tags=["arcane"]),
+         Foe(kind="monster_shambler", source="q1", health=600, cost=12.0, role="ranged", rank=5, tags=["beast"]),
+         Foe(kind="monster_soldier_light", source="q2", health=20, cost=0.8, role="ranged", tags=["strogg", "soldier"]),
+         Foe(kind="monster_soldier", source="q2", health=30, cost=1.0, role="ranged", tags=["strogg", "soldier"]),
+         Foe(kind="monster_soldier_ss", source="q2", health=40, cost=1.4, role="ranged", tags=["strogg", "soldier"]),
+         Foe(kind="monster_infantry", source="q2", health=100, cost=2.8, role="ranged", rank=2, tags=["strogg", "soldier"]),
+         Foe(kind="monster_flyer", source="q2", health=50, cost=1.6, role="fly", rank=2, tags=["strogg"]),
+         Foe(kind="monster_parasite", source="q2", health=175, cost=4.0, role="melee", rank=3, tags=["strogg"]),
+         Foe(kind="monster_gunner", source="q2", health=175, cost=4.5, role="ranged", rank=3, tags=["strogg"]),
+         Foe(kind="monster_chick", source="q2", health=175, cost=4.5, role="ranged", rank=3, tags=["strogg"]),
+         Foe(kind="monster_berserk", source="q2", health=240, cost=4.8, role="melee", rank=3, tags=["strogg"]),
+         Foe(kind="monster_floater", source="q2", health=200, cost=5.0, role="fly", rank=3, tags=["strogg"]),
+         Foe(kind="monster_mutant", source="q2", health=300, cost=6.0, role="melee", rank=4, tags=["strogg"]),
+         Foe(kind="monster_brain", source="q2", health=300, cost=6.0, role="melee", rank=4, tags=["strogg"]),
+         Foe(kind="monster_hover", source="q2", health=240, cost=6.0, role="fly", rank=4, tags=["strogg"]),
+         Foe(kind="monster_gladiator", source="q2", health=400, cost=8.0, role="ranged", rank=4, tags=["strogg"]),
+         Foe(kind="monster_tank", source="q2", health=750, cost=14.0, role="ranged", rank=5, tags=["strogg"]),
+         Foe(kind="monster_tank_commander", source="q2", health=1000, cost=18.0, role="ranged", rank=6, tags=["strogg"]),
+         Foe(kind="info_player_deathmatch", source="q3", health=60, cost=2.2, role="ranged", rank=2, tags=["q3"])
      ];
 
 glob CAST_GUARDIANS: list[str] = [
@@ -557,6 +561,70 @@ def cast_teleporter(director: Director3, corridor: Corridor) {
     }
 }
 
+"""What joins two rooms one over the other: a lift's platform, risen to
+the upper floor and lowered to the lower when the level begins (Quake's
+func_plat); a jump pad's push up the column and onto the landing beside
+the hole; a lamp in each."""
+def cast_connector(director: Director3, corridor: Corridor) {
+    if len(corridor.column) != 2 {
+        return;
+    }
+    upper_id = corridor.head if corridor.lower == corridor.tail else corridor.tail;
+    upper = director.spaces.get(upper_id, None);
+    if upper is None {
+        return;
+    }
+    kit = kit_of(upper.district);
+    x0 = float(corridor.column[0]) * CELL;
+    y0 = float(corridor.column[1]) * CELL;
+    low = float(corridor.low) * LIFT;
+    high = float(corridor.high) * LIFT;
+    middle_x = x0 + CELL;
+    middle_y = y0 + CELL;
+    if corridor.connector == "lift" {
+        director.put_brushed(
+            {"classname": "func_plat", "height": str(int(high - low)), "speed": "200"},
+            [plain_box(Vec3(x=x0 + 2.0, y=y0 + 2.0, z=high - 8.0), Vec3(x=x0 + 2.0 * CELL - 2.0, y=y0 + 2.0 * CELL - 2.0, z=high), kit.step, kit.scale)]
+        );
+        director.put({"classname": "light", "origin": origin_text(middle_x, middle_y, low + 72.0), "light": "160"});
+    } elif corridor.connector == "jumppad" and len(corridor.landing) == 2 {
+        land_x = (float(corridor.landing[0]) + 1.0) * CELL;
+        land_y = (float(corridor.landing[1]) + 1.0) * CELL;
+        across = math.sqrt((land_x - middle_x) * (land_x - middle_x) + (land_y - middle_y) * (land_y - middle_y));
+        # Pushed up the column at a steady rise; out of its top the body
+        # flies on over the floor, falling, onto the landing.
+        rise = 320.0;
+        flight = (rise + math.sqrt(rise * rise + 2.0 * 800.0 * 24.0)) / 800.0;
+        drive = max(60.0, (across - 24.0) / flight);
+        speed = math.sqrt(rise * rise + drive * drive) / 10.0;
+        pitch = -math.degrees(math.atan2(rise, drive));
+        yaw = math.degrees(math.atan2(land_y - middle_y, land_x - middle_x));
+        director.put_brushed(
+            {"classname": "func_wall", "_passion": "jumppad"},
+            [plain_box(Vec3(x=x0 + 8.0, y=y0 + 8.0, z=low), Vec3(x=x0 + 2.0 * CELL - 8.0, y=y0 + 2.0 * CELL - 8.0, z=low + 4.0), TELEPORT_MATERIAL, 1.0)]
+        );
+        # Straight up the column first (in the lower room it stands in the
+        # open, so a slant there would carry the body out of the push), then,
+        # in the slab where the shaft has walls, on the slant over the floor.
+        director.put_brushed(
+            {
+                "classname": "trigger_push",
+                "angles": "-90 0 0",
+                "speed": str(int(rise / 10.0)),
+                "_land": origin_text(land_x, land_y, high + 24.0)
+            },
+            [plain_box(Vec3(x=x0 + 6.0, y=y0 + 6.0, z=low + 4.0), Vec3(x=x0 + 2.0 * CELL - 6.0, y=y0 + 2.0 * CELL - 6.0, z=high - 24.0), "trigger", 1.0)]
+        );
+        director.put_brushed(
+            {"classname": "trigger_push", "angles": str(int(pitch)) + " " + str(int(yaw)) + " 0", "speed": str(int(speed))},
+            [plain_box(Vec3(x=x0 + 6.0, y=y0 + 6.0, z=high - 24.0), Vec3(x=x0 + 2.0 * CELL - 6.0, y=y0 + 2.0 * CELL - 6.0, z=high + 24.0), "trigger", 1.0)]
+        );
+        director.put({"classname": "light", "origin": origin_text(middle_x, middle_y, low + 64.0), "light": "220", "_color": "180 220 255"});
+    } else {
+        director.put({"classname": "light", "origin": origin_text(middle_x, middle_y, low + 72.0), "light": "120"});
+    }
+}
+
 """The game a district's foes are mostly drawn from."""
 def district_source(space: Space) -> str {
     return kit_of(space.district).game;
@@ -566,11 +634,17 @@ def district_source(space: Space) -> str {
 no costlier than what is left of its budget, of a role its room suits."""
 def pick_foe(director: Director3, space: Space, budget: float, rank_cap: int) -> Foe | None {
     home = district_source(space);
+    theme = theme_named(director.plan.theme);
+    leaning: list[str] = theme.foes if theme is not None else [];
     weights: list[float] = [];
     for foe in CAST_ROSTER {
         weight = 0.0;
         if foe.cost <= budget and foe.rank <= rank_cap and (not director.only or foe.kind in director.only) {
             weight = 3.0 if foe.source == home else 0.6;
+            # The theme's foes hold the level more than others.
+            if leaning {
+                weight *= 3.0 if any([tag in leaning for tag in foe.tags]) else 0.4;
+            }
             if foe.role == "fly" and space.h < 14 {
                 weight = 0.0;
             }
@@ -688,6 +762,8 @@ def cast(estate: Estate, mass: Massing, plan: Expedition, dice: Stream, density:
     for corridor in estate_corridors(estate) {
         if corridor.teleport {
             cast_teleporter(director, corridor);
+        } elif corridor.connector {
+            cast_connector(director, corridor);
         } else {
             cast_doors(director, corridor);
         }

@@ -156,7 +156,7 @@ with entry {
         folder = "id1" if game == "q1" else ("baseq2" if game == "q2" else "baseq3");
         maps = CORPUS_Q1 if game == "q1" else (CORPUS_Q2 if game == "q2" else CORPUS_Q3);
         if game == "passion" {
-            maps = ["v3-" + str(seed) for seed in range(1, 9)];
+            maps = ["v4-" + str(seed) for seed in range(1, 9)];
         }
         if chosen {
             maps = chosen;

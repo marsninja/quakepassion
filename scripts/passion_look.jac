@@ -34,7 +34,7 @@ def capture_view(app: App, renderer: Renderer, name: str) {
 
 with entry {
     game = os.environ.get("QP_LOOK_GAME", "passion");
-    level_name = os.environ.get("QP_LOOK_MAP", "v3-42");
+    level_name = os.environ.get("QP_LOOK_MAP", "v4-42");
     shots = int(os.environ.get("QP_LOOK_SHOTS", "8"));
     prefix = os.environ.get("QP_LOOK_PREFIX", "look_" + game + "_" + level_name.replace("-", "_"));
     print("LOOK game=" + game + " map=" + level_name);
