@@ -1207,7 +1207,8 @@ impl App.step() -> bool {
         leaving_run = self.passion_run;
         if self.expedition_complete and self.level.bsp.game == "passion" and leaving_run is not None
             and leaving_run.plays(self.level.name) {
-            self.passion_onward(asked);
+            # The player bot at the controls goes on as a player would.
+            self.passion_onward(asked or self.autoplay is not None);
             return True;
         }
         if asked {
