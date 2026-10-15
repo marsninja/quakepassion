@@ -1,10 +1,11 @@
-# Passion expeditions
+# Passion runs
 
-Passion is the fourth game mode of the shared engine (`games/passion/`). It
-generates seeded expeditions, real levels of brushes in three dimensions,
-from the original Quake, Quake II and Quake III assets, and measures them
-against the original games' own levels. The generator version is `v3`
-(`generate.jac` `VERSION`).
+Passion is the fourth game mode of the shared engine (`games/passion/`). A
+run is a seed: its levels, real levels of brushes in three dimensions, are
+generated one after another from the original Quake, Quake II and Quake III
+assets and measured against the original games' own levels. Each level's
+way out leads on to the next, made while the last is played; nothing is
+saved. The generator version is `v3` (`generate.jac` `VERSION`).
 
 ## Run
 
@@ -15,18 +16,25 @@ With the build in the README and all three games under one asset directory
 QP_GAME=passion QP_SEED=42 DYLD_LIBRARY_PATH=vendor ./qp
 ```
 
-- `QP_SEED` picks the seed (default 1); `QP_MAP=v3-42` is the equivalent
-  level name. Seeds run from 1 to 2147483646, and names with another version
-  prefix are rejected (`seed_from`), so saves from an older generator do not
-  load.
-- `QP_LIGHT_CACHE` sets the baked-lighting cache directory (default
-  `~/.cache/quakepassion/lighting`); an empty value bakes every time. A file
-  is named by the hash of the expedition's map and the bake's settings.
-- The Escape menu lists twelve fresh seeds when Passion is selected. The HUD
-  briefing names the districts the route crosses and the objectives (for
-  example "Gothic Ruin > Strogg Works | Recover 1 key, reach extraction").
-- A seed takes 2-7 s to generate (a few candidates are built and the best
-  kept), and its light 6-12 s to bake the first time it is played.
+- `QP_SEED` is the run's seed (default 1), from 1 to 2147483646. The run's
+  first level is `v3-42`, its levels after that `v3-42-2`, `v3-42-3` and on
+  (`QP_MAP` names any of them). Each level is made from the run's seed and
+  its depth, so a seed always plays the same run, and a deeper level is
+  fought over more densely and has a room or two more. Names with another
+  version prefix are refused (`run_of`).
+- The Escape menu's Passion page takes a seed typed in, or rolls one, and
+  starts its run.
+- Reaching a level's way out shows its tally (kills, time) and Enter goes on
+  to the next level. That level has been made a few milliseconds a frame
+  while the last was played (`Forge`, `run.jac`), so it usually opens at
+  once; if it is not ready yet the tally shows how far it has got, and it
+  opens when it is.
+- Health, armour, weapons and ammunition carry on from level to level;
+  keys do not. A death begins the level again with what the player came in
+  with, from the level kept in memory.
+- The first level of a run is made when the run starts (2-7 s to lay out,
+  about a second to compile, 5-8 s to light), with its progress on the
+  loading screen.
 
 ## The yardstick and the corpus
 
@@ -123,7 +131,17 @@ kept.
 9. **Build**: the map items become a studio scene, compiled by
    `editor/compile/live.jac` with buried faces cut away
    (`editor/compile/cull.jac`) and lit by the studio's light bake at 32-unit
-   luxels (bounce, a light grid for models), kept on disk once baked.
+   luxels (bounce, a light grid for models).
+
+Every stage is made a step at a time: the generator's functions are Jac
+generators (`draft_steps`, `arrange_steps`, `route_steps`, `dress_steps`,
+`map_item_steps`, `compile_steps`, `light_job_steps`, the light job's
+`work_steps` and `finish_steps`) that pause every few milliseconds of
+work, and a `Forge` steps them for as long as it is given. The game gives
+it 4 ms a frame while a level is played (30 ms while a way out waits on
+it); the studio steps it a few steps a frame to show it. The longest
+single step is about 30 ms (a large face cut against many brushes), most
+are well under 8, and a level comes out the same however it was stepped.
 
 ## Districts (`kits.jac`)
 
@@ -156,6 +174,18 @@ brushes, a group a room and a group a corridor, with the way out as a
 trigger; `ed_exp mission`, `rooms`, `ways` and `measures` say its beats and
 links, spaces, corridors and how it measures against the corpus, and
 `ed_exp show` draws the ways over the level.
+
+`ed_exp watch <seed> [level]` shows a level being made, in a new scene: each
+candidate's rooms appear as boxes as they are placed (the start green, the
+goal red, rooms with an objective amber), then shaped, with their floor
+levels and stages; each corridor's search is drawn as it goes (the blocks it
+goes between, and the block it has reached), and the corridors found in the
+colour of their link; then the lamps and the cast. A box beside it says the
+stage, the candidate and why earlier candidates were turned down, and holds
+it still, steps it, paces it (a bar, or Slower and Faster) or stops it. Once
+a candidate is chosen and its brushes written, the level opens as a
+document, as `ed_exp open` opens one, and is compiled and lit by the
+studio.
 
 ## The arsenal
 
@@ -208,15 +238,18 @@ QP_CORPUS_GAMES=passion .jac/qp-corpus
 - `tests/passion_tests.jac`: the massing's shell seals all air; every
   archetype gives a stage and doorways and every floor level can be walked
   to; arrangements are deterministic and corridors join their doorways;
-  names parse strictly; a survey keeps its promises (start, exit, a door for
-  each lock, a fair score); the light cache round-trips; a compiled
+  names parse strictly and a run's levels follow one another; a survey
+  keeps its promises (start, exit, a door for each lock, a fair score), and
+  a forge stepped a step at a time makes the same expedition; a compiled
   expedition is walked from its start to its exit by the yardstick over its
   real collision.
 - `scripts/passion_map.jac`: how each seed's survey went, why candidates
   were turned down, teleporters and windows (seeds 1-12: 0-2 teleporters,
   2-7 s).
 - `scripts/passion_play.jac`: each seed's logic played in the game (keys,
-  switches, guardians, locked doors, the way out). Seeds 1-30 pass.
+  switches, guardians, locked doors, the way out); with `QP_PLAY_RUN=1` the
+  way out must also lead on to the run's next level, carrying health and
+  leaving keys behind, and a death there must begin it again at once.
 - `scripts/passion_look.jac`: photographs from the widest views a player can
   reach, along the route from start to exit, or from given places; the same
   for the original levels, to compare by eye.

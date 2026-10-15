@@ -134,112 +134,9 @@ obj Massing {
 
     """The solid that touches air, merged into boxes, each of one space."""
     def shell -> list[CellBox] {
-        count = self.nx * self.ny * self.nz;
-        mark = [0 for _ in range(count)];
-        # Every solid cell beside air (diagonals too) is shell: grown out from
-        # the air, the solid a face away taking that air's space first.
-        for pass_index in range(2) {
-            for z in range(self.nz) {
-                for y in range(self.ny) {
-                    for x in range(self.nx) {
-                        space = self.owner[(z * self.ny + y) * self.nx + x];
-                        if space == 0 {
-                            continue;
-                        }
-                        for dz in [-1, 0, 1] {
-                            for dy in [-1, 0, 1] {
-                                for dx in [-1, 0, 1] {
-                                    face = abs(dx) + abs(dy) + abs(dz) == 1;
-                                    if face != (pass_index == 0) {
-                                        continue;
-                                    }
-                                    cx = x + dx;
-                                    cy = y + dy;
-                                    cz = z + dz;
-                                    if cx < 0 or cy < 0 or cz < 0 or cx >= self.nx or cy >= self.ny or cz >= self.nz {
-                                        continue;
-                                    }
-                                    index = (cz * self.ny + cy) * self.nx + cx;
-                                    if self.owner[index] == 0 and mark[index] == 0 {
-                                        mark[index] = space;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        # Each shell cell's key: its space and which of its six sides face
-        # air, so a box holds only cells alike on every side and each side
-        # of a box faces air all over or not at all.
-        for z in range(self.nz) {
-            for y in range(self.ny) {
-                for x in range(self.nx) {
-                    index = (z * self.ny + y) * self.nx + x;
-                    if mark[index] <= 0 {
-                        continue;
-                    }
-                    bits = 0;
-                    for (bit, dx, dy, dz) in [(1, 1, 0, 0), (2, -1, 0, 0), (4, 0, 1, 0), (8, 0, -1, 0), (16, 0, 0, 1), (32, 0, 0, -1)] {
-                        if self.air(x + dx, y + dy, z + dz) {
-                            bits = bits | bit;
-                        }
-                    }
-                    mark[index] = mark[index] * 64 + bits;
-                }
-            }
-        }
         boxes: list[CellBox] = [];
-        for z in range(self.nz) {
-            for y in range(self.ny) {
-                for x in range(self.nx) {
-                    index = (z * self.ny + y) * self.nx + x;
-                    space = mark[index];
-                    if space <= 0 {
-                        continue;
-                    }
-                    # Grow along x, then y, then z while every cell matches.
-                    x1 = x + 1;
-                    while x1 < self.nx and mark[(z * self.ny + y) * self.nx + x1] == space {
-                        x1 += 1;
-                    }
-                    y1 = y + 1;
-                    growing = True;
-                    while growing and y1 < self.ny {
-                        for cx in range(x, x1) {
-                            if mark[(z * self.ny + y1) * self.nx + cx] != space {
-                                growing = False;
-                            }
-                        }
-                        if growing {
-                            y1 += 1;
-                        }
-                    }
-                    z1 = z + 1;
-                    growing = True;
-                    while growing and z1 < self.nz {
-                        for cy in range(y, y1) {
-                            for cx in range(x, x1) {
-                                if mark[(z1 * self.ny + cy) * self.nx + cx] != space {
-                                    growing = False;
-                                }
-                            }
-                        }
-                        if growing {
-                            z1 += 1;
-                        }
-                    }
-                    for cz in range(z, z1) {
-                        for cy in range(y, y1) {
-                            for cx in range(x, x1) {
-                                mark[(cz * self.ny + cy) * self.nx + cx] = 0;
-                            }
-                        }
-                    }
-                    boxes.append(CellBox(x0=x, y0=y, z0=z, x1=x1, y1=y1, z1=z1, owner=space // 64 - 1));
-                }
-            }
+        for label in shell_steps(self, boxes) {
+            continue;
         }
         return boxes;
     }
@@ -307,4 +204,124 @@ def floor_reached(mass: Massing, x: int, y: int, z: int, links: list[list[int]] 
         }
     }
     return reached;
+}
+
+"""`Massing.shell` a step at a time: it pauses every few layers of the
+massing, and puts the boxes in `boxes`."""
+def shell_steps(mass: Massing, boxes: list[CellBox]) -> Iterator[str] {
+    count = mass.nx * mass.ny * mass.nz;
+    mark = [0 for _ in range(count)];
+    # Every solid cell beside air (diagonals too) is shell: grown out from
+    # the air, the solid a face away taking that air's space first.
+    for pass_index in range(2) {
+        for z in range(mass.nz) {
+            if z % 4 == 3 {
+                yield "shell";
+            }
+            for y in range(mass.ny) {
+                for x in range(mass.nx) {
+                    space = mass.owner[(z * mass.ny + y) * mass.nx + x];
+                    if space == 0 {
+                        continue;
+                    }
+                    for dz in [-1, 0, 1] {
+                        for dy in [-1, 0, 1] {
+                            for dx in [-1, 0, 1] {
+                                face = abs(dx) + abs(dy) + abs(dz) == 1;
+                                if face != (pass_index == 0) {
+                                    continue;
+                                }
+                                cx = x + dx;
+                                cy = y + dy;
+                                cz = z + dz;
+                                if cx < 0 or cy < 0 or cz < 0 or cx >= mass.nx or cy >= mass.ny or cz >= mass.nz {
+                                    continue;
+                                }
+                                index = (cz * mass.ny + cy) * mass.nx + cx;
+                                if mass.owner[index] == 0 and mark[index] == 0 {
+                                    mark[index] = space;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    # Each shell cell's key: its space and which of its six sides face
+    # air, so a box holds only cells alike on every side and each side
+    # of a box faces air all over or not at all.
+    for z in range(mass.nz) {
+        if z % 4 == 3 {
+            yield "shell";
+        }
+        for y in range(mass.ny) {
+            for x in range(mass.nx) {
+                index = (z * mass.ny + y) * mass.nx + x;
+                if mark[index] <= 0 {
+                    continue;
+                }
+                bits = 0;
+                for (bit, dx, dy, dz) in [(1, 1, 0, 0), (2, -1, 0, 0), (4, 0, 1, 0), (8, 0, -1, 0), (16, 0, 0, 1), (32, 0, 0, -1)] {
+                    if mass.air(x + dx, y + dy, z + dz) {
+                        bits = bits | bit;
+                    }
+                }
+                mark[index] = mark[index] * 64 + bits;
+            }
+        }
+    }
+    for z in range(mass.nz) {
+        if z % 4 == 3 {
+            yield "shell";
+        }
+        for y in range(mass.ny) {
+            for x in range(mass.nx) {
+                index = (z * mass.ny + y) * mass.nx + x;
+                space = mark[index];
+                if space <= 0 {
+                    continue;
+                }
+                # Grow along x, then y, then z while every cell matches.
+                x1 = x + 1;
+                while x1 < mass.nx and mark[(z * mass.ny + y) * mass.nx + x1] == space {
+                    x1 += 1;
+                }
+                y1 = y + 1;
+                growing = True;
+                while growing and y1 < mass.ny {
+                    for cx in range(x, x1) {
+                        if mark[(z * mass.ny + y1) * mass.nx + cx] != space {
+                            growing = False;
+                        }
+                    }
+                    if growing {
+                        y1 += 1;
+                    }
+                }
+                z1 = z + 1;
+                growing = True;
+                while growing and z1 < mass.nz {
+                    for cy in range(y, y1) {
+                        for cx in range(x, x1) {
+                            if mark[(z1 * mass.ny + cy) * mass.nx + cx] != space {
+                                growing = False;
+                            }
+                        }
+                    }
+                    if growing {
+                        z1 += 1;
+                    }
+                }
+                for cz in range(z, z1) {
+                    for cy in range(y, y1) {
+                        for cx in range(x, x1) {
+                            mark[(cz * mass.ny + cy) * mass.nx + cx] = 0;
+                        }
+                    }
+                }
+                boxes.append(CellBox(x0=x, y0=y, z0=z, x1=x1, y1=y1, z1=z1, owner=space // 64 - 1));
+            }
+        }
+    }
 }

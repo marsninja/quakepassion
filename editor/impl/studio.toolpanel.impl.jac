@@ -43,8 +43,11 @@ impl Studio.keep_tool_panels {
         }
         spec = self.tool_specs[key];
         if key not in self.tool_boxes {
-            casing = Floater(title=spec.title, command="ed_toolpanel close " + quote_command_word(key), least_wide=460, least_tall=200);
-            casing.area = Rect(x=max(8, (stage.width - 800) // 2), y=110, w=min(800, max(460, stage.width - 16)), h=430);
+            casing = Floater(title=spec.title, command="ed_toolpanel close " + quote_command_word(key), least_wide=300 if spec.wide > 0 else 460, least_tall=200);
+            wide = min(spec.wide if spec.wide > 0 else 800, max(300, stage.width - 16));
+            tall = spec.tall if spec.tall > 0 else 430;
+            left = stage.width - wide - 8 if spec.right else (stage.width - wide) // 2;
+            casing.area = Rect(x=max(8, left), y=110, w=wide, h=tall);
             casing.settle(stage);
             stage.open(casing);
             self.tool_boxes[key] = casing;

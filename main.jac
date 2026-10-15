@@ -21,6 +21,7 @@ import sys;
 
 import from engine.world.level { Level, spawn_player }
 import from games.levels { open_level, saved_entities, override_path }
+import from games.passion.run { Run, run_of_level }
 import from engine.core.preferences { Preferences }
 import from engine.core.menu { game_directory }
 import from engine.assets.content { play_pack, pack_start_map, playing }
@@ -38,6 +39,7 @@ with entry {
     world = World();  # unrooted by design: worlds are rebuilt from data
     # every run; root is reserved for save games (phase 7)
     level = Level();
+    passion_run: Run | None = None;
     # The first level honours the saved skill before the app reads the rest
     # of its settings into the same shell.
     shell = Shell();
@@ -94,7 +96,18 @@ with entry {
         # Q1 and Q2 play the fifth skill (Q3's Nightmare!) as Nightmare.
         played = skill if game == "q3" else min(3, skill);
         try {
-            level = open_level(world, game_directory(game), opened, game, played);
+            if game == "passion" {
+                # A Passion run begins: its first level made through the run,
+                # which keeps it to begin again from and makes the next.
+                run = run_of_level(None, opened, game_directory(game));
+                forge = run.forge_for(opened);
+                forge.complete();
+                run.opening = forge;
+                passion_run = run;
+                level = open_level(world, game_directory(game), opened, game, played, forged=forge);
+            } else {
+                level = open_level(world, game_directory(game), opened, game, played);
+            }
             player = spawn_player(level);
         } except Exception as error {
             if not saved_entities(game, opened) {
@@ -126,7 +139,8 @@ with entry {
         clock=Clock(),
         smoke=(os.getenv("QP_SMOKE", "") != ""),
         shell=shell,
-        host=host
+        host=host,
+        passion_run=passion_run
     );
     # The editing studio (`edit`, F8); QP_EDIT=1 starts in it.
     studio = attach_studio(app);

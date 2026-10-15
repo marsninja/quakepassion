@@ -24,6 +24,7 @@ import from vendor.raylib {
 }
 
 import from games.arenas { ArenaProgress, parse_arenas, ladder }
+import from games.passion.generate { level_name, run_of }
 import from ..world.arena { ordinal }
 
 """The search path of what a game is playing (engine/assets/content.jac)."""
@@ -131,6 +132,10 @@ obj LevelMenu {
         labels: list[str] = [],
         message: str = "",
         seed_cursor: int = 0,
+        # Passion's seed as typed, and the characters typed this frame (the
+        # app hands them over while the menu is open).
+        seed_text: str = "",
+        typed: list[str] = [],
         games: list[str] = ["q1", "q2", "q3", "passion"],
         # The chosen game's installed packs, and the one whose maps are listed.
         pack: int = 0,
@@ -185,11 +190,10 @@ obj LevelMenu {
         self.message = "";
         game = self.games[self.game];
         if game == "passion" {
-            seed = max(int(time.time()), self.seed_cursor + 12) % 2147483000 + 1;
-            self.seed_cursor = seed;
-            self.maps = ["v3-" + str(seed + i) for i in range(12)];
-            self.labels = list(self.maps);
-            self.message = "Seeded expeditions | Click Passion for fresh seeds";
+            if not self.seed_text {
+                self.roll_seed();
+            }
+            self.choose_seed();
             return;
         }
         pack = shelf().find(self.chosen_pack());
@@ -212,6 +216,40 @@ obj LevelMenu {
         } except Exception as error {
             self.message = "Cannot list maps: " + str(error);
         }
+    }
+
+    """A fresh seed for Passion, from the clock."""
+    def roll_seed() {
+        seed = max(int(time.time()), self.seed_cursor + 1) % 2147483000 + 1;
+        self.seed_cursor = seed;
+        self.seed_text = str(seed);
+    }
+
+    """The run the typed seed starts: its first level is the one loaded."""
+    def choose_seed() {
+        self.selected = 0;
+        self.offset = 0;
+        digits = self.seed_text.lstrip("0");
+        seed = int(digits) if digits else 0;
+        if seed < 1 or seed > 2147483646 {
+            self.maps = [];
+            self.labels = [];
+            self.message = "A seed is a whole number from 1 to 2147483646";
+            return;
+        }
+        self.maps = [level_name(seed, 1)];
+        self.labels = list(self.maps);
+        self.message = "";
+    }
+
+    """The seed of the Passion run a level belongs to, typed in."""
+    def show_run(name: str) {
+        try {
+            self.seed_text = str(run_of(name)[0]);
+        } except ValueError {
+            return;
+        }
+        self.choose_seed();
     }
 
     """Read a pack's archives for its maps and their titles."""
@@ -378,6 +416,9 @@ obj LevelMenu {
                 self.scan();
             }
         }
+        if self.games[self.game] == "passion" {
+            return self.update_seed(click);
+        }
         for row in range(len(self.packs)) {
             if click and self.hit(750, 205 + row * 30, 210, 28) {
                 self.choose_pack(row);
@@ -413,6 +454,39 @@ obj LevelMenu {
                 and self.hit(310, 205 + row * 30, 425, 28) {
                 self.selected = index;
             }
+        }
+        if click and self.hit(760, 610, 200, 42) {
+            return "quit";
+        }
+        if len(self.maps) > 0
+            and (IsKeyPressed(i32(257)) or (click and self.hit(310, 610, 260, 42))) {
+            return "load";
+        }
+        return "";
+    }
+
+    """Passion's page: digits typed into the seed, Backspace taking one
+    away, the dice for a fresh one, and Enter (or the button) to start the
+    run."""
+    def update_seed(click: bool) -> str {
+        changed = False;
+        for character in self.typed {
+            if character.isdigit() and len(self.seed_text) < 10 {
+                self.seed_text += character;
+                changed = True;
+            }
+        }
+        self.typed = [];
+        if IsKeyPressed(i32(259)) and self.seed_text {
+            self.seed_text = self.seed_text[:-1];
+            changed = True;
+        }
+        if click and self.hit(560, 260, 160, 44) {
+            self.roll_seed();
+            changed = True;
+        }
+        if changed {
+            self.choose_seed();
         }
         if click and self.hit(760, 610, 200, 42) {
             return "quit";
@@ -523,6 +597,10 @@ obj LevelMenu {
             self.box(310 + i * 165, 145, 155, 40, color);
             self.label(titles[i], 325 + i * 165, 155, 22, white);
         }
+        if self.games[self.game] == "passion" {
+            self.draw_seed(white, amber, brown);
+            return;
+        }
         for row in range(11) {
             index = self.offset + row;
             if index >= len(self.maps) {
@@ -556,6 +634,31 @@ obj LevelMenu {
         self.label(self.message[:75], 310, 580, 16, amber);
         self.box(310, 610, 260, 42, brown);
         self.label("Render selected level", 322, 622, 20, white);
+        self.box(760, 610, 200, 42, Color(r=75, g=35, b=30, a=255));
+        self.label("Quit", 825, 622, 20, white);
+    }
+
+    """Passion's page: the seed of the run, and how a run goes."""
+    def draw_seed(white: Color, amber: Color, brown: Color) {
+        self.label("Seed", 310, 222, 22, white);
+        self.box(380, 260, 170, 44, Color(r=48, g=45, b=41, a=255));
+        caret = "_" if int(time.time() * 2.0) % 2 == 0 else " ";
+        self.label(self.seed_text + caret, 392, 270, 26, amber);
+        self.box(560, 260, 160, 44, brown);
+        self.label("Roll the dice", 572, 272, 20, white);
+        lines = [
+            "Type a seed, or roll one. A seed is a whole run:",
+            "each level's way out leads on to the next,",
+            "made while you play the one before.",
+            "The same seed always plays the same run.",
+            "Health, armour and weapons carry on; keys do not."
+        ];
+        for (row, line) in enumerate(lines) {
+            self.label(line, 310, 340 + row * 28, 20, white);
+        }
+        self.label(self.message[:75], 310, 580, 16, amber);
+        self.box(310, 610, 260, 42, brown);
+        self.label("Start the run", 322, 622, 20, white);
         self.box(760, 610, 200, 42, Color(r=75, g=35, b=30, a=255));
         self.label("Quit", 825, 622, 20, white);
     }

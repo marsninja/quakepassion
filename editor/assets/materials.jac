@@ -40,6 +40,24 @@ obj ArchiveMaterials(Materials) {
         return loader;
     }
 
+    """Open every game's archives now, rather than at the first material
+    each holds (each takes a moment to index): a game whose files are not
+    there is passed over."""
+    def open_all {
+        self.reader();
+        catalog = self.catalog;
+        if catalog is None {
+            return;
+        }
+        for game in ["q1", "q2", "q3"] {
+            try {
+                catalog.source(game);
+            } except Exception {
+                continue;
+            }
+        }
+    }
+
     def texture(name: str) -> Texture {
         if name in self.found {
             return self.found[name];

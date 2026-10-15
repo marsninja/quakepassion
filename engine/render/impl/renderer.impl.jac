@@ -459,26 +459,38 @@ impl Renderer.draw_keys(message: str) {
     }
 }
 
-impl Renderer.draw_loading(name: str) {
+impl Renderer.draw_loading(name: str, stage: str = "", share: float = -1.0) {
     if not IsWindowReady() {
         return;
     }
     BeginDrawing();
     ClearBackground(Color(r=10, g=8, b=6, a=255));
     DrawText(
-        "Preparing expedition " + name,
+        "Making " + name,
         40,
         i32(self.height / 2 - 40),
         28,
         Color(r=255, g=230, b=180, a=255)
     );
+    words = {
+        "survey": "Laying out rooms and the ways between them",
+        "map": "Writing the brushes",
+        "compile": "Building the level",
+        "bake": "Lighting it",
+        "ready": "Opening it"
+    };
     DrawText(
-        "First visits take longer while lighting is prepared.",
+        words.get(stage, "Rolling the dice"),
         40,
         i32(self.height / 2 + 12),
         20,
         Color(r=190, g=180, b=160, a=255)
     );
+    if share >= 0.0 {
+        wide = max(100, self.width - 80);
+        DrawRectangle(40, i32(self.height / 2 + 48), i32(wide), 10, Color(r=48, g=40, b=32, a=255));
+        DrawRectangle(40, i32(self.height / 2 + 48), i32(int(float(wide) * max(0.0, min(1.0, share)))), 10, Color(r=255, g=184, b=107, a=255));
+    }
     EndDrawing();
 }
 

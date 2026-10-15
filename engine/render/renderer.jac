@@ -266,7 +266,9 @@ obj Renderer {
     def draw_overlay(lines: list[str]);
     def draw_opponents(world: World, height: float, blend: TickBlend = TickBlend());
     def draw_message(message: str);
-    def draw_loading(name: str);
+    """The loading screen of a level being made: its name, the stage it is
+    at and, when `share` is 0 to 1, how far it has got."""
+    def draw_loading(name: str, stage: str = "", share: float = -1.0);
     def draw_combat(state: CombatState, arena: bool, ammo: int = -1, score: str = "");
     def draw_scoreboard(title: str, lines: list[str], footer: str);
     def draw_projectiles(

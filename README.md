@@ -17,7 +17,7 @@ Quake (and games in general) is the thing that got me into programming. This pro
 - **Quake**: the full campaign, 32 maps (start, four episodes, end), with its monsters and bosses (Chthon, Shub-Niggurath), runes, secrets, intermissions and episode text.
 - **Quake II**: the full campaign, 39 maps across its units, with hub returns, the help computer, cinematics, the monster roster and the final bosses.
 - **Quake III Arena**: the single-player ladder from `arenas.txt`: free-for-all matches against botlib-driven bots (AAS routing, fuzzy item and weapon weights, chat), scoring, awards and the podium.
-- **Passion**: a fourth mode that generates seeded expeditions, real three-dimensional levels built from all three games' assets and measured against the originals. See [docs/passion.md](docs/passion.md).
+- **Passion**: a fourth mode of endless seeded runs: real three-dimensional levels built from all three games' assets and measured against the originals, each level's way out leading on to the next, made while the last is played. See [docs/passion.md](docs/passion.md).
 
 Save/load, per-game key bindings, the console and settings work in all modes. An editing studio is being built into the engine ([docs/studio-status.md](docs/studio-status.md)). Network multiplayer and mods are out of scope. Known gaps are tracked per area in [docs/](docs/README.md).
 
@@ -120,7 +120,7 @@ through WSLg cannot capture the mouse, and draws with a software renderer.
 ./qp                                # Quake: e1m1
 QP_GAME=q2 ./qp                     # Quake II: the intro cinematic, then base1
 QP_GAME=q3 QP_MAP=q3dm7 ./qp        # a Quake III arena
-QP_GAME=passion QP_SEED=42 ./qp     # a seeded Passion expedition
+QP_GAME=passion QP_SEED=42 ./qp     # a Passion run from seed 42
 ./qp +map e1m3 +god                 # console commands after the configuration
 ```
 
@@ -130,7 +130,7 @@ QP_GAME=passion QP_SEED=42 ./qp     # a seeded Passion expedition
 | `QP_PACK` | A content pack to play instead: a mission pack, re-release episode or free game (`hipnotic`, `rogue`, `xatrix`, `teamarena`, `librequake`, `openarena`, ...; see [docs/content-packs-status.md](docs/content-packs-status.md)) |
 | `QP_MAP` | Starting map basename (default `e1m1`, `base1`, `q3dm1`) |
 | `QP_ASSETS` | Asset directory for the selected game (for Passion, the parent of all three) |
-| `QP_SEED` | Passion expedition seed |
+| `QP_SEED` | The seed of a Passion run |
 | `QP_WALK=0` | Start in free flight instead of walking |
 | `QP_CONFIG_DIR` | Where settings and bindings live (default `$HOME`) |
 | `QP_CAPTURE=<frame>:<file.png>` | Play normally, save one full screenshot at that frame, exit |
@@ -139,7 +139,6 @@ QP_GAME=passion QP_SEED=42 ./qp     # a seeded Passion expedition
 | `QP_EDIT=1` | Start in the studio (the `edit` command, F8) |
 | `QP_OVERRIDES` | Where the studio saves a map's edited entities (default `.quakepassion-overrides` beside the settings) |
 | `QP_RENDER_LEGACY=1` | Draw models and effect cubes through the old CPU/immediate-mode path, for comparison |
-| `QP_LIGHT_CACHE` | Passion's baked-lighting cache (default `~/.cache/quakepassion/lighting`) |
 
 Validation scripts read further `QP_*` variables of their own; each documents
 them in its header.

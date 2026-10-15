@@ -515,6 +515,48 @@ obj LightJob {
         return True;
     }
 
+    """The work of `step` a step at a time, `faces` faces at a time (a
+    bounce's patches by sixteen, the grid's points by thirty-two), with
+    the laying out of patches between paused too: until all is lit and
+    `finish` may write it."""
+    def work_steps(faces: int) -> Iterator[str] {
+        while self.phase == "direct" {
+            stop = min(self.last, self.next_face + max(1, faces));
+            for index in range(self.next_face, stop) {
+                self.light_face(index);
+            }
+            self.next_face = stop;
+            if self.next_face >= self.last {
+                yield from self.lay_patch_steps();
+                self.phase = "bounce";
+            }
+            yield "direct";
+        }
+        while self.phase == "bounce" {
+            stop = min(len(self.patches), self.next_patch + 16);
+            for index in range(self.next_patch, stop) {
+                self.gather(index);
+            }
+            self.next_patch = stop;
+            if self.next_patch >= len(self.patches) {
+                self.lay_grid();
+                self.phase = "grid";
+            }
+            yield "bounce";
+        }
+        while self.phase == "grid" {
+            stop = min(len(self.grid_points), self.next_point + 32);
+            for index in range(self.next_point, stop) {
+                self.light_point(index);
+            }
+            self.next_point = stop;
+            if self.next_point >= len(self.grid_points) {
+                self.phase = "ready";
+            }
+            yield "grid";
+        }
+    }
+
     """Whether any of a style's lamps comes near enough a face to light it."""
     def style_near(index: int, style: int) -> bool {
         face = self.made.bsp.faces[index];
@@ -612,12 +654,22 @@ obj LightJob {
     each taking the steady light its samples have (less the even ambient)
     times what its material gives back, and the light it gives off."""
     def lay_patches {
+        for label in self.lay_patch_steps() {
+            continue;
+        }
+    }
+
+    """`lay_patches` a step at a time."""
+    def lay_patch_steps -> Iterator[str] {
         bsp = self.made.bsp;
         if not self.bouncing {
             return;
         }
         for index in range(self.first, self.last) {
             at = index - self.first;
+            if at % 256 == 255 {
+                yield "patches";
+            }
             face = bsp.faces[index];
             span = self.sizes[at];
             wide = max(0.001, span[1] - span[0]);
@@ -839,10 +891,21 @@ obj LightJob {
     then a layer for each style that reaches it), the grid, and the
     corners of what moves. Answers how many samples were lit."""
     def finish -> int {
+        for label in self.finish_steps() {
+            continue;
+        }
+        return self.total;
+    }
+
+    """`finish` a step at a time: it pauses every few faces it writes."""
+    def finish_steps -> Iterator[str] {
         bsp = self.made.bsp;
         least = self.least;
         pixels = bytearray();
         for index in range(self.first, self.last) {
+            if (index - self.first) % 256 == 255 {
+                yield "write";
+            }
             at = index - self.first;
             face = bsp.faces[index];
             across = self.dims_of[at][0];
@@ -893,7 +956,7 @@ obj LightJob {
         if self.rays >= self.ray_budget {
             self.made.warnings.append("Light bounced only as far as " + str(self.ray_budget) + " lines of sight");
         }
-        return self.total;
+        yield "written";
     }
 }
 
@@ -930,6 +993,22 @@ def:priv face_glow(scene: Scene, made: LiveLevel) -> dict[int, Vec3] {
 scene has no lamps and nothing glows, or it would take more than `budget`
 samples (the level is then left flat, with a warning)."""
 def light_job(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 400000) -> LightJob | None {
+    held = Lighting();
+    for label in light_job_steps(scene, made, luxel, budget, held) {
+        continue;
+    }
+    return held.job;
+}
+
+"""A light job as it is set up: the job once it is ready (none when there
+is nothing to light, or too much)."""
+obj Lighting {
+    has job: LightJob | None = None;
+}
+
+"""`light_job` a step at a time: it pauses every so many brushes taken as
+shadows and faces measured, and leaves the job in `held`."""
+def light_job_steps(scene: Scene, made: LiveLevel, luxel: float, budget: int, held: Lighting) -> Iterator[str] {
     lamps: list[Lamp] = [];
     styles: list[int] = [];
     switches = switch_styles(scene.items());
@@ -952,8 +1031,9 @@ def light_job(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 
     bsp = made.bsp;
     glowing = face_glow(scene, made);
     if (len(lamps) == 0 and len(glowing) == 0) or len(bsp.models) == 0 {
-        return None;
+        return;
     }
+    yield "glow";
     job = LightJob(made=made, lamps=lamps, lamp_styles=styles, least=scene_floor(scene), luxel=luxel, emission=glowing);
     # Lamps that shine one way light only what is in their cones.
     job.cones = scene_cones(scene);
@@ -975,6 +1055,7 @@ def light_job(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 
         }
     }
     occluder = BrushOccluder();
+    taken = 0;
     for item in scene.items() {
         # What moves, and what is only a volume, casts no fixed shadow.
         if item.classname() not in ["worldspawn", "func_group", "func_wall", "func_static"] {
@@ -985,6 +1066,10 @@ def light_job(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 
             # through casts no shadow.
             if solid.sides and not material_clear(solid.sides[0].material) and brush_contents(solid.sides) & LIQUID_BITS == 0 {
                 occluder.add(solid.sides);
+                taken += 1;
+                if taken % 64 == 0 {
+                    yield "shadows";
+                }
             }
         }
     }
@@ -996,6 +1081,9 @@ def light_job(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 
     # The size of every face's lightmap first, to hold to the budget.
     total = 0;
     for index in range(job.first, job.last) {
+        if (index - job.first) % 1024 == 1023 {
+            yield "measure";
+        }
         face = bsp.faces[index];
         u = face.vertices[1].sub(face.vertices[0]).normalized();
         v = face.normal.cross(u).normalized();
@@ -1015,7 +1103,7 @@ def light_job(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 
     }
     if total > budget {
         made.warnings.append("The scene is too large to light at once (" + str(total) + " samples)");
-        return None;
+        return;
     }
     job.total = total;
     # Bounced light in patches no smaller than four samples, and not so
@@ -1024,7 +1112,8 @@ def light_job(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 
     while float(total) * luxel * luxel / (job.patch_size * job.patch_size) > 2500.0 {
         job.patch_size *= 2.0;
     }
-    return job;
+    held.job = job;
+    yield "ready";
 }
 
 """Light the level a scene compiled to. Answers how many samples were lit:

@@ -1,18 +1,18 @@
 """Passion's generator: the massing seals what it carves, every archetype
 gives doorways and a stage, arrangements are deterministic and their
 corridors join the doorways they were routed between, the cast keeps its
-promises (a start, an exit, a door for each lock), the critic and the light
-cache work, and a compiled expedition can be walked from its start to its
-exit by the yardstick's traversal of its real collision."""
+promises (a start, an exit, a door for each lock), a run's levels follow
+one another, a forge made a step at a time makes what a survey makes, and
+a compiled expedition can be walked from its start to its exit by the
+yardstick's traversal of its real collision."""
 import from engine.math.vec3 { Vec3 }
-import from engine.formats.bsp { Bsp, Face }
 import from engine.formats.brush_collision { build_brush_collision }
 import from games.passion.random { stream_for }
 import from games.passion.mission { build_mission, beats_of, links_of, validate_mission }
 import from games.passion.massing { Massing, CELL, LIFT, floor_reached }
 import from games.passion.spaces { Space, ARCHETYPES, shape_space, space_size }
 import from games.passion.arrange { arrange, estate_spaces, estate_corridors, doorway_block, Estate, CORRIDOR_HIGH }
-import from games.passion.generate { seed_from, survey, pack_light, unpack_light, VERSION }
+import from games.passion.generate { seed_from, run_of, level_name, next_level, level_seed, survey, Forge, VERSION }
 import from games.passion.critic { critic_measures, critic_score }
 import from games.passion.yardstick { traverse, Spread, level_start }
 import from editor.formats.map { MapFile }
@@ -133,9 +133,16 @@ test "arrangements are deterministic and corridors join their doorways" {
     assert routed > 0;
 }
 
-test "expedition names parse strictly" {
+test "expedition names parse strictly, and a run's levels follow one another" {
     assert seed_from(VERSION + "-42") == 42;
-    for bad in ["v2-42", VERSION + "-042", VERSION + "-0", VERSION + "-2147483647", "42"] {
+    assert run_of(VERSION + "-42-3") == [42, 3];
+    assert next_level(VERSION + "-42") == VERSION + "-42-2" and next_level(VERSION + "-42-2") == VERSION + "-42-3";
+    assert level_name(42, 1) == VERSION + "-42";
+    # Each level of a run has a seed of its own, the same every time.
+    seeds = [level_seed(42, depth) for depth in range(1, 6)];
+    assert len(set(seeds)) == 5 and seeds == [level_seed(42, depth) for depth in range(1, 6)];
+    assert seed_from(VERSION + "-42-2") == seeds[1];
+    for bad in ["v2-42", VERSION + "-042", VERSION + "-0", VERSION + "-2147483647", "42", VERSION + "-42-1", VERSION + "-42-02", VERSION + "-42-0", VERSION + "-42-2-3"] {
         refused = False;
         try {
             seed_from(bad);
@@ -160,36 +167,18 @@ test "a survey keeps its promises: start, exit, a door for every lock, a fair sc
     assert len(record.items[0].brushes) > 500;
     assert record.score > -60.0 , str(record.score);
     assert record.measures["levels"] >= 2.0;
-    again = survey(7);
+    # Made a step at a time, the same seed makes the same expedition.
+    forge = Forge(name=VERSION + "-7");
+    steps = 0;
+    while not forge.advance(0.0) {
+        steps += 1;
+    }
+    again = forge.survey;
+    made = forge.made;
+    assert not forge.failure and again is not None and made is not None , forge.failure;
+    assert steps > 50 and forge.stage == "ready" and forge.share() == 1.0;
     assert again.score == record.score and len(again.items) == len(record.items);
-}
-
-test "a level's light is kept and read back whole" {
-    bsp = Bsp(game="passion");
-    for index in range(3) {
-        face = Face(vertices=[Vec3(), Vec3(x=1.0), Vec3(y=1.0)]);
-        face.light_offset = index * 12;
-        face.light_width = 2;
-        face.light_height = 2;
-        face.styles = [0, 33] if index == 1 else [0];
-        face.light_uv = [0.0, 0.5, 1.0, 1.5, 0.25, 0.75];
-        face.colors = [10, 20, 30, 255] if index == 2 else [];
-        bsp.faces.append(face);
-    }
-    bsp.lighting = bytes([index % 128 for index in range(36)]);
-    bsp.light_grid = bytes([1, 2, 3, 4, 5, 6, 7, 8]);
-    bsp.light_channels = 3;
-    data = pack_light(bsp);
-    fresh = Bsp(game="passion");
-    for index in range(3) {
-        fresh.faces.append(Face(vertices=[Vec3(), Vec3(x=1.0), Vec3(y=1.0)]));
-    }
-    assert unpack_light(data, fresh);
-    assert fresh.faces[1].styles == [0, 33] and fresh.faces[2].colors == [10, 20, 30, 255];
-    assert fresh.faces[0].light_uv[3] == 1.5 and fresh.lighting == bsp.lighting and fresh.light_grid == bsp.light_grid;
-    fresh.faces.append(Face());
-    assert not unpack_light(data, fresh);
-    assert not unpack_light(data[:-1], fresh);
+    assert len(made.bsp.faces) > 1000;
 }
 
 test "a compiled expedition is walked from its start to its exit" {

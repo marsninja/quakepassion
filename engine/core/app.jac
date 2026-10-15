@@ -163,6 +163,8 @@ import from games.q2_layouts {
     Q2_USABLE_ITEMS
 }
 import from games.levels { open_level }
+import from games.passion.generate { Forge }
+import from games.passion.run { Run, run_of_level, run_title, PLAY_BUDGET, WAIT_BUDGET }
 import from ..render.effects { EffectScene }
 import from ..render.flares { FlareRenderer }
 import from ..render.viewweapon { ViewWeapon }
@@ -416,7 +418,9 @@ obj App {
         bench_ctrl: bool = False,
         bench_alt: bool = False;
 
-    has expedition_complete: bool = False;
+    has expedition_complete: bool = False,
+        # The Passion run being played: its levels, the next being made.
+        passion_run: Run | None = None;
     has finale_text: str = "",
         finale_active: bool = False,
         intermission_text: str = "",
@@ -515,6 +519,21 @@ obj App {
     def run();
     def step() -> bool;
     def switch_level();
+    """A Passion level's forge: the one made ahead when it is this level,
+    else made now, its progress on the loading screen."""
+    def passion_forge(name: str) -> Forge;
+    """Keep the player as they came into a Passion level, to begin it again
+    so after a death."""
+    def keep_passion_entry();
+    """Begin the Passion level being played again, the player as they came
+    into it. False when there is nothing kept to begin it from."""
+    def restart_passion() -> bool;
+    """A Passion level's way out was reached: note it, and go on to the
+    next level once it is made."""
+    def passion_cleared();
+    """While a cleared Passion level waits on the next: make more of it, and
+    go on when it is made and wanted."""
+    def passion_onward(asked: bool);
     def load_destination(
         game: str,
         name: str,

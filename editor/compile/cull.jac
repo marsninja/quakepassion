@@ -12,7 +12,9 @@ import from engine.math.vec3 { Vec3 }
 import from ..geometry.brush { Side }
 
 glob CULL_EPSILON: float = 0.01,
-     CULL_CELL: float = 256.0;
+     CULL_CELL: float = 256.0,
+     # Pieces cut between a side's pauses.
+     CUT_SLICE: int = 400;
 
 """The two pieces of a polygon either side of a plane: [front, back], each
 empty when nothing lies there. Points on the plane go to both."""
@@ -172,7 +174,18 @@ obj FaceCutter {
     """The pieces of brush `owner`'s side (its winding `outline`) that no
     other brush covers."""
     def pieces(owner: int, outline: list[Vec3], normal: Vec3, dist: float) -> list[list[Vec3]] {
+        found: list[list[Vec3]] = [];
+        for label in self.piece_steps(owner, outline, normal, dist, found) {
+            continue;
+        }
+        return found;
+    }
+
+    """`pieces` a step at a time, into `found`: it pauses every so many
+    pieces cut, for a side that many brushes cover."""
+    def piece_steps(owner: int, outline: list[Vec3], normal: Vec3, dist: float, found: list[list[Vec3]]) -> Iterator[str] {
         kept: list[list[Vec3]] = [outline];
+        work = 0;
         for other in self.near(outline, owner) {
             cut: list[list[Vec3]] = [];
             for piece in kept {
@@ -186,8 +199,13 @@ obj FaceCutter {
             if not kept {
                 break;
             }
+            work += len(kept);
+            if work >= CUT_SLICE {
+                work = 0;
+                yield "cut";
+            }
         }
-        return kept;
+        found.extend(kept);
     }
 }
 

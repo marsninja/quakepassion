@@ -104,6 +104,9 @@ impl App.handle_keys() -> bool {
     polled = self.keyboard.poll();
     events = polled[0];
     typed = polled[1];
+    if self.menu.opened and not self.console.active {
+        self.menu.typed = list(typed);
+    }
     escape = False;
     shift = self.keyboard.is_down("SHIFT");
     ctrl = self.keyboard.is_down("CTRL") or self.keyboard.is_down("COMMAND");
