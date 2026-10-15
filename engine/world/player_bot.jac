@@ -1065,6 +1065,34 @@ walker AutoThink {
             return;
         }
         here_area = self.bot.area_near(self.origin)[0];
+        self.nearest_exit(here_area);
+        if bot.exit_goal is not None {
+            return;
+        }
+        # None to be had with the doors it has found shut closed off: one
+        # beyond such a door is still the way out, and the door is then seen
+        # to on the way (what opens it, its key), as any door in the way is.
+        shut = [area for (area, held) in bot.closed.items() if held[0] != 0 and area in mesh.disabled];
+        if not shut {
+            return;
+        }
+        for area in shut {
+            mesh.enable_area(area, True);
+        }
+        self.nearest_exit(here_area);
+        for area in shut {
+            mesh.enable_area(area, False);
+        }
+    }
+
+    """The nearest way out the bot can get to from `here_area` as the areas
+    stand open, as its exit goal (left as it was when none)."""
+    def nearest_exit(here_area: int) {
+        bot = self.bot;
+        mesh = bot.mesh;
+        if mesh is None {
+            return;
+        }
         best_time = UNREACHED;
         for portal in [self.world->:HasExit:->][?:LevelExit] {
             if not portal.volume.bounds {
@@ -1072,22 +1100,30 @@ walker AutoThink {
             }
             box = portal.volume.bounds[0];
             goal = box.mins.add(box.maxs).scale(0.5);
-            area = mesh.locate(goal);
-            # A tall volume's middle floats over the floor, in no area: any
-            # area reaching into it (as with an item's box) is the way in.
-            if area == 0 {
-                for candidate in mesh.aas.box_areas(box.mins, box.maxs, 16) {
-                    if mesh.aas.areas[candidate].reach_count > 0 and candidate not in mesh.disabled {
-                        area = candidate;
-                        break;
-                    }
-                }
-            }
-            if area == 0 or here_area == 0 {
+            if here_area == 0 {
                 continue;
             }
-            times = mesh.times_to(area, TFL_DEFAULT);
-            cost = times[here_area] if here_area < len(times) else UNREACHED;
+            # The area at its middle, or (a tall volume's middle floats over
+            # the floor, in no area) the one reaching into it soonest got to,
+            # as with an item's box.
+            area = 0;
+            cost = UNREACHED;
+            candidates = [mesh.locate(goal)];
+            candidates.extend(mesh.aas.box_areas(box.mins, box.maxs, 16));
+            for candidate in candidates {
+                if candidate <= 0 or mesh.aas.areas[candidate].reach_count == 0 or candidate in mesh.disabled {
+                    continue;
+                }
+                times = mesh.times_to(candidate, TFL_DEFAULT);
+                took = times[here_area] if here_area < len(times) else UNREACHED;
+                if took < cost {
+                    cost = took;
+                    area = candidate;
+                }
+            }
+            if area == 0 {
+                continue;
+            }
             if cost < best_time {
                 best_time = cost;
                 bot.exit_goal = goal;

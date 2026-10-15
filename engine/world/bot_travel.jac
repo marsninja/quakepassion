@@ -871,7 +871,9 @@ walker FollowRoute {
         }
         while route.points {
             passage = route.passages[0] if route.passages else None;
-            if passage is not None and special_travel(passage.kind) {
+            # A teleporter's way is done when the bot comes out of it, not on
+            # coming near its edge: short of the trigger, nothing carries it.
+            if passage is not None and (special_travel(passage.kind) or passage.kind == TRAVEL_TELEPORT) {
                 if standing != route.areas[0] {
                     break;
                 }
