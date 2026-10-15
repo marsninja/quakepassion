@@ -777,7 +777,16 @@ def plan_route(
         came_from = area;
         if best.kind in [TRAVEL_TELEPORT, TRAVEL_JUMPPAD] {
             # The trigger carries the bot on; planning resumes where it lands.
-            route.add(best.start, best.target, passage=best);
+            # A teleporter is walked on into, past the edge of its trigger
+            # where the way starts.
+            aim = best.start;
+            if best.kind == TRAVEL_TELEPORT {
+                into = Vec3(x=best.start.x - position.x, y=best.start.y - position.y);
+                if into.length() > 1.0 {
+                    aim = best.start.add(into.normalized().scale(16.0));
+                }
+            }
+            route.add(aim, best.target, passage=best);
             route.found = True;
             return route;
         }

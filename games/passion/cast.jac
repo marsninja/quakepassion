@@ -271,7 +271,7 @@ obj Director3 {
 
     """A free place in a space, spread from what stands there already and
     far from `away` when given; on a perch when asked and one is free."""
-    def take(space: Space, perch: bool = False, away: list[float] = []) -> list[float] {
+    def take(space: Space, perch: bool = False, away: list[float] = [], roomy: bool = False) -> list[float] {
         land = self.ground(space);
         pool = land.perches if perch and land.perches else land.spots;
         best: list[int] = [];
@@ -289,6 +289,12 @@ obj Director3 {
             if away {
                 score += 0.3 * (abs((float(cell[0]) + 0.5) * CELL - away[0]) + abs((float(cell[1]) + 0.5) * CELL - away[1]));
             }
+            # Roomy: floor all round, so a body (or a pad a cell either side)
+            # set down there touches no wall nor what dresses one. Asked after
+            # the dice, so the dice fall the same whatever is asked.
+            if roomy and not self.open_round(cell) {
+                continue;
+            }
             if score > best_score {
                 best_score = score;
                 best = cell;
@@ -299,6 +305,21 @@ obj Director3 {
         }
         land.taken.append(best);
         return [(float(best[0]) + 0.5) * CELL, (float(best[1]) + 0.5) * CELL, float(best[2]) * LIFT + 24.0];
+    }
+
+    """Whether the eight cells round `cell` are floor with air above, as
+    `cell` is."""
+    def open_round(cell: list[int]) -> bool {
+        for dy in [-1, 0, 1] {
+            for dx in [-1, 0, 1] {
+                x = cell[0] + dx;
+                y = cell[1] + dy;
+                if not self.mass.air(x, y, cell[2]) or not self.mass.air(x, y, cell[2] + 3) or self.mass.air(x, y, cell[2] - 1) {
+                    return False;
+                }
+            }
+        }
+        return True;
     }
 
     """A space's stage as a point to stand on."""
@@ -345,7 +366,9 @@ def cast_objectives(director: Director3) {
             high = Vec3(x=point[0] + 32.0, y=point[1] + 32.0, z=floor + 8.0);
             director.put_brushed({"classname": "func_wall", "_passion": "exit"}, [plain_box(low, high, TELEPORT_MATERIAL, 1.0)]);
             director.put({"classname": "light", "origin": origin_text(point[0], point[1], floor + 56.0), "light": "300", "_color": "200 220 255"});
-            director.made.exit_low = [point[0] - 32.0, point[1] - 32.0, floor + 8.0];
+            # The way out is touched by a body's feet: from just over the
+            # floor, so feet on the gate (its top at floor + 8) are inside it.
+            director.made.exit_low = [point[0] - 32.0, point[1] - 32.0, floor + 2.0];
             director.made.exit_high = [point[0] + 32.0, point[1] + 32.0, floor + 96.0];
         }
         beat = director.plan_beat(space.beat);
@@ -506,8 +529,8 @@ def cast_teleporter(director: Director3, corridor: Corridor) {
     }
     ways = [(tail, head)] if corridor.mode == "valve" else [(tail, head), (head, tail)];
     for (source, target) in ways {
-        here = director.take(source);
-        there = director.take(target);
+        here = director.take(source, roomy=True);
+        there = director.take(target, roomy=True);
         if not here or not there {
             continue;
         }
@@ -522,10 +545,12 @@ def cast_teleporter(director: Director3, corridor: Corridor) {
             [plain_box(Vec3(x=here[0] - 24.0, y=here[1] - 24.0, z=floor + 4.0), Vec3(x=here[0] + 24.0, y=here[1] + 24.0, z=floor + 68.0), "trigger", 1.0)]
         );
         middle = director.middle(target);
+        # A little over the floor: the arrival is clear of a pad beside it,
+        # and the body drops the last few units.
         director.put({
             "classname": "info_teleport_destination",
             "targetname": name,
-            "origin": origin_text(there[0], there[1], there[2]),
+            "origin": origin_text(there[0], there[1], there[2] + 8.0),
             "angle": str(yaw_toward(there[0], there[1], middle[0], middle[1]))
         });
         director.put({"classname": "light", "origin": origin_text(here[0], here[1], floor + 64.0), "light": "180", "_color": "180 200 255"});

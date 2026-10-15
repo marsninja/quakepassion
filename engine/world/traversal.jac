@@ -524,9 +524,13 @@ def load_traversal(world: World, bsp: Bsp) {
                 world +>:HasTraversal:+> traversal;
                 continue;
             }
+            # Passion's levels place Quake's destinations among the others.
             supported = ["info_teleport_destination"]
                 if bsp.game == "q1"
                 else ["target_position", "misc_teleporter_dest", "info_notnull"];
+            if bsp.game == "passion" {
+                supported.append("info_teleport_destination");
+            }
             if point_pad {
                 supported = ["misc_teleporter_dest"];
             }

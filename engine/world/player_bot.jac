@@ -19,7 +19,7 @@ import from .bot_travel { FollowRoute, TravelResult, gap_distance, soonest_out, 
 import from .pickups { Pickup, HasPickup }
 import from .inventory { quantity }
 import from .bot_trace { BotTrace, trace_text, trace_number, trace_point }
-import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_for, Projectile, HasProjectile }
+import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_for, weapon_rule, Projectile, HasProjectile }
 import from .exits { LevelExit, HasExit }
 import from .doors { Door, HasDoor, door_starts_open }
 import from .trains { Train, HasTrain, TrackPoint, TrackNext }
@@ -41,7 +41,10 @@ glob AUTO_THINK: float = 0.1,
     # How long something given up is passed over: supplies (there are
     # others) and the rest.
     AUTO_PASS_SUPPLY: float = 240.0,
-    AUTO_PASS_OTHER: float = 60.0;
+    AUTO_PASS_OTHER: float = 60.0,
+    # Seconds a fight may go on with no harm done and no nearer before the
+    # enemy is given up and the bot goes back to its way.
+    AUTO_FIGHT_STALL: float = 12.0;
 
 """Something the bot can be doing."""
 node AutoMode {
@@ -119,6 +122,12 @@ node PlayerBot {
         given_up: list[tuple[Vec3, float]] = [],
         # Monsters given up killing, and until when (they move about).
         given_up_bodies: list[tuple[Opponent, float]] = [],
+        # The fight under way: with whom, its health and distance last think,
+        # the nearest it has been, and when the fight last got anywhere.
+        fight_with: Opponent | None = None,
+        fight_health: int = 0,
+        fight_nearest: float = 0.0,
+        fight_moved_at: float = 0.0,
         exit_goal: Vec3 | None = None,
         # The areas it has stood in, and when it last chose where to roam.
         visited: set[int] = set(),
@@ -398,6 +407,16 @@ node PlayerBot {
     def passed_over(point: Vec3) -> bool {
         for (spot, until) in self.given_up {
             if until > self.clock and spot.sub(point).length() < 8.0 {
+                return True;
+            }
+        }
+        return False;
+    }
+
+    """Whether a monster is given up fighting, for now."""
+    def passed_body(body: Opponent) -> bool {
+        for (quarry, until) in self.given_up_bodies {
+            if until > self.clock and quarry is body {
                 return True;
             }
         }
@@ -954,6 +973,12 @@ walker AutoThink {
             if line.fraction < 0.97 {
                 continue;
             }
+            # One given up fighting (no harm done to it, and no nearer, for a
+            # while) is passed by, unless it is hurting the bot now.
+            attacked = self.bot.clock - self.bot.hurt_at < 2.0 and distance < 200.0;
+            if not attacked and self.bot.passed_body(body) {
+                continue;
+            }
             # One it holds nothing to hurt with (only the axe, out of reach;
             # nothing that does enough at once to a zombie) is not fought:
             # it keeps on its way, dodging what comes at it.
@@ -1040,6 +1065,34 @@ walker AutoThink {
             return;
         }
         here_area = self.bot.area_near(self.origin)[0];
+        self.nearest_exit(here_area);
+        if bot.exit_goal is not None {
+            return;
+        }
+        # None to be had with the doors it has found shut closed off: one
+        # beyond such a door is still the way out, and the door is then seen
+        # to on the way (what opens it, its key), as any door in the way is.
+        shut = [area for (area, held) in bot.closed.items() if held[0] != 0 and area in mesh.disabled];
+        if not shut {
+            return;
+        }
+        for area in shut {
+            mesh.enable_area(area, True);
+        }
+        self.nearest_exit(here_area);
+        for area in shut {
+            mesh.enable_area(area, False);
+        }
+    }
+
+    """The nearest way out the bot can get to from `here_area` as the areas
+    stand open, as its exit goal (left as it was when none)."""
+    def nearest_exit(here_area: int) {
+        bot = self.bot;
+        mesh = bot.mesh;
+        if mesh is None {
+            return;
+        }
         best_time = UNREACHED;
         for portal in [self.world->:HasExit:->][?:LevelExit] {
             if not portal.volume.bounds {
@@ -1047,12 +1100,30 @@ walker AutoThink {
             }
             box = portal.volume.bounds[0];
             goal = box.mins.add(box.maxs).scale(0.5);
-            area = mesh.locate(goal);
-            if area == 0 or here_area == 0 {
+            if here_area == 0 {
                 continue;
             }
-            times = mesh.times_to(area, TFL_DEFAULT);
-            cost = times[here_area] if here_area < len(times) else UNREACHED;
+            # The area at its middle, or (a tall volume's middle floats over
+            # the floor, in no area) the one reaching into it soonest got to,
+            # as with an item's box.
+            area = 0;
+            cost = UNREACHED;
+            candidates = [mesh.locate(goal)];
+            candidates.extend(mesh.aas.box_areas(box.mins, box.maxs, 16));
+            for candidate in candidates {
+                if candidate <= 0 or mesh.aas.areas[candidate].reach_count == 0 or candidate in mesh.disabled {
+                    continue;
+                }
+                times = mesh.times_to(candidate, TFL_DEFAULT);
+                took = times[here_area] if here_area < len(times) else UNREACHED;
+                if took < cost {
+                    cost = took;
+                    area = candidate;
+                }
+            }
+            if area == 0 {
+                continue;
+            }
             if cost < best_time {
                 best_time = cost;
                 bot.exit_goal = goal;
@@ -1631,9 +1702,44 @@ walker AutoThink {
         }
     }
 
+    """Keep count of the fight with `enemy`: it is getting somewhere while
+    the enemy is hurt or the bot gets nearer it. One that has got nowhere
+    for a while (out of reach of all it holds, or shot at to no effect) is
+    given up for a time, and None is answered: the bot goes on its way."""
+    def keep_fight(enemy: Opponent | None) -> Opponent | None {
+        bot = self.bot;
+        if enemy is None {
+            bot.fight_with = None;
+            return None;
+        }
+        distance = enemy.pos.sub(self.player.pos).length();
+        if enemy is not bot.fight_with {
+            bot.fight_with = enemy;
+            bot.fight_health = enemy.health;
+            bot.fight_nearest = distance;
+            bot.fight_moved_at = bot.clock;
+            return enemy;
+        }
+        # A hurt is counted think by think, so a zombie whose health comes
+        # back after each pain is still seen being hit.
+        if enemy.health < bot.fight_health or distance < bot.fight_nearest - 32.0 {
+            bot.fight_moved_at = bot.clock;
+            bot.fight_nearest = min(bot.fight_nearest, distance);
+        }
+        bot.fight_health = enemy.health;
+        if bot.clock - bot.fight_moved_at < AUTO_FIGHT_STALL {
+            return enemy;
+        }
+        print("AUTOPLAY fight given up:", enemy.rule.model, "no harm done and no nearer for", int(bot.clock - bot.fight_moved_at), "s");
+        bot.trace.event("fight_given_up", bot.clock, {"enemy": trace_text(enemy.rule.model), "distance": trace_number(distance)});
+        bot.given_up_bodies.append((enemy, bot.clock + AUTO_PASS_OTHER));
+        bot.fight_with = None;
+        return None;
+    }
+
     can engage with Engage entry {
         bot = self.bot;
-        enemy = self.spot_enemy();
+        enemy = self.keep_fight(self.spot_enemy());
         bot.enemy = enemy;
         if enemy is None {
             visit self.shift(here, "seek_exit");
@@ -1713,7 +1819,7 @@ walker AutoThink {
         if objective.kind == "kill" {
             bot.enemy = objective.body;
         } else {
-            enemy = self.spot_enemy();
+            enemy = self.keep_fight(self.spot_enemy());
             bot.enemy = enemy;
         }
         # A button is walked into (its middle); a trigger stood in, at the
@@ -1835,13 +1941,19 @@ walker AutoThink {
         if best is None {
             return False;
         }
+        # Chosen again, the same goal keeps its count of how long it has got
+        # no nearer: else one it cannot reach is never given up.
+        previous = bot.goal;
+        same = previous is not None and previous.sub(best).length() < 1.0;
         bot.goal = best;
         bot.goal_area = best_area;
         bot.goal_name = best_name;
-        bot.route.abandon();
         bot.roam_chosen = bot.clock;
-        bot.roam_nearest = 1.0e9;
-        bot.roam_nearer_at = bot.clock;
+        if not same {
+            bot.route.abandon();
+            bot.roam_nearest = 1.0e9;
+            bot.roam_nearer_at = bot.clock;
+        }
         return True;
     }
 
@@ -1854,6 +1966,12 @@ walker AutoThink {
             return;
         }
         if self.resupply() {
+            visit self.shift(here, "activate");
+            return;
+        }
+        # A door in the way that something else opens: that first, or a way
+        # round it, rather than walking into it again and again.
+        if self.check_movers() {
             visit self.shift(here, "activate");
             return;
         }
@@ -2183,6 +2301,11 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             standoff = max(220.0, autoplay_standoff(player, state, foe) + 20.0);
             wet = player.water_depth >= 2;
             needed = autoplay_needed(foe);
+            # Holding nothing that hurts it from farther than arm's length (an
+            # axe, a gauntlet): in to swing, not off out of its own reach.
+            if autoplay_can_hurt(player, state, foe, 64.0) and not autoplay_can_hurt(player, state, foe, 220.0) {
+                standoff = 40.0;
+            }
             # Knocking a zombie down rather than blowing it apart: near
             # enough to hit, not off at the grenade launcher's distance.
             if autoplay_knock(foe) > 0 and autoplay_weapon(player, state, reach, wet, needed) <= 0 {
@@ -2267,8 +2390,12 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         }
         yaw_gap = abs(autoplay_turn(player.yaw, want_yaw));
         pitch_gap = abs(want_pitch - player.pitch);
-        # Only with a weapon that reaches it: not the axe from across a room.
-        intent.fire = slot > 0 and yaw_gap < 0.12 and pitch_gap < 0.15;
+        # Only with a weapon that reaches it, and only once that is the one
+        # in hand: an axe or a gauntlet swung from across a room hits
+        # nothing, while the gun asked for is still being taken up.
+        held = weapon_rule(state, state.weapon);
+        in_hand = held is not None and held.reach >= distance;
+        intent.fire = slot > 0 and in_hand and yaw_gap < 0.12 and pitch_gap < 0.15;
         self.fired = intent.fire;
     } elif self.travel.view_set {
         want_yaw = math.radians(self.travel.yaw);
