@@ -14,6 +14,7 @@ it. Once a candidate is chosen and its brushes written, the level opens as
 a document, as `ed_exp open` opens one."""
 
 import os;
+import math;
 import from engine.math.vec3 { Vec3 }
 import from games.passion.generate { Survey, survey, Forge, level_name, run_of, CANDIDATES }
 import from games.passion.massing { CELL, LIFT }
@@ -42,6 +43,8 @@ obj Expeditions(StudioTool) {
         stepping: bool = False,
         pace: int = 3,
         framed: str = "",
+        # The rooms' bounds (in cells) the camera was set to take in.
+        framed_box: list[int] = [],
         since_panel: float = 0.0;
 
     def commands -> list[tuple[str, str, str]] {
@@ -239,6 +242,7 @@ obj Expeditions(StudioTool) {
             self.paused = False;
             self.stepping = False;
             self.framed = "";
+            self.framed_box = [];
             self.shown = False;
             host.run(["ed_scene", "forge_" + name.replace("-", "_")]);
             host.say("Watching " + name + " being made");
@@ -332,28 +336,26 @@ obj Expeditions(StudioTool) {
     }
 
     """Point the camera at a candidate's rooms: from behind and above
-    them, the whole in view."""
+    their middle, far enough back that the whole of them, across and up and
+    down, is in view."""
     def frame_spaces(host: ToolHost, spaces: list[Space]) {
         if not spaces {
             return;
         }
         low_x = min([float(space.x) for space in spaces]) * CELL;
         low_y = min([float(space.y) for space in spaces]) * CELL;
+        low_z = min([float(space.z) for space in spaces]) * LIFT;
         high_x = max([float(space.x + space.w) for space in spaces]) * CELL;
         high_y = max([float(space.y + space.d) for space in spaces]) * CELL;
         high_z = max([float(space.z + space.h) for space in spaces]) * LIFT;
-        span = max(high_x - low_x, high_y - low_y);
+        span = max(max(high_x - low_x, high_y - low_y), (high_z - low_z) * 1.4);
         middle_x = (low_x + high_x) * 0.5;
-        host.run(
-            [
-                "ed_cam",
-                str(int(middle_x)),
-                str(int(low_y - span * 0.55)),
-                str(int(high_z + span * 0.55)),
-                "90",
-                "-40"
-            ]
-        );
+        middle_y = (low_y + high_y) * 0.5;
+        middle_z = (low_z + high_z) * 0.5;
+        eye_y = low_y - span * 0.55;
+        eye_z = high_z + span * 0.4;
+        pitch = -math.degrees(math.atan2(eye_z - middle_z, middle_y - eye_y));
+        host.run(["ed_cam", str(int(middle_x)), str(int(eye_y)), str(int(eye_z)), "90", str(int(pitch))]);
     }
 
     def tick(host: ToolHost, dt: float) {
@@ -388,8 +390,12 @@ obj Expeditions(StudioTool) {
             # Again once the rooms are in the massing (they are moved into it).
             key = str(record.candidates) + ("m" if layout is not None and layout.mass is not None else "p");
             spaces = estate_spaces(estate);
-            if key != self.framed and (len(spaces) >= 6 or key.endswith("m")) {
+            # And again whenever a room is placed beyond what is in view (a
+            # room stacked above or below the rest).
+            box = spaces_box(spaces);
+            if (len(spaces) >= 6 or key.endswith("m")) and (key != self.framed or not box_within(box, self.framed_box)) {
                 self.framed = key;
+                self.framed_box = box;
                 self.frame_spaces(host, spaces);
             }
         }
@@ -554,6 +560,29 @@ obj Expeditions(StudioTool) {
     def settings_lines(host: ToolHost) -> list[str] {
         return [];
     }
+}
+
+"""The bounds of rooms, in cells: lowest x, y and z, then highest."""
+def spaces_box(spaces: list[Space]) -> list[int] {
+    if not spaces {
+        return [];
+    }
+    return [
+        min([space.x for space in spaces]),
+        min([space.y for space in spaces]),
+        min([space.z for space in spaces]),
+        max([space.x + space.w for space in spaces]),
+        max([space.y + space.d for space in spaces]),
+        max([space.z + space.h for space in spaces])
+    ];
+}
+
+"""Whether one set of bounds lies inside another."""
+def box_within(inner: list[int], outer: list[int]) -> bool {
+    if len(inner) != 6 or len(outer) != 6 {
+        return False;
+    }
+    return inner[0] >= outer[0] and inner[1] >= outer[1] and inner[2] >= outer[2] and inner[3] <= outer[3] and inner[4] <= outer[4] and inner[5] <= outer[5];
 }
 
 """The twelve edges of a box."""
