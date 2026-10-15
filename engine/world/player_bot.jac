@@ -41,7 +41,10 @@ glob AUTO_THINK: float = 0.1,
     # How long something given up is passed over: supplies (there are
     # others) and the rest.
     AUTO_PASS_SUPPLY: float = 240.0,
-    AUTO_PASS_OTHER: float = 60.0;
+    AUTO_PASS_OTHER: float = 60.0,
+    # Seconds a fight may go on with no harm done and no nearer before the
+    # enemy is given up and the bot goes back to its way.
+    AUTO_FIGHT_STALL: float = 12.0;
 
 """Something the bot can be doing."""
 node AutoMode {
@@ -119,6 +122,12 @@ node PlayerBot {
         given_up: list[tuple[Vec3, float]] = [],
         # Monsters given up killing, and until when (they move about).
         given_up_bodies: list[tuple[Opponent, float]] = [],
+        # The fight under way: with whom, its health and distance last think,
+        # the nearest it has been, and when the fight last got anywhere.
+        fight_with: Opponent | None = None,
+        fight_health: int = 0,
+        fight_nearest: float = 0.0,
+        fight_moved_at: float = 0.0,
         exit_goal: Vec3 | None = None,
         # The areas it has stood in, and when it last chose where to roam.
         visited: set[int] = set(),
@@ -398,6 +407,16 @@ node PlayerBot {
     def passed_over(point: Vec3) -> bool {
         for (spot, until) in self.given_up {
             if until > self.clock and spot.sub(point).length() < 8.0 {
+                return True;
+            }
+        }
+        return False;
+    }
+
+    """Whether a monster is given up fighting, for now."""
+    def passed_body(body: Opponent) -> bool {
+        for (quarry, until) in self.given_up_bodies {
+            if until > self.clock and quarry is body {
                 return True;
             }
         }
@@ -952,6 +971,11 @@ walker AutoThink {
             }
             line = self.level.collision.trace_point(eye, target);
             if line.fraction < 0.97 {
+                continue;
+            }
+            # One given up fighting (no harm done to it, and no nearer, for a
+            # while) is passed by, unless it is at arm's length.
+            if distance > 120.0 and self.bot.passed_body(body) {
                 continue;
             }
             # One it holds nothing to hurt with (only the axe, out of reach;
@@ -1631,9 +1655,44 @@ walker AutoThink {
         }
     }
 
+    """Keep count of the fight with `enemy`: it is getting somewhere while
+    the enemy is hurt or the bot gets nearer it. One that has got nowhere
+    for a while (out of reach of all it holds, or shot at to no effect) is
+    given up for a time, and None is answered: the bot goes on its way."""
+    def keep_fight(enemy: Opponent | None) -> Opponent | None {
+        bot = self.bot;
+        if enemy is None {
+            bot.fight_with = None;
+            return None;
+        }
+        distance = enemy.pos.sub(self.player.pos).length();
+        if enemy is not bot.fight_with {
+            bot.fight_with = enemy;
+            bot.fight_health = enemy.health;
+            bot.fight_nearest = distance;
+            bot.fight_moved_at = bot.clock;
+            return enemy;
+        }
+        # A hurt is counted think by think, so a zombie whose health comes
+        # back after each pain is still seen being hit.
+        if enemy.health < bot.fight_health or distance < bot.fight_nearest - 32.0 {
+            bot.fight_moved_at = bot.clock;
+            bot.fight_nearest = min(bot.fight_nearest, distance);
+        }
+        bot.fight_health = enemy.health;
+        if bot.clock - bot.fight_moved_at < AUTO_FIGHT_STALL {
+            return enemy;
+        }
+        print("AUTOPLAY fight given up:", enemy.rule.model, "no harm done and no nearer for", int(bot.clock - bot.fight_moved_at), "s");
+        bot.trace.event("fight_given_up", bot.clock, {"enemy": trace_text(enemy.rule.model), "distance": trace_number(distance)});
+        bot.given_up_bodies.append((enemy, bot.clock + AUTO_PASS_OTHER));
+        bot.fight_with = None;
+        return None;
+    }
+
     can engage with Engage entry {
         bot = self.bot;
-        enemy = self.spot_enemy();
+        enemy = self.keep_fight(self.spot_enemy());
         bot.enemy = enemy;
         if enemy is None {
             visit self.shift(here, "seek_exit");
@@ -1713,7 +1772,7 @@ walker AutoThink {
         if objective.kind == "kill" {
             bot.enemy = objective.body;
         } else {
-            enemy = self.spot_enemy();
+            enemy = self.keep_fight(self.spot_enemy());
             bot.enemy = enemy;
         }
         # A button is walked into (its middle); a trigger stood in, at the
