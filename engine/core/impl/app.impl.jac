@@ -54,6 +54,11 @@ impl App.run() {
         self.flares.upload(self.level);
         self.prepare_presentation();
         self.record_entry();
+        started_run = self.passion_run;
+        if self.level.bsp.game == "passion" and started_run is not None {
+            started_run.opened(time.time());
+            self.keep_passion_entry();
+        }
         self.start_level_music();
         # Q2 newgame: "map *ntro.cin+base1" plays the introduction first.
         film = exit_cinematic(self.opening);
@@ -436,13 +441,14 @@ impl App.render_frame() {
             if self.level.bsp.game == "passion" {
                 if self.notice_wait <= 0.0 {
                     self.renderer.draw_message(
-                        "PASSION " + self.level.name + " | " + self.level.briefing
+                        "PASSION " + run_title(self.level.name) + " | " + self.level.briefing
                     );
                 }
-                if self.expedition_complete {
-                    self.renderer.draw_terminal(
-                        "Expedition complete! Enter: replay | Esc: new seed"
-                    );
+                shown_run = self.passion_run;
+                if self.expedition_complete and shown_run is not None and shown_run.plays(self.level.name) {
+                    self.renderer.draw_terminal(shown_run.tally());
+                } elif self.expedition_complete {
+                    self.renderer.draw_terminal("Expedition complete! Enter: replay | Esc: menu");
                 }
             }
             # With the original art the status bar layer prints messages.
@@ -732,11 +738,19 @@ impl App.load_destination(
     try {
         world = World();
         skill = self.host.skill.integer;
+        built = self.workbench.build_level(game, name);
+        # A Passion level is made by its run's forge; a scene the studio
+        # built plays as it was built.
+        forged: Forge | None = None;
+        if game == "passion" and built is None {
+            forged = self.passion_forge(name);
+        }
         level = open_level(
             world, game_directory(game), name, game, skill if game == "q3" else min(3, skill),
             subdivisions=self.renderer.cvars.subdivisions.number,
             entities=self.staged_entities.get(game + "/" + name),
-            built=self.workbench.build_level(game, name)
+            built=built,
+            forged=forged
         );
         runes = quantity(self.player.inventory, "runes")
             if game == "q1"
@@ -762,8 +776,9 @@ impl App.load_destination(
             # Q1 strips keys between levels; Q2 strips them between units only
             # in coop (BeginIntermission) but forgets the unit's cross-level
             # trigger flags (use_target_changelevel).
+            # Passion's keys open their own level's doors only.
             copied = self.player.inventory spawn CopyInventory(
-                skip_keys=game == "q1", skip_flags=new_unit
+                skip_keys=game in ["q1", "passion"], skip_flags=new_unit
             );
             player.inventory = copied.result;
             # SetChangeParms: at least 25 shells carry over.
@@ -940,6 +955,11 @@ impl App.load_destination(
         self.cinematic_resume = False;
         self.pending_cinematic = "";
         self.record_entry();
+        entered_run = self.passion_run;
+        if game == "passion" and entered_run is not None and forged is not None {
+            entered_run.opened(time.time());
+            self.keep_passion_entry();
+        }
         self.start_level_music();
         # Draw the new level once before play: a level's first draw uploads
         # and prepares what it shows, and a slow first frame would hand the
@@ -1048,9 +1068,8 @@ impl App.step() -> bool {
                 }
             }
             self.menu.scan();
-            if self.level.bsp.game == "passion"
-                and self.level.name not in self.menu.maps {
-                self.menu.maps = [self.level.name] + self.menu.maps;
+            if self.level.bsp.game == "passion" {
+                self.menu.show_run(self.level.name);
             }
             for i in range(len(self.menu.maps)) {
                 if self.menu.maps[i] == self.level.name {
@@ -1184,7 +1203,14 @@ impl App.step() -> bool {
                 return True;
             }
         }
-        if self.prompt_key(257) {
+        asked = self.prompt_key(257);
+        leaving_run = self.passion_run;
+        if self.expedition_complete and self.level.bsp.game == "passion" and leaving_run is not None
+            and leaving_run.plays(self.level.name) {
+            self.passion_onward(asked);
+            return True;
+        }
+        if asked {
             if contest is not None and contest.finished {
                 rows = standings(contest);
                 self.finish_arena(contest, bool(rows) and rows[0].human);
@@ -1194,6 +1220,11 @@ impl App.step() -> bool {
         }
         self.render_frame();
         return True;
+    }
+    # The next level of a Passion run is made a little each frame.
+    forging = self.passion_run;
+    if forging is not None and self.level.active and self.level.bsp.game == "passion" and forging.plays(self.level.name) {
+        forging.forge_ahead(PLAY_BUDGET);
     }
     # Acceptance bots drive the real game loop through a scripted intent.
     scripted = self.scripted;
@@ -1883,6 +1914,7 @@ impl App.step() -> bool {
                     and exit_request.request == "passion_complete" {
                     self.expedition_complete = True;
                     self.level.completion.pending = 1;
+                    self.passion_cleared();
                     break;
                 }
                 destination = exit_map(exit_request.request);
@@ -2017,6 +2049,9 @@ impl App.finish_stats() {
 }
 
 impl App.restart_level() {
+    if self.level.bsp.game == "passion" and self.restart_passion() {
+        return;
+    }
     if not self.entry_save {
         self.load_destination(
             self.level.bsp.game,
@@ -3171,7 +3206,7 @@ impl App.draw_loading(game: str, name: str) {
     black = self.loading_black;
     self.loading_black = False;
     if game == "passion" {
-        self.renderer.draw_loading(name);
+        self.renderer.draw_loading(run_title(name));
         return;
     }
     # Only the running game's art is at hand: a load that also changes the

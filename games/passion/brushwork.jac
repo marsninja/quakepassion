@@ -8,7 +8,7 @@ and its lamps become light entities."""
 import from engine.math.vec3 { Vec3 }
 import from editor.formats.map { MapItem }
 import from editor.geometry.brush { Side }
-import from .massing { Massing, CellBox, CELL, LIFT }
+import from .massing { Massing, CellBox, CELL, LIFT, shell_steps }
 import from .spaces { Space }
 import from .kits { Kit, kit_of, kit_surfaces, kit_water }
 import from .dress { Dressing, Lamp3, box_brush }
@@ -17,7 +17,20 @@ import from .dress { Dressing, Lamp3, box_brush }
 space each faces."""
 def shell_brushes(mass: Massing, spaces: dict[int, Space]) -> list[list[Side]] {
     found: list[list[Side]] = [];
-    for box in mass.shell() {
+    for label in shell_brush_steps(mass, spaces, found) {
+        continue;
+    }
+    return found;
+}
+
+"""`shell_brushes` a step at a time, into `found`."""
+def shell_brush_steps(mass: Massing, spaces: dict[int, Space], found: list[list[Side]]) -> Iterator[str] {
+    boxes: list[CellBox] = [];
+    yield from shell_steps(mass, boxes);
+    for (number, box) in enumerate(boxes) {
+        if number % 96 == 95 {
+            yield "brushes";
+        }
         space = spaces.get(box.owner, None);
         if space is None {
             continue;
@@ -43,7 +56,6 @@ def shell_brushes(mass: Massing, spaces: dict[int, Space]) -> list[list[Side]] {
         }
         found.append(box_brush(box.low(), box.high(), materials, kit.scale, [side for side in glowing if materials[side] != "caulk"]));
     }
-    return found;
 }
 
 """Whether any cell across one side of a box (0 +x, 1 -x, 2 +y, 3 -y, 4 +z,
@@ -101,6 +113,15 @@ def lamp_item(lamp: Lamp3) -> MapItem {
 """The map items of an expedition: the world (structure and dressing),
 then the lamps, then `extra` entities (the population)."""
 def map_items(mass: Massing, spaces: list[Space], dressing: Dressing, extra: list[MapItem], message: str = "") -> list[MapItem] {
+    items: list[MapItem] = [];
+    for label in map_item_steps(mass, spaces, dressing, extra, message, items) {
+        continue;
+    }
+    return items;
+}
+
+"""`map_items` a step at a time, into `items`."""
+def map_item_steps(mass: Massing, spaces: list[Space], dressing: Dressing, extra: list[MapItem], message: str, items: list[MapItem]) -> Iterator[str] {
     by_id: dict[int, Space] = {};
     for space in spaces {
         by_id[space.id] = space;
@@ -108,7 +129,9 @@ def map_items(mass: Massing, spaces: list[Space], dressing: Dressing, extra: lis
     world = MapItem(
         fields={"classname": "worldspawn", "message": message, "_minlight": "8", "_bounce": "1", "generator": "passion-v3"}
     );
-    world.brushes = shell_brushes(mass, by_id);
+    shell: list[list[Side]] = [];
+    yield from shell_brush_steps(mass, by_id, shell);
+    world.brushes = shell;
     for space in spaces {
         if space.flood <= 0 {
             continue;
@@ -132,14 +155,14 @@ def map_items(mass: Massing, spaces: list[Space], dressing: Dressing, extra: lis
     for brush in dressing.brushes {
         world.brushes.append(brush);
     }
-    items: list[MapItem] = [world];
+    items.append(world);
     for lamp in dressing.lamps {
         items.append(lamp_item(lamp));
     }
     for item in extra {
         items.append(item);
     }
-    return items;
+    yield "items";
 }
 
 """Where to stand a player in a space: on its stage, facing the room's

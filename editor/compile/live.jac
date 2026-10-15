@@ -160,6 +160,14 @@ obj LiveCompiler {
     side that has an outline and a material that draws. `volume` brushes
     (triggers) collide with nothing and draw nothing."""
     def add(solid: Solid, model: int, volume: bool = False) {
+        for label in self.add_steps(solid, model, volume) {
+            continue;
+        }
+    }
+
+    """`add` a step at a time: it pauses while a side many brushes cover is
+    cut."""
+    def add_steps(solid: Solid, model: int, volume: bool = False) -> Iterator[str] {
         bsp = self.result.bsp;
         outlines = brush_windings(solid.sides);
         brush = Brush(contents=0 if volume else brush_contents(solid.sides));
@@ -184,7 +192,8 @@ obj LiveCompiler {
             pieces = [outline];
             cutter = self.cutter;
             if cutter is not None and model == 0 and solid.serial in self.cut_index {
-                pieces = cutter.pieces(self.cut_index[solid.serial], outline, normal, side.plane.dist);
+                pieces = [];
+                yield from cutter.piece_steps(self.cut_index[solid.serial], outline, normal, side.plane.dist, pieces);
             }
             # Full light from above, less on the sides (east and west a
             # little more than north and south), least from below.
@@ -247,7 +256,33 @@ obj LiveCompiler {
 other entity that owns brushes gets a model of its own and a `model` field
 naming it."""
 def compile_scene(scene: Scene, materials: Materials, cut: bool = False) -> LiveLevel {
+    into = Compiling();
+    for label in compile_steps(scene, materials, cut, into) {
+        continue;
+    }
+    compiler = into.compiler;
+    if compiler is None {
+        raise ValueError("The scene was not compiled");
+    }
+    return compiler.result;
+}
+
+"""A scene's compile as it goes: the compiler, its level so far in its
+`result`, and how many brushes it has taken of how many."""
+obj Compiling {
+    has compiler: LiveCompiler | None = None,
+        done: int = 0,
+        total: int = 0;
+}
+
+glob COMPILE_SLICE: int = 12;
+
+"""`compile_scene` a slice at a time: it pauses every few brushes cut or
+compiled, and leaves the compiler (and its level) in `into`."""
+def compile_steps(scene: Scene, materials: Materials, cut: bool, into: Compiling) -> Iterator[str] {
     compiler = LiveCompiler(materials=materials);
+    into.compiler = compiler;
+    into.total = len(scene.solids()) * (2 if cut else 1);
     result = compiler.result;
     bsp = result.bsp;
     if cut {
@@ -263,6 +298,10 @@ def compile_scene(scene: Scene, materials: Materials, cut: bool = False) -> Live
                 if solid.sides and not material_clear(solid.sides[0].material) and brush_contents(solid.sides) & LIQUID_BITS == 0 {
                     compiler.cut_index[solid.serial] = cutter.add(solid.sides, brush_windings(solid.sides));
                 }
+                into.done += 1;
+                if into.done % COMPILE_SLICE == 0 {
+                    yield "cut";
+                }
             }
         }
         compiler.cutter = cutter;
@@ -277,13 +316,21 @@ def compile_scene(scene: Scene, materials: Materials, cut: bool = False) -> Live
                 world_fields[key] = value;
             }
             for solid in scene.solids_of(item) {
-                compiler.add(solid, world_model);
+                yield from compiler.add_steps(solid, world_model);
+                into.done += 1;
+                if into.done % COMPILE_SLICE == 0 {
+                    yield "compile";
+                }
             }
         } elif item.classname() == "func_group" {
             # A group is a way of holding the world's brushes, not a thing
             # in the level.
             for solid in scene.solids_of(item) {
-                compiler.add(solid, world_model);
+                yield from compiler.add_steps(solid, world_model);
+                into.done += 1;
+                if into.done % COMPILE_SLICE == 0 {
+                    yield "compile";
+                }
             }
         } else {
             others.append(item);
@@ -336,7 +383,7 @@ def compile_scene(scene: Scene, materials: Materials, cut: bool = False) -> Live
     bsp.clusters = 1;
     bsp.cluster_bytes = 1;
     bsp.visibility = bytes([0, 0, 0, 0, 0, 0, 0, 0, 1]);
-    return result;
+    yield "compiled";
 }
 
 """What changed between two compiles of a scene where only brushes of the

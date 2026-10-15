@@ -28,7 +28,13 @@ obj PanelSpec {
         # 1, and the command run with the new value when it is let go.
         # With no `order` the box has no words to edit, and the bars and
         # notes are all of it.
-        bars: list[tuple[str, float, str]] = [];
+        bars: list[tuple[str, float, str]] = [],
+        # Where the box first stands: its width and height, and whether
+        # against the right edge (beside the view) rather than in the middle.
+        # None but the defaults when zero.
+        wide: int = 0,
+        tall: int = 0,
+        right: bool = False;
 }
 
 """What the studio does for its tools."""

@@ -28,7 +28,9 @@ glob CORRIDOR_HIGH: int = 6,
      CLEARANCE: int = 4,
      ABUT_CHANCE: float = 0.25,
      MARGIN: int = 4,
-     SEARCH_LIMIT: int = 120000;
+     SEARCH_LIMIT: int = 120000,
+     # States a corridor search expands between pauses.
+     ROUTE_SLICE: int = 400;
 
 # Archetypes whose floor runs out to their walls, so two of them can meet
 # wall to wall through a doorway.
@@ -364,6 +366,39 @@ def route_blocks(
     allowed: dict[int, bool],
     stats: list[int] = []
 ) -> list[list[int]] {
+    found = Route();
+    for label in route_steps(mass, reserve, start, start_heading, goal, allowed, found) {
+        continue;
+    }
+    stats.extend(found.stats);
+    return found.path;
+}
+
+"""What a corridor search found: its blocks in order (none when it gave up),
+how many states it expanded and, while it runs, the block it stands on
+and the blocks it goes between."""
+obj Route {
+    has path: list[list[int]] = [],
+        stats: list[int] = [],
+        at: list[int] = [],
+        # The blocks it went from and to.
+        start: list[int] = [],
+        goal: list[int] = [];
+}
+
+"""The search of `route_blocks` a slice at a time: it pauses every so many
+states, and leaves what it found in `found`."""
+def route_steps(
+    mass: Massing,
+    reserve: Reserve,
+    start: list[int],
+    start_heading: int,
+    goal: list[int],
+    allowed: dict[int, bool],
+    found: Route
+) -> Iterator[str] {
+    found.start = start;
+    found.goal = goal;
     nx = mass.nx;
     ny = mass.ny;
     nz = mass.nz;
@@ -391,6 +426,10 @@ def route_blocks(
         x = cell % nx;
         y = (cell // nx) % ny;
         z = cell // (nx * ny);
+        if expanded % ROUTE_SLICE == 0 {
+            found.at = [x, y, z];
+            yield "route";
+        }
         if x == goal[0] and y == goal[1] and z == goal[2] {
             path: list[list[int]] = [];
             at = state;
@@ -403,8 +442,9 @@ def route_blocks(
                 at = came[at];
             }
             path.reverse();
-            stats.append(expanded);
-            return path;
+            found.stats = [expanded];
+            found.path = path;
+            return;
         }
         spent = best.get(state, 0.0);
         for turn in range(4) {
@@ -439,9 +479,8 @@ def route_blocks(
             }
         }
     }
-    stats.append(expanded);
-    stats.append(len(frontier.items));
-    return [];
+    found.stats = [expanded, len(frontier.items)];
+    found.path = [];
 }
 
 """Carve a doorway straight through two walls (a block two cells deep along
@@ -569,7 +608,27 @@ def doorway_pairs(tail: Space, head: Space, one_way: bool) -> list[list[Doorway]
 """Arrange an expedition: place and shape its spaces, route its links.
 Answers the estate and the massing carved."""
 def arrange(plan: Expedition, dice: Stream) -> list[any] {
+    held = Layout();
+    for label in arrange_steps(plan, dice, held) {
+        continue;
+    }
+    return [held.estate, held.mass];
+}
+
+"""An arrangement as it is made: the estate and its massing once there is
+one, and the corridor being searched for."""
+obj Layout {
+    has estate: Estate | None = None,
+        mass: Massing | None = None,
+        route: Route | None = None;
+}
+
+"""`arrange` a step at a time: it pauses after each space is placed and
+shaped, during each corridor's search and after each link is made, and
+leaves the estate and massing in `held`."""
+def arrange_steps(plan: Expedition, dice: Stream, held: Layout) -> Iterator[str] {
     estate = Estate(seed=plan.seed);
+    held.estate = estate;
     every_beat = beats_of(plan);
     beats = [
         every_beat[index]
@@ -631,6 +690,7 @@ def arrange(plan: Expedition, dice: Stream) -> list[any] {
         spaces[beat.id] = space;
         placed.append(space);
         estate +>:Encloses:+> space;
+        yield "place";
     }
     # Shift everything into the grid with a margin all round.
     low_x = min([space.x for space in placed]) - MARGIN;
@@ -648,10 +708,12 @@ def arrange(plan: Expedition, dice: Stream) -> list[any] {
     estate.ny = high_y - low_y;
     estate.nz = high_z - low_z + CORRIDOR_HIGH;
     mass = Massing(nx=estate.nx, ny=estate.ny, nz=estate.nz);
+    held.mass = mass;
     reserve = Reserve(mass=mass);
     for space in placed {
         shape_space(space, mass, dice.child("shape", space.beat));
         reserve.hold_box(space.x, space.y, space.z, space.x + space.w, space.y + space.d, space.z + space.h, space.id);
+        yield "shape";
     }
     reserve.refresh(0, 0, mass.nx, mass.ny);
     # Links: the main way first (in progression order), loops after.
@@ -732,7 +794,11 @@ def arrange(plan: Expedition, dice: Stream) -> list[any] {
             for (key, value) in doorway_allowed(mass, goal).items() {
                 allowed[key] = value;
             }
-            path = route_blocks(mass, reserve, start, out.side, goal, allowed);
+            found = Route();
+            held.route = found;
+            yield from route_steps(mass, reserve, start, out.side, goal, allowed, found);
+            held.route = None;
+            path = found.path;
             if not path {
                 continue;
             }
@@ -778,9 +844,10 @@ def arrange(plan: Expedition, dice: Stream) -> list[any] {
             estate.teleports += 1;
             tail +>:Corridor(link=link.id, mode=link.mode, needs=link.needs, tail=tail.id, head=head.id, teleport=True):+> head;
         }
+        yield "link";
     }
     cut_windows(estate, mass, reserve, placed, wanted_windows, dice.derive("windows"));
-    return [estate, mass];
+    yield "windows";
 }
 
 """A window between two rooms whose boxes face each other across a gap of

@@ -132,20 +132,30 @@ def run_cell(direction: int, line: int, along: int) -> list[int] {
 """Dress the massing."""
 def dress(mass: Massing, spaces: list[Space], dice: Stream) -> Dressing {
     made = Dressing();
+    for label in dress_steps(mass, spaces, dice, made) {
+        continue;
+    }
+    return made;
+}
+
+"""`dress` a step at a time, into `made`: the passes over the whole massing
+pause after each of its layers."""
+def dress_steps(mass: Massing, spaces: list[Space], dice: Stream, made: Dressing) -> Iterator[str] {
     by_id: dict[int, Space] = {};
     for space in spaces {
         by_id[space.id] = space;
     }
-    edge_trims(mass, by_id, made);
+    yield from edge_trim_steps(mass, by_id, made);
     pilasters(mass, by_id, made, dice);
     ceiling_lamps(mass, by_id, made, dice);
     dark_rooms(mass, by_id, made);
     glowing_pits(by_id, made);
     court_lamps(by_id, made);
     hanging_lamps(mass, by_id, made);
-    railings(mass, by_id, made);
+    yield "lamps";
+    yield from railing_steps(mass, by_id, made);
     window_bars(by_id, made);
-    return made;
+    yield "bars";
 }
 
 def:priv owner_space(by_id: dict[int, Space], owner: int) -> Space | None {
@@ -183,11 +193,20 @@ def in_room(by_id: dict[int, Space], owner: int) -> bool {
 """Baseboards and cornices: runs of cells along a wall, at a floor (solid
 below) or under a ceiling (solid above)."""
 def edge_trims(mass: Massing, by_id: dict[int, Space], made: Dressing) {
+    for label in edge_trim_steps(mass, by_id, made) {
+        continue;
+    }
+}
+
+def edge_trim_steps(mass: Massing, by_id: dict[int, Space], made: Dressing) -> Iterator[str] {
     for direction in range(4) {
         step = direction_step(direction);
         lines = mass.nx if direction < 2 else mass.ny;
         length = mass.ny if direction < 2 else mass.nx;
         for z in range(mass.nz) {
+            if z % 4 == 3 {
+                yield "trim";
+            }
             for line in range(lines) {
                 for top in [False, True] {
                     run_start = -1;
@@ -606,11 +625,20 @@ def glowing_pits(by_id: dict[int, Space], made: Dressing) {
 
 """Railings along floor edges of rooms that drop three lifts or more."""
 def railings(mass: Massing, by_id: dict[int, Space], made: Dressing) {
+    for label in railing_steps(mass, by_id, made) {
+        continue;
+    }
+}
+
+def railing_steps(mass: Massing, by_id: dict[int, Space], made: Dressing) -> Iterator[str] {
     for direction in range(4) {
         step = direction_step(direction);
         lines = mass.nx if direction < 2 else mass.ny;
         length = mass.ny if direction < 2 else mass.nx;
         for z in range(1, mass.nz) {
+            if z % 4 == 0 {
+                yield "railing";
+            }
             for line in range(lines) {
                 run_start = -1;
                 run_owner = 0;

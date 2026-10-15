@@ -17,25 +17,30 @@ Several candidates are built toward it, each in full:
 The critic scores each by how near its measures come to the original
 games' levels (`critic.jac` against `corpus.jac`), and the best becomes a
 map: brushes and entities, compiled by the studio's compiler with buried
-faces cut away, and lit by its light bake, kept on disk once baked."""
-import os;
-import math;
-import struct;
-import hashlib;
+faces cut away, and lit by its light bake.
+
+A level is made a step at a time by a `Forge`: the game makes the next
+level of a run while the current one is played, and the studio shows one
+being made. Nothing is kept on disk.
+
+A run is a seed: `v3-<seed>` is its first level and `v3-<seed>-<n>` its
+level n, each seeded from the run's seed and its depth, a little harder
+the deeper it lies."""
+import time;
 import from .random { Stream, stream_for, mix32 }
 import from .mission { Expedition, Beat, Link, beats_of, links_of, build_mission }
-import from .arrange { Estate, Corridor, arrange, estate_spaces, estate_corridors, CORRIDOR_HIGH }
+import from .arrange { Estate, Corridor, Layout, arrange_steps, estate_spaces, estate_corridors, CORRIDOR_HIGH }
 import from .massing { Massing, floor_reached }
 import from .spaces { Space }
-import from .dress { Dressing, dress, frame_doorway, corridor_lamps }
+import from .dress { Dressing, dress_steps, frame_doorway, corridor_lamps }
 import from .cast { Casting, cast }
 import from .critic { critic_measures, critic_score }
-import from .brushwork { map_items }
+import from .brushwork { map_item_steps }
 import from .kits { KITS, kit_of }
-import from editor.formats.map { MapItem, MapFile, write_map }
+import from editor.formats.map { MapItem, MapFile }
 import from editor.document.scene { Scene, scene_from_map }
-import from editor.compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials }
-import from editor.compile.light { light_job }
+import from editor.compile.live { Compiling, compile_steps, LiveLevel, Materials, SwatchMaterials }
+import from editor.compile.light { light_job_steps, Lighting, LightJob }
 import from editor.assets.materials { ArchiveMaterials }
 import from engine.formats.bsp { Bsp }
 import from engine.math.vec3 { Vec3 }
@@ -50,13 +55,18 @@ glob CANDIDATES: int = 4;
 glob ARCHETYPES: list[str] = ["keys", "relays", "guardian", "mixed"];
 glob BINS: list[float] = [0.15, 0.5, 0.85];
 glob LUXEL: float = 32.0;
-glob BAKE_VERSION: bytes = b"passion-v3-bake-1";
+# Faces lit between a bake's pauses.
+glob BAKE_SLICE: int = 8;
+glob DEPTH_LIMIT: int = 9999;
 
 """What a seed made: its niche and archetype, how many candidates were tried
 and why any were turned down, the winner's mission, estate, massing,
 dressing and cast, its map items, its measures and the critic's score."""
 node Survey {
     has seed: int = 0,
+        # The run it belongs to and how deep in it it lies.
+        run: int = 0,
+        depth: int = 1,
         niche: list[int] = [],
         archetype: str = "",
         briefing: str = "",
@@ -78,17 +88,49 @@ node Survey {
 
 edge Surveys: World --> Survey {}
 
-"""The seed an expedition's name stands for: `v3-<seed>`, the seed from 1
-to 2147483646 without leading zeros."""
-def seed_from(name: str) -> int {
+"""The run and depth an expedition's name stands for: `v3-<run>` is the
+first level of the run seeded `run` (1 to 2147483646, without leading
+zeros), `v3-<run>-<depth>` its level `depth` (2 to 9999)."""
+def run_of(name: str) -> list[int] {
     if not name.startswith(VERSION + "-") {
         raise ValueError("Expected expedition " + VERSION + "-SEED");
     }
-    seed = int(name[len(VERSION) + 1:]);
-    if seed < 1 or seed > 2147483646 or name != VERSION + "-" + str(seed) {
-        raise ValueError("Seed must be 1..2147483646");
+    words = name[len(VERSION) + 1:].split("-");
+    if len(words) > 2 {
+        raise ValueError("Expected expedition " + VERSION + "-SEED or " + VERSION + "-SEED-LEVEL");
     }
-    return seed;
+    run = int(words[0]);
+    depth = int(words[1]) if len(words) == 2 else 1;
+    if run < 1 or run > 2147483646 or depth < 1 or depth > DEPTH_LIMIT or name != level_name(run, depth) {
+        raise ValueError("Seed must be 1..2147483646 and level 2.." + str(DEPTH_LIMIT));
+    }
+    return [run, depth];
+}
+
+"""The name of a run's level."""
+def level_name(run: int, depth: int) -> str {
+    return VERSION + "-" + str(run) + ("-" + str(depth) if depth > 1 else "");
+}
+
+"""The level after one in its run."""
+def next_level(name: str) -> str {
+    found = run_of(name);
+    return level_name(found[0], min(DEPTH_LIMIT, found[1] + 1));
+}
+
+"""The seed a run's level is made from: the run's own for its first, and
+for each after it a seed of its own drawn from the two."""
+def level_seed(run: int, depth: int) -> int {
+    if depth <= 1 {
+        return run;
+    }
+    return mix32((run * 2654435761 + depth * 40503) % 4294967296) % 2147483646 + 1;
+}
+
+"""The seed an expedition's name stands for."""
+def seed_from(name: str) -> int {
+    found = run_of(name);
+    return level_seed(found[0], found[1]);
 }
 
 """A seed's niche: loopiness, verticality, density and size, three bins
@@ -103,6 +145,8 @@ obj Draft {
     has reason: str = "",
         detail: str = "",
         plan: Expedition | None = None,
+        # The arrangement while it is made.
+        layout: Layout | None = None,
         estate: Estate | None = None,
         mass: Massing | None = None,
         dressing: Dressing | None = None,
@@ -193,40 +237,57 @@ def flood_pits(estate: Estate, by_id: dict[int, Space], dice: Stream) {
 }
 
 """Build one candidate in full."""
-def build_draft(seed: int, index: int, niche: list[int], archetype: str) -> Draft {
+def build_draft(seed: int, index: int, niche: list[int], archetype: str, depth: int = 1) -> Draft {
+    made = Draft();
+    for label in draft_steps(seed, index, niche, archetype, depth, made) {
+        continue;
+    }
+    return made;
+}
+
+"""`build_draft` a step at a time, into `draft`. A level deeper in its run
+is fought over more densely and has a room or two more."""
+def draft_steps(seed: int, index: int, niche: list[int], archetype: str, depth: int, draft: Draft) -> Iterator[str] {
     stream = stream_for(seed, "candidate").child("k", index);
-    draft = Draft();
+    deeper = min(10, depth - 1);
     loopiness = max(0.0, min(1.0, BINS[niche[0]] + stream.uniform(-0.15, 0.15)));
     verticality = max(0.2, min(1.0, BINS[niche[1]] + 0.15 + stream.uniform(-0.1, 0.1)));
-    density = max(0.25, min(1.0, [0.35, 0.55, 0.8][niche[2]] + stream.uniform(-0.1, 0.1)));
-    rooms = [12, 16, 21][niche[3]] + stream.between(-2, 2);
+    density = max(0.25, min(1.0, [0.35, 0.55, 0.8][niche[2]] + stream.uniform(-0.1, 0.1) + 0.04 * float(deeper)));
+    rooms = [12, 16, 21][niche[3]] + stream.between(-2, 2) + deeper // 3;
     sections = 1 + niche[3] // 2 + stream.below(2);
     objectives = 1 + stream.below(2);
     try {
         plan = build_mission(seed, stream.derive("mission"), archetype, objectives, sections, rooms, loopiness);
     } except (AssertionError, ValueError) {
         draft.reason = "mission";
-        return draft;
+        return;
     }
     plan.verticality = verticality;
     plan.density = density;
     plan.candidate = index;
     choose_districts(plan, stream.derive("districts"));
     draft.plan = plan;
-    made = arrange(plan, stream.derive("layout"));
-    estate: Estate = made[0];
-    mass: Massing = made[1];
+    yield "mission";
+    layout = Layout();
+    draft.layout = layout;
+    yield from arrange_steps(plan, stream.derive("layout"), layout);
+    estate = layout.estate;
+    mass = layout.mass;
+    if estate is None or mass is None {
+        draft.reason = "layout";
+        return;
+    }
     draft.estate = estate;
     draft.mass = mass;
     if estate.failures {
         draft.reason = "layout";
-        return draft;
+        return;
     }
     links = len(links_of(plan));
     if estate.teleports > max(2, links // 4) {
         draft.reason = "routing";
         draft.detail = str(estate.teleports) + " of " + str(links) + " links by teleporter";
-        return draft;
+        return;
     }
     spaces = estate_spaces(estate);
     by_id: dict[int, Space] = {};
@@ -235,12 +296,14 @@ def build_draft(seed: int, index: int, niche: list[int], archetype: str) -> Draf
     }
     flood_pits(estate, by_id, stream.derive("pits"));
     missed = stages_missed(estate, mass, by_id);
+    yield "reach";
     if missed {
         draft.reason = "unreachable";
         draft.detail = ", ".join([str(space.id) + " " + space.kind + " (" + space.role + ")" for space in missed]);
-        return draft;
+        return;
     }
-    dressing = dress(mass, spaces, stream.derive("dress"));
+    dressing = Dressing();
+    yield from dress_steps(mass, spaces, stream.derive("dress"), dressing);
     for corridor in estate_corridors(estate) {
         if corridor.air in by_id and corridor.blocks {
             corridor_lamps(dressing, by_id[corridor.air], corridor.blocks, CORRIDOR_HIGH);
@@ -253,20 +316,22 @@ def build_draft(seed: int, index: int, niche: list[int], archetype: str) -> Draf
         }
     }
     draft.dressing = dressing;
+    yield "frames";
     casting = cast(estate, mass, plan, stream.derive("cast"), density);
     draft.casting = casting;
+    yield "cast";
     if not casting.start {
         draft.reason = "start";
-        return draft;
+        return;
     }
     if not casting.exit_low {
         draft.reason = "exit";
-        return draft;
+        return;
     }
     supplies = casting.placed_health + casting.placed_armor + casting.placed_shells;
     draft.measures = critic_measures(mass, dressing.lamps, casting.monsters, supplies);
     draft.score = critic_score(draft.measures);
-    return draft;
+    yield "critic";
 }
 
 """The banner for an expedition: the districts its route crosses and what
@@ -293,14 +358,31 @@ def briefing_for(plan: Expedition) -> str {
 
 """Survey a seed: build candidates toward its niche and keep the one the
 critic likes best."""
-def survey(seed: int, wanted: list[int] = []) -> Survey {
+def survey(seed: int, wanted: list[int] = [], depth: int = 1) -> Survey {
+    forge = Forge();
+    for label in survey_steps(seed, wanted, depth, forge) {
+        continue;
+    }
+    record = forge.survey;
+    if record is None {
+        raise ValueError("No expedition could be built for seed " + str(seed));
+    }
+    return record;
+}
+
+"""`survey` a step at a time: the survey, and the candidate being built,
+are the forge's to show while it goes."""
+def survey_steps(seed: int, wanted: list[int], depth: int, forge: Forge) -> Iterator[str] {
     niche = niche_for(seed) if not wanted else wanted;
     archetype = ARCHETYPES[mix32(seed + 977) % len(ARCHETYPES)];
-    record = Survey(seed=seed, niche=niche, archetype=archetype);
+    record = Survey(seed=seed, niche=niche, archetype=archetype, depth=depth);
+    forge.survey = record;
     best: Draft | None = None;
     attempt = 0;
     while attempt < CANDIDATES * 3 and record.valid < CANDIDATES {
-        draft = build_draft(seed, attempt, niche, archetype);
+        draft = Draft();
+        forge.draft = draft;
+        yield from draft_steps(seed, attempt, niche, archetype, depth, draft);
         attempt += 1;
         record.candidates += 1;
         if draft.reason {
@@ -316,6 +398,7 @@ def survey(seed: int, wanted: list[int] = []) -> Survey {
     if best is None {
         raise ValueError("No expedition could be built for seed " + str(seed) + ": " + " | ".join(record.notes));
     }
+    forge.draft = best;
     record.plan = best.plan;
     record.estate = best.estate;
     record.mass = best.mass;
@@ -328,155 +411,205 @@ def survey(seed: int, wanted: list[int] = []) -> Survey {
     estate = best.estate;
     dressing = best.dressing;
     casting = best.casting;
+    yield "chosen";
     if plan is not None and mass is not None and estate is not None and dressing is not None and casting is not None {
         record.briefing = briefing_for(plan);
         record.start = casting.start;
-        record.items = map_items(mass, estate_spaces(estate), dressing, casting.items, record.briefing);
+        items: list[MapItem] = [];
+        yield from map_item_steps(mass, estate_spaces(estate), dressing, casting.items, record.briefing, items);
+        record.items = items;
     }
-    return record;
+    yield "brushwork";
 }
 
-"""Where an expedition's light is kept: a file named by the hash of its
-map, the bake's settings and the bake's own version."""
-def light_cache_path(directory: str, text: str) -> str {
-    digest = hashlib.sha256(BAKE_VERSION);
-    digest.update(str(LUXEL).encode());
-    digest.update(text.encode());
-    return directory + "/" + digest.hexdigest() + ".light";
-}
+"""A level being made a step at a time, so that one is made while another
+is played, or watched as it is made: what it has made so far (the survey
+and the candidate being built, then the scene, its compile and its light),
+and how far it has got."""
+obj Forge {
+    has name: str = "",
+        directory: str = "",
+        # The materials to build with: one set kept through a run reads the
+        # games' archives once and each texture once.
+        materials: Materials | None = None,
+        # The stage it is at (survey, map, compile, bake, ready) and the
+        # step it last took within it.
+        stage: str = "",
+        step: str = "",
+        survey: Survey | None = None,
+        draft: Draft | None = None,
+        scene: Scene | None = None,
+        compiling: Compiling | None = None,
+        made: LiveLevel | None = None,
+        job: LightJob | None = None,
+        steps: Iterator[str] | None = None,
+        finished: bool = False,
+        failure: str = "",
+        # How it went: the steps taken, the seconds they took, and the
+        # longest of them and where it was.
+        taken: int = 0,
+        spent: float = 0.0,
+        longest: float = 0.0,
+        longest_step: str = "";
 
-"""A baked level's light as bytes: each face's lightmap place and layers,
-the corners of what moves, the lightmaps and the grid for models."""
-def pack_light(bsp: Bsp) -> bytes {
-    data = bytearray(b"QPL3");
-    data.extend(struct.pack("<IIII", len(bsp.faces), len(bsp.lighting), len(bsp.light_grid), bsp.light_channels));
-    for face in bsp.faces {
-        data.extend(struct.pack("<iHHB", face.light_offset, face.light_width, face.light_height, len(face.styles)));
-        for style in face.styles {
-            data.append(style & 255);
-        }
-        data.extend(struct.pack("<H", len(face.light_uv)));
-        for value in face.light_uv {
-            data.extend(struct.pack("<f", value));
-        }
-        data.extend(struct.pack("<H", len(face.colors)));
-        for value in face.colors {
-            data.append(max(0, min(255, value)));
-        }
-    }
-    data.extend(bsp.lighting);
-    data.extend(bsp.light_grid);
-    return bytes(data);
-}
-
-"""Put light read back from bytes onto a freshly compiled level; False (and
-the level untouched) when the bytes do not fit it."""
-def unpack_light(data: bytes, bsp: Bsp) -> bool {
-    if len(data) < 20 or data[:4] != b"QPL3" {
-        return False;
-    }
-    head = struct.unpack("<IIII", data[4:20]);
-    if int(head[0]) != len(bsp.faces) {
-        return False;
-    }
-    offset = 20;
-    faces: list[list[any]] = [];
-    for index in range(len(bsp.faces)) {
-        if offset + 9 > len(data) {
-            return False;
-        }
-        fixed = struct.unpack("<iHHB", data[offset:offset + 9]);
-        offset += 9;
-        styles: list[int] = [];
-        for step in range(int(fixed[3])) {
-            styles.append(int(data[offset]));
-            offset += 1;
-        }
-        count = int(struct.unpack("<H", data[offset:offset + 2])[0]);
-        offset += 2;
-        uv: list[float] = [];
-        for step in range(count) {
-            uv.append(float(struct.unpack("<f", data[offset:offset + 4])[0]));
-            offset += 4;
-        }
-        count = int(struct.unpack("<H", data[offset:offset + 2])[0]);
-        offset += 2;
-        colors: list[int] = [int(value) for value in data[offset:offset + count]];
-        offset += count;
-        faces.append([int(fixed[0]), int(fixed[1]), int(fixed[2]), styles, uv, colors]);
-    }
-    if offset + int(head[1]) + int(head[2]) != len(data) {
-        return False;
-    }
-    for (index, face) in enumerate(bsp.faces) {
-        kept = faces[index];
-        face.light_offset = kept[0];
-        face.light_width = kept[1];
-        face.light_height = kept[2];
-        face.styles = kept[3];
-        face.light_uv = kept[4];
-        face.colors = kept[5];
-    }
-    bsp.lighting = data[offset:offset + int(head[1])];
-    bsp.light_grid = data[offset + int(head[1]):offset + int(head[1]) + int(head[2])];
-    bsp.light_channels = int(head[3]);
-    return True;
-}
-
-"""Light a compiled expedition: from the cache when it holds this map's
-light, else baked (and kept there)."""
-def light_level(scene_text: str, made: LiveLevel, scene: Scene, cache_directory: str) -> bool {
-    path = light_cache_path(cache_directory, scene_text) if cache_directory else "";
-    if path and os.path.isfile(path) {
-        data = b"";
-        with open(path, "rb") as handle {
-            data = handle.read();
-        }
-        if unpack_light(data, made.bsp) {
+    """Go on for up to `budget` seconds (a step at least). True once the
+    level is made, or could not be (`failure` says why)."""
+    def advance(budget: float) -> bool {
+        if self.finished {
             return True;
         }
-    }
-    job = light_job(scene, made, LUXEL, 4000000);
-    if job is None {
+        if self.steps is None {
+            self.steps = forge_steps(self);
+        }
+        steps = self.steps;
+        if steps is None {
+            return True;
+        }
+        began = time.time();
+        while True {
+            before = time.time();
+            label = "";
+            try {
+                label = next(steps, "");
+            } except Exception as error {
+                self.failure = str(error) if str(error) else "The expedition could not be made";
+            }
+            took = time.time() - before;
+            self.taken += 1;
+            self.spent += took;
+            if took > self.longest {
+                self.longest = took;
+                self.longest_step = self.stage + "/" + label;
+            }
+            if not label {
+                self.finished = True;
+                self.steps = None;
+                return True;
+            }
+            self.step = label;
+            if time.time() - began >= budget {
+                return False;
+            }
+        }
         return False;
     }
-    while not job.step(200) {
-        continue;
-    }
-    job.finish();
-    if path {
-        os.makedirs(cache_directory, exist_ok=True);
-        partial = path + ".part";
-        with open(partial, "wb") as handle {
-            handle.write(pack_light(made.bsp));
+
+    """Make the rest at once."""
+    def complete {
+        while not self.advance(60.0) {
+            continue;
         }
-        os.replace(partial, path);
     }
-    return True;
+
+    """How far it has got, from 0 to 1: the survey's candidates, then the
+    compile's brushes, then the bake."""
+    def share -> float {
+        if self.finished {
+            return 1.0;
+        }
+        if self.stage == "survey" {
+            record = self.survey;
+            tried = float(record.candidates) if record is not None else 0.0;
+            return 0.35 * min(1.0, tried / float(CANDIDATES + 1));
+        }
+        if self.stage == "map" {
+            return 0.35;
+        }
+        compiling = self.compiling;
+        if self.stage == "compile" and compiling is not None {
+            return 0.35 + 0.1 * float(compiling.done) / float(max(1, compiling.total));
+        }
+        job = self.job;
+        if self.stage == "bake" and job is not None {
+            return 0.45 + 0.55 * job.share();
+        }
+        return 0.45 if self.stage == "bake" else 0.0;
+    }
 }
 
-"""Generate the expedition a name stands for, as a level of `world`: its
-materials read from the games under `directory`, its light kept under
-`cache_directory` ("" to bake every time)."""
-def generate(world: World, name: str, directory: str, cache_directory: str = "") -> Level {
-    record = survey(seed_from(name));
-    casting = record.casting;
-    if not record.items or casting is None {
+"""The steps of a forge: the survey, the map, its compile and its bake."""
+def forge_steps(forge: Forge) -> Iterator[str] {
+    found = run_of(forge.name);
+    forge.stage = "survey";
+    yield from survey_steps(level_seed(found[0], found[1]), [], found[1], forge);
+    record = forge.survey;
+    if record is None or not record.items or record.casting is None {
         raise ValueError("Expedition survey is incomplete");
     }
-    text = write_map(record.items);
-    scene = scene_from_map("passion", name, MapFile(items=record.items));
-    materials: Materials = ArchiveMaterials(directory=directory) if directory else SwatchMaterials();
-    made = compile_scene(scene, materials, True);
-    if directory {
-        light_level(text, made, scene, cache_directory);
+    record.run = found[0];
+    forge.stage = "map";
+    scene = scene_from_map("passion", forge.name, MapFile(items=record.items));
+    forge.scene = scene;
+    yield "map";
+    materials = forge.materials;
+    if materials is None {
+        materials = ArchiveMaterials(directory=forge.directory) if forge.directory else SwatchMaterials();
+        forge.materials = materials;
+    }
+    forge.stage = "compile";
+    compiling = Compiling();
+    forge.compiling = compiling;
+    yield from compile_steps(scene, materials, True, compiling);
+    compiler = compiling.compiler;
+    if compiler is None {
+        raise ValueError("The expedition was not compiled");
+    }
+    made = compiler.result;
+    forge.made = made;
+    if forge.directory {
+        forge.stage = "bake";
+        held = Lighting();
+        yield from light_job_steps(scene, made, LUXEL, 4000000, held);
+        job = held.job;
+        if job is not None {
+            forge.job = job;
+            yield from job.work_steps(BAKE_SLICE);
+            yield from job.finish_steps();
+            yield "lit";
+        }
+    }
+    forge.stage = "ready";
+    yield "ready";
+}
+
+"""Generate the expedition a name stands for, as a level of `world`: from
+`forged` when that forge has made this level, else made now, its materials
+read from the games under `directory`."""
+def generate(world: World, name: str, directory: str, forged: Forge | None = None) -> Level {
+    forge = forged if forged is not None and forged.name == name and forged.finished and not forged.failure else None;
+    if forge is None {
+        forge = Forge(name=name, directory=directory);
+        forge.complete();
+    }
+    return open_forged(world, forge);
+}
+
+"""Open what a forge made as a level of `world`: its compiled level, the
+survey kept beside it, and the way out."""
+def open_forged(world: World, forge: Forge) -> Level {
+    if forge.failure {
+        raise ValueError(forge.failure);
+    }
+    record = forge.survey;
+    made = forge.made;
+    if record is None or made is None {
+        raise ValueError("Expedition " + forge.name + " is not made yet");
+    }
+    casting = record.casting;
+    if casting is None or not casting.exit_low {
+        raise ValueError("Expedition survey is incomplete");
     }
     bsp = made.bsp;
-    level = Level(active=True, name=name, bsp=bsp);
+    level = Level(active=True, name=forge.name, bsp=bsp);
     level.briefing = record.briefing;
     level.asset_manifest = "|".join([texture.name for texture in bsp.textures]) + "|"
         + "|".join([entity.fields.get("asset_game", "passion") + ":" + entity.fields.get("classname", "") for entity in bsp.entities]);
     prepare_level(world, level);
+    # A level begun again after a death reopens its forge: its survey leaves
+    # the world it was in (torn down when the new one opens) first.
+    for held in [record<-:Surveys:<-][?:World] {
+        held del --> record;
+    }
     world +>:Surveys:+> record;
     volume = CollisionMap();
     volume.add_box(

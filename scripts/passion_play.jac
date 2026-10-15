@@ -11,22 +11,27 @@ inventory, a switch's plate must open the doors it names, a guardian (slain)
 must open its gate. Then every locked door is walked up to and must open,
 and the player is set in the way out, which must complete the expedition.
 Walking between them is the yardstick's to prove (passion_tests.jac); this
-proves the wiring. A line `PLAY seed=... PASS` or `FAIL <why>` per seed;
-the exit is photographed as play_<seed>.png."""
+proves the wiring. With QP_PLAY_RUN=1 the run goes on: the way out must
+lead on to the run's next level (made meanwhile), with the player's health
+carried and the last level's keys left behind, and a death there must begin
+that level again at once, from the level kept in memory. A line
+`PLAY seed=... PASS` or `FAIL <why>` per seed; the exit is photographed as
+play_<seed>.png."""
 import os;
 import math;
+import time;
 import from engine.core.app { App }
 import from engine.core.clock { Clock }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, damage_opponent }
 import from engine.world.doors { Door, HasDoor }
-import from engine.world.inventory { quantity }
+import from engine.world.inventory { quantity, InventorySlot, ItemStack }
 import from engine.world.pickups { Pickup, HasPickup }
 import from engine.world.signals { Signal, Targets }
 import from engine.input.input { Intent }
 import from engine.math.vec3 { Vec3 }
-import from games.passion.generate { survey_of, Survey }
+import from games.passion.generate { survey_of, Survey, next_level }
 import from games.passion.mission { beats_of }
 import from games.passion.arrange { estate_spaces }
 import from games.passion.massing { CELL, LIFT }
@@ -179,6 +184,55 @@ def:priv play_seed(app: App, renderer: Renderer, seed: int) -> str {
     if app.level.completion.pending == 0 {
         return "the way out did not complete the expedition";
     }
+    if os.environ.get("QP_PLAY_RUN", "") {
+        return play_onward(app, renderer, seed);
+    }
+    return "";
+}
+
+"""Go on from a cleared level to the run's next, then die there and begin
+it again; the reason it failed, or ""."""
+def:priv play_onward(app: App, renderer: Renderer, seed: int) -> str {
+    following = next_level(app.level.name);
+    health = app.player.health;
+    began = time.time();
+    frames = 0;
+    while app.level.name != following and frames < 20000 {
+        app.passion_onward(frames == 0);
+        frames += 1;
+    }
+    if app.level.name != following {
+        return "the way out did not lead on to " + following;
+    }
+    print("PLAY   onward to " + following + " after " + str(round(time.time() - began, 1)) + "s, health " + str(health) + " -> " + str(app.player.health));
+    if app.player.health != health {
+        return "health was not carried on (" + str(health) + " -> " + str(app.player.health) + ")";
+    }
+    for stack in [app.player.inventory->:InventorySlot:->][?:ItemStack] {
+        if stack.kind.startswith("key") and stack.quantity > 0 {
+            return "a key was carried on: " + stack.kind;
+        }
+    }
+    play_ticks(app, 30);
+    entered = app.player.health;
+    app.player.health = 0;
+    began = time.time();
+    app.restart_level();
+    took = time.time() - began;
+    print("PLAY   begun again after a death in " + str(round(took, 2)) + "s, health " + str(app.player.health));
+    if app.level.name != following {
+        return "a death did not begin " + following + " again";
+    }
+    if app.player.health != entered {
+        return "begun again with health " + str(app.player.health) + ", not " + str(entered);
+    }
+    if took > 5.0 {
+        return "beginning again took " + str(round(took, 1)) + "s: the level was made again";
+    }
+    for frame in range(3) {
+        app.render_frame();
+    }
+    renderer.screenshot("play_" + str(seed) + "_2.png");
     return "";
 }
 

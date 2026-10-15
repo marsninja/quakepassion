@@ -6,7 +6,7 @@ from.
     DYLD_LIBRARY_PATH=vendor .jac/qp-corpus > corpus.txt
 
 QP_CORPUS_GAMES picks the games (default "q1 q2 q3"; "passion" measures
-generated expeditions, v3-1 to v3-8, lit and kept under QP_LIGHT_CACHE),
+generated expeditions, v3-1 to v3-8, lit),
 QP_CORPUS_MAPS a list of maps to measure instead of each game's own, QP_ASSETS the folder that
 holds id1, baseq2 and baseq3 (default ~/quake-assets). Each level prints a
 `measure` line (every measure as name=value) and a `texture` line for each
@@ -165,7 +165,7 @@ with entry {
             began = time.time();
             try {
                 if game == "passion" {
-                    level = generate(World(), name, assets, os.environ.get("QP_LIGHT_CACHE", ""));
+                    level = generate(World(), name, assets);
                 } else {
                     level = load_level(World(), assets + "/" + folder, name, game);
                 }
