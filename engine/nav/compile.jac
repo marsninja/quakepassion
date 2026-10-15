@@ -662,6 +662,20 @@ def:priv nav_seed_points(world: World, level: Level) -> list[Vec3] {
     return points;
 }
 
+"""The spot nearest `point`, within `within` units; None when none is."""
+def:priv nav_nearest_spot(grid: NavGrid, point: Vec3, within: float) -> NavSpot | None {
+    best: NavSpot | None = None;
+    nearest = within;
+    for spot in grid.spots {
+        gap = spot.origin.sub(point).length();
+        if gap < nearest {
+            nearest = gap;
+            best = spot;
+        }
+    }
+    return best;
+}
+
 """Each spot inside a teleporter's trigger leads to the spot at its exit."""
 def:priv nav_teleports(world: World, grid: NavGrid) -> int {
     count = 0;
@@ -674,6 +688,11 @@ def:priv nav_teleports(world: World, grid: NavGrid) -> int {
             continue;
         }
         exit_spot = nav_seed(grid, places[0].origin);
+        # An exit by a wall puts its column's middle in the wall: the
+        # nearest spot found there instead.
+        if exit_spot is None {
+            exit_spot = nav_nearest_spot(grid, places[0].origin, 64.0);
+        }
         if exit_spot is None {
             continue;
         }

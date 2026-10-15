@@ -73,6 +73,12 @@ test "a number key takes up its role's weapons in turn" {
     assert seen == ["q2:shotgun", "q3:shotgun", "q2:supershotgun", "q1:shotgun"];
     # The rockets' key with no launcher held changes nothing.
     assert not change_weapon(player, state, 6);
+    # A weapon's own slot in the arsenal (as the player bot asks for one)
+    # takes up that weapon, from the axe as from anything else.
+    assert change_weapon(player, state, passion_slot("q1", 1)) and selected_weapon(state).key == "axe";
+    state.cooldown = 0.0;
+    assert change_weapon(player, state, passion_slot("q2", 3)) and selected_weapon(state).game == "q2";
+    assert selected_weapon(state).key == "supershotgun";
     # Quake's shotgun is not Quake II's.
     fresh = Player();
     held(fresh, ["weapon_q2:shotgun"]);
