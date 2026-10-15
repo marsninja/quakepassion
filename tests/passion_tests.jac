@@ -14,6 +14,7 @@ import from games.passion.spaces { Space, ARCHETYPES, shape_space, space_size }
 import from games.passion.arrange { arrange, estate_spaces, estate_corridors, doorway_block, Estate, CORRIDOR_HIGH }
 import from games.passion.generate { seed_from, run_of, level_name, next_level, level_seed, survey, Forge, VERSION }
 import from games.passion.critic { critic_measures, critic_score }
+import from games.passion.themes { THEMES, theme_for }
 import from games.passion.yardstick { traverse, Spread, level_start }
 import from editor.formats.map { MapFile }
 import from editor.document.scene { scene_from_map }
@@ -179,6 +180,40 @@ test "a survey keeps its promises: start, exit, a door for every lock, a fair sc
     assert steps > 50 and forge.stage == "ready" and forge.share() == 1.0;
     assert again.score == record.score and len(again.items) == len(record.items);
     assert len(made.bsp.faces) > 1000;
+}
+
+test "thirty themes, each of real archetypes and connectors, every one some seed's" {
+    assert len(THEMES) == 30;
+    keys = [theme.key for theme in THEMES];
+    assert len(set(keys)) == 30;
+    for theme in THEMES {
+        assert theme.centre in ARCHETYPES , theme.key;
+        for kind in theme.kinds.keys() {
+            assert kind in ARCHETYPES , theme.key + " " + kind;
+        }
+        for kind in theme.connectors.keys() {
+            assert kind in ["stair", "lift", "drop", "water", "jumppad"] , theme.key + " " + kind;
+        }
+    }
+    seen = set([theme_for(seed).key for seed in range(1, 400)]);
+    assert len(seen) == 30;
+}
+
+test "a theme of depths joins its rooms straight up and down" {
+    # Seed 84 is the Abyss: rooms one over another, joined by lifts and holes.
+    record = survey(84);
+    estate = record.estate;
+    mass = record.mass;
+    assert estate is not None and mass is not None and record.theme == "abyss";
+    joined = [corridor for corridor in estate_corridors(estate) if corridor.connector];
+    assert len(joined) >= 1;
+    for corridor in joined {
+        assert len(corridor.column) == 2 and corridor.high > corridor.low;
+        # The column is open from the lower floor up through the upper.
+        for cz in range(corridor.low, corridor.high) {
+            assert mass.air(corridor.column[0], corridor.column[1], cz) , corridor.connector;
+        }
+    }
 }
 
 test "a compiled expedition is walked from its start to its exit" {

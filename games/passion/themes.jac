@@ -83,7 +83,7 @@ glob THEMES: list[Theme] = [
         key="dungeon", title="Dungeon",
         kinds={"crypt": 4.0, "maze": 2.0, "vault": 2.0, "cellblock": 2.0, "lhall": 2.0, "hall": 1.0},
         centre="crypt", connectors={"drop": 3.0, "stair": 2.0, "lift": 1.0}, stack=0.35, drift=-1, dense=0.1,
-        liquid="water", kits=["Stone Keep", "Runic Halls"], foes=["undead", "beast"], light=0.7
+        liquid="water", kits=["Stone Keep", "Runic Halls"], foes=["undead", "beast"], light=0.85
     ),
     Theme(
         key="cloister", title="Cloister",
@@ -102,7 +102,7 @@ glob THEMES: list[Theme] = [
         kinds={"crypt": 4.0, "vault": 3.0, "ziggurat": 2.0, "court": 2.0, "maze": 1.0},
         centre="ziggurat", connectors={"stair": 3.0, "drop": 1.0},
         kits=["Runic Halls", "Stone Keep", "Gothic Ruin"], foes=["undead", "arcane"],
-        light=0.75, tint="200 210 255"
+        light=0.9, tint="215 225 255"
     ),
     Theme(
         key="ziggurat", title="Ziggurat",
@@ -120,7 +120,7 @@ glob THEMES: list[Theme] = [
         key="refinery", title="Refinery",
         kinds={"cistern": 4.0, "catwalk": 3.0, "bridgespan": 2.0, "hall": 2.0},
         centre="cistern", connectors={"lift": 2.0, "stair": 2.0, "water": 1.0}, liquid="slime", flood=0.4,
-        kits=["Strogg Works", "Slipgate Base", "Tech Complex"], foes=["strogg", "soldier"], tint="200 255 180"
+        kits=["Strogg Works", "Slipgate Base", "Tech Complex"], foes=["strogg", "soldier"], tint="215 255 200"
     ),
     Theme(
         key="powerplant", title="Power Plant",
@@ -138,7 +138,7 @@ glob THEMES: list[Theme] = [
         key="mine", title="Mine",
         kinds={"cave": 4.0, "shaft": 3.0, "chasm": 2.0, "catwalk": 2.0, "crypt": 1.0},
         centre="shaft", connectors={"lift": 3.0, "drop": 2.0, "stair": 1.0}, stack=0.45, vertical=0.3, drift=-1,
-        liquid="lava", kits=["Deep Mines", "Strogg Works"], foes=["strogg", "beast"], light=0.8
+        liquid="lava", kits=["Deep Mines", "Strogg Works"], foes=["strogg", "beast"], light=0.9
     ),
     Theme(
         key="slipgate", title="Slipgate Complex",
@@ -174,25 +174,25 @@ glob THEMES: list[Theme] = [
         key="caverns", title="Caverns",
         kinds={"cave": 6.0, "chasm": 2.0, "cistern": 1.0, "terraces": 1.0},
         centre="cave", centre_grow=3, connectors={"drop": 2.0, "stair": 2.0, "water": 1.5, "lift": 1.0}, stack=0.35,
-        liquid="water", kits=["Deep Mines", "Runic Halls", "Gothic Ruin"], foes=["beast", "undead"], light=0.8
+        liquid="water", kits=["Deep Mines", "Runic Halls", "Gothic Ruin"], foes=["beast", "undead"], light=0.9
     ),
     Theme(
         key="sunken", title="Sunken Temple",
         kinds={"cistern": 4.0, "crypt": 2.0, "octagon": 2.0, "ziggurat": 2.0, "overlook": 1.0},
         centre="cistern", connectors={"water": 4.0, "stair": 1.0}, stack=0.35, liquid="water", flood=0.5,
-        kits=["Runic Halls", "Gothic Ruin", "Stone Keep"], foes=["arcane", "undead"], tint="180 220 255"
+        kits=["Runic Halls", "Gothic Ruin", "Stone Keep"], foes=["arcane", "undead"], light=1.1, tint="205 230 255"
     ),
     Theme(
         key="forge", title="Lava Forge",
         kinds={"catwalk": 4.0, "bridgespan": 3.0, "chasm": 3.0, "hall": 1.0, "cave": 1.0},
         centre="catwalk", centre_grow=3, connectors={"stair": 2.0, "lift": 2.0, "drop": 1.0}, liquid="lava", flood=0.5,
-        kits=["Runic Halls", "Deep Mines", "Strogg Works"], foes=["beast", "arcane", "strogg"], tint="255 190 140"
+        kits=["Runic Halls", "Deep Mines", "Strogg Works"], foes=["beast", "arcane", "strogg"], tint="255 205 165"
     ),
     Theme(
         key="abyss", title="Abyss",
         kinds={"shaft": 3.0, "chasm": 3.0, "catwalk": 2.0, "towerhub": 2.0, "cave": 2.0},
         centre="shaft", connectors={"drop": 5.0, "lift": 2.0, "water": 0.5, "stair": 1.0}, stack=0.6, vertical=0.5, drift=-1,
-        kits=["Deep Mines", "Runic Halls", "Gothic Ruin"], foes=["beast", "undead"], light=0.8
+        kits=["Deep Mines", "Runic Halls", "Gothic Ruin"], foes=["beast", "undead"], light=0.9
     ),
     Theme(
         key="skyislands", title="Sky Islands",
@@ -222,7 +222,7 @@ glob THEMES: list[Theme] = [
         key="labyrinth", title="Labyrinth",
         kinds={"maze": 5.0, "lhall": 3.0, "crypt": 2.0, "crosshall": 2.0},
         centre="maze", centre_grow=3, loop=0.3, rooms=3,
-        kits=["Runic Halls", "Stone Keep", "Strogg Outpost"], foes=["beast", "undead"], light=0.85
+        kits=["Runic Halls", "Stone Keep", "Strogg Outpost"], foes=["beast", "undead"], light=0.95
     ),
     Theme(
         key="clockwork", title="Clockwork",

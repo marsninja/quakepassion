@@ -115,7 +115,7 @@ obj Expeditions(StudioTool) {
         estate = record.estate;
         spaces = estate_spaces(estate) if estate is not None else [];
         rooms = len([space for space in spaces if space.role != "corridor"]);
-        return "studio: expedition seed=" + str(record.seed) + " archetype=" + record.archetype + " beats="
+        return "studio: expedition seed=" + str(record.seed) + " theme=" + record.theme + " archetype=" + record.archetype + " beats="
             + str(len(beats_of(plan)) if plan is not None else 0) + " links=" + str(len(links_of(plan)) if plan is not None else 0)
             + " rooms=" + str(rooms) + " corridors=" + str(len(spaces) - rooms) + " score=" + str(round(record.score, 2))
             + " tried=" + str(record.candidates) + " valid=" + str(record.valid) + " shown=" + ("1" if self.shown else "0");
@@ -191,7 +191,8 @@ obj Expeditions(StudioTool) {
             for corridor in corridors {
                 print(
                     "studio: expedition way " + str(corridor.link) + " " + str(corridor.tail) + ">" + str(corridor.head) + " "
-                        + corridor.mode + (" needs=" + ",".join(corridor.needs) if corridor.needs else "")
+                        + corridor.mode + (" " + corridor.connector if corridor.connector else "")
+                        + (" needs=" + ",".join(corridor.needs) if corridor.needs else "")
                         + (" teleport" if corridor.teleport else "") + (" window" if corridor.window else "")
                         + " blocks=" + str(len(corridor.blocks))
                 );
@@ -453,6 +454,16 @@ obj Expeditions(StudioTool) {
         };
         for corridor in estate_corridors(estate) {
             tone = tones[corridor.mode] if corridor.mode in tones else ink(0xe6dfd4);
+            # A way straight up or down: a post from floor to floor, coloured
+            # by what it is (lift, drop, water, jump pad).
+            if corridor.connector and len(corridor.column) == 2 {
+                post = {"lift": ink(0xf5a524), "drop": ink(0xe5484d), "water": ink(0x5b8def), "jumppad": ink(0x4cc38a)};
+                shade = post[corridor.connector] if corridor.connector in post else tone;
+                foot = Vec3(x=(float(corridor.column[0]) + 1.0) * CELL, y=(float(corridor.column[1]) + 1.0) * CELL, z=float(corridor.low) * LIFT);
+                head = Vec3(x=foot.x, y=foot.y, z=float(corridor.high) * LIFT);
+                host.line(foot, head, shade);
+                wire_box(host, foot.sub(Vec3(x=CELL, y=CELL)), Vec3(x=foot.x + CELL, y=foot.y + CELL, z=head.z), shade);
+            }
             previous: Vec3 | None = None;
             for block in corridor.blocks {
                 middle = Vec3(x=(float(block[0]) + 1.0) * CELL, y=(float(block[1]) + 1.0) * CELL, z=float(block[2]) * LIFT + 8.0);

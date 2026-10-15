@@ -5,7 +5,8 @@ run is a seed: its levels, real levels of brushes in three dimensions, are
 generated one after another from the original Quake, Quake II and Quake III
 assets and measured against the original games' own levels. Each level's
 way out leads on to the next, made while the last is played; nothing is
-saved. The generator version is `v3` (`generate.jac` `VERSION`).
+saved. Every level takes one of thirty themes (below). The generator version
+is `v4` (`generate.jac` `VERSION`).
 
 ## Run
 
@@ -17,7 +18,7 @@ QP_GAME=passion QP_SEED=42 DYLD_LIBRARY_PATH=vendor ./qp
 ```
 
 - `QP_SEED` is the run's seed (default 1), from 1 to 2147483646. The run's
-  first level is `v3-42`, its levels after that `v3-42-2`, `v3-42-3` and on
+  first level is `v4-42`, its levels after that `v4-42-2`, `v4-42-3` and on
   (`QP_MAP` names any of them). Each level is made from the run's seed and
   its depth, so a seed always plays the same run, and a deeper level is
   fought over more densely and has a room or two more. Names with another
@@ -62,9 +63,89 @@ median of six floor levels, 40% of their floor over other floor, 240 units
 of headroom, 176-unit sightlines, a lamp per 110 units, and lightmaps whose
 quartiles are 1, 35 and 109.
 
+## Themes (`themes.jac`)
+
+Each level is made in a theme, drawn from its own seed (so a run's levels
+differ, and a seed always gives the same). A theme is data, not code: a
+recipe the rest of the generator reads.
+
+- **Archetype weights**: which kinds of room it leans to (multiplying each
+  beat kind's own), and its **centrepiece**: the hub, arena or goal takes
+  the theme's great room, grown.
+- **Connectors**: how rooms set one over another are joined, and how often
+  a room is so set (below).
+- **Leanings** added to the seed's niche: verticality, loopiness, density,
+  rooms; the way the level **drifts** (up a spire, down a mine); the
+  **mission** archetypes it sets (keys, relays, guardians).
+- **Dressing**: its districts (first choice first), the foes that hold it
+  (soldier, beast, undead, arcane, Strogg, Quake III, weighted three to one),
+  the liquid in its pits (lava, slime, water), its light (brighter or darker
+  than the district's, and its colour), how often a tall room opens to the
+  sky, how often corridors are widened, and (the Slipgate Complex) how
+  often a link is a teleporter on purpose.
+
+| Theme | Centrepiece | Leans on | Joined by |
+| --- | --- | --- | --- |
+| Keep | court | courts, tower hubs, cross halls | stairs, lifts, drops |
+| Cathedral | cross hall | overlooks, crypts, octagons | stairs, drops |
+| Spire | tower hub | shafts, atriums (rises) | lifts, stairs, jump pads |
+| Dungeon | crypt | mazes, cell blocks (sinks) | drops, stairs, lifts |
+| Cloister | court | courts, terraces (loops) | stairs |
+| Ruins | chasm | bridge spans, caves (lava, sky) | drops, stairs, jump pads, lifts |
+| Necropolis | ziggurat | crypts, vaults | stairs, drops |
+| Ziggurat | ziggurat | terraces, stair halls (rises) | stairs, lifts |
+| Factory | catwalk | crate halls, overlooks (lava) | lifts, stairs, drops |
+| Refinery | cistern | catwalks, bridge spans (slime) | lifts, stairs, water |
+| Power Plant | tower hub | shafts, catwalks (relays) | lifts |
+| Warehouse | crate hall | overlooks, L halls | stairs, lifts |
+| Mine | shaft | caves, chasms (sinks, lava) | lifts, drops |
+| Slipgate Complex | octagon | halls, vaults (teleporters) | stairs, lifts, gates |
+| Waterworks | cistern | bridge spans, shafts | water, lifts |
+| Detention Block | cell block | L halls, mazes (keys) | stairs, lifts |
+| Hangar | arena | atriums, overlooks | jump pads, lifts |
+| Laboratory | octagon | vaults, cross halls (relays) | lifts, stairs |
+| Caverns | cave | chasms, cisterns | drops, stairs, water, lifts |
+| Sunken Temple | cistern | crypts, octagons, ziggurats | water |
+| Lava Forge | catwalk | bridge spans, chasms (lava) | stairs, lifts, drops |
+| Abyss | shaft | chasms, catwalks (sinks) | drops, lifts |
+| Sky Islands | bridge span | courts, octagons (sky) | jump pads, lifts |
+| Gauntlet | arena | arenas (dense, linear) | stairs, lifts, drops |
+| Colosseum | arena | terraces, courts (guardians) | stairs |
+| Siege | court | tower hubs, terraces | stairs, lifts |
+| Labyrinth | maze | L halls, crypts (loops) | stairs |
+| Clockwork | tower hub | vaults, shafts (relays) | lifts |
+| Twin Towers | tower hub | bridge spans, shafts | lifts, stairs, jump pads |
+| Spiral Descent | shaft | tower hubs, terraces (sinks) | stairs, drops, lifts |
+
+### Rooms over rooms
+
+A room may be placed straight over or under the room it links to, their
+boxes overlapping by nine cells or more each way and a slab of two lifts
+between. The link is then joined through the slab by a column two cells
+square, where both floors run round it, nothing of either room is kept
+clear (stairs, stage) and the lower room is open from its floor to its
+ceiling over it; when no column will do, by a corridor as before.
+
+- **Lift**: Quake's `func_plat`, built risen to the upper floor and
+  lowered to the lower when the level begins; it rises when stepped on.
+- **Drop**: a hole in the upper floor (one way down).
+- **Water**: the column flooded from the lower floor to just under the
+  upper, walled round in the lower room but for a way in at its foot;
+  swum up, dropped down.
+- **Jump pad**: a pad at the foot of the column, a push straight up it and,
+  in the slab, a push on the slant that sets the body down on two cells of
+  floor beside the hole (a `_land` point the navigation reads).
+- **Stair**: a corridor that climbs between them.
+
+An open link takes a lift, water or a stair (both ways); a one-way link a
+drop (down) or a jump pad (up); a link that needs a door, a stair. Rooms
+already joined both ways may have a quicker drop or pad besides, as the
+theme likes: it skips nothing. The floors' flood (`floor_reached`), the
+pits' flooding and the navigation know each of them.
+
 ## Pipeline (`generate.jac`)
 
-A seed picks a niche (how much the expedition loops, how vertical it is, how
+A seed picks a theme, a niche (how much the expedition loops, how vertical it is, how
 densely it is fought over, how big it is) and an objective archetype (keys,
 relays, guardians or a mix). Up to four candidates are built in full; each is
 turned down if it cannot be laid out, needs too many teleporters, or if a
@@ -81,7 +162,15 @@ kept.
    middle), a chasm (a pit crossed by a bridge, stairs from the pit up to a
    ledge), an open court (an arcade round it, sky over it), terraces, a stair
    hall, a vault (a dais for its prize), an arena (a sunken pit and steps
-   down) or a crypt (a grid of squat pillars). Doorways (`Doorway`) are found
+   down), a crypt (a grid of squat pillars), an overlook (a mezzanine along
+   one wall), a tower hub (stairs winding round a central column), a
+   catwalk (walkways over a pit of lava or slime), a cistern (a pool with a
+   raised walk and a bridge), a cell block (galleries over cells), a crate
+   hall (stacks of crates kept off two aisles), a cave (rounded corners,
+   hanging rock, uneven floor, rock pillars), a bridge span (a bridge down
+   a long void), an L hall, a cross hall, an octagon, a ziggurat (a stepped
+   mound) or a maze (passages two cells wide round a walk by the walls),
+   weighted by the theme. Doorways (`Doorway`) are found
    from the carved cells: two cells of floor deep, headroom for a doorway, at
    each floor level the stage can be walked to; ledges high in the walls for
    one-way drops.
@@ -230,7 +319,7 @@ QP_SEEDS="1 2 3 4 5 6 7 8 9 10 11 12" .jac/qp-passion-map
 jac build scripts/passion_play.jac --native -o .jac/qp-play
 QP_GAME=passion QP_SEEDS="1 2 3" DYLD_LIBRARY_PATH=vendor .jac/qp-play
 jac build scripts/passion_look.jac --native -o .jac/qp-look
-QP_GAME=passion QP_LOOK_GAME=passion QP_LOOK_MAP=v3-5 QP_LOOK_ROUTE=1 DYLD_LIBRARY_PATH=vendor .jac/qp-look
+QP_GAME=passion QP_LOOK_GAME=passion QP_LOOK_MAP=v4-5 QP_LOOK_ROUTE=1 DYLD_LIBRARY_PATH=vendor .jac/qp-look
 jac build scripts/passion_corpus.jac --native -o .jac/qp-corpus
 QP_CORPUS_GAMES=passion .jac/qp-corpus
 ```
@@ -243,7 +332,13 @@ QP_CORPUS_GAMES=passion .jac/qp-corpus
   a forge stepped a step at a time makes the same expedition; a compiled
   expedition is walked from its start to its exit by the yardstick over its
   real collision.
-- `scripts/passion_map.jac`: how each seed's survey went, why candidates
+- `scripts/passion_connectors.jac`: every lift, drop, flooded shaft and
+  jump pad of a seed ridden in the game: the player set on a lift's
+  platform, a pad, over a hole or at the foot of a shaft must come out on
+  the other floor.
+- `scripts/passion_map.jac`: with `QP_THEME=<key>` (or `all`, each over
+  `QP_SEEDS`) any theme is surveyed whatever the seed; the line says the
+  theme, its connectors and the archetypes used. How each seed's survey went, why candidates
   were turned down, teleporters and windows (seeds 1-12: 0-2 teleporters,
   2-7 s).
 - `scripts/passion_play.jac`: each seed's logic played in the game (keys,
@@ -262,7 +357,13 @@ Jac compiler defects found while building Passion are recorded in
 ## Limitations
 
 - Rooms are boxes and their structure axis-aligned: no slopes, arches or
-  round rooms yet, and walls are a cell thick.
+  round rooms (octagons and caves are cut on the grid), and walls are a cell
+  thick.
+- A theme holds for a whole level; districts change by section, themes do
+  not yet.
+- Only rooms placed one over the other are joined straight up or down, and
+  a lift is called up only by stepping onto it (or by falling to it down
+  the shaft from above).
 - The yardstick does not swim or ride lifts, so a level's reach and routes
   are measured as far as walking, jumping, dropping and teleporters go.
 - Generated levels are still more detailed in small faces and trim than the

@@ -73,7 +73,8 @@ def:priv ride(app: App, kind: str, column: list[int], low: int, high: int, landi
             frames += 1;
             at = feet(app);
             best = max(best, at.z);
-            if frames > 30 and app.player.grounded and abs(at.z - high_z) < 8.0 {
+            # Set down on the upper floor (or a step on it beyond the landing).
+            if frames > 30 and app.player.grounded and at.z >= high_z - 8.0 and at.z <= high_z + 40.0 {
                 return "";
             }
         }

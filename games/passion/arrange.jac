@@ -254,7 +254,9 @@ kept clear there (stairs, stage) and the lower room is open from its floor
 to its ceiling over it. Answers [x, y, low floor, high floor, landing x,
 landing y] (the landing beside the hole on the upper floor, -1 when there
 is none), or nothing when no column will do."""
-def build_connector(lower: Space, upper: Space, mass: Massing, reserve: Reserve, owner: Space, dice: Stream, notes: list[str] = []) -> list[int] {
+def build_connector(
+    lower: Space, upper: Space, mass: Massing, reserve: Reserve, owner: Space, dice: Stream, notes: list[str] = [], opening: int = 0
+) -> list[int] {
     if upper.flood > 0 or lower.flood > 0 {
         notes.append("flooded " + lower.kind + "/" + upper.kind);
         return [];
@@ -294,7 +296,9 @@ def build_connector(lower: Space, upper: Space, mass: Massing, reserve: Reserve,
                     }
                 }
             }
-            if ring < 6 {
+            # A wider opening (a jump pad's, so a body anywhere on the pad
+            # rises clear of the slab) takes the whole ring.
+            if ring < (12 if opening > 0 else 6) {
                 good = False;
             }
             if not good {
@@ -350,12 +354,13 @@ def build_connector(lower: Space, upper: Space, mass: Massing, reserve: Reserve,
     pick = found[dice.below(len(found))];
     cx = pick[0];
     cy = pick[1];
-    mass.carve(cx, cy, lower.z + lower.h, cx + 2, cy + 2, high, owner.id);
-    reserve.hold_box(cx, cy, lower.z + lower.h, cx + 2, cy + 2, high, owner.id);
+    mass.carve(cx - opening, cy - opening, lower.z + lower.h, cx + 2 + opening, cy + 2 + opening, high, owner.id);
+    reserve.hold_box(cx - opening, cy - opening, lower.z + lower.h, cx + 2 + opening, cy + 2 + opening, high, owner.id);
     # Where a jump pad sets the body down: two cells of floor beside the hole.
     landing = [-1, -1];
+    reach = 3 + opening;
     for way in dice.order(4) {
-        step = [[3, 0], [-3, 0], [0, 3], [0, -3]][way];
+        step = [[reach, 0], [-reach, 0], [0, reach], [0, -reach]][way];
         lx = cx + step[0];
         ly = cy + step[1];
         good = True;
@@ -367,8 +372,8 @@ def build_connector(lower: Space, upper: Space, mass: Massing, reserve: Reserve,
             }
         }
         # And open floor between, with room overhead, for the flight across.
-        gap_x = cx + 2 if step[0] > 0 else (cx - 1 if step[0] < 0 else -1);
-        gap_y = cy + 2 if step[1] > 0 else (cy - 1 if step[1] < 0 else -1);
+        gap_x = cx + 2 + opening if step[0] > 0 else (cx - 1 - opening if step[0] < 0 else -1);
+        gap_y = cy + 2 + opening if step[1] > 0 else (cy - 1 - opening if step[1] < 0 else -1);
         for offset in range(2) {
             nx = gap_x if gap_x >= 0 else cx + offset;
             ny = gap_y if gap_y >= 0 else cy + offset;
@@ -388,8 +393,8 @@ def build_connector(lower: Space, upper: Space, mass: Massing, reserve: Reserve,
         }
     }
     # Nothing is set down, nor railed off, on the column or round it.
-    for ny in range(cy - 1, cy + 3) {
-        for nx in range(cx - 1, cx + 3) {
+    for ny in range(cy - 1 - opening, cy + 3 + opening) {
+        for nx in range(cx - 1 - opening, cx + 3 + opening) {
             upper.kept.append([nx, ny, high]);
             lower.kept.append([nx, ny, pick[2]]);
         }
@@ -414,7 +419,7 @@ def add_shortcut(theme: Theme, link: Link, tail: Space, head: Space, mass: Massi
     }
     owner = Space(id=len(placed), role="corridor", kind="corridor", district=upper.district, tension=upper.tension);
     owner.levels = [];
-    joined = build_connector(lower, upper, mass, reserve, owner, dice.child("shortcut", link.id), estate.stack_notes);
+    joined = build_connector(lower, upper, mass, reserve, owner, dice.child("shortcut", link.id), estate.stack_notes, 1 if kind == "jumppad" else 0);
     if not joined or (kind == "jumppad" and joined[4] < 0) {
         return False;
     }
@@ -1136,7 +1141,9 @@ def arrange_steps(plan: Expedition, dice: Stream, held: Layout) -> Iterator[str]
         if connector and connector != "stair" {
             lower = tail if tail.z < head.z else head;
             upper = head if lower is tail else tail;
-            joined = build_connector(lower, upper, mass, reserve, corridor_space, dice.child("connector", link.id), estate.stack_notes);
+            joined = build_connector(
+                lower, upper, mass, reserve, corridor_space, dice.child("connector", link.id), estate.stack_notes, 1 if connector == "jumppad" else 0
+            );
             if joined and connector == "jumppad" and joined[4] < 0 {
                 joined = [];
             }
