@@ -974,8 +974,9 @@ walker AutoThink {
                 continue;
             }
             # One given up fighting (no harm done to it, and no nearer, for a
-            # while) is passed by, unless it is at arm's length.
-            if distance > 120.0 and self.bot.passed_body(body) {
+            # while) is passed by, unless it is hurting the bot now.
+            attacked = self.bot.clock - self.bot.hurt_at < 2.0 and distance < 200.0;
+            if not attacked and self.bot.passed_body(body) {
                 continue;
             }
             # One it holds nothing to hurt with (only the axe, out of reach;
@@ -1072,6 +1073,16 @@ walker AutoThink {
             box = portal.volume.bounds[0];
             goal = box.mins.add(box.maxs).scale(0.5);
             area = mesh.locate(goal);
+            # A tall volume's middle floats over the floor, in no area: any
+            # area reaching into it (as with an item's box) is the way in.
+            if area == 0 {
+                for candidate in mesh.aas.box_areas(box.mins, box.maxs, 16) {
+                    if mesh.aas.areas[candidate].reach_count > 0 and candidate not in mesh.disabled {
+                        area = candidate;
+                        break;
+                    }
+                }
+            }
             if area == 0 or here_area == 0 {
                 continue;
             }
@@ -1894,13 +1905,19 @@ walker AutoThink {
         if best is None {
             return False;
         }
+        # Chosen again, the same goal keeps its count of how long it has got
+        # no nearer: else one it cannot reach is never given up.
+        previous = bot.goal;
+        same = previous is not None and previous.sub(best).length() < 1.0;
         bot.goal = best;
         bot.goal_area = best_area;
         bot.goal_name = best_name;
-        bot.route.abandon();
         bot.roam_chosen = bot.clock;
-        bot.roam_nearest = 1.0e9;
-        bot.roam_nearer_at = bot.clock;
+        if not same {
+            bot.route.abandon();
+            bot.roam_nearest = 1.0e9;
+            bot.roam_nearer_at = bot.clock;
+        }
         return True;
     }
 
@@ -1913,6 +1930,12 @@ walker AutoThink {
             return;
         }
         if self.resupply() {
+            visit self.shift(here, "activate");
+            return;
+        }
+        # A door in the way that something else opens: that first, or a way
+        # round it, rather than walking into it again and again.
+        if self.check_movers() {
             visit self.shift(here, "activate");
             return;
         }
@@ -2242,6 +2265,11 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             standoff = max(220.0, autoplay_standoff(player, state, foe) + 20.0);
             wet = player.water_depth >= 2;
             needed = autoplay_needed(foe);
+            # Holding nothing that hurts it from farther than arm's length (an
+            # axe, a gauntlet): in to swing, not off out of its own reach.
+            if autoplay_can_hurt(player, state, foe, 64.0) and not autoplay_can_hurt(player, state, foe, 220.0) {
+                standoff = 40.0;
+            }
             # Knocking a zombie down rather than blowing it apart: near
             # enough to hit, not off at the grenade launcher's distance.
             if autoplay_knock(foe) > 0 and autoplay_weapon(player, state, reach, wet, needed) <= 0 {
