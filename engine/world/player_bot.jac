@@ -19,7 +19,7 @@ import from .bot_travel { FollowRoute, TravelResult, gap_distance, soonest_out, 
 import from .pickups { Pickup, HasPickup }
 import from .inventory { quantity }
 import from .bot_trace { BotTrace, trace_text, trace_number, trace_point }
-import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_for, Projectile, HasProjectile }
+import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_for, weapon_rule, Projectile, HasProjectile }
 import from .exits { LevelExit, HasExit }
 import from .doors { Door, HasDoor, door_starts_open }
 import from .trains { Train, HasTrain, TrackPoint, TrackNext }
@@ -2267,8 +2267,12 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
         }
         yaw_gap = abs(autoplay_turn(player.yaw, want_yaw));
         pitch_gap = abs(want_pitch - player.pitch);
-        # Only with a weapon that reaches it: not the axe from across a room.
-        intent.fire = slot > 0 and yaw_gap < 0.12 and pitch_gap < 0.15;
+        # Only with a weapon that reaches it, and only once that is the one
+        # in hand: an axe or a gauntlet swung from across a room hits
+        # nothing, while the gun asked for is still being taken up.
+        held = weapon_rule(state, state.weapon);
+        in_hand = held is not None and held.reach >= distance;
+        intent.fire = slot > 0 and in_hand and yaw_gap < 0.12 and pitch_gap < 0.15;
         self.fired = intent.fire;
     } elif self.travel.view_set {
         want_yaw = math.radians(self.travel.yaw);

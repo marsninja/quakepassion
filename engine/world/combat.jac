@@ -2279,10 +2279,12 @@ def change_weapon(player: Player, state: CombatState, slot: int) -> bool {
     if state.grenade_phase > 0 or state.charge > 0.0 or not state.rules {
         return select_weapon(player, state, slot);
     }
-    if state.rules[0].role > 0 {
+    # A Passion arsenal's number keys take up a role (1 to 9); a weapon's
+    # own slot in it (11 and on) takes up that weapon, as the player bot asks.
+    rule = weapon_rule(state, slot);
+    if state.rules[0].role > 0 and rule is None {
         return change_role(player, state, slot);
     }
-    rule = weapon_rule(state, slot);
     if rule is None or not owns_weapon(player, rule) {
         if state.game == "q1" {
             state.messages.append("no weapon.");
