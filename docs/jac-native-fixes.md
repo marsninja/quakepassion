@@ -8,8 +8,11 @@ tracked the local patch stacks used while each fix was in review.
 
 ## Current compiler
 
-The `jaseci` submodule pins the compiler source. It points at the
-`qp-pin-v8` branch of `marsninja/jac`: upstream main `875ef9d29` plus
+The `jaseci` submodule pins compiler source at `9421a0850b`, on the
+`fix/qp-sort-captured-keys` branch of `marsninja/jac`. It extends the previous
+`qp-pin-v8` pin (`d6197207`) with the production backport of
+[jaseci-labs/jac#10138](https://github.com/jaseci-labs/jac/pull/10138).
+That previous pin contains upstream main `875ef9d29` plus
 [jaseci-labs/jac#10002](https://github.com/jaseci-labs/jac/pull/10002), which
 has since merged, and
 [jaseci-labs/jac#10061](https://github.com/jaseci-labs/jac/pull/10061), which
@@ -24,7 +27,7 @@ to export, so the released `jac` 0.37.25 binary compiles QuakePassion with
 the pinned source. CI (`.github/workflows/jac-test.yml`) does the same and
 caches the native compiler kernel per pin. No local patch stacks or compiler
 worktrees are needed, and the submodule can return to `jaseci-labs/jac` main
-once #10017, #10090 and #10114 have merged.
+once #10017, #10090, #10114 and #10138 have merged.
 
 ## Open upstream
 
@@ -32,6 +35,7 @@ Open upstream and in the pin:
 
 | Defect | Upstream PR | Found by |
 | --- | --- | --- |
+| Native `sorted(..., key=...)` and `list.sort(key=...)` rejected lambdas that capture a local or object. The fix passes lifted captures or closure environments to the key and keeps owned closures alive through the sort. Four targeted upstream regression tests pass, including scalar/object captures, aggregate keys and in-place/reverse sorting. | [#10138](https://github.com/jaseci-labs/jac/pull/10138) | Passion portal placement sorts candidate cells relative to their room in `Director3.portal_site`; the native build rejected this ordinary captured key. |
 | `assert cond, <message>` carried its message into the `AssertionError` only when the message was a string literal: one that was worked out (a concatenation, an f-string) was dropped, and the error said only `assertion failed at <file>:<line>` | [#10017](https://github.com/jaseci-labs/jac/pull/10017) | The Passion mission editor (`editor/document/missionedit.jac`), which says what the generator's own proof (`validate_mission`) found wrong with a mission changed by hand: "Mission needs an ungranted token: ..." came back as a file and a line |
 | A module whose import closure held more than `[build] native_closure_cap` (256) modules was placed on the server, said only in a note, and a native entry that imported it failed to lower with E5092 far from the cause; the cap is removed | [#10061](https://github.com/jaseci-labs/jac/pull/10061) | `games/frame_order.jac` (LibreQuake's frame numbers): one more module put the studio's closure at 257 and `jac build main.jac --native` failed on `attach_studio` |
 | `list.pop()` on a list whose elements live in pointer slots (lists of lists, objects, strings, dicts) returned the bare `i8*`, so a local bound from it without an annotation took that type and a subscript on it failed to lower ("Type of #1 arg mismatch"); the function was demoted to Python, and everything that called it with it | [#10090](https://github.com/jaseci-labs/jac/pull/10090) | Passion's massing flood (`floor_reached`) and corridor search pop cells from a `list[list[int]]`: the demotion spread up to `generate`, and `jac build main.jac --native` failed |
