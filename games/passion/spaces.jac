@@ -81,6 +81,7 @@ node Space {
         d: int = 8,
         h: int = 10,
         tension: float = 0.0,
+        encounter: str = "",
         optional: bool = False,
         order: int = 0,
         size: int = 1,

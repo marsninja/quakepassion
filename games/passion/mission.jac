@@ -615,6 +615,19 @@ def annotate(plan: Expedition) {
         }
     }
     plan.route = route;
+    # Breathing room belongs to the main progression as well as optional
+    # branches. Reuse a plain beat, preserving all links and token grants.
+    since_rest = 0;
+    for beat in sorted(all_beats, key=lambda (b: Beat) { (b.order, b.id); }) {
+        if beat.optional { continue; }
+        if beat.kind in ["start", "recovery", "vista", "goal"] {
+            since_rest = 0;
+        } elif since_rest >= 3 and beat.kind in ["room", "junction"] and not beat.grants {
+            beat.kind = "recovery";
+            beat.size = 1;
+            since_rest = 0;
+        } else { since_rest += 1; }
+    }
     total = max(1, order - 1);
     for beat in all_beats {
         t = float(max(0, beat.order)) / float(total);
@@ -633,6 +646,11 @@ def annotate(plan: Expedition) {
             tension = 0.0;
         }
         beat.tension = max(0.0, min(1.0, tension));
+        beat.encounter = "quiet" if beat.kind in ["start", "goal", "recovery", "vista", "cache"] else (
+            "guardian" if beat.kind == "guardian" else (
+                "teach" if beat.order < 4 else ["crossfire", "pressure", "ambush"][beat.order % 3]
+            )
+        );
     }
 }
 

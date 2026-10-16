@@ -152,6 +152,7 @@ def dress_steps(mass: Massing, spaces: list[Space], dice: Stream, made: Dressing
     glowing_pits(by_id, made);
     court_lamps(by_id, made);
     hanging_lamps(mass, by_id, made);
+    landmark_lights(mass, by_id, made);
     yield "lamps";
     yield from railing_steps(mass, by_id, made);
     window_bars(by_id, made);
@@ -240,7 +241,8 @@ def edge_trim_steps(mass: Massing, by_id: dict[int, Space], made: Dressing) -> I
                                     corners = wall_strip(direction, line, run_start, along - 1, low, high, TRIM_DEPTH);
                                     made.brushes.append(plain_box(corners[0], corners[1], kit.trim, kit.scale));
                                     start_cell = run_cell(direction, line, run_start);
-                                    if not top and space.role != "corridor" and mass.headroom(start_cell[0], start_cell[1], z) >= 8 {
+                                    if not top and space.kind not in ["cave", "maze", "crypt"] and direction == (space.order + space.district) % 4
+                                        and mass.headroom(start_cell[0], start_cell[1], z) >= 8 {
                                         # A lower band of the wall in the kit's second
                                         # material, and a rail along its top.
                                         band = wall_strip(direction, line, run_start, along - 1, low, low + WAINSCOT_HIGH, 3.0);
@@ -263,14 +265,20 @@ stands whole from floor to ceiling, every few cells, with a lamp on every
 other one."""
 def pilasters(mass: Massing, by_id: dict[int, Space], made: Dressing, dice: Stream) {
     for space in by_id.values() {
-        if space.role in ["corridor", "window"] or space.kind in ["shaft", "vault"] {
+        if space.role in ["corridor", "window", "start", "recovery", "vista", "cache"]
+            or space.kind in ["shaft", "vault", "cave", "maze", "crypt", "cratehall"] {
             continue;
         }
         kit = kit_of(space.district);
         owner = space.id + 1;
-        gap = 3;
+        gap = 5 if space.centre else 7;
         lamp_every = 2;
         for direction in range(4) {
+            # Repeated ribs belong to the long walls of a major space;
+            # small connecting rooms keep a simpler silhouette.
+            if not space.centre and direction // 2 != (1 if space.w >= space.d else 0) {
+                continue;
+            }
             step = direction_step(direction);
             # The walls of this space facing `direction`: the cells along
             # the box's side, at each floor level.
@@ -427,7 +435,7 @@ def ceiling_lamps(mass: Massing, by_id: dict[int, Space], made: Dressing, dice: 
         if corridor or space.role == "window" or made.lit.get(space.id, 0) > 0 {
             continue;
         }
-        gap = 4 if corridor else 5;
+        gap = 5 if space.centre else 7;
         for cz in range(space.z, space.z + space.h) {
             for cy in range(space.y, space.y + space.d) {
                 for cx in range(space.x, space.x + space.w) {
@@ -580,11 +588,17 @@ def hanging_lamps(mass: Massing, by_id: dict[int, Space], made: Dressing) {
         if space.role in ["corridor", "window"] or space.sky or space.w * space.d < 110 {
             continue;
         }
+        if made.lit.get(space.id, 0) >= len(space.levels) and not space.centre {
+            continue;
+        }
         kit = kit_of(space.district);
         owner = space.id + 1;
         for level in space.levels {
             for cy in range(space.y + 3, space.y + space.d - 2, 6) {
                 for cx in range(space.x + 3, space.x + space.w - 2, 6) {
+                    if made.lit.get(space.id, 0) >= max(2, len(space.levels) * 2) {
+                        continue;
+                    }
                     if mass.at(cx, cy, level) != owner or not mass.standing(cx, cy, level) or mass.headroom(cx, cy, level) < 10 {
                         continue;
                     }
@@ -599,6 +613,30 @@ def hanging_lamps(mass: Massing, by_id: dict[int, Space], made: Dressing) {
                         )
                     );
                 }
+            }
+        }
+    }
+}
+
+"""A readable focal point for objectives and breathing spaces. Keep the
+mark flush with the floor so it never adds an obstacle to the route."""
+def landmark_lights(mass: Massing, by_id: dict[int, Space], made: Dressing) {
+    for space in by_id.values() {
+        if not space.stage or (not space.centre and space.role not in ["start", "key", "switch", "guardian", "recovery", "vista", "cache", "goal"]) {
+            continue;
+        }
+        kit = kit_of(space.district);
+        x = (float(space.stage[0]) + 0.5) * CELL;
+        y = (float(space.stage[1]) + 0.5) * CELL;
+        floor = float(space.stage[2]) * LIFT;
+        color = "255 210 150" if space.role in ["start", "recovery", "vista", "cache"] else (
+            "255 220 100" if space.role == "key" else ("150 220 255" if space.role in ["switch", "goal"] else lamp_tint(kit, space))
+        );
+        reach = float(mass.headroom(space.stage[0], space.stage[1], space.stage[2])) * LIFT;
+        made.add_lamp(space, Lamp3(x=x, y=y, z=floor + min(112.0, reach - 16.0), level=240 if space.role in ["key", "switch", "goal"] else 170, color=color));
+        if space.role in ["key", "switch", "guardian", "goal"] or space.centre {
+            for (dx, dy) in [(-24.0, -24.0), (20.0, -24.0), (-24.0, 20.0), (20.0, 20.0)] {
+                made.brushes.append(box_brush(Vec3(x=x + dx, y=y + dy, z=floor), Vec3(x=x + dx + 4.0, y=y + dy + 4.0, z=floor + 1.0), [kit.trim, kit.trim, kit.trim, kit.trim, kit.light, kit.trim], kit.scale, [4]));
             }
         }
     }
@@ -695,7 +733,7 @@ def railing_steps(mass: Massing, by_id: dict[int, Space], made: Dressing) -> Ite
 
 """Frames round a doorway in a space's wall: two jambs and a lintel standing
 out into the room."""
-def frame_doorway(made: Dressing, space: Space, door: Doorway, high: int) {
+def frame_doorway(made: Dressing, space: Space, door: Doorway, high: int, accent: bool = True, hint: str = "") {
     kit = kit_of(space.district);
     if door.side == 0 {
         line = space.x + space.w - 1;
@@ -713,10 +751,16 @@ def frame_doorway(made: Dressing, space: Space, door: Doorway, high: int) {
     finish = start + float(door.span) * CELL;
     low = float(door.level) * LIFT;
     top = low + float(high) * LIFT;
-    for (a, b) in [(start - 16.0, start), (finish, finish + 16.0)] {
-        jamb = pilaster_box(door.side, line, a, b, low, top + 16.0, 10.0);
-        made.brushes.append(plain_box(jamb[0], jamb[1], kit.support, kit.scale));
+    if accent {
+        for (a, b) in [(start - 16.0, start), (finish, finish + 16.0)] {
+            jamb = pilaster_box(door.side, line, a, b, low, top + 16.0, 10.0);
+            made.brushes.append(plain_box(jamb[0], jamb[1], kit.support, kit.scale));
+        }
     }
     lintel = pilaster_box(door.side, line, start, finish, top, top + 16.0, 10.0);
     made.brushes.append(plain_box(lintel[0], lintel[1], kit.trim, kit.scale));
+    if hint {
+        point = pilaster_box(door.side, line, (start + finish) * 0.5 - 2.0, (start + finish) * 0.5 + 2.0, low + 56.0, low + 60.0, 24.0)[0];
+        made.add_lamp(space, Lamp3(x=point.x, y=point.y, z=point.z, level=130, color="255 220 100" if hint == "key" else "150 220 255"));
+    }
 }

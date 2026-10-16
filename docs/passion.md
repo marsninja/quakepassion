@@ -149,12 +149,17 @@ A seed picks a theme, a niche (how much the expedition loops, how vertical it is
 densely it is fought over, how big it is) and an objective archetype (keys,
 relays, guardians or a mix). Up to four candidates are built in full; each is
 turned down if it cannot be laid out, needs too many teleporters, or if a
-room's stage cannot be walked to; the critic scores the rest and the best is
-kept.
+room's stage cannot be walked to. Candidates also need safe supply budgets
+and a realised progression graph: local approaches, connectors and teleporter
+placements must join their stages, and each promised lock must have a door.
+The critic scores the remaining candidates and keeps the best.
 
-1. **Mission** (`mission.jac`, unchanged from v2): beats and links, a cyclic
+1. **Mission** (`mission.jac`): beats and links, a cyclic
    grammar after Dormans whose links carry tokens; an exhaustive search over
-   (beat, tokens) proves the goal reachable and no state a softlock.
+   (beat, tokens) proves the goal reachable and no state a softlock. Plain
+   beats on the main progression become recovery beats between combat runs;
+   encounters are assigned as teaching fights, crossfire, pressure, ambushes
+   and guardians.
 2. **Spaces** (`spaces.jac`): each beat becomes a box in a voxel massing
    (`massing.jac`, cells 32 units across and 16 up) and takes an archetype by
    its role: a hall (dais, pillar rows), an atrium (a balcony round its walls
@@ -191,26 +196,37 @@ kept.
 4. **Pits**: a chasm's pit floods, deep with its district's lava or slime
    where nothing needs the floor (no doorway opens there and the objective is
    on the bridge), else a lift of water.
-5. **Dressing** (`dress.jac`): a lower band of the wall in the kit's second
-   material, baseboards on walls six lifts high or more, cornices in tall
-   rooms, pilasters on plinths every three cells where the wall stands whole,
-   railings on edges over a drop (never on or beside stairs, never where they
-   leave a walk under two cells), frames round doorways, bars across windows.
-   Lamps: on every other pilaster, under ceilings where no wall lamp went,
-   along corridors every third block, hung over big rooms' floors, over the
-   middle of courts (whose sky glows), over lava and slime, and over any room
-   still unlit.
-6. **Cast** (`cast.jac`): the start; each objective on its room's stage (a
-   key; a plate set in the floor with a trigger over it for a switch; a
-   guardian whose death fires its gate); doors for what each link needs (one
-   for all its keys, one per token something else opens, a shootable wall for
-   a secret, a trigger beyond a shortcut); teleporters; foes from a roster of
-   all three games weighted toward each district's game, by a threat budget
-   from tension, size and density; health, shells and armour by what the
-   fights cost.
-7. **Critic** (`critic.jac`): the yardstick's measures taken quickly from the
-   massing, lamps and cast, each scored by how many corpus spreads it lies
-   from the corpus median.
+5. **Dressing** (`dress.jac`): baseboards, selective wall bands and cornices,
+   ribs on the long walls of major rooms, railings, doorway headers and bars
+   across windows. Recovery rooms and natural spaces keep simpler outlines.
+   Broad, repeated lighting is reduced; warm recovery lights and brighter
+   objective markers give spaces focal points. Key and relay gates have
+   consistent lighting cues. Floor markers are only one unit high.
+6. **Cast** (`cast.jac`, `experience.jac`, `supplies.jac`): objectives, doors,
+   teleporters, weapon discoveries and distinct encounters. An experience
+   graph links each room to its encounter, positions and rewards. Ranged
+   positions need a sightline to the approach, pressure uses floor-level
+   attackers, ambushes favour occlusion, and crossfire links opposing lanes.
+   Placement and sight checks include thin dressing as well as the massing.
+   Start, recovery, vista, cache and goal rooms receive no population.
+   Nearby enemy positions also avoid sightlines into quiet rooms' stages.
+   Health and ammunition use the engine's actual pickup rules. Guardians
+   count toward threat and damage. Each fight budgets for arrival at 35 HP
+   and locally available ammunition for the gun offered in the safe start;
+   optional branches and later weapons cannot subsidise that guarantee.
+   Higher weapons come with their own ammo, and optional caches offer distinct
+   capabilities from the other games. The damage and accuracy forecasts remain
+   heuristics.
+7. **Critic and progression** (`critic.jac`, `progression.jac`): geometric
+   corpus distances plus bounded targets for quiet intervals, weapon and
+   ammo variety, encounter coverage and variety, cover, usable firing lanes,
+   supply adequacy and useful optional rewards. Weapon variety counts distinct
+   discoveries, and looping plans favour physically certified return shortcuts.
+   More pickups do not produce an unlimited score. The realised corridor graph
+   repeats the exhaustive
+   token-state proof; locked passages that fell back to ungated teleporters
+   and gates that did not fit are rejected. Local floor and connector checks
+   are complemented by real collision and mover tests below.
 8. **Brushwork** (`brushwork.jac`): the massing's shell (the solid touching
    air, diagonals included, so the world is sealed) merged into boxes that
    hold only cells of one space exposed alike on every side, so a side faces
@@ -278,7 +294,7 @@ studio.
 
 ## The arsenal
 
-A Passion level, generated or a studio scene, holds every weapon of the
+A Passion level, generated or a studio scene, supports every weapon of the
 three games (`passion_arsenal` in `games/weapons.jac`), each by its own
 game's rules: its shots, missiles, blasts and knockback, its muzzle flash,
 its sounds and its model in view come from its own game (`shot_game`,
@@ -303,9 +319,13 @@ weapon, effects and audio).
 - **Armor** is the one value every game's pickups already share; each
   pickup sets how much it absorbs by its own game's rule.
 - **The start**: the melee weapon and first gun of the game the level's
-  things come from most (`lead_game`): Quake's axe and shotgun with 25
+  start district comes from, recorded as `_passion_kit` on the generated
+  worldspawn: Quake's axe and shotgun with 25
   shells, Quake II's blaster, or Quake III's gauntlet and machine gun with
-  100 bullets.
+  100 bullets. Studio scenes without that field retain the entity-count
+  fallback (`lead_game`). A new gun is visible in the safe starting room,
+  with two further discoveries during progression and additional optional
+  rewards. Adding items cannot change the planned starting kit.
 - **Sounds** in a Passion level are read from the game a path names
   (`q2:sound/...`), else Quake's archive, else the first game that has the
   file; monsters are heard from their own game's archive.
@@ -314,6 +334,11 @@ weapon, effects and audio).
 
 ```sh
 jac test tests/passion_tests.jac
+jac test tests/passion_experience_tests.jac
+jac build scripts/passion_experience_audit.jac --native -o .jac/qp-audit
+.jac/qp-audit
+jac build scripts/passion_walkthrough.jac --native -o .jac/qp-walk
+QP_HEADLESS=1 QP_SEEDS="4 25 84 100" QP_CONFIG_DIR=.jac/walk-config .jac/qp-walk
 jac build scripts/passion_map.jac --native -o .jac/qp-passion-map
 QP_SEEDS="1 2 3 4 5 6 7 8 9 10 11 12" .jac/qp-passion-map
 jac build scripts/passion_play.jac --native -o .jac/qp-play
@@ -332,6 +357,20 @@ QP_CORPUS_GAMES=passion .jac/qp-corpus
   a forge stepped a step at a time makes the same expedition; a compiled
   expedition is walked from its start to its exit by the yardstick over its
   real collision.
+- `tests/passion_experience_tests.jac`: pickup amounts and caps, matched
+  ammo for each progression weapon, starting-kit stability, experience graph
+  scoring, thin dressing in sight/collision checks, route progress during
+  detours, gate wiring, a deliberately broken physical corridor, and generated
+  supply and pacing contracts.
+- `scripts/passion_experience_audit.jac`: one naturally selected seed per
+  theme, or `QP_SEEDS`; JSON results include experience measures and rejected
+  candidates.
+- `scripts/passion_walkthrough.jac`: the actual player bot and game loop
+  from normal inventory, without god mode or warping. A pass requires level
+  completion; timeout and death budgets are explicit failures. Defaults are
+  600 simulation seconds and three deaths, configurable with `QP_WALK_SECONDS`
+  and `QP_WALK_DEATHS`; `QP_WALK_TRACES` chooses the trace/screenshot folder.
+  This is an automated acceptance tool, not a substitute for human playtests.
 - `scripts/passion_connectors.jac`: every lift, drop, flooded shaft and
   jump pad of a seed ridden in the game: the player set on a lift's
   platform, a pad, over a hole or at the foot of a shaft must come out on
@@ -369,8 +408,12 @@ Jac compiler defects found while building Passion are recorded in
 - Generated levels are still more detailed in small faces and trim than the
   originals (cut faces round pilasters, plinths and stair risers), and use
   fewer textures.
-- The generator's supplies (health, shells, armor) still balance against
-  the shotguns alone: it places no weapons, and no ammunition but shells.
-- The director's damage model is a heuristic, not a combat simulation.
+- Supply forecasts keep the safe-start gun viable independently of later
+  discoveries. Damage, accuracy and expected arrival health remain conservative
+  heuristics; combat difficulty still needs complete playthroughs and human
+  feedback.
+- Physical progression proofs use the massing and realised passage wiring;
+  they do not simulate moving platforms or combat. Walkthroughs and connector
+  execution cover those separately.
 - The level is one cluster (no visibility culling); generated expeditions
   draw well within the frame budget, but a bake by planes could cut them.

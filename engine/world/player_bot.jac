@@ -14,7 +14,7 @@ import math;
 import time;
 import from .world { World, Player }
 import from .level { Level }
-import from .bot_routes { NavMesh, HasNavMesh, BotRoute, AvoidReach, plan_route, build_navmesh, predict_mover, UNREACHED }
+import from .bot_routes { NavMesh, HasNavMesh, BotRoute, AvoidReach, plan_route, build_navmesh, predict_mover, area_travel_time, UNREACHED }
 import from .bot_travel { FollowRoute, TravelResult, gap_distance, soonest_out, compass, BODY_REACH_BELOW, BODY_REACH_ABOVE }
 import from .pickups { Pickup, HasPickup }
 import from .inventory { quantity }
@@ -1250,10 +1250,13 @@ walker AutoThink {
         for (model, area) in movers {
             resting = area in bot.rest_areas;
             # A plat's top is walked onto from beside it only while the plat
-            # is up there: down, it is a shaft.
+            # is up there: down, it is a shaft. Check that transient state
+            # only when boarding now: a distant plat can be beyond this
+            # route slice's elevator leg and must not disconnect the map.
             plat = objective_mover(self.world, model);
             if plat is not None and plat.kind == "platform" and plat.state != "locked" and not resting
                 and area not in lifted_into and area != here_now and area > 0 and area not in mesh.disabled
+                and bot.route.areas and bot.route.areas[0] == area
                 and plat.position < 0.99 {
                 bot.close_area(area, -model);
                 bot.route.abandon();
@@ -1551,8 +1554,7 @@ walker AutoThink {
         # As long as the way there should take, twice over, and twenty seconds
         # to do it in.
         best.allowed = float(best_time) * 0.02 + 20.0;
-        best.nearest = 1.0e9;
-        best.nearer_at = bot.clock;
+        best.reset_progress(bot.clock);
         signal = best.signal;
         best.fired = signal.fired if signal is not None else 0;
         current = bot.objective;
@@ -1758,10 +1760,14 @@ walker AutoThink {
         # long time all told), not while it is on its way.
         if objective is not None {
             gap = objective.stand_point.sub(self.origin).length() if objective.stand > 0 else objective.point.sub(self.origin).length();
-            if gap < objective.nearest - 32.0 {
-                objective.nearest = gap;
-                objective.nearer_at = bot.clock;
+            area = bot.area_near(self.origin)[0];
+            mesh = bot.mesh;
+            travel = 0;
+            if mesh is not None {
+                goal = objective.stand if objective.stand > 0 else mesh.locate(objective.point);
+                travel = area_travel_time(mesh, area, self.origin, goal);
             }
+            objective.note_progress(gap, area, travel, bot.clock);
         }
         finished = objective is not None and objective.done(self.player);
         stalled = objective is not None and bot.clock - objective.nearer_at > max(25.0, objective.allowed * 0.5);
@@ -1800,8 +1806,7 @@ walker AutoThink {
             if resumed is not None {
                 resumed.started = bot.clock;
                 # Set aside is not stuck: its progress is counted afresh.
-                resumed.nearest = 1.0e9;
-                resumed.nearer_at = bot.clock;
+                resumed.reset_progress(bot.clock);
             }
             bot.route.abandon();
             if resumed is None {

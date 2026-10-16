@@ -21,7 +21,10 @@ impl App.run() {
             self.player,
             self.combat,
             self.level.bsp.game,
-            lead=lead_game([entity.fields.get("asset_game", "") for entity in self.level.bsp.entities])
+            lead=lead_game(
+                [entity.fields.get("asset_game", "") for entity in self.level.bsp.entities],
+                self.level.bsp.entities[0].fields.get("_passion_kit", "") if self.level.bsp.entities else ""
+            )
         );
         populate_pickups(self.world, self.level, game_directory(self.level.bsp.game));
         populate_fixtures(self.world, self.level, game_directory(self.level.bsp.game));
@@ -811,7 +814,10 @@ impl App.load_destination(
             combat,
             game,
             fresh=not carrying,
-            lead=lead_game([entity.fields.get("asset_game", "") for entity in level.bsp.entities])
+            lead=lead_game(
+                [entity.fields.get("asset_game", "") for entity in level.bsp.entities],
+                level.bsp.entities[0].fields.get("_passion_kit", "") if level.bsp.entities else ""
+            )
         );
         if carrying {
             select_weapon(player, combat, self.combat.weapon);
@@ -2668,7 +2674,10 @@ impl App.respawn_arena_player() {
         player,
         self.combat,
         self.level.bsp.game,
-        lead=lead_game([entity.fields.get("asset_game", "") for entity in self.level.bsp.entities])
+        lead=lead_game(
+                [entity.fields.get("asset_game", "") for entity in self.level.bsp.entities],
+                self.level.bsp.entities[0].fields.get("_passion_kit", "") if self.level.bsp.entities else ""
+            )
     );
     player.health = player.max_health + 25;
     player.armor = 0;

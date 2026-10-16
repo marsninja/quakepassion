@@ -35,6 +35,8 @@ import from .spaces { Space }
 import from .dress { Dressing, dress_steps, frame_doorway, corridor_lamps, box_brush }
 import from .cast { Casting, cast }
 import from .critic { critic_measures, critic_score }
+import from .experience { experience_measures }
+import from .progression { validate_progression }
 import from .brushwork { map_item_steps }
 import from .kits { KITS, kit_of, kit_water }
 import from .themes { Theme, THEMES, theme_for, theme_named }
@@ -348,10 +350,14 @@ def draft_steps(seed: int, index: int, niche: list[int], archetype: str, depth: 
             corridor_lamps(dressing, by_id[corridor.air], corridor.blocks, CORRIDOR_HIGH);
         }
         if corridor.out_door is not None and corridor.tail in by_id {
-            frame_doorway(dressing, by_id[corridor.tail], corridor.out_door, CORRIDOR_HIGH);
+            room = by_id[corridor.tail];
+            hint = "key" if any([token.startswith("key_") for token in corridor.needs]) else ("relay" if corridor.needs else "");
+            frame_doorway(dressing, room, corridor.out_door, CORRIDOR_HIGH, room.centre or room.role == "hub" or bool(corridor.needs), hint);
         }
         if corridor.in_door is not None and corridor.head in by_id and corridor.in_door.floored {
-            frame_doorway(dressing, by_id[corridor.head], corridor.in_door, CORRIDOR_HIGH);
+            room = by_id[corridor.head];
+            hint = "key" if any([token.startswith("key_") for token in corridor.needs]) else ("relay" if corridor.needs else "");
+            frame_doorway(dressing, room, corridor.in_door, CORRIDOR_HIGH, room.centre or room.role == "hub" or bool(corridor.needs), hint);
         }
     }
     # Flooded shafts: water from the lower room's floor to just under the
@@ -371,7 +377,7 @@ def draft_steps(seed: int, index: int, niche: list[int], archetype: str, depth: 
     }
     draft.dressing = dressing;
     yield "frames";
-    casting = cast(estate, mass, plan, stream.derive("cast"), density);
+    casting = cast(estate, mass, plan, stream.derive("cast"), density, dressing=dressing);
     draft.casting = casting;
     yield "cast";
     if not casting.start {
@@ -382,8 +388,23 @@ def draft_steps(seed: int, index: int, niche: list[int], archetype: str, depth: 
         draft.reason = "exit";
         return;
     }
-    supplies = casting.placed_health + casting.placed_armor + casting.placed_shells;
+    if casting.issues {
+        draft.reason = "supplies";
+        draft.detail = "; ".join(casting.issues);
+        return;
+    }
+    certified = 0;
+    try {
+        certified = validate_progression(plan, estate, mass, casting.items);
+    } except AssertionError as error {
+        draft.reason = "progression";
+        draft.detail = str(error);
+        return;
+    }
+    supplies = casting.placed_health + casting.placed_armor + casting.placed_ammo + casting.placed_weapons;
     draft.measures = critic_measures(mass, dressing.lamps, casting.monsters, supplies);
+    draft.measures.update(experience_measures(casting.experience));
+    draft.measures["play_certified_passages"] = float(certified);
     draft.score = critic_score(draft.measures);
     yield "critic";
 }

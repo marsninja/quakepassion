@@ -1034,7 +1034,7 @@ walker FollowRoute {
         if passage is None {
             # The last leg is in the goal's own area (BotMoveInGoalArea).
             speed = goal_area_speed(toward[1]);
-        } elif passage.kind == TRAVEL_TELEPORT and toward[1] < 30.0 {
+        } elif passage.kind == TRAVEL_TELEPORT and flat_toward(origin, passage.start)[1] < 30.0 {
             # BotTravel_Teleport: half speed for the last 30 units.
             speed = 200.0;
         } elif passage.kind == TRAVEL_WALK and here.grounded {

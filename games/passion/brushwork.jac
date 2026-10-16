@@ -127,8 +127,13 @@ def map_item_steps(mass: Massing, spaces: list[Space], dressing: Dressing, extra
         by_id[space.id] = space;
     }
     world = MapItem(
-        fields={"classname": "worldspawn", "message": message, "_minlight": "8", "_bounce": "1", "generator": "passion-v3"}
+        fields={"classname": "worldspawn", "message": message, "_minlight": "8", "_bounce": "1", "generator": "passion-v4"}
     );
+    for item in extra {
+        if item.fields.get("classname", "") == "info_player_start" {
+            world.fields["_passion_kit"] = item.fields.get("_passion_kit", "");
+        }
+    }
     shell: list[list[Side]] = [];
     yield from shell_brush_steps(mass, by_id, shell);
     world.brushes = shell;

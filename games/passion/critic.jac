@@ -178,5 +178,32 @@ def critic_score(measures: dict[str, float]) -> float {
         distance = critic_distance(name, measures[name]);
         total += weight * min(9.0, distance * distance);
     }
+    # Gameplay constraints supplement the corpus's geometric yardstick.
+    # Targets saturate: adding more guns or quiet rooms is not endlessly
+    # rewarded, and the score cannot excuse an unsafe supply forecast.
+    goals = {
+        "play_weapons": 3.0,
+        "play_ammo_types": 2.0,
+        "play_patterns": 3.0,
+        "play_fight_coverage": 0.8,
+        "play_cover": 0.35,
+        "play_supplied": 1.0,
+        "play_firing_lanes": 0.65,
+        "play_optional_rewards": 1.0
+    };
+    for (name, target) in goals.items() {
+        if name in measures {
+            shortfall = max(0.0, target - measures[name]) / target;
+            total += (8.0 if name == "play_supplied" else 2.0) * shortfall * shortfall;
+        }
+    }
+    if "play_quiet" in measures {
+        share = measures["play_quiet"];
+        total += 8.0 * max(0.0, 0.15 - share) + 4.0 * max(0.0, share - 0.45);
+    }
+    total += 12.0 * measures.get("play_quiet_violations", 0.0);
+    if measures.get("play_returns_wanted", 0.0) > 0.0 {
+        total += 2.0 * max(0.0, 1.0 - measures.get("play_return_routes", 0.0)) ** 2;
+    }
     return -total;
 }

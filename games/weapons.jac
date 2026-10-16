@@ -98,7 +98,9 @@ def passion_arsenal -> list[WeaponRule] {
 
 """The game a level's things come from most (their asset_game), which a
 Passion player starts out armed for; Quake's when none says."""
-def lead_game(sources: list[str]) -> str {
+def lead_game(sources: list[str], planned: str = "") -> str {
+    # A generated level keeps its planned kit as rewards change item counts.
+    if planned in ["q1", "q2", "q3"] { return planned; }
     counts: dict[str, int] = {"q1": 0, "q2": 0, "q3": 0};
     for source in sources {
         if source in counts {

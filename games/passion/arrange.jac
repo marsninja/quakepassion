@@ -75,6 +75,7 @@ edge Corridor: Space --> Space {
         air: int = -1,
         teleport: bool = False,
         window: bool = False,
+        certified: bool = False,
         # A way straight up or down between rooms one over the other: lift,
         # drop, water or jumppad; the column's low corner, the floors it joins
         # (the lower room's and the upper's, in lifts), which room is lower,
@@ -986,6 +987,7 @@ def arrange_steps(plan: Expedition, dice: Stream, held: Layout) -> Iterator[str]
             d=dims[1],
             h=dims[2],
             tension=beat.tension,
+            encounter=beat.encounter,
             optional=beat.optional,
             order=beat.order,
             size=beat.size,

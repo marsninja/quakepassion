@@ -166,7 +166,7 @@ def cell_floor(x: int, y: int, z: int) -> Vec3 {
 body (four lifts), joined to their four neighbours when those are at most a
 lift higher (a step) or any height lower (a drop). Answers the reached
 cells' indices."""
-def floor_reached(mass: Massing, x: int, y: int, z: int, links: list[list[int]] = []) -> dict[int, bool] {
+def floor_reached(mass: Massing, x: int, y: int, z: int, links: list[list[int]] = [], owners: list[int] = []) -> dict[int, bool] {
     reached: dict[int, bool] = {};
     # Extra ways (teleporters): from one cell to another, [x0, y0, z0, x1, y1, z1].
     jumps: dict[int, list[int]] = {};
@@ -183,6 +183,7 @@ def floor_reached(mass: Massing, x: int, y: int, z: int, links: list[list[int]] 
         if index in reached or not mass.standing(cx, cy, cz) or mass.headroom(cx, cy, cz) < 4 {
             continue;
         }
+        if owners and mass.at(cx, cy, cz) not in owners { continue; }
         reached[index] = True;
         if index in jumps {
             todo.append(jumps[index]);

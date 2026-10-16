@@ -20,7 +20,10 @@ import from .arrange { Estate, Corridor, estate_spaces, estate_corridors, CORRID
 import from .mission { Expedition, Beat, beats_of }
 import from .kits { Kit, kit_of }
 import from .themes { theme_named }
-import from .dress { box_brush, plain_box }
+import from .dress { Dressing, box_brush, plain_box }
+import from .experience { Experience, Encounter, CombatPosition, Reward, ComposeEncounters, HoldsPosition, Supplies, encounters, clear_sight, cover_at, link_crossfire, detail_boxes, body_clear }
+import from .supplies { progression_weapon, ammo_class, supply_rule, health_after, fight_rounds }
+import from games.weapons { passion_start, PASSION_AMMO_CAPS }
 
 obj Foe {
     has kind: str,
@@ -89,6 +92,11 @@ obj Casting {
         placed_health: int = 0,
         placed_armor: int = 0,
         placed_shells: int = 0,
+        placed_ammo: int = 0,
+        placed_weapons: int = 0,
+        lead: str = "q1",
+        experience: Experience = Experience(),
+        issues: list[str] = [],
         doors: int = 0;
 }
 
@@ -146,6 +154,7 @@ def supply_names(source: str) -> dict[str, list[str]] {
 body, off stairs and the stage, and not in a doorway's mouth."""
 obj Ground3 {
     has spots: list[list[int]] = [],
+        supply_spots: list[list[int]] = [],
         perches: list[list[int]] = [],
         taken: list[list[int]] = [];
 }
@@ -168,6 +177,9 @@ obj Director3 {
         spaces: dict[int, Space] = {},
         by_beat: dict[int, Space] = {},
         grounds: dict[int, Ground3] = {},
+        encounters: dict[int, Encounter] = {},
+        details: list[list[float]] = [],
+        sights: dict[str, bool] = {},
         mouths: dict[int, bool] = {},
         made: Casting = Casting(),
         # Token to the name its trigger fires.
@@ -245,13 +257,21 @@ obj Director3 {
                         continue;
                     }
                     key = self.cell_key(cx, cy, cz);
-                    if key in kept or key in self.mouths or self.mass.headroom(cx, cy, cz) < 5 {
+                    if self.mass.headroom(cx, cy, cz) < 5 {
                         continue;
                     }
                     if space.flood > 0 and cz < space.z + space.flood {
                         # Nothing is left standing in a pit's liquid.
                         continue;
                     }
+                    point = [(float(cx) + 0.5) * CELL, (float(cy) + 0.5) * CELL, float(cz) * LIFT + 24.0];
+                    if not body_clear(point, self.details) { continue; }
+                    if [cx, cy, cz] != space.stage {
+                        # Pickups are triggers, so the walk kept clear of
+                        # blocking actors is a good place to find supplies.
+                        found.supply_spots.append([cx, cy, cz]);
+                    }
+                    if key in kept or key in self.mouths { continue; }
                     # Room for a body: floor beside it on at least three sides.
                     near = 0;
                     for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
@@ -275,13 +295,17 @@ obj Director3 {
 
     """A free place in a space, spread from what stands there already and
     far from `away` when given; on a perch when asked and one is free."""
-    def take(space: Space, perch: bool = False, away: list[float] = [], roomy: bool = False) -> list[float] {
+    def take(space: Space, perch: bool = False, away: list[float] = [], roomy: bool = False, near: list[float] = [], supply: bool = False) -> list[float] {
         land = self.ground(space);
-        pool = land.perches if perch and land.perches else land.spots;
+        pool = land.supply_spots if supply else (land.perches if perch and land.perches else land.spots);
         best: list[int] = [];
-        best_score = -1.0;
+        best_score = -1000000.0;
         for cell in pool {
             if cell in land.taken {
+                continue;
+            }
+            point = [(float(cell[0]) + 0.5) * CELL, (float(cell[1]) + 0.5) * CELL, float(cell[2]) * LIFT + 24.0];
+            if near and (abs(point[2] - near[2]) > 32.0 or not self.sight(near, point)) {
                 continue;
             }
             spread = 512.0;
@@ -290,6 +314,9 @@ obj Director3 {
                 spread = min(spread, gap);
             }
             score = spread + self.dice.unit() * 48.0;
+            if near {
+                score = spread * 0.1 - abs(point[0] - near[0]) - abs(point[1] - near[1]) + self.dice.unit() * 12.0;
+            }
             if away {
                 score += 0.3 * (abs((float(cell[0]) + 0.5) * CELL - away[0]) + abs((float(cell[1]) + 0.5) * CELL - away[1]));
             }
@@ -309,6 +336,91 @@ obj Director3 {
         }
         land.taken.append(best);
         return [(float(best[0]) + 0.5) * CELL, (float(best[1]) + 0.5) * CELL, float(best[2]) * LIFT + 24.0];
+    }
+
+    """A real pickup on the approach floor, visible before the encounter.
+    Reserve it in the same placement set as foes and objectives."""
+    def pack(space: Space, encounter: Encounter, source: str, classname: str, flags: str = "0", essential: bool = True) -> Reward | None {
+        point = self.take(space, near=encounter.approach, supply=True);
+        if not point {
+            if essential { encounter.issues.append("no approach space for " + classname); }
+            return None;
+        }
+        rule = supply_rule(source, classname, flags);
+        self.put({"classname": classname, "origin": origin_text(point[0], point[1], point[2]), "asset_game": source, "spawnflags": flags, "_room": str(space.id)});
+        reward = Reward(point=point, kind=rule.kind, source=source, amount=rule.amount);
+        encounter +>:Supplies:+> reward;
+        return reward;
+    }
+
+    def sight(a: list[float], b: list[float]) -> bool {
+        key = origin_text(a[0], a[1], a[2]) + ">" + origin_text(b[0], b[1], b[2]);
+        if key not in self.sights { self.sights[key] = clear_sight(self.mass, a, b, self.details); }
+        return self.sights[key];
+    }
+
+    """Choose an enemy position for its job. Ranged positions need a real
+    lane to the approach; pressure approaches on the floor; ambushes use
+    occlusion. Keep the quiet rooms' stages out of nearby firing lanes."""
+    def take_enemy(space: Space, encounter: Encounter, role: str) -> list[float] {
+        ground = self.ground(space);
+        best: list[int] = [];
+        best_score = -1000000.0;
+        stride = max(1, len(ground.spots) // 100);
+        for cell in ground.spots[::stride] {
+            if cell in ground.taken { continue; }
+            point = [(float(cell[0]) + 0.5) * CELL, (float(cell[1]) + 0.5) * CELL, float(cell[2]) * LIFT + 24.0];
+            dx = point[0] - encounter.approach[0];
+            dy = point[1] - encounter.approach[1];
+            distance = math.sqrt(dx * dx + dy * dy);
+            if distance < 160.0 { continue; }
+            if role == "melee" and abs(point[2] - encounter.approach[2]) > 32.0 { continue; }
+            seen = self.sight(point, encounter.approach);
+            if role == "ranged" and encounter.pattern != "ambush" and not seen { continue; }
+            leaks = False;
+            for quiet in self.encounters.values() {
+                if quiet.quiet and quiet.room != space.id {
+                    qspace = self.spaces[quiet.room];
+                    qpoint = self.stage_point(qspace);
+                    gap = abs(point[0] - qpoint[0]) + abs(point[1] - qpoint[1]) + abs(point[2] - qpoint[2]);
+                    if gap < 768.0 and self.sight(point, qpoint) { leaks = True; }
+                }
+            }
+            if leaks { continue; }
+            spread = 320.0;
+            for other in ground.taken {
+                spread = min(spread, float(abs(other[0] - cell[0]) + abs(other[1] - cell[1])) * CELL);
+            }
+            if spread < 56.0 { continue; }
+            cover = cover_at(self.mass, point);
+            score = min(640.0, distance) * 0.2 + spread + self.dice.unit() * 24.0;
+            if role == "ranged" { score += float(cover) * 48.0; }
+            if encounter.pattern == "overwatch" { score += max(0.0, point[2] - encounter.approach[2]) * 0.5; }
+            if encounter.pattern == "ambush" and not seen { score += 180.0; }
+            if encounter.pattern == "pressure" and role == "melee" { score -= distance * 0.4; }
+            if encounter.pattern == "crossfire" {
+                for other in [encounter->:HoldsPosition:->][?:CombatPosition] {
+                    ax = other.point[0] - encounter.approach[0];
+                    ay = other.point[1] - encounter.approach[1];
+                    if dx * ax + dy * ay < 0.0 { score += 180.0; }
+                }
+            }
+            if score > best_score { best_score = score; best = cell; }
+        }
+        if not best { return []; }
+        ground.taken.append(best);
+        return [(float(best[0]) + 0.5) * CELL, (float(best[1]) + 0.5) * CELL, float(best[2]) * LIFT + 24.0];
+    }
+
+    def note_foe(encounter: Encounter, foe: Foe, point: list[float]) {
+        encounter.foes += 1;
+        encounter.enemy_health += foe.health;
+        encounter.threat += foe.cost;
+        position = CombatPosition(point=point, role=foe.role, foe=foe.kind, sees_entry=self.sight(point, encounter.approach), cover=cover_at(self.mass, point));
+        encounter +>:HoldsPosition:+> position;
+        link_crossfire(encounter, position);
+        self.made.monsters += 1;
+        self.made.threat += foe.cost;
     }
 
     """Whether the eight cells round `cell` are floor with air above, as
@@ -355,11 +467,13 @@ def cast_objectives(director: Director3) {
         point = director.stage_point(space);
         middle = director.middle(space);
         if space.role == "start" {
+            director.made.lead = district_source(space);
             director.made.start = point;
             director.put({
                 "classname": "info_player_start",
                 "origin": origin_text(point[0], point[1], point[2]),
-                "angle": str(yaw_toward(point[0], point[1], middle[0], middle[1]))
+                "angle": str(yaw_toward(point[0], point[1], middle[0], middle[1])),
+                "_passion_kit": director.made.lead
             });
         }
         if space.role == "goal" {
@@ -399,15 +513,18 @@ def cast_objectives(director: Director3) {
             } elif token.startswith("guardian:") {
                 name = token_name(token);
                 director.fires[token] = name;
-                pick = CAST_GUARDIANS[director.dice.below(len(CAST_GUARDIANS))];
+                choices = [foe for foe in CAST_ROSTER if foe.kind in CAST_GUARDIANS and foe.cost <= 12.0];
+                foe = choices[director.dice.below(len(choices))];
+                pick = foe.kind;
                 director.put({
                     "classname": pick,
                     "origin": origin_text(point[0], point[1], point[2]),
                     "angle": str(yaw_toward(point[0], point[1], middle[0], middle[1])),
                     "target": name,
+                    "spawnflags": "1",
                     "asset_game": "q2" if pick.startswith("monster_tank") or pick == "monster_gladiator" else "q1"
                 });
-                director.made.monsters += 1;
+                director.note_foe(director.encounters[space.id], foe, point);
             } elif token.startswith("open:") {
                 director.fires[token] = token_name(token);
             }
@@ -464,7 +581,7 @@ def cast_doors(director: Director3, corridor: Corridor) {
             high = Vec3(x=float(block[0] + 2) * CELL, y=middle[1] + 8.0, z=roof);
         }
         secret = "_secret" in door_plan;
-        door = {"classname": "func_door", "angle": "-1", "speed": "60" if secret else "160", "wait": "-1", "lip": "8"};
+        door = {"classname": "func_door", "angle": "-1", "speed": "60" if secret else "160", "wait": "-1", "lip": "8", "_mission_link": str(corridor.link)};
         for (key, value) in door_plan.items() {
             door[key] = value;
         }
@@ -503,7 +620,7 @@ def cast_doors(director: Director3, corridor: Corridor) {
         }
         secret = "_secret" in fields;
         material = kit.wall if secret else kit.door;
-        door = {"classname": "func_door", "angle": "-1", "speed": "60" if secret else "160", "wait": "-1", "lip": "8"};
+        door = {"classname": "func_door", "angle": "-1", "speed": "60" if secret else "160", "wait": "-1", "lip": "8", "_mission_link": str(corridor.link)};
         for (key, value) in fields.items() {
             door[key] = value;
         }
@@ -526,6 +643,10 @@ def cast_doors(director: Director3, corridor: Corridor) {
 trigger in each space it leads from, a destination in each it leads to
 (only the one way for a one-way link)."""
 def cast_teleporter(director: Director3, corridor: Corridor) {
+    if corridor.needs {
+        director.made.issues.append("link " + str(corridor.link) + ": a locked passage needs a physical gate");
+        return;
+    }
     tail = director.spaces.get(corridor.tail, None);
     head = director.spaces.get(corridor.head, None);
     if tail is None or head is None {
@@ -545,7 +666,7 @@ def cast_teleporter(director: Director3, corridor: Corridor) {
             [plain_box(Vec3(x=here[0] - 32.0, y=here[1] - 32.0, z=floor), Vec3(x=here[0] + 32.0, y=here[1] + 32.0, z=floor + 4.0), TELEPORT_MATERIAL, 1.0)]
         );
         director.put_brushed(
-            {"classname": "trigger_teleport", "target": name},
+            {"classname": "trigger_teleport", "target": name, "_mission_link": str(corridor.link), "_room": str(source.id), "_portal_point": origin_text(here[0], here[1], here[2])},
             [plain_box(Vec3(x=here[0] - 24.0, y=here[1] - 24.0, z=floor + 4.0), Vec3(x=here[0] + 24.0, y=here[1] + 24.0, z=floor + 68.0), "trigger", 1.0)]
         );
         middle = director.middle(target);
@@ -554,6 +675,9 @@ def cast_teleporter(director: Director3, corridor: Corridor) {
         director.put({
             "classname": "info_teleport_destination",
             "targetname": name,
+            "_mission_link": str(corridor.link),
+            "_room": str(target.id),
+            "_portal_point": origin_text(there[0], there[1], there[2]),
             "origin": origin_text(there[0], there[1], there[2] + 8.0),
             "angle": str(yaw_toward(there[0], there[1], middle[0], middle[1]))
         });
@@ -632,7 +756,7 @@ def district_source(space: Space) -> str {
 
 """A foe for a space: from its district's game mostly, others now and then,
 no costlier than what is left of its budget, of a role its room suits."""
-def pick_foe(director: Director3, space: Space, budget: float, rank_cap: int) -> Foe | None {
+def pick_foe(director: Director3, space: Space, budget: float, rank_cap: int, wanted: str = "") -> Foe | None {
     home = district_source(space);
     theme = theme_named(director.plan.theme);
     leaning: list[str] = theme.foes if theme is not None else [];
@@ -651,6 +775,9 @@ def pick_foe(director: Director3, space: Space, budget: float, rank_cap: int) ->
             if foe.kind in CAST_GUARDIANS {
                 weight *= 0.3;
             }
+            if wanted {
+                weight *= 4.0 if foe.role == wanted else 0.15;
+            }
         }
         weights.append(weight);
     }
@@ -660,97 +787,151 @@ def pick_foe(director: Director3, space: Space, budget: float, rank_cap: int) ->
     return CAST_ROSTER[director.dice.weighted(weights)];
 }
 
-"""Foes in every room by its threat budget (tension, size, the
-expedition's density), on perches when they fight from afar; and supplies
-by what the fights cost, walking the rooms in the order they are reached."""
+"""Stage weapon discoveries, distinct fights and quiet beats. Supplies
+sit on the approach floor and use play's item amounts; an optional detour
+never subsidises the mandatory route's forecast."""
 def cast_population(director: Director3) {
-    rooms = [space for space in director.spaces.values() if space.role not in ["corridor", "window", "start"]];
-    order: list[float] = [float(space.order if space.order >= 0 else 999) for space in rooms];
-    ranked: list[int] = [];
-    for index in range(len(rooms)) {
-        at = len(ranked);
-        while at > 0 and order[ranked[at - 1]] > order[index] {
-            at -= 1;
-        }
-        ranked.insert(at, index);
+    staged = encounters(director.made.experience);
+    required = [encounter for encounter in staged if not encounter.optional];
+    discoveries: dict[int, int] = {};
+    for (tier, at) in enumerate([0, max(1, len(required) // 3), max(2, len(required) * 2 // 3)]) {
+        if at < len(required) { discoveries[required[at].room] = tier; }
     }
+    lead = director.made.lead;
+    weapon = progression_weapon(lead, 0);
+    fallback = progression_weapon(lead, 0);
+    optional_weapons = [progression_weapon(source, tier) for source in ["q1", "q2", "q3"] if source != lead for tier in range(3)];
+    initial = passion_start(lead);
+    stock: dict[str, int] = {};
+    if initial.ammo { stock[initial.ammo] = initial.rounds; }
     health = 100.0;
-    total = max(1, len(rooms));
-    for (step, index) in enumerate(ranked) {
-        space = rooms[index];
+    total = max(1, len(staged));
+    for (step, encounter) in enumerate(staged) {
+        space = director.spaces[encounter.room];
+        saved_health = health;
+        saved_stock = dict(stock);
+        encounter.health_before = health;
+        if space.id in discoveries {
+            offered = progression_weapon(lead, discoveries[space.id]);
+            reward = director.pack(space, encounter, lead, "weapon_" + offered.key);
+            if reward is not None {
+                weapon = offered;
+                director.made.placed_weapons += 1;
+                stock[weapon.ammo] = min(PASSION_AMMO_CAPS[weapon.ammo], stock.get(weapon.ammo, 0) + weapon.pickup_ammo);
+            }
+        } elif encounter.optional and space.role in ["cache", "vista"] and optional_weapons {
+            # A detour offers another game's capability, with its own ammo.
+            offered = optional_weapons.pop(step % len(optional_weapons));
+            source = offered.game;
+            reward = director.pack(space, encounter, source, "weapon_" + offered.key, essential=False);
+            if reward is not None {
+                director.made.placed_weapons += 1;
+                ammo = director.pack(space, encounter, source, ammo_class(source, offered.ammo), essential=False);
+                if ammo is not None { director.made.placed_ammo += 1; }
+            }
+        }
+        # Later discoveries can lie on a route the player has not taken.
+        # The visible gun in the safe start remains viable for every fight.
+        encounter.weapon = fallback.game + ":" + fallback.key;
         area = float(len(director.ground(space).spots));
         progress = float(step) / float(total);
         budget = 0.5 * director.density * (0.6 + space.tension) * (2.0 + area / 22.0) * (0.7 + 0.8 * progress);
-        if space.role in ["cache"] {
-            budget *= 0.3;
-        }
+        budget = min(14.0, budget);
+        if encounter.pattern == "teach" { budget = min(3.0, budget); }
+        if encounter.quiet { budget = 0.0; }
         rank_cap = 2 + int(progress * 4.0);
-        spent = 0.0;
-        focus = director.middle(space);
+        spent = encounter.threat;
         guard = 0;
         while spent < budget and guard < 24 {
             guard += 1;
-            foe = pick_foe(director, space, budget - spent + 0.6, rank_cap);
-            if foe is None {
-                break;
-            }
-            point = director.take(space, foe.role == "ranged" and director.dice.chance(0.6));
-            if not point {
-                break;
-            }
+            wanted = "melee" if encounter.pattern == "pressure" and encounter.foes % 2 == 0 else "ranged";
+            foe = pick_foe(director, space, budget - spent, rank_cap, wanted);
+            if foe is None { break; }
+            point = director.take_enemy(space, encounter, foe.role);
+            if not point { continue; }
             director.put({
                 "classname": foe.kind,
                 "origin": origin_text(point[0], point[1], point[2]),
-                "angle": str(yaw_toward(point[0], point[1], focus[0], focus[1])),
-                "asset_game": foe.source
+                "angle": str(yaw_toward(point[0], point[1], encounter.approach[0], encounter.approach[1])),
+                "asset_game": foe.source,
+                "_room": str(space.id),
+                "_encounter": encounter.pattern,
+                "spawnflags": "1" if encounter.pattern == "ambush" and foe.source in ["q1", "q2"] else "0"
             });
             spent += foe.cost;
-            director.made.monsters += 1;
-            director.made.threat += foe.cost;
-            health -= foe.cost * 4.5;
+            director.note_foe(encounter, foe, point);
         }
-        # Supplies: keep the expected health above a floor, shells for the
-        # fights, armour now and then.
+        # Supply the fight before subtracting its cost. Include guardians
+        # and record the low point before a later room can replenish it.
+        damage = encounter.threat * 4.5;
+        if encounter.foes > 0 {
+            health = min(health, 35.0);
+            encounter.health_before = health;
+        }
+        wanted_health = 100.0 if encounter.quiet else min(100.0, max(75.0, damage + 35.0));
         names = supply_names(district_source(space));
-        while health < 90.0 {
-            point = director.take(space);
-            if not point {
-                break;
-            }
-            big = health < 40.0;
-            pick = names["health"] if big else names["small"];
-            fields = {"classname": pick[0], "origin": origin_text(point[0], point[1], point[2]), "asset_game": district_source(space)};
-            if pick[1] != "0" {
-                fields["spawnflags"] = pick[1];
-            }
-            director.put(fields);
-            health += 25.0 if big else 15.0;
+        while health < wanted_health {
+            pick = names["health"] if wanted_health - health >= 10.0 else names["small"];
+            reward = director.pack(space, encounter, district_source(space), pick[0], pick[1]);
+            if reward is None { break; }
+            rule = supply_rule(district_source(space), pick[0], pick[1]);
+            replenished = health_after(health, rule);
+            encounter.health_added += replenished - health;
+            health = replenished;
             director.made.placed_health += 1;
         }
+        encounter.health_ready = health;
+        health -= damage;
+        encounter.health_after = health;
         director.made.low = min(director.made.low, health);
-        for box_index in range(1 + int(spent / 6.0) if spent > 0.0 else 0) {
-            point = director.take(space);
-            if point {
-                pick = names["shells"];
-                director.put({"classname": pick[0], "origin": origin_text(point[0], point[1], point[2]), "asset_game": district_source(space)});
-                director.made.placed_shells += 1;
+        encounter.ammo_needed = fight_rounds(fallback, encounter.enemy_health);
+        if encounter.foes > 0 { stock[fallback.ammo] = 0; }
+        wanted_ammo = max(encounter.ammo_needed, fallback.cost * 6 if space.role == "start" else 0);
+        while stock.get(fallback.ammo, 0) < wanted_ammo {
+            classname = ammo_class(fallback.game, fallback.ammo);
+            reward = director.pack(space, encounter, fallback.game, classname);
+            if reward is None { break; }
+            stock[fallback.ammo] = min(PASSION_AMMO_CAPS[fallback.ammo], stock.get(fallback.ammo, 0) + reward.amount);
+            director.made.placed_ammo += 1;
+            if fallback.ammo == "shells" { director.made.placed_shells += 1; }
+            if stock[fallback.ammo] >= PASSION_AMMO_CAPS[fallback.ammo] { break; }
+        }
+        encounter.ammo_ready = stock.get(fallback.ammo, 0);
+        stock[fallback.ammo] = max(0, encounter.ammo_ready - encounter.ammo_needed);
+        if weapon.ammo != fallback.ammo and (encounter.foes > 0 or space.id in discoveries) {
+            extra = 0;
+            wanted_extra = max(weapon.cost * 6, fight_rounds(weapon, encounter.enemy_health));
+            while extra < wanted_extra {
+                reward = director.pack(space, encounter, weapon.game, ammo_class(weapon.game, weapon.ammo), essential=False);
+                if reward is None { break; }
+                extra += reward.amount;
+                director.made.placed_ammo += 1;
             }
         }
-        if director.dice.chance(0.3) {
-            point = director.take(space, True);
-            if point {
-                pick = names["armor"];
-                director.put({"classname": pick[0], "origin": origin_text(point[0], point[1], point[2]), "asset_game": district_source(space)});
+        if encounter.foes > 0 and (health < 25.0 or encounter.ammo_ready < encounter.ammo_needed) {
+            encounter.issues.append("insufficient approach supplies");
+        }
+        if encounter.optional or space.role in ["cache", "recovery"] or director.dice.chance(0.2) {
+            pick = names["armor"];
+            if director.pack(space, encounter, district_source(space), pick[0], pick[1], essential=False) is not None {
                 director.made.placed_armor += 1;
             }
+        }
+        if encounter.optional {
+            health = saved_health;
+            stock = saved_stock;
+        }
+        for issue in encounter.issues {
+            director.made.issues.append("room " + str(space.id) + ": " + issue);
         }
     }
     director.made.health = health;
 }
 
 """Cast an expedition."""
-def cast(estate: Estate, mass: Massing, plan: Expedition, dice: Stream, density: float, only: list[str] = []) -> Casting {
+def cast(estate: Estate, mass: Massing, plan: Expedition, dice: Stream, density: float, only: list[str] = [], dressing: Dressing | None = None) -> Casting {
     director = Director3(estate=estate, mass=mass, plan=plan, dice=dice, density=density, only=only);
+    if dressing is not None { director.details = detail_boxes(dressing.brushes); }
     for space in estate_spaces(estate) {
         director.spaces[space.id] = space;
         if space.role not in ["corridor", "window"] {
@@ -758,6 +939,12 @@ def cast(estate: Estate, mass: Massing, plan: Expedition, dice: Stream, density:
         }
     }
     director.note_mouths();
+    composition = estate spawn ComposeEncounters(mass=mass, details=director.details);
+    director.made.experience = composition.experience;
+    director.made.experience.expects_returns = plan.loopiness >= 0.5;
+    for encounter in encounters(composition.experience) {
+        director.encounters[encounter.room] = encounter;
+    }
     cast_objectives(director);
     for corridor in estate_corridors(estate) {
         if corridor.teleport {

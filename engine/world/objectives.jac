@@ -59,7 +59,32 @@ node Objective {
         allowed: float = 40.0,
         # How near the bot has come to it, and when it last came nearer.
         nearest: float = 1.0e9,
-        nearer_at: float = 0.0;
+        nearer_at: float = 0.0,
+        route_best: int = 1000000000,
+        progress_areas: set[int] = set();
+
+    """Progress along a viable route can go away from the target in world
+    space. Credit a lower travel cost or a new reachable area once; circling
+    through the same areas cannot keep an objective alive indefinitely."""
+    def note_progress(distance: float, area: int, travel: int, now: float) {
+        advanced = distance < self.nearest - 32.0;
+        if advanced { self.nearest = distance; }
+        if area > 0 and travel > 0 {
+            if travel < self.route_best - 5 or area not in self.progress_areas {
+                advanced = True;
+            }
+            self.route_best = min(self.route_best, travel);
+            self.progress_areas.add(area);
+        }
+        if advanced { self.nearer_at = now; }
+    }
+
+    def reset_progress(now: float) {
+        self.nearest = 1.0e9;
+        self.nearer_at = now;
+        self.route_best = 1000000000;
+        self.progress_areas.clear();
+    }
 
     """Whether it is done: the signal fired since it was taken up, the
     monster dead, the item taken, the door moving."""
