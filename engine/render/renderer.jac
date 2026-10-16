@@ -40,7 +40,7 @@ import from vendor.raylib {
         position: Vector3, width: f32, height: f32, length: f32, color: Color
     ) -> None;  def DrawText(
         text: str, posX: i32, posY: i32, fontSize: i32, color: Color
-    ) -> None;  obj rlVertexBuffer;  obj rlDrawCall;  obj rlRenderBatch {
+    ) -> None;  def MeasureText(text: str, fontSize: i32) -> i32;  obj rlVertexBuffer;  obj rlDrawCall;  obj rlRenderBatch {
         has bufferCount: i32,
             currentBuffer: i32,
             vertexBuffer: ptr[rlVertexBuffer],

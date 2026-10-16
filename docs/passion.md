@@ -417,3 +417,51 @@ Jac compiler defects found while building Passion are recorded in
   execution cover those separately.
 - The level is one cluster (no visibility culling); generated expeditions
   draw well within the frame budget, but a bake by planes could cut them.
+
+# Human navigation review
+
+The experience graph is also reviewed for what a person can recognise.
+`wayfinding.jac` visits the room graph with `ReadRoutes`, attaching passage
+cues to their rooms. It distinguishes onward passages, returns, optional
+side rooms and gates. Secret walls receive no visible threshold cue. These
+marks describe static relationships; they do not promise that a passage is
+the player's current objective.
+
+Within each room, a floor search samples stage-to-threshold and landing
+walks, respecting thin dressing and small steps. Direct-light estimates
+include occlusion. Uncovered route samples receive local light instead of
+declaring a room adequately lit merely because it contains a lamp. The
+audit exposes `route_samples`, `route_dark_before`, `route_dark_after`,
+`route_added_lamps` and `route_missing_paths`. These are visibility proxies,
+not measured rendered luminance or proof that every floor is navigable.
+
+Portal pads and nearby arrivals are chosen together. A return pad is 64–96
+units from the arrival on a clear, level walk; the player arrives outside
+its trigger. Catwalks carrying portals get a wider perimeter landing before
+dressing, retaining edge railings and clearance from wall trim. Pad and
+arrival space is reserved before population. A candidate with
+no suitable pair is rejected. Spawn and arrival facing prefer a visible,
+open onward passage over a locked gate or optional branch.
+
+Devices have distinct markings: an animated portal surface, a square exit
+frame, two lift stripes and three expanding jump-pad bars. Lift stripes are
+part of the moving brush model. Silver and gold gate lights and mark counts
+differ. Return-route scoring includes certified one-way passages back to
+earlier required rooms, as well as shortcuts; a descent into a new room is
+not a return.
+
+`scripts/passion_design_audit.jac` exports room bounds, heights, actual
+passages, cues, lamps, encounters and entity positions for visual review.
+Use this alongside game screenshots and human play, not just bot outcomes.
+A stuck bot can expose a confusing junction without demonstrating that a
+human cannot traverse it. In particular, review useful player cover rather
+than equating enemy proximity to a wall with tactical cover; count quiet
+beats along the route actually played rather than all optional rooms; and
+tune supply surplus from observed consumption rather than treating a
+conservative supply forecast as a difficulty score.
+
+The mission briefing includes prerequisites granted on required detours,
+including keys that are not themselves exit tokens. Long messages wrap to
+the window width so those objectives remain visible. The native compiler
+uses the backport at `9421a0850b`; the corresponding upstream fix and
+regression coverage are in [jac PR #10138](https://github.com/jaseci-labs/jac/pull/10138).

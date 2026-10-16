@@ -630,7 +630,7 @@ def landmark_lights(mass: Massing, by_id: dict[int, Space], made: Dressing) {
         y = (float(space.stage[1]) + 0.5) * CELL;
         floor = float(space.stage[2]) * LIFT;
         color = "255 210 150" if space.role in ["start", "recovery", "vista", "cache"] else (
-            "255 220 100" if space.role == "key" else ("150 220 255" if space.role in ["switch", "goal"] else lamp_tint(kit, space))
+            "235 235 225" if space.role == "key" else ("150 220 255" if space.role == "switch" else ("160 255 190" if space.role == "goal" else lamp_tint(kit, space)))
         );
         reach = float(mass.headroom(space.stage[0], space.stage[1], space.stage[2])) * LIFT;
         made.add_lamp(space, Lamp3(x=x, y=y, z=floor + min(112.0, reach - 16.0), level=240 if space.role in ["key", "switch", "goal"] else 170, color=color));
@@ -761,6 +761,6 @@ def frame_doorway(made: Dressing, space: Space, door: Doorway, high: int, accent
     made.brushes.append(plain_box(lintel[0], lintel[1], kit.trim, kit.scale));
     if hint {
         point = pilaster_box(door.side, line, (start + finish) * 0.5 - 2.0, (start + finish) * 0.5 + 2.0, low + 56.0, low + 60.0, 24.0)[0];
-        made.add_lamp(space, Lamp3(x=point.x, y=point.y, z=point.z, level=130, color="255 220 100" if hint == "key" else "150 220 255"));
+        made.add_lamp(space, Lamp3(x=point.x, y=point.y, z=point.z, level=180, color="255 210 80" if hint == "key_gold" else ("210 230 255" if hint == "key_silver" else "150 220 255")));
     }
 }

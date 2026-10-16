@@ -23,6 +23,7 @@ import from .themes { theme_named }
 import from .dress { Dressing, box_brush, plain_box }
 import from .experience { Experience, Encounter, CombatPosition, Reward, ComposeEncounters, HoldsPosition, Supplies, encounters, clear_sight, cover_at, link_crossfire, detail_boxes, body_clear }
 import from .supplies { progression_weapon, ammo_class, supply_rule, health_after, fight_rounds }
+import from .wayfinding { Wayfinding }
 import from games.weapons { passion_start, PASSION_AMMO_CAPS }
 
 obj Foe {
@@ -96,6 +97,7 @@ obj Casting {
         placed_weapons: int = 0,
         lead: str = "q1",
         experience: Experience = Experience(),
+        navigation: Wayfinding = Wayfinding(),
         issues: list[str] = [],
         doors: int = 0;
 }
@@ -359,6 +361,53 @@ obj Director3 {
         return self.sights[key];
     }
 
+    """Choose a portal and its nearby arrival together. The arrival has a
+    clear, level walk back to the pad, outside its trigger, and both are
+    reserved before supplies or enemies can occupy them."""
+    def portal_site(space: Space) -> list[list[float]] {
+        land = self.ground(space);
+        candidates = sorted(land.supply_spots, key=lambda (cell: list[int]) {
+            (cell not in land.spots, min(cell[0] - space.x, space.x + space.w - cell[0] - 1,
+                cell[1] - space.y, space.y + space.d - cell[1] - 1), cell[2], cell[1], cell[0]);
+        });
+        for cell in candidates {
+            if cell in land.taken or self.cell_key(cell[0], cell[1], cell[2]) in self.mouths or not self.open_round(cell) { continue; }
+            pad = [(float(cell[0]) + 0.5) * CELL, (float(cell[1]) + 0.5) * CELL, float(cell[2]) * LIFT + 24.0];
+            if abs(pad[0] - self.stage_point(space)[0]) + abs(pad[1] - self.stage_point(space)[1]) < 96.0 { continue; }
+            reserved = False;
+            for other in land.taken {
+                if abs(other[0] - cell[0]) <= 2 and abs(other[1] - cell[1]) <= 2 and abs(other[2] - cell[2]) <= 1 { reserved = True; }
+            }
+            if reserved { continue; }
+            for distance in [3, 2] {
+                for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    arrival_cell = [cell[0] + dx * distance, cell[1] + dy * distance, cell[2]];
+                    if arrival_cell not in land.supply_spots or arrival_cell in land.taken { continue; }
+                    clear = True;
+                    for step in range(distance + 1) {
+                        x = cell[0] + dx * step;
+                        y = cell[1] + dy * step;
+                        point = [(float(x) + 0.5) * CELL, (float(y) + 0.5) * CELL, pad[2]];
+                        if self.mass.at(x, y, cell[2]) != space.id + 1 or not self.mass.standing(x, y, cell[2])
+                            or self.mass.headroom(x, y, cell[2]) < 5 or not body_clear(point, self.details)
+                            or [x, y, cell[2]] in land.taken { clear = False; }
+                    }
+                    if not clear { continue; }
+                    arrival = [(float(arrival_cell[0]) + 0.5) * CELL, (float(arrival_cell[1]) + 0.5) * CELL, pad[2]];
+                    if not self.sight(pad, arrival) { continue; }
+                    # Keep the whole pad clear. The arrival needs one body
+                    # cell; neighbouring pickup triggers do not obstruct it.
+                    for oy in [-1, 0, 1] {
+                        for ox in [-1, 0, 1] { land.taken.append([cell[0] + ox, cell[1] + oy, cell[2]]); }
+                    }
+                    land.taken.append(arrival_cell);
+                    return [pad, arrival];
+                }
+            }
+        }
+        return [];
+    }
+
     """Choose an enemy position for its job. Ranged positions need a real
     lane to the approach; pressure approaches on the floor; ambushes use
     occlusion. Keep the quiet rooms' stages out of nearby firing lanes."""
@@ -473,6 +522,7 @@ def cast_objectives(director: Director3) {
                 "classname": "info_player_start",
                 "origin": origin_text(point[0], point[1], point[2]),
                 "angle": str(yaw_toward(point[0], point[1], middle[0], middle[1])),
+                "_room": str(space.id),
                 "_passion_kit": director.made.lead
             });
         }
@@ -482,8 +532,8 @@ def cast_objectives(director: Director3) {
             floor = float(space.stage[2]) * LIFT;
             low = Vec3(x=point[0] - 32.0, y=point[1] - 32.0, z=floor);
             high = Vec3(x=point[0] + 32.0, y=point[1] + 32.0, z=floor + 8.0);
-            director.put_brushed({"classname": "func_wall", "_passion": "exit"}, [plain_box(low, high, TELEPORT_MATERIAL, 1.0)]);
-            director.put({"classname": "light", "origin": origin_text(point[0], point[1], floor + 56.0), "light": "300", "_color": "200 220 255"});
+            director.put_brushed({"classname": "func_wall", "_passion": "exit"}, [plain_box(low, high, kit.trim, kit.scale)] + device_marks(point[0], point[1], floor + 8.0, kit.light, kit.scale, "exit"));
+            director.put({"classname": "light", "origin": origin_text(point[0], point[1], floor + 56.0), "light": "300", "_color": "160 255 190"});
             # The way out is touched by a body's feet: from just over the
             # floor, so feet on the gate (its top at floor + 8) are inside it.
             director.made.exit_low = [point[0] - 32.0, point[1] - 32.0, floor + 2.0];
@@ -497,6 +547,8 @@ def cast_objectives(director: Director3) {
             if token.startswith("key_") {
                 found = key_entity(token);
                 director.put({"classname": found[0], "origin": origin_text(point[0], point[1], point[2]), "asset_game": found[1]});
+                director.put({"classname": "light", "origin": origin_text(point[0], point[1], point[2] + 40.0),
+                    "light": "200", "_color": "255 210 80" if token == "key_gold" else "210 230 255"});
             } elif token.startswith("relay:") or token.startswith("switch:") {
                 # A plate on the stage, thrown by stepping onto it: the plate
                 # itself is set in the floor, the stepping is a trigger over it.
@@ -652,17 +704,19 @@ def cast_teleporter(director: Director3, corridor: Corridor) {
     if tail is None or head is None {
         return;
     }
+    sites = {tail.id: director.portal_site(tail), head.id: director.portal_site(head)};
+    if not sites[tail.id] or not sites[head.id] {
+        director.made.issues.append("link " + str(corridor.link) + ": no clear paired portal landing");
+        return;
+    }
     ways = [(tail, head)] if corridor.mode == "valve" else [(tail, head), (head, tail)];
     for (source, target) in ways {
-        here = director.take(source, roomy=True);
-        there = director.take(target, roomy=True);
-        if not here or not there {
-            continue;
-        }
+        here = sites[source.id][0];
+        there = sites[target.id][1];
         name = "tele_" + str(corridor.link) + "_" + str(target.id);
         floor = here[2] - 24.0;
         director.put_brushed(
-            {"classname": "func_wall", "_passion": "teleporter"},
+            {"classname": "func_wall", "_passion": "teleporter", "_mission_link": str(corridor.link)},
             [plain_box(Vec3(x=here[0] - 32.0, y=here[1] - 32.0, z=floor), Vec3(x=here[0] + 32.0, y=here[1] + 32.0, z=floor + 4.0), TELEPORT_MATERIAL, 1.0)]
         );
         director.put_brushed(
@@ -681,8 +735,26 @@ def cast_teleporter(director: Director3, corridor: Corridor) {
             "origin": origin_text(there[0], there[1], there[2] + 8.0),
             "angle": str(yaw_toward(there[0], there[1], middle[0], middle[1]))
         });
-        director.put({"classname": "light", "origin": origin_text(here[0], here[1], floor + 64.0), "light": "180", "_color": "180 200 255"});
+        director.put({"classname": "light", "origin": origin_text(here[0], here[1], floor + 64.0), "light": "220", "_color": "205 160 255"});
     }
+}
+
+"""Shapes as well as colour identify devices. All markings are one unit
+high and, on a lift, belong to the moving model itself."""
+def device_marks(x: float, y: float, z: float, material: str, scale: float, kind: str) -> list[list[Side]] {
+    rectangles: list[list[float]] = [];
+    if kind == "lift" {
+        rectangles = [[-24.0, -24.0, -18.0, 24.0], [18.0, -24.0, 24.0, 24.0]];
+    } elif kind == "jump" {
+        # Three expanding bars read as a launch fan.
+        rectangles = [[-7.0, -16.0, 7.0, -10.0], [-13.0, -3.0, 13.0, 3.0], [-19.0, 10.0, 19.0, 16.0]];
+    } else {
+        # The exit is a complete bright square frame.
+        rectangles = [[-28.0, -28.0, 28.0, -22.0], [-28.0, 22.0, 28.0, 28.0],
+            [-28.0, -22.0, -22.0, 22.0], [22.0, -22.0, 28.0, 22.0]];
+    }
+    return [box_brush(Vec3(x=x + r[0], y=y + r[1], z=z), Vec3(x=x + r[2], y=y + r[3], z=z + 1.0),
+        [material for _ in range(6)], scale, [4]) for r in rectangles];
 }
 
 """What joins two rooms one over the other: a lift's platform, risen to
@@ -709,6 +781,7 @@ def cast_connector(director: Director3, corridor: Corridor) {
         director.put_brushed(
             {"classname": "func_plat", "height": str(int(high - low)), "speed": "200"},
             [plain_box(Vec3(x=x0 + 2.0, y=y0 + 2.0, z=high - 8.0), Vec3(x=x0 + 2.0 * CELL - 2.0, y=y0 + 2.0 * CELL - 2.0, z=high), kit.step, kit.scale)]
+                + device_marks(middle_x, middle_y, high, kit.light, kit.scale, "lift")
         );
         director.put({"classname": "light", "origin": origin_text(middle_x, middle_y, low + 72.0), "light": "160"});
     } elif corridor.connector == "jumppad" and len(corridor.landing) == 2 {
@@ -725,7 +798,8 @@ def cast_connector(director: Director3, corridor: Corridor) {
         yaw = math.degrees(math.atan2(land_y - middle_y, land_x - middle_x));
         director.put_brushed(
             {"classname": "func_wall", "_passion": "jumppad"},
-            [plain_box(Vec3(x=x0 + 8.0, y=y0 + 8.0, z=low), Vec3(x=x0 + 2.0 * CELL - 8.0, y=y0 + 2.0 * CELL - 8.0, z=low + 4.0), TELEPORT_MATERIAL, 1.0)]
+            [plain_box(Vec3(x=x0 + 8.0, y=y0 + 8.0, z=low), Vec3(x=x0 + 2.0 * CELL - 8.0, y=y0 + 2.0 * CELL - 8.0, z=low + 4.0), kit.step, kit.scale)]
+                + device_marks(middle_x, middle_y, low + 4.0, kit.light, kit.scale, "jump")
         );
         # Straight up the column first (in the lower room it stands in the
         # open, so a slant there would carry the body out of the push), then,

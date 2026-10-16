@@ -33,6 +33,8 @@ import from .arrange { Estate, Corridor, Layout, arrange_steps, estate_spaces, e
 import from .massing { Massing, floor_reached, CELL, LIFT }
 import from .spaces { Space }
 import from .dress { Dressing, dress_steps, frame_doorway, corridor_lamps, box_brush }
+import from .wayfinding { ReadRoutes, PreparePortalLandings, orient_arrivals, route_cues }
+import from .experience { detail_boxes }
 import from .cast { Casting, cast }
 import from .critic { critic_measures, critic_score }
 import from .experience { experience_measures }
@@ -343,6 +345,7 @@ def draft_steps(seed: int, index: int, niche: list[int], archetype: str, depth: 
         draft.detail = ", ".join([str(space.id) + " " + space.kind + " (" + space.role + ")" for space in missed]);
         return;
     }
+    estate spawn PreparePortalLandings(mass=mass);
     dressing = Dressing();
     yield from dress_steps(mass, spaces, stream.derive("dress"), dressing);
     for corridor in estate_corridors(estate) {
@@ -351,12 +354,14 @@ def draft_steps(seed: int, index: int, niche: list[int], archetype: str, depth: 
         }
         if corridor.out_door is not None and corridor.tail in by_id {
             room = by_id[corridor.tail];
-            hint = "key" if any([token.startswith("key_") for token in corridor.needs]) else ("relay" if corridor.needs else "");
+            keys = [token for token in corridor.needs if token.startswith("key_")];
+            hint = keys[0] if keys else ("relay" if corridor.needs else "");
             frame_doorway(dressing, room, corridor.out_door, CORRIDOR_HIGH, room.centre or room.role == "hub" or bool(corridor.needs), hint);
         }
         if corridor.in_door is not None and corridor.head in by_id and corridor.in_door.floored {
             room = by_id[corridor.head];
-            hint = "key" if any([token.startswith("key_") for token in corridor.needs]) else ("relay" if corridor.needs else "");
+            keys = [token for token in corridor.needs if token.startswith("key_")];
+            hint = keys[0] if keys else ("relay" if corridor.needs else "");
             frame_doorway(dressing, room, corridor.in_door, CORRIDOR_HIGH, room.centre or room.role == "hub" or bool(corridor.needs), hint);
         }
     }
@@ -401,10 +406,20 @@ def draft_steps(seed: int, index: int, niche: list[int], archetype: str, depth: 
         draft.detail = str(error);
         return;
     }
+    routes = estate spawn ReadRoutes(mass=mass, dressing=dressing, items=casting.items);
+    casting.navigation = routes.navigation;
+    orient_arrivals(routes.navigation, spaces, mass, casting.items, detail_boxes(dressing.brushes));
+    yield "wayfinding";
     supplies = casting.placed_health + casting.placed_armor + casting.placed_ammo + casting.placed_weapons;
     draft.measures = critic_measures(mass, dressing.lamps, casting.monsters, supplies);
     draft.measures.update(experience_measures(casting.experience));
     draft.measures["play_certified_passages"] = float(certified);
+    draft.measures["route_samples"] = float(routes.navigation.samples);
+    draft.measures["route_dark_before"] = float(routes.navigation.dark_before);
+    draft.measures["route_dark_after"] = float(routes.navigation.dark_after);
+    draft.measures["route_added_lamps"] = float(routes.navigation.added_lamps);
+    draft.measures["route_missing_paths"] = float(routes.navigation.missing_paths);
+    draft.measures["route_cues"] = float(len(route_cues(routes.navigation)));
     draft.score = critic_score(draft.measures);
     yield "critic";
 }
@@ -413,8 +428,15 @@ def draft_steps(seed: int, index: int, niche: list[int], archetype: str, depth: 
 it asks."""
 def briefing_for(plan: Expedition) -> str {
     counts: dict[str, int] = {};
-    for token in plan.objectives {
-        kind = "keys" if token.startswith("key_") else ("relays" if token.startswith("relay:") else "guardians");
+    tokens = set(plan.objectives);
+    # Keys on required detours can be prerequisites without being exit
+    # tokens. The player needs to know about these too.
+    for beat in beats_of(plan) {
+        if not beat.optional { tokens.update(beat.grants); }
+    }
+    for token in tokens {
+        if not token.startswith(("key_", "relay:", "switch:", "guardian:")) { continue; }
+        kind = "keys" if token.startswith("key_") else ("relays" if token.startswith(("relay:", "switch:")) else "guardians");
         counts[kind] = counts.get(kind, 0) + 1;
     }
     parts: list[str] = [];

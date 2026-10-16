@@ -45,6 +45,8 @@ with entry {
             assert measures["play_ammo_types"] >= 2.0;
             assert measures["play_supplied"] == 1.0;
             assert record.measures.get("play_certified_passages", 0.0) > 0.0;
+            assert casting.navigation.samples > 0;
+            assert casting.navigation.dark_after <= casting.navigation.dark_before;
             print(
                 json.dumps(
                     {
@@ -56,7 +58,7 @@ with entry {
                         "lead": casting.lead,
                         "weapons": casting.placed_weapons,
                         "ammo": casting.placed_ammo,
-                        "measures": measures,
+                        "measures": record.measures,
                         "rejections": record.rejections,
                         "notes": record.notes,
                         "seconds": time.time() - began

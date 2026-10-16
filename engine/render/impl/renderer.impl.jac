@@ -427,9 +427,24 @@ impl Renderer.draw_scoreboard(title: str, lines: list[str], footer: str) {
 }
 
 impl Renderer.draw_message(message: str) {
-    DrawText(
-        message, 20, i32(self.height - 104), 20, Color(r=255, g=230, b=180, a=255)
-    );
+    # Mission prerequisites and notices must remain visible when the
+    # player resizes the window. Wrap above the status rows.
+    lines: list[str] = [];
+    for paragraph in message.split("\n") {
+        line = "";
+        for word in paragraph.split() {
+            candidate = line + (" " if line else "") + word;
+            if line and int(MeasureText(candidate, 20)) > self.width - 40 {
+                lines.append(line);
+                line = word;
+            } else { line = candidate; }
+        }
+        if line { lines.append(line); }
+    }
+    top = max(8, self.height - 104 - max(0, len(lines) - 1) * 24);
+    for (index, line) in enumerate(lines) {
+        DrawText(line, 20, i32(top + index * 24), 20, Color(r=255, g=230, b=180, a=255));
+    }
 }
 
 

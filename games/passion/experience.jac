@@ -341,6 +341,7 @@ walker ReviewExperience {
         weapons: int = 0,
         discoveries: set[str] = set(),
         return_routes: int = 0,
+        shortcuts: int = 0,
         ammo: set[str] = set(),
         patterns: set[str] = set(),
         supplied: int = 0,
@@ -360,7 +361,18 @@ walker ReviewExperience {
         self.rooms += 1;
         for room in [here->:InRoom:->][?:Space] {
             for corridor in [edge room->:Corridor:->] {
-                if corridor.mode == "shortcut" and corridor.certified { self.return_routes += 1; }
+                if not corridor.certified or corridor.window { continue; }
+                if corridor.mode == "shortcut" {
+                    self.shortcuts += 1;
+                    self.return_routes += 1;
+                } elif corridor.mode == "valve" {
+                    # A key-room drop back into a familiar hub is also a
+                    # return. A one-way descent into a new room is not.
+                    for destination in [room->:Corridor:->][?:Space] {
+                        if destination.id == corridor.head and destination.order < room.order
+                            and not destination.optional { self.return_routes += 1; }
+                    }
+                }
             }
         }
         if here.quiet {
@@ -440,6 +452,7 @@ def experience_measures(experience: Experience) -> dict[str, float] {
         "play_quiet_violations": float(review.quiet_violations),
         "play_weapons": float(len(review.discoveries)),
         "play_return_routes": float(review.return_routes),
+        "play_shortcuts": float(review.shortcuts),
         "play_returns_wanted": 1.0 if experience.expects_returns else 0.0,
         "play_ammo_types": float(len(review.ammo)),
         "play_patterns": float(len(review.patterns)),
