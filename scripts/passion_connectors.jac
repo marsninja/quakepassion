@@ -5,10 +5,12 @@ the real game, and say whether it carries the player.
     QP_GAME=passion QP_SEEDS="15 84" DYLD_LIBRARY_PATH=vendor .jac/qp-connectors
 
 For each connector of each seed (QP_SEEDS, default 15) the player is set
-down where a body would use it and the game steps on, with god mode on:
+down where a body would use it and the game steps on, with god mode on and
+opponents dormant. Combat knockback must not push the stationary test rider
+off a platform; normal walkthroughs exercise combat separately:
 
 - a lift: on its platform at the bottom, standing still; it must carry
-  the player up to the upper floor;
+  the player up to the upper floor, pause, then carry them back down;
 - a jump pad: on the pad; it must throw the player up the column and set
   them down on the upper floor beside the hole;
 - a drop: over the hole on the upper floor; the player must land on the
@@ -22,6 +24,7 @@ import from engine.core.app { App }
 import from engine.core.clock { Clock }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
+import from engine.world.combat { Opponent, HasOpponent }
 import from engine.input.input { Intent }
 import from engine.math.vec3 { Vec3 }
 import from games.passion.generate { survey_of, Survey, level_name }
@@ -56,15 +59,21 @@ def:priv ride(app: App, kind: str, column: list[int], low: int, high: int, landi
     best = -100000.0;
     if kind == "lift" {
         stand_at(app, middle_x, middle_y, low_z + 2.0);
-        while frames < 900 {
+        reached_top = False;
+        while frames < 1800 {
             tick(app, False);
             frames += 1;
             best = max(best, feet(app).z);
             if feet(app).z >= high_z - 4.0 {
+                reached_top = True;
+            }
+            if reached_top and app.player.grounded and feet(app).z <= low_z + 4.0 {
                 return "";
             }
         }
-        return "rose only to " + str(int(best)) + " of " + str(int(high_z));
+        at = feet(app);
+        return ("did not return to the lower landing" if reached_top else "rose only to " + str(int(best)) + " of " + str(int(high_z)))
+            + "; ended at " + str(int(at.x)) + "," + str(int(at.y)) + "," + str(int(at.z));
     }
     if kind == "jumppad" {
         stand_at(app, middle_x, middle_y, low_z + 6.0);
@@ -122,6 +131,9 @@ with entry {
             continue;
         }
         app.player.god_mode = True;
+        for enemy in [app.world->:HasOpponent:->][?:Opponent] {
+            enemy.dormant = True;
+        }
         found = survey_of(app.world);
         if found is None {
             continue;

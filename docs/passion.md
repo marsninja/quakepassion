@@ -374,7 +374,9 @@ QP_CORPUS_GAMES=passion .jac/qp-corpus
 - `scripts/passion_connectors.jac`: every lift, drop, flooded shaft and
   jump pad of a seed ridden in the game: the player set on a lift's
   platform, a pad, over a hole or at the foot of a shaft must come out on
-  the other floor.
+  the other floor. Lift checks also wait aboard and require the return
+  trip to the lower landing. This mechanics check uses god mode and dormant
+  opponents; normal walkthroughs retain live combat.
 - `scripts/passion_map.jac`: with `QP_THEME=<key>` (or `all`, each over
   `QP_SEEDS`) any theme is surveyed whatever the seed; the line says the
   theme, its connectors and the archetypes used. How each seed's survey went, why candidates
@@ -400,9 +402,8 @@ Jac compiler defects found while building Passion are recorded in
   thick.
 - A theme holds for a whole level; districts change by section, themes do
   not yet.
-- Only rooms placed one over the other are joined straight up or down, and
-  a lift is called up only by stepping onto it (or by falling to it down
-  the shaft from above).
+- Only rooms placed one over the other are joined straight up or down.
+  Lifts are called by proximity; there is no separate call button.
 - The yardstick does not swim or ride lifts, so a level's reach and routes
   are measured as far as walking, jumping, dropping and teleporters go.
 - Generated levels are still more detailed in small faces and trim than the
@@ -445,7 +446,10 @@ open onward passage over a locked gate or optional branch.
 
 Devices have distinct markings: an animated portal surface, a square exit
 frame, two lift stripes and three expanding jump-pad bars. Lift stripes are
-part of the moving brush model. Silver and gold gate lights and mark counts
+part of the moving brush model. Automatic Passion lifts pause at the top,
+carry a waiting rider back down, and pause at the bottom for disembarking.
+Original Quake maps and named platforms retain their existing behaviour.
+Silver and gold gate lights and mark counts
 differ. Return-route scoring includes certified one-way passages back to
 earlier required rooms, as well as shortcuts; a descent into a new room is
 not a return.

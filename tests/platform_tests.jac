@@ -65,6 +65,35 @@ test "all three games share platform carrying up and down without drift" {
     }
 }
 
+test "Passion lifts carry a waiting rider both ways and pause at the bottom" {
+    fixture = platform_fixture("passion");
+    platform = [fixture.world->:HasDoor:->][?:Door][0];
+    player = Player(pos=Vec3(z=56.03125 + fixture.collision.eye_height));
+    bottom = player.pos.z;
+    for _ in range(4) { ride(fixture, player, 0.25); }
+    assert platform.state == "open" and platform.position == 1.0;
+    assert abs(player.pos.z - bottom - 64.0) < 0.00001;
+    # Repeated requests from someone aboard must not prevent descent.
+    for _ in range(12) {
+        platform.requested = True;
+        ride(fixture, player, 0.25);
+    }
+    assert platform.state == "closing";
+    for _ in range(4) { ride(fixture, player, 0.25); }
+    assert platform.state == "closed" and platform.position == 0.0;
+    assert abs(player.pos.z - bottom) < 0.00001;
+    for _ in range(8) {
+        platform.requested = True;
+        ride(fixture, player, 0.25);
+    }
+    assert platform.state == "closed" and platform.position == 0.0;
+    # The rider can leave during the pause without being lifted away.
+    player.pos.x = 500.0;
+    ride(fixture, player, 2.0);
+    ride(fixture, player, 1.0);
+    assert platform.state == "closed";
+}
+
 test "a blocked rider reverses the platform without partially moving anything" {
     fixture = platform_fixture();
     platform = [fixture.world->:HasDoor:->][?:Door][0];

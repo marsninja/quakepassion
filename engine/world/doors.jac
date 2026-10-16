@@ -539,6 +539,19 @@ walker DoorTick {
             }
         }
         near = here.requested or here.activation.pending > 0 or contact;
+        # Generated expeditions use lifts as two-way passages. A rider
+        # must be able to descend by staying aboard, then step off at the
+        # bottom before the next ascent. Original-map plats retain their
+        # game's occupied-top behaviour; named platforms retain their wiring.
+        shuttle = self.bsp.game == "passion" and here.kind == "platform" and here.automatic;
+        if shuttle {
+            if here.state in ["open", "closing"] {
+                near = False;
+            } elif here.state == "closed" and here.remaining > 0.0 {
+                here.remaining = max(0.0, here.remaining - self.dt);
+                near = False;
+            }
+        }
         if here.keys and not here.unlocked {
             here.requested = False;
             here.activation.pending = 0;
@@ -705,6 +718,7 @@ walker DoorTick {
             }
         } elif next_position == 0.0 and direction < 0.0 {
             here.state = "closed";
+            if shuttle { here.remaining = here.hold_time; }
         }
     }
 }
