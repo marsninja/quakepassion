@@ -24,6 +24,24 @@ obj Texture {
         fullbright: bool = False;
 }
 
+"""The kind of picture an image file's bytes are, for its decoder: PNG and
+JPEG by their signatures, otherwise what its name says (".tga" for a file
+with neither signature whose name says JPEG: a generated TGA standing in for
+a JPEG keeps the JPEG's name)."""
+def sniffed_extension(extension: str, data: bytes) -> str {
+    if len(data) >= 4 and data[0] == 137 and data[1] == 80 and data[2] == 78 and data[3] == 71 {
+        return ".png";
+    }
+    if len(data) >= 2 and data[0] == 255 and data[1] == 216 {
+        return ".jpg";
+    }
+    lower = extension.lower();
+    if lower == ".jpg" or lower == ".jpeg" {
+        return ".tga";
+    }
+    return extension;
+}
+
 obj TexInfo {
     has s: Vec3,
         t: Vec3,

@@ -12,7 +12,10 @@ QP_GRAYBOX=1 selects the development arena. QP_SMOKE=1 captures deterministic
 views and exits. QP_CAPTURE=<frame>:<file.png> plays normally and saves one
 full screenshot (HUD and weapon included) at that frame, then exits. All modes
 require a graphical display. QP_CONFIG_DIR keeps the settings and bindings
-somewhere other than HOME. Arguments starting with "+" run as console commands
+somewhere other than HOME. QP_GENERATED=1 plays generated assets (textures,
+sounds, models and music made by games/procgen) instead of the games' own;
+QP_GENERATED_DIR keeps them somewhere other than ~/.quakepassion-generated.
+Arguments starting with "+" run as console commands
 after the configuration (quake.rc's stuffcmds): `./qp +map e1m2 +god`.
 """
 
@@ -25,6 +28,8 @@ import from games.passion.run { Run, run_of_level }
 import from engine.core.preferences { Preferences }
 import from engine.core.menu { game_directory }
 import from engine.assets.content { play_pack, pack_start_map, playing }
+import from engine.assets.generated { set_generated }
+import from games.procgen.bake { ensure_generated }
 import from engine.core.app { App, HostCvars }
 import from engine.console.shell { Shell, command_line_text }
 import from engine.core.clock { Clock }
@@ -46,10 +51,16 @@ with entry {
     shell.boot();
     host = HostCvars();
     host.skill = shell.register(host.skill);
+    host.generated = shell.register(host.generated);
     try {
         shell.execute_text(Preferences().settings_text());
     } except Exception as error {
         shell.print("Settings: " + str(error));
+    }
+    # QP_GENERATED=1 (or 0) plays the generated assets (or the games' own)
+    # whatever the settings say.
+    if os.getenv("QP_GENERATED", "") != "" {
+        host.generated.assign(os.getenv("QP_GENERATED", "0"));
     }
     skill = host.skill.integer;
     if os.getenv("QP_GRAYBOX", "") == "" {
@@ -93,6 +104,13 @@ with entry {
             map_name = "v3-" + os.getenv("QP_SEED", "1");
         }
         opened = os.getenv("QP_MAP", map_name);
+        # The first level's generated assets, baked when missing or stale.
+        set_generated(host.generated.on());
+        if host.generated.on() {
+            for record in ensure_generated(game) {
+                print("quakepassion: generated " + record.words());
+            }
+        }
         # Q1 and Q2 play the fifth skill (Q3's Nightmare!) as Nightmare.
         played = skill if game == "q3" else min(3, skill);
         try {

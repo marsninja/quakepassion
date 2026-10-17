@@ -731,6 +731,7 @@ impl App.load_destination(
     if not self.quiet_load {
         self.draw_loading(game, name);
     }
+    self.prepare_generated(game);
     next_renderer = QuakeRenderer();
     next_models = ModelScene();
     next_effects = EffectScene(cvars=self.effects.cvars);
@@ -2147,7 +2148,8 @@ impl App.refresh_settings() {
         "Music volume: " + str(int(self.audio.music_volume.number * 100.0 + 0.5)) + "%",
         "God mode: " + ("On" if self.host.god.on() else "Off"),
         "Skill (next level): " + ["Easy", "Normal", "Hard", "Nightmare", "Nightmare"][skill]
-            + " (Q3: " + Q3_SKILL_NAMES[skill] + ")"
+            + " (Q3: " + Q3_SKILL_NAMES[skill] + ")",
+        "Generated assets (next level): " + ("On" if self.host.generated.on() else "Off")
     ];
 }
 
@@ -2220,8 +2222,30 @@ impl App.adjust_setting(direction: int) {
         if self.host.skill.integer == 4 and self.level.bsp.game == "q3" {
             self.audio.play_path("sound/misc/nightmare.wav");
         }
+    } elif row == 16 {
+        self.host.generated.assign("0" if self.host.generated.on() else "1");
+        self.menu.message = "Generated assets " + ("on" if self.host.generated.on() else "off") + " from the next level";
     }
     self.save_preferences();
+}
+
+"""Generated assets on or off for the level about to load, as `qp_generated`
+says; when on, whatever the game draws on that is missing or out of date is
+baked first (games/procgen/bake.jac), its progress on the console."""
+impl App.prepare_generated(game: str) {
+    on = self.host.generated.on();
+    set_generated(on);
+    if not on {
+        return;
+    }
+    try {
+        for record in ensure_generated(game) {
+            self.shell.print("Generated " + record.words());
+        }
+    } except Exception as error {
+        self.shell.print("Generated assets: the bake failed (" + str(error) + "); playing the games' own");
+        set_generated(False);
+    }
 }
 
 """Every archived cvar back to its default (Cvar_Restart_f), walking again."""

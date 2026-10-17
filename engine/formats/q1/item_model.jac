@@ -65,11 +65,16 @@ def item_light_at(bsp: Bsp, face: Face, s: float, t: float) -> float {
     return total;
 }
 
-def parse_item_bsp(data: bytes, palette: bytes) -> AnimatedModel {
+"""A pickup's model from its BSP file. `textures`, when given (one for each
+the file holds), are drawn in place of the file's own (generated ones)."""
+def parse_item_bsp(data: bytes, palette: bytes, textures: list[Texture] = []) -> AnimatedModel {
     if len(palette) != 768 {
         raise ValueError("Item BSP needs a palette");
     }
     bsp = parse_bsp(data);
+    if len(textures) == len(bsp.textures) and textures {
+        bsp.textures = textures;
+    }
     model = AnimatedModel(baked_light=True);
     bakes: list[ItemFaceBake] = [];
     for f in range(len(bsp.faces)) {

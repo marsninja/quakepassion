@@ -21,6 +21,7 @@ import os;
 import from engine.assets.catalog { AssetCatalog }
 import from engine.formats.bsp { Texture }
 import from engine.formats.q1.bsp { parse_bsp }
+import from engine.assets.generated { generated_miptex }
 import from engine.formats.q2.bsp { parse_wal }
 
 glob FLOOR: int = 0,
@@ -305,9 +306,10 @@ obj Loader {
             self.q1_palette = self.catalog.source("q1").read("gfx/palette.lmp");
         }
         if map_name not in self.q1_maps {
-            self.q1_maps[map_name] = parse_bsp(
-                self.catalog.source("q1").read("maps/" + map_name + ".bsp")
-            ).textures;
+            self.q1_maps[map_name] = generated_miptex(
+                parse_bsp(self.catalog.source("q1").read("maps/" + map_name + ".bsp")).textures,
+                self.catalog.source("q1").paks
+            );
         }
         found = [
             texture
