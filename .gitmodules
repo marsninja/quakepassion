@@ -1,4 +1,4 @@
 [submodule "jaseci"]
 	path = jaseci
 	url = https://github.com/marsninja/jac.git
-	branch = qp-pin-v8
+	branch = qp-pin-v9

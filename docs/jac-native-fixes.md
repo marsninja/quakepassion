@@ -9,14 +9,17 @@ tracked the local patch stacks used while each fix was in review.
 ## Current compiler
 
 The `jaseci` submodule pins the compiler source. It points at the
-`qp-pin-v8` branch of `marsninja/jac`: upstream main `875ef9d29` plus
+`qp-pin-v9` branch of `marsninja/jac`: upstream main `875ef9d29` plus
 [jaseci-labs/jac#10002](https://github.com/jaseci-labs/jac/pull/10002), which
 has since merged, and
 [jaseci-labs/jac#10061](https://github.com/jaseci-labs/jac/pull/10061), which
 has merged too, and
-[jaseci-labs/jac#10017](https://github.com/jaseci-labs/jac/pull/10017),
-[jaseci-labs/jac#10090](https://github.com/jaseci-labs/jac/pull/10090) and
 [jaseci-labs/jac#10114](https://github.com/jaseci-labs/jac/pull/10114), which
+has merged, and
+[jaseci-labs/jac#10017](https://github.com/jaseci-labs/jac/pull/10017),
+[jaseci-labs/jac#10090](https://github.com/jaseci-labs/jac/pull/10090),
+[jaseci-labs/jac#10168](https://github.com/jaseci-labs/jac/pull/10168) and
+[jaseci-labs/jac#10170](https://github.com/jaseci-labs/jac/pull/10170), which
 are open (below). Everything earlier pins carried has merged upstream too,
 the Windows target work (#9991) among it. `scripts/stage_compiler.sh` prepares
 that source (and the typeshed stubs it needs) and prints the `JAC_DEV_SOURCE`
@@ -24,7 +27,7 @@ to export, so the released `jac` 0.37.25 binary compiles QuakePassion with
 the pinned source. CI (`.github/workflows/jac-test.yml`) does the same and
 caches the native compiler kernel per pin. No local patch stacks or compiler
 worktrees are needed, and the submodule can return to `jaseci-labs/jac` main
-once #10017, #10090 and #10114 have merged.
+once #10017, #10090, #10168 and #10170 have merged.
 
 ## Open upstream
 
@@ -35,12 +38,14 @@ Open upstream and in the pin:
 | `assert cond, <message>` carried its message into the `AssertionError` only when the message was a string literal: one that was worked out (a concatenation, an f-string) was dropped, and the error said only `assertion failed at <file>:<line>` | [#10017](https://github.com/jaseci-labs/jac/pull/10017) | The Passion mission editor (`editor/document/missionedit.jac`), which says what the generator's own proof (`validate_mission`) found wrong with a mission changed by hand: "Mission needs an ungranted token: ..." came back as a file and a line |
 | A module whose import closure held more than `[build] native_closure_cap` (256) modules was placed on the server, said only in a note, and a native entry that imported it failed to lower with E5092 far from the cause; the cap is removed | [#10061](https://github.com/jaseci-labs/jac/pull/10061) | `games/frame_order.jac` (LibreQuake's frame numbers): one more module put the studio's closure at 257 and `jac build main.jac --native` failed on `attach_studio` |
 | `list.pop()` on a list whose elements live in pointer slots (lists of lists, objects, strings, dicts) returned the bare `i8*`, so a local bound from it without an annotation took that type and a subscript on it failed to lower ("Type of #1 arg mismatch"); the function was demoted to Python, and everything that called it with it | [#10090](https://github.com/jaseci-labs/jac/pull/10090) | Passion's massing flood (`floor_reached`) and corridor search pop cells from a `list[list[int]]`: the demotion spread up to `generate`, and `jac build main.jac --native` failed |
-| A `for` over an iterator inside a generator (`enumerate`, `zip`, `map`, any call that returns an iterator, or an iterator passed in) kept it in a frame slot without owning it rightly: an iterator the loop made was released when the loop ended and again when the frame was dropped, and one passed in was released by the frame without being retained, so the heap was corrupted (crashes under Guard Malloc, `free_list_checksum_botch` aborts at random otherwise) | [#10114](https://github.com/jaseci-labs/jac/pull/10114) | Passion's forge, which makes a level a step at a time through generators: `for (number, box) in enumerate(boxes)` in `shell_brush_steps` and `for (index, side) in enumerate(solid.sides)` in the compiler's `add_steps` |
+| A module's own function named like a fixed-width type (`def u16(data, at)`) or a `wrapping_*` builtin was lowered as the cast or the wrapping operation: a two-argument call failed with E5092 "Native lowering failed for fixed-width cast 'u16'" and its function was demoted (a one-argument call was silently cast) | [#10168](https://github.com/jaseci-labs/jac/pull/10168) | The generated-assets manifest (`games/procgen/manifest.jac`), whose little-endian header readers are named `u16` |
+| `bytes(range(n))`, `bytes(a_tuple)` and `bytearray(range(n))` were refused (E5092 "Native lowering failed for builtin call 'bytes'") while a list, a list variable and a generator lowered | [#10170](https://github.com/jaseci-labs/jac/pull/10170) | The generated palettes (`games/procgen/palette.jac`), whose colormap ends with the identity row `bytes(range(256))` |
 
 Merged upstream and in the pin, not yet in a release:
 
 | Defect | Upstream PR | Found by |
 | --- | --- | --- |
+| A `for` over an iterator inside a generator (`enumerate`, `zip`, `map`, any call that returns an iterator, or an iterator passed in) kept it in a frame slot without owning it rightly: an iterator the loop made was released when the loop ended and again when the frame was dropped, and one passed in was released by the frame without being retained, so the heap was corrupted (crashes under Guard Malloc, `free_list_checksum_botch` aborts at random otherwise) | [#10114](https://github.com/jaseci-labs/jac/pull/10114) | Passion's forge, which makes a level a step at a time through generators: `for (number, box) in enumerate(boxes)` in `shell_brush_steps` and `for (index, side) in enumerate(solid.sides)` in the compiler's `add_steps` |
 | A read of a variable narrowed by an earlier `if x is None { return; }` was typed with its declared type and reported (E1099) when resolving an assignment to the same variable elsewhere in the function forced its scope to be checked: the narrowing queries refused any query for a symbol already being resolved, wherever it was asked | [#10002](https://github.com/jaseci-labs/jac/pull/10002) | `Studio.drag_lay` in `editor/impl/studio.layhandle.impl.jac`: `main` did not build |
 | A block whose last statement held a comprehension lost the narrowing of what followed it | [#9990](https://github.com/jaseci-labs/jac/pull/9990) | `Studio.float_views` in `editor/impl/studio.windows.impl.jac` |
 | A Windows target (`--target-triple x86_64-pc-windows-msvc`) wrote an image that did not load, and nothing that touched a file, a directory or the clock built for it | [#9991](https://github.com/jaseci-labs/jac/pull/9991) | Building `qp.exe`: a Linux `qp` under WSLg cannot capture the mouse |
