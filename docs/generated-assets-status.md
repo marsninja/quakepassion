@@ -112,7 +112,8 @@ What was run for this work:
   so the rules play as before, but a frame's pose comes from its name alone.
 - **Text and rules are not generated**: maps, scripts, configs, bot files
   and Quake III shader scripts are read from the games, by design.
-- **Running with no game data** (the issue's last milestone) needs the games'
-  maps and rules, so only Passion could; Passion still opens the games'
-  maps for its materials, so a run with nothing installed is not yet
-  possible.
+- **The games must be installed.** The manifest is read from them, and
+  Passion opens their maps for its materials. A run with no game data
+  installed (the issue's last stretch goal) was left out of scope: it would
+  have meant shipping a manifest of id's names and facts in the repository,
+  or guessing models' frame layouts from names alone.
