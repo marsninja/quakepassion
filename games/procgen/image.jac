@@ -168,3 +168,33 @@ def resized(source: Picture, w: int, h: int) -> Picture {
     }
     return made;
 }
+
+"""The picture at another size, sampled smoothly and wrapping at its edges,
+so a picture that tiles still tiles when enlarged."""
+def enlarged(source: Picture, w: int, h: int) -> Picture {
+    made = Picture(w=w, h=h);
+    for y in range(h) {
+        fy = (float(y) + 0.5) * float(source.h) / float(h) - 0.5;
+        y0 = int(fy + float(source.h)) - source.h;
+        ty = fy - float(y0);
+        r0 = (y0 % source.h + source.h) % source.h;
+        r1 = (r0 + 1) % source.h;
+        for x in range(w) {
+            fx = (float(x) + 0.5) * float(source.w) / float(w) - 0.5;
+            x0 = int(fx + float(source.w)) - source.w;
+            tx = fx - float(x0);
+            c0 = (x0 % source.w + source.w) % source.w;
+            c1 = (c0 + 1) % source.w;
+            a = r0 * source.w + c0;
+            b = r0 * source.w + c1;
+            c = r1 * source.w + c0;
+            d = r1 * source.w + c1;
+            i = y * w + x;
+            made.r[i] = (source.r[a] * (1.0 - tx) + source.r[b] * tx) * (1.0 - ty) + (source.r[c] * (1.0 - tx) + source.r[d] * tx) * ty;
+            made.g[i] = (source.g[a] * (1.0 - tx) + source.g[b] * tx) * (1.0 - ty) + (source.g[c] * (1.0 - tx) + source.g[d] * tx) * ty;
+            made.b[i] = (source.b[a] * (1.0 - tx) + source.b[b] * tx) * (1.0 - ty) + (source.b[c] * (1.0 - tx) + source.b[d] * tx) * ty;
+            made.a[i] = (source.a[a] * (1.0 - tx) + source.a[b] * tx) * (1.0 - ty) + (source.a[c] * (1.0 - tx) + source.a[d] * tx) * ty;
+        }
+    }
+    return made;
+}

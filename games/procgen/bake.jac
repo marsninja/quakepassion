@@ -37,7 +37,7 @@ import from .sounds { make_sound }
 
 """Bumped whenever a recipe changes what it makes, so every bake is made
 again."""
-glob GENERATOR_VERSION: str = "13";
+glob GENERATOR_VERSION: str = "14";
 
 """What a bake made, and how it went."""
 obj BakeReport {
@@ -324,7 +324,7 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
             # The 2D art is drawn as 2D art whatever its shader does with
             # it (the console font and the status numbers are blended).
             two_d = lower.startswith("gfx/2d/") or lower.startswith("menu/") or lower.startswith("icons/")
-                or lower.startswith("ui/") or lower.startswith("levelshots/");
+                or lower.startswith("ui/") or lower.startswith("levelshots/") or lower.startswith("gfx/damage/");
             if two_d {
                 drawn_2d = picture_2d(slot.name, w, h, "q3");
                 if drawn_2d is not None {
@@ -334,7 +334,7 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
             }
             if lower.startswith("textures/") or lower.startswith("models/") or role != "base" {
                 painted = paint_role(slot.name, w, h, role);
-                made.append((slot.name, tga_bytes(painted.picture, role in ["alpha", "blend"])));
+                made.append((slot.name, tga_bytes(painted.picture, role in ["alpha", "blend", "unblend"])));
                 return made;
             }
             drawn = picture_2d(slot.name, w, h, "q3");

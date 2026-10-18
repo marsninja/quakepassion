@@ -68,7 +68,39 @@ obj ModelFacts {
         # The box of the frame the model rests in (one named idle or stand,
         # else the first): where a held weapon is shown.
         rest_low: Vec3 = Vec3(),
-        rest_high: Vec3 = Vec3(x=1.0, y=1.0, z=1.0);
+        rest_high: Vec3 = Vec3(x=1.0, y=1.0, z=1.0),
+        # Each tag's place and axes at each frame: how the game hangs one
+        # model on another (a weapon in the hand, a head on a torso), which
+        # are rules, as an animation.cfg's numbers are, not a shape.
+        tag_origins: list[list[Vec3]] = [],
+        tag_axes: list[list[list[Vec3]]] = [];
+
+    """Where tag `name` hangs at each frame, or [] when it is not known."""
+    def tag_track(name: str) -> tuple[list[Vec3], list[list[Vec3]]] {
+        index = self.tags.index(name) if name in self.tags else -1;
+        if index < 0 or index >= len(self.tag_origins) {
+            return ([], []);
+        }
+        return (self.tag_origins[index], self.tag_axes[index]);
+    }
+}
+
+"""Every tag's place and axes, frame by frame, into `facts`."""
+def:priv keep_tags(facts: ModelFacts, model: AnimatedModel) {
+    if not model.tags {
+        return;
+    }
+    facts.tags = [tag.name for tag in model.tags[0].tags];
+    facts.tag_origins = [[] for name in facts.tags];
+    facts.tag_axes = [[] for name in facts.tags];
+    for frame in model.tags {
+        for (k, tag) in enumerate(frame.tags) {
+            if k < len(facts.tags) {
+                facts.tag_origins[k].append(tag.origin);
+                facts.tag_axes[k].append(list(tag.axes));
+            }
+        }
+    }
 }
 
 """Read a model's facts from its file."""
@@ -90,7 +122,7 @@ def read_model_facts(data: bytes, kind: str, palette: bytes) -> ModelFacts | Non
     if kind == "md3" and not model.surfaces and model.tags {
         # A model of tags alone (a player's hand, where a weapon hangs).
         held = ModelFacts(kind=kind, frame_names=["frame " + str(k) for k in range(len(model.tags))]);
-        held.tags = [tag.name for tag in model.tags[0].tags];
+        keep_tags(held, model);
         held.low = Vec3(x=-1.0, y=-1.0, z=-1.0);
         held.high = Vec3(x=1.0, y=1.0, z=1.0);
         held.first_low = held.low;
@@ -126,9 +158,7 @@ def read_model_facts(data: bytes, kind: str, palette: bytes) -> ModelFacts | Non
             }
         }
     }
-    if model.tags {
-        facts.tags = [tag.name for tag in model.tags[0].tags];
-    }
+    keep_tags(facts, model);
     facts.low = low;
     facts.high = high;
     first_low = Vec3(x=1.0e9, y=1.0e9, z=1.0e9);
@@ -186,6 +216,13 @@ def model_family(path: str) -> str {
     }
     if leaf.endswith("_hand") {
         return "hand";
+    }
+    # Quake III keeps its pickups by kind (models/ammo/ holds its rockets
+    # and grenades in flight, which are projectiles).
+    for (kept, family) in [("/powerups/ammo/", "ammo"), ("/powerups/armor/", "armor"), ("/powerups/health/", "health"), ("/powerups/instant/", "powerup"), ("/powerups/holdable/", "powerup")] {
+        if kept in lower {
+            return family;
+        }
     }
     if "/weapons/" in lower or "/weapons2/" in lower or "/objects/flash" in lower {
         if "flash" in leaf or "/flash" in lower {
@@ -369,8 +406,17 @@ def build_shape(family: str, lower: str, seed: int) -> Shaper {
         }
     } elif family == "armor" {
         colour = "green" if ("1" in lower or "shard" in lower or "jacket" in lower or "green" in lower) else ("yellow" if ("2" in lower or "combat" in lower or "yellow" in lower) else "red");
-        shaper.lathe(Frame(at=Vec3(z=-0.5)), [(0.25, 0.0), (0.45, 0.2), (0.5, 0.6), (0.35, 0.95), (0.15, 1.0)], 10, tile_of(colour), 0.6);
-        shaper.ring(Frame(at=Vec3(z=0.42)), 0.3, 0.05, 10, 4, tile_of("darksteel"));
+        if "shard" in lower {
+            shaper.lathe(Frame(at=Vec3(z=-0.5)), [(0.0, 0.0), (0.35, 0.2), (0.3, 0.7), (0.0, 1.0)], 6, tile_of(colour));
+        } else {
+            # A breastplate (wider across the shoulders than deep), its two
+            # shoulder guards and a collar.
+            shaper.lathe(Frame(at=Vec3(z=-0.5)), [(0.2, 0.0), (0.3, 0.15), (0.34, 0.55), (0.3, 0.8), (0.18, 0.9)], 12, tile_of(colour), 0.55);
+            for side in [-1.0, 1.0] {
+                shaper.ball(Frame(at=Vec3(y=side * 0.36, z=0.3)), Vec3(x=0.2, y=0.16, z=0.13), 5, 8, tile_of(colour));
+            }
+            shaper.ring(Frame(at=Vec3(z=0.4)), 0.15, 0.04, 10, 4, tile_of("darksteel"));
+        }
     } elif family == "health" {
         if "mega" in lower or "sphere" in lower or "stim" in lower {
             shaper.ball(Frame(), Vec3(x=0.5, y=0.5, z=0.5), 8, 10, tile_of("white" if "stim" not in lower else "glowblue"));
@@ -471,6 +517,26 @@ def placed_points(points: list[Vec3], low: Vec3, high: Vec3, by_length: bool = F
     ];
 }
 
+"""The shape turned a quarter about its up axis when its long side would
+then lie along the box's long side."""
+def turned_to_fit(points: list[Vec3], low: Vec3, high: Vec3) -> list[Vec3] {
+    if not points {
+        return points;
+    }
+    a = Vec3(x=1.0e9, y=1.0e9, z=1.0e9);
+    b = Vec3(x=-1.0e9, y=-1.0e9, z=-1.0e9);
+    for p in points {
+        a = Vec3(x=min(a.x, p.x), y=min(a.y, p.y), z=min(a.z, p.z));
+        b = Vec3(x=max(b.x, p.x), y=max(b.y, p.y), z=max(b.z, p.z));
+    }
+    shape_long_x = (b.x - a.x) >= (b.y - a.y);
+    box_long_x = (high.x - low.x) >= (high.y - low.y);
+    if shape_long_x == box_long_x {
+        return points;
+    }
+    return [Vec3(x=-p.y, y=p.x, z=p.z) for p in points];
+}
+
 """The shape fitted into the box from `low` to `high` (each axis stretched
 to fill it)."""
 def fitted_points(points: list[Vec3], low: Vec3, high: Vec3) -> list[Vec3] {
@@ -511,10 +577,15 @@ def model_doc(path: str, facts: ModelFacts) -> ModelDoc | None {
     if not shaper.points {
         return None;
     }
-    fitted = placed_points(
-        shaper.points, facts.rest_low if family == "weapon" else facts.first_low,
-        facts.rest_high if family == "weapon" else facts.first_high, family == "weapon"
-    );
+    fitted: list[Vec3] = [];
+    if family in ["armor", "health", "ammo", "powerup", "key"] {
+        fitted = fitted_points(turned_to_fit(shaper.points, facts.first_low, facts.first_high), facts.first_low, facts.first_high);
+    } else {
+        fitted = placed_points(
+            shaper.points, facts.rest_low if family == "weapon" else facts.first_low,
+            facts.rest_high if family == "weapon" else facts.first_high, family == "weapon"
+        );
+    }
     motion = Motion(family=family, count=len(facts.frame_names), names=facts.frame_names, seed=seed);
     doc = ModelDoc(name=path);
     surfaces = facts.surfaces if facts.surfaces else ["model"];
@@ -541,13 +612,20 @@ def model_doc(path: str, facts: ModelFacts) -> ModelDoc | None {
     }
     for name in facts.tags {
         tag = Tag(name=name);
-        # A weapon's muzzle at its front, anything else at its middle.
-        spot = middle;
-        if "flash" in name or "barrel" in name {
-            spot = Vec3(x=facts.first_high.x, y=middle.y, z=middle.z);
+        (origins, axes) = facts.tag_track(name);
+        if len(origins) >= len(facts.frame_names) and origins {
+            tag.origins = origins[:len(facts.frame_names)];
+            tag.axes = axes[:len(facts.frame_names)];
+        } else {
+            # Not known: a weapon's muzzle at its front, anything else at
+            # its middle.
+            spot = middle;
+            if "flash" in name or "barrel" in name {
+                spot = Vec3(x=facts.first_high.x, y=middle.y, z=middle.z);
+            }
+            tag.origins = [spot for frame in range(len(facts.frame_names))];
+            tag.axes = [[Vec3(x=1.0), Vec3(y=1.0), Vec3(z=1.0)] for frame in range(len(facts.frame_names))];
         }
-        tag.origins = [spot for frame in range(len(facts.frame_names))];
-        tag.axes = [[Vec3(x=1.0), Vec3(y=1.0), Vec3(z=1.0)] for frame in range(len(facts.frame_names))];
         doc +>:HasTag:+> tag;
     }
     return doc;

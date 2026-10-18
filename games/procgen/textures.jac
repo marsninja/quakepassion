@@ -15,8 +15,8 @@ sixteen texels tall whatever the texture's size, so the world keeps one
 scale."""
 import math;
 import from games.passion.random { hash_label, mix32 }
-import from .field { Field, lattice }
-import from .image { Picture, Rgb, hex_rgb, filled, along }
+import from .field { Field, lattice, value_noise }
+import from .image { Picture, Rgb, hex_rgb, filled, along, enlarged }
 import from .graph { Recipe, Op }
 import from .families { Families, families_of, choose_family }
 
@@ -661,6 +661,11 @@ def paint_named(name: str, w: int, h: int, game: str, family_hint: str = "") -> 
     if not family {
         family = family_of(leaf if game != "q1" else stem);
     }
+    if game == "q3" and not family_hint and q3_set(stem) == "base" and family in ["stone", "brick", "rock", "ground"] {
+        # Quake III's base sets are an industrial base: their walls and
+        # floors are metal, whatever the name says of where they go.
+        family = "metal";
+    }
     words = [stem];
     if name.startswith("+a") or (len(name) > 1 and name[0] == "+" and name[1] >= "a") {
         words.append("+a");
@@ -690,14 +695,45 @@ def paint_role(path: str, w: int, h: int, role: str) -> Paint {
     stem = lower.rsplit(".", 1)[0];
     seed = hash_label(1, "q3:" + stem);
     group = hash_label(2, "q3:" + stem.rstrip("0123456789_"));
-    v = Variation(w=w, h=h, seed=seed, group=group, words=[stem], game="q3");
-    painted_role = paint_role_with(v, path, stem, w, h, role);
+    # Quake III draws its wall pictures at two texels to a unit where Quake
+    # drew one, and the recipes measure in Quake's texels: such a picture is
+    # painted at half its size and enlarged, with a fine grain over it.
+    halved = lower.startswith("textures/") and w >= 64 and h >= 64 and role != "env";
+    pw = w // 2 if halved else w;
+    ph = h // 2 if halved else h;
+    v = Variation(w=pw, h=ph, seed=seed, group=group, words=[stem], game="q3");
+    painted_role = paint_role_with(v, path, stem, pw, ph, role);
     v.release();
-    return painted_role;
+    if not halved {
+        return painted_role;
+    }
+    big = enlarged(painted_role.picture, w, h);
+    grain = value_noise(w, h, w // 2, h // 2, seed ^ 91);
+    for i in range(w * h) {
+        k = 0.94 + grain.v[i] * 0.12;
+        big.r[i] = min(1.0, big.r[i] * k);
+        big.g[i] = min(1.0, big.g[i] * k);
+        big.b[i] = min(1.0, big.b[i] * k);
+    }
+    return Paint(picture=big);
+}
+
+"""A Quake III texture's set: the word before the underscore of its folder
+(textures/base_wall/... is "base", textures/gothic_block/... "gothic")."""
+def q3_set(stem: str) -> str {
+    parts = stem.split("/");
+    if len(parts) < 3 or parts[0] != "textures" {
+        return "";
+    }
+    return parts[1].split("_")[0];
 }
 
 def:priv paint_role_with(v: Variation, path: str, stem: str, w: int, h: int, role: str) -> Paint {
     if role == "add" {
+        fixture = fixture_of(stem);
+        if fixture {
+            return fixture_glow(fixture, w, h);
+        }
         return glow_paint(v, stem);
     }
     if role == "filter" {
@@ -722,6 +758,17 @@ def:priv paint_role_with(v: Variation, path: str, stem: str, w: int, h: int, rol
         for i in range(w * h) {
             painted.picture.a[i] = 0.0 if holes.v[i] > 0.5 else 1.0;
         }
+    } elif (role == "blend" or role == "unblend") and stem.startswith("textures/") {
+        # A wall picture over a shine or a screen: its frames solid, its
+        # panels' faces letting what is under them show through.
+        r = v.recipe();
+        size = [32.0, 64.0][v.pick(2, "inset")];
+        faces = r.field(r.op("panels", {"rows": float(v.fit(h, size)), "cols": float(v.fit(w, size)), "mortar": 5.0, "bevel": 3.0}));
+        speckle = r.field(r.op("noise", {"cells": float(v.fit(w, 12.0)), "octaves": 3.0, "keep": 0.5}));
+        for i in range(w * h) {
+            solid = 1.0 - faces.v[i] * (0.55 + 0.25 * speckle.v[i]);
+            painted.picture.a[i] = (1.0 - solid) if role == "unblend" else solid;
+        }
     } elif role == "blend" {
         r = v.recipe();
         edge_noise = r.field(r.op("noise", {"cells": 6.0, "octaves": 4.0, "keep": 0.6}));
@@ -735,6 +782,43 @@ def:priv paint_role_with(v: Variation, path: str, stem: str, w: int, h: int, rol
         }
     }
     return painted;
+}
+
+"""The picture a light's glow belongs to: Quake III adds `name.blend`,
+`name.glow`, `name_glow` or `name_glo` over `name` to make its lamps shine;
+"" for anything else."""
+def fixture_of(stem: str) -> str {
+    if not stem.startswith("textures/") {
+        return "";
+    }
+    for ending in [".blend", ".glow", "_glow", "_glo"] {
+        if stem.endswith(ending) and len(stem) > len(ending) + 9 {
+            return stem[:len(stem) - len(ending)];
+        }
+    }
+    return "";
+}
+
+"""A light's glow: its fixture painted again as it is painted for itself,
+kept only where it shines (the lamps a recipe marks, else its brightest
+texels), on black."""
+def:priv fixture_glow(fixture: str, w: int, h: int) -> Paint {
+    lit_up = paint_named(fixture, w, h, "q3");
+    made = Picture(w=w, h=h);
+    picture = lit_up.picture;
+    for i in range(w * h) {
+        shine = 0.0;
+        if len(lit_up.glow) == w * h {
+            shine = lit_up.glow[i];
+        } else {
+            luminance = picture.r[i] * 0.3 + picture.g[i] * 0.59 + picture.b[i] * 0.11;
+            shine = max(0.0, min(1.0, (luminance - 0.5) / 0.3));
+        }
+        made.r[i] = min(1.0, picture.r[i] * shine * 1.3);
+        made.g[i] = min(1.0, picture.g[i] * shine * 1.3);
+        made.b[i] = min(1.0, picture.b[i] * shine * 1.3);
+    }
+    return Paint(picture=made);
 }
 
 """Something that glows, on black: a flame, a flare, a beam or a lamp's

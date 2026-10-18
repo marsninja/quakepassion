@@ -709,7 +709,10 @@ def player_part_doc(path: str, part_name: str, facts: ModelFacts, ranges: list[t
         if part_name == "upper" {
             points = in_frame(points, hips_frame);
         } elif part_name == "head" and head is not None {
-            points = in_frame(points, head.world);
+            # A bone grows down its frame (limbs hang); the head stands up
+            # from the neck its tag is at, so it is turned half about its
+            # forward axis.
+            points = [Vec3(x=p.x, y=-p.y, z=-p.z) for p in in_frame(points, head.world)];
         }
         scaled: list[Vec3] = [];
         for p in points {

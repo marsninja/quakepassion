@@ -287,6 +287,19 @@ impl App.host_command(args: list[str]) {
         } else {
             self.shell.print("noclip OFF" if self.walking else "noclip ON");
         }
+    } elif name == "setviewpos" {
+        # Q3's Cmd_SetViewpos_f: the feet at x y z, turned to yaw; pitch
+        # (down positive, as Q3 reads it) is QuakePassion's own addition.
+        if len(args) < 4 {
+            self.shell.print("setviewpos <x> <y> <z> [yaw] [pitch]");
+            return;
+        }
+        self.player.pos = Vec3(x=float(args[1]), y=float(args[2]), z=float(args[3]) + self.level.collision.eye_height);
+        self.player.yaw = math.radians(float(args[4])) if len(args) > 4 else self.player.yaw;
+        self.player.pitch = -math.radians(float(args[5])) if len(args) > 5 else 0.0;
+        self.player.velocity = Vec3();
+        self.player.tick_pose.settle();
+        move_to_area(self.player, self.level.areas[self.level.locate(self.player.pos)]);
     } elif name == "say" {
         # g_cmds.c Cmd_Say_f: the line goes to everyone, the bots included
         # (they may answer it).

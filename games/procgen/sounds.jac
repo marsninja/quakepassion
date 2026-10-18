@@ -474,6 +474,8 @@ def make_sound(path: str, seconds: float, rate: int, loops: bool, game: str) -> 
     } else {
         made = interface(tone);
     }
+    (tilt, level) = q3_calibration(family) if game == "q3" else (0.0, 0.0);
+    made = tilted(made, tilt);
     if loops {
         # Made a little long, then its tail faded into its head.
         fade = min(0.25, tone.seconds * 0.2);
@@ -481,5 +483,46 @@ def make_sound(path: str, seconds: float, rate: int, loops: bool, game: str) -> 
     } else {
         made = fitted(made, tone.seconds);
     }
-    return peaked(made, 0.9);
+    return peaked(made, 0.9 * math.pow(10.0, level / 20.0));
+}
+
+"""How each family of Quake III's sounds is coloured and how loud it is,
+against the game's own: a tilt (above 0 darker, a one-pole low-pass keeping
+1 - tilt of each step; below 0 brighter, each sample less -tilt of the one
+before) and a level in decibels below full. Each was found by matching the
+median brightness and loudness of every generated sound of the family to the
+median of the game's sounds of that family (none fitted to a single sound);
+a family the game plays louder than its generated sounds can go is left at
+full level."""
+def q3_calibration(family: str) -> tuple[float, float] {
+    table: dict[str, tuple[float, float]] = {
+        "ambient": (-0.85, -4.3), "button": (0.937, -4.9), "creature": (-0.25, -3.1), "gore": (-0.8, 0.0),
+        "gunshot": (0.736, 0.0), "interface": (0.97, 0.0), "launch": (-0.8, 0.0), "lightning": (-0.75, 0.0),
+        "mover": (-0.35, -2.5), "pickup": (0.803, -3.2), "step": (-0.55, -12.1), "teleport": (0.903, -2.2),
+        "water": (0.97, -1.8)
+    };
+    return table.get(family, (0.0, 0.0));
+}
+
+"""A sound made darker (tilt above 0) or brighter (below 0)."""
+def tilted(source: Wave, tilt: float) -> Wave {
+    if abs(tilt) < 1.0e-6 or not source.samples {
+        return source;
+    }
+    made: list[float] = [0.0] * len(source.samples);
+    if tilt > 0.0 {
+        keep = 1.0 - tilt;
+        held = 0.0;
+        for (i, sample) in enumerate(source.samples) {
+            held += keep * (sample - held);
+            made[i] = held;
+        }
+    } else {
+        before = 0.0;
+        for (i, sample) in enumerate(source.samples) {
+            made[i] = sample + tilt * before;
+            before = sample;
+        }
+    }
+    return Wave(rate=source.rate, samples=made);
 }

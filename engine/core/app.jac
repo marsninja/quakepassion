@@ -213,6 +213,7 @@ glob HOST_COMMANDS: list[tuple[str, str, str]] = [
     ("quit", "quit", "leave QuakePassion"),
     ("god", "god", "toggle god mode"),
     ("noclip", "noclip", "toggle flying through walls"),
+    ("setviewpos", "setviewpos <x> <y> <z> [yaw] [pitch]", "move the player there, looking that way (degrees)"),
     ("give", "give <item> [count]", "give all, health, weapons, ammo, armor or an item"),
     ("say", "say <text>", "say something to everyone in the match"),
     ("kill", "kill", "suicide"),
