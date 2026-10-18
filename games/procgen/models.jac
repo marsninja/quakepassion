@@ -424,7 +424,16 @@ def build_shape(family: str, lower: str, seed: int) -> Shaper {
         shaper.box(Frame(), Vec3(x=0.25, y=0.25, z=0.8), tile_of("red"));
         shaper.box(Frame(), Vec3(x=0.8, y=0.25, z=0.25), tile_of("red"));
     } elif family == "ammo" {
-        shaper.box(Frame(), Vec3(x=1.0, y=0.7, z=0.6), tile_of(["darksteel", "wood", "green", "brass"][pick]));
+        # Coloured by what it feeds, as the games colour their ammunition.
+        material = ["darksteel", "wood", "green", "brass"][pick];
+        for (words, kind) in [(["machinegun", "bullet"], "yellow"), (["shotgun", "shell"], "brass"), (["rocket"], "red"), (["plasma", "cell"], "blue"), (["lightning"], "white"), (["rail", "slug"], "green"), (["grenade"], "green"), (["bfg"], "glowblue"), (["nail"], "steel")] {
+            for word in words {
+                if word in lower {
+                    material = kind;
+                }
+            }
+        }
+        shaper.box(Frame(), Vec3(x=1.0, y=0.7, z=0.6), tile_of(material));
         shaper.box(Frame(at=Vec3(z=0.32)), Vec3(x=0.8, y=0.5, z=0.06), tile_of("steel"));
     } elif family == "key" {
         if "card" in lower or "pass" in lower or "cd" in lower {
@@ -454,8 +463,11 @@ def build_shape(family: str, lower: str, seed: int) -> Shaper {
             shaper.lathe(Frame(at=Vec3(z=-0.5)), [(0.0, 0.0), (0.35, 0.15), (0.4, 0.5), (0.3, 0.85), (0.0, 1.0)], 8, tile_of(["glow", "glowblue", "brass", "green"][pick]));
         }
     } elif family == "flash" {
-        # A muzzle flash: a burst of glow along +x.
-        shaper.lathe(Frame(x=Vec3(y=1.0), y=Vec3(z=1.0), z=Vec3(x=1.0)), [(0.0, 0.0), (0.4, 0.15), (0.25, 0.6), (0.0, 1.0)], 8, tile_of("glow"));
+        # A muzzle flash: a star of glow across the muzzle (two crossed
+        # blades and a disc), a little deep along +x.
+        shaper.box(Frame(), Vec3(x=0.15, y=1.0, z=0.18), tile_of("glow"));
+        shaper.box(Frame(), Vec3(x=0.15, y=0.18, z=1.0), tile_of("glow"));
+        shaper.lathe(Frame(x=Vec3(y=1.0), y=Vec3(z=1.0), z=Vec3(x=1.0)), [(0.0, -0.1), (0.35, 0.0), (0.2, 0.3), (0.0, 0.5)], 10, tile_of("glow"));
     } elif family == "hand" {
         # Nothing to see: where a weapon hangs, by its tags.
         shaper.ball(Frame(), Vec3(x=0.01, y=0.01, z=0.01), 2, 3, tile_of("rubber"));
@@ -578,7 +590,7 @@ def model_doc(path: str, facts: ModelFacts) -> ModelDoc | None {
         return None;
     }
     fitted: list[Vec3] = [];
-    if family in ["armor", "health", "ammo", "powerup", "key"] {
+    if family in ["armor", "health", "ammo", "powerup", "key", "flash", "explosion"] {
         fitted = fitted_points(turned_to_fit(shaper.points, facts.first_low, facts.first_high), facts.first_low, facts.first_high);
     } else {
         fitted = placed_points(

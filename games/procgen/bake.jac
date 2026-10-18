@@ -137,10 +137,16 @@ def player_doc(context: BakeContext, slot: AssetSlot) -> ModelDoc | None {
     return player_part_doc(slot.name, part, facts, ranges, legs_facts.first_low, legs_facts.first_high);
 }
 
-"""A model's skin: the material atlas, graded part way toward the tone of
+"""A model's skin: the material atlas, a creature's graded part way toward the tone of
 the game's own skins."""
 def skin_atlas(name: str, w: int, h: int, game: str) -> Picture {
-    return graded(material_atlas(name, w, h, game), family_tone(game, "skin"), 0.85);
+    atlas = material_atlas(name, w, h, game);
+    if model_family(name) != "character" {
+        # Pickups and weapons keep their colours (the games colour them by
+        # kind); only creatures are toned to the game's own.
+        return atlas;
+    }
+    return graded(atlas, family_tone(game, "skin"), 0.85);
 }
 
 """A wall picture graded to the tone of its family in the game's own."""

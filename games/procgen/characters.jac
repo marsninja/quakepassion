@@ -472,10 +472,11 @@ def body_mesh(body: Body, lift: float, whole_pitch: float, whole_roll: float, ar
         # The limb runs from the joint down the bone's -z.
         flipped = Frame(at=frame.at, x=frame.x, y=frame.y.scale(-1.0), z=frame.z.scale(-1.0));
         segments = 8 if b.name in ["torso", "head", "spine", "hips"] else 6;
+        depth = body_depth(b.name);
         shaper.lathe(
             flipped,
-            [(b.radius * 0.6, -b.radius * 0.4), (b.radius, 0.0), (b.tip_radius, b.length), (b.tip_radius * 0.6, b.length + b.tip_radius * 0.4)],
-            segments, tile_of(b.material)
+            [(b.radius * 0.6 * depth, -b.radius * 0.4), (b.radius * depth, 0.0), (b.tip_radius * depth, b.length), (b.tip_radius * 0.6 * depth, b.length + b.tip_radius * 0.4)],
+            segments, tile_of(b.material), 1.0 / depth
         );
         if b.name == "head" {
             # Eyes, glowing.
@@ -509,12 +510,29 @@ first frame: as tall as it, its feet on its floor, centred on it."""
 def fit_to(points: list[Vec3], rest_low: Vec3, rest_high: Vec3, low: Vec3, high: Vec3) -> list[Vec3] {
     height = max(1.0e-4, rest_high.z - rest_low.z);
     scale = (high.z - low.z) / height;
+    # Each way across as far as the original's box reaches, but never
+    # more than 1.8 times (or less than 0.6 of) the height's scale: a
+    # weapon held out at arm's length should not stretch the body.
+    sx = max(scale * 0.6, min(scale * 1.8, (high.x - low.x) / max(1.0e-4, rest_high.x - rest_low.x)));
+    sy = max(scale * 0.6, min(scale * 1.8, (high.y - low.y) / max(1.0e-4, rest_high.y - rest_low.y)));
     rest_mid = rest_low.add(rest_high).scale(0.5);
     mid = low.add(high).scale(0.5);
     return [
-        Vec3(x=mid.x + (p.x - rest_mid.x) * scale, y=mid.y + (p.y - rest_mid.y) * scale, z=low.z + (p.z - rest_low.z) * scale)
+        Vec3(x=mid.x + (p.x - rest_mid.x) * sx, y=mid.y + (p.y - rest_mid.y) * sy, z=low.z + (p.z - rest_low.z) * scale)
         for p in points
     ];
+}
+
+"""How deep a bone's flesh is from front to back, against its width: a
+torso or a head is shallower than it is wide; a limb is round."""
+def body_depth(name: str) -> float {
+    if name == "torso" or name == "spine" {
+        return 0.65;
+    }
+    if name == "head" {
+        return 0.85;
+    }
+    return 1.0;
 }
 
 def:priv bounds_of(points: list[Vec3]) -> tuple[Vec3, Vec3] {
@@ -647,10 +665,11 @@ def part_mesh(body: Body, names: list[str], armed: bool) -> Shaper {
             continue;
         }
         flipped = Frame(at=b.world.at, x=b.world.x, y=b.world.y.scale(-1.0), z=b.world.z.scale(-1.0));
+        depth = body_depth(b.name);
         shaper.lathe(
             flipped,
-            [(b.radius * 0.6, -b.radius * 0.4), (b.radius, 0.0), (b.tip_radius, b.length), (b.tip_radius * 0.6, b.length + b.tip_radius * 0.4)],
-            8 if b.name in ["torso", "head"] else 6, tile_of(b.material)
+            [(b.radius * 0.6 * depth, -b.radius * 0.4), (b.radius * depth, 0.0), (b.tip_radius * depth, b.length), (b.tip_radius * 0.6 * depth, b.length + b.tip_radius * 0.4)],
+            8 if b.name in ["torso", "head"] else 6, tile_of(b.material), 1.0 / depth
         );
         if b.name == "head" {
             for side in [1.0, -1.0] {

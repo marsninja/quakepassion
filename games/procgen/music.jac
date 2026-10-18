@@ -144,7 +144,7 @@ def score_for(name: str, game: str, seconds: float, rate: int) -> Score {
     seed = hash_label(13, game + ":" + name.lower());
     scales = ["phrygian", "minor", "locrian"] if game == "q1" else (["minor", "phrygian", "harmonic"] if game == "q2" else ["minor", "dorian", "harmonic"]);
     scale = SCALES[scales[mix32(seed) % len(scales)]];
-    tempo = [60.0, 72.0, 80.0][mix32(seed + 1) % 3] if game == "q1" else ([126.0, 138.0, 148.0][mix32(seed + 1) % 3] if game == "q2" else [104.0, 112.0, 124.0][mix32(seed + 1) % 3]);
+    tempo = [60.0, 72.0, 80.0][mix32(seed + 1) % 3] if game == "q1" else ([126.0, 138.0, 148.0][mix32(seed + 1) % 3] if game == "q2" else [140.0, 150.0, 160.0][mix32(seed + 1) % 3]);
     tonic = 33 + mix32(seed + 2) % 12;
     bar = 240.0 / tempo;
     bars = max(4, int(seconds / bar));
@@ -179,13 +179,40 @@ def:priv dark_ambient(score: Score, mix: Mix) {
     for b in range(score.bars) {
         chord = score.chords[b % len(score.chords)];
         start = float(b) * bar;
-        for (degree, octave, gain) in [(0, 0, 0.35), (4, 0, 0.18), (0, 1, 0.12)] {
+        for (degree, octave, gain) in [(0, 0, 0.16), (4, 0, 0.06)] {
             pad = Voice(
                 wave="saw", pitch=hertz(score.note(chord, degree, octave)), vibrato_depth=0.003, vibrato_rate=0.3,
                 attack=bar * 0.4, sustain=bar * 0.5, decay=bar * 0.6, lowpass=300.0 + 400.0 * score.unit("lp", b),
                 resonance=0.3, volume=1.0, seed=score.seed + b * 7 + degree
             );
             mix.add_wrapped(render(pad, score.rate), start, gain);
+        }
+        # The ground: a sub drone on the chord's root, and a roar of noise
+        # tuned by a resonant filter to it (Quake's tracks are mostly low
+        # rumble, little of them a clear note).
+        sub = Voice(wave="sine", pitch=hertz(score.note(chord, 0, -1)), vibrato_depth=0.002, vibrato_rate=0.2, attack=bar * 0.3, sustain=bar * 0.6, decay=bar * 0.5, volume=1.0, seed=score.seed + b);
+        mix.add_wrapped(render(sub, score.rate), start, 0.28);
+        roar = Voice(wave="pink", pitch=100.0, attack=bar * 0.3, sustain=bar * 0.6, decay=bar * 0.5, lowpass=hertz(score.note(chord, 0, 1)) * 2.0, resonance=0.7, volume=1.0, seed=score.seed + b * 3);
+        mix.add_wrapped(render(roar, score.rate), start, 0.3);
+        # Things happening in the dark, two or three a second: metal
+        # scraped, struck far off, a breath of air, a creak.
+        events = 4 + int(score.unit("events", b) * 8.0);
+        for e in range(events) {
+            at = start + bar * score.unit("at" + str(e), b);
+            kind = int(score.unit("kind" + str(e), b) * 4.0);
+            seed2 = score.seed + b * 31 + e;
+            if kind == 0 {
+                scrape = Voice(wave="noise", pitch=60.0 + 200.0 * score.unit("sp" + str(e), b), attack=0.05, sustain=0.2, decay=0.4, lowpass=1800.0, resonance=0.6, volume=1.0, seed=seed2);
+                mix.add_wrapped(render(scrape, score.rate), at, 0.3);
+            } elif kind == 1 {
+                mix.add_wrapped(muffled(clang(score.rate, seed2, 80.0 + 300.0 * score.unit("cp" + str(e), b)), 900.0), at, 0.45);
+            } elif kind == 2 {
+                breath = Voice(wave="pink", pitch=100.0, attack=0.3, sustain=0.2, decay=0.5, lowpass=700.0, lowpass_sweep=1.0, volume=1.0, seed=seed2);
+                mix.add_wrapped(render(breath, score.rate), at, 0.3);
+            } else {
+                creak = Voice(wave="saw", pitch=40.0 + 60.0 * score.unit("kp" + str(e), b), slide=0.5, vibrato_depth=0.05, vibrato_rate=9.0, attack=0.02, sustain=0.15, decay=0.2, lowpass=900.0, volume=1.0, seed=seed2);
+                mix.add_wrapped(render(creak, score.rate), at, 0.25);
+            }
         }
         if score.unit("clang", b) < 0.5 {
             mix.add_wrapped(clang(score.rate, score.seed + b, hertz(score.note(chord, 2, 2))), start + bar * score.unit("clangat", b), 0.25);
@@ -231,13 +258,22 @@ def:priv industrial_metal(score: Score, mix: Mix) {
             bass = Voice(wave="saw", pitch=base * 0.5, attack=0.0, sustain=eighth * 0.6, decay=eighth * 0.3, lowpass=500.0, volume=1.0, seed=score.seed + k);
             mix.add_wrapped(render(bass, score.rate), at, 0.25);
         }
+        # A wall under the riff: the chord held on a distorted saw, so the
+        # mix never drops out between the chugs (the game's own keep a
+        # steady roar).
+        held = Voice(wave="saw", pitch=hertz(score.note(chord, 0, 1)), vibrato_depth=0.004, vibrato_rate=4.0, attack=0.05, sustain=bar * 0.9, decay=0.1, lowpass=2800.0, volume=1.0, seed=score.seed + b);
+        held5 = Voice(wave="saw", pitch=hertz(score.note(chord, 0, 1)) * 1.4983, vibrato_depth=0.004, vibrato_rate=4.3, attack=0.05, sustain=bar * 0.9, decay=0.1, lowpass=2800.0, volume=1.0, seed=score.seed + b + 9);
+        mix.add_wrapped(driven(layered([render(held, score.rate), render(held5, score.rate)], [1.0, 0.8], [0.0, 0.0], score.rate), 9.0), start, 0.12);
+        for k in range(16) {
+            mix.add_wrapped(hat(score.rate, score.seed + k * 5 + b, False), start + float(k) * eighth * 0.5, 0.25);
+        }
         for k in range(8) {
             at = start + float(k) * eighth;
             if k % 4 == 0 or (k == 7 and b % 2 == 1) {
-                mix.add_wrapped(kick(score.rate, score.seed + k), at, 0.7);
+                mix.add_wrapped(kick(score.rate, score.seed + k), at, 0.5);
             }
             if k % 4 == 2 {
-                mix.add_wrapped(snare(score.rate, score.seed + k + b), at, 0.5);
+                mix.add_wrapped(snare(score.rate, score.seed + k + b), at, 0.75);
             }
             mix.add_wrapped(hat(score.rate, score.seed + k * 3 + b, k % 2 == 1 and b % 4 == 3), at, 0.4);
         }
@@ -254,12 +290,16 @@ def:priv electronic(score: Score, mix: Mix) {
         start = float(b) * bar;
         for degree in [0, 2, 4] {
             pad = Voice(wave="saw", pitch=hertz(score.note(chord, degree, 1)), vibrato_depth=0.004, vibrato_rate=5.0, attack=bar * 0.2, sustain=bar * 0.7, decay=bar * 0.3, lowpass=1400.0, resonance=0.2, volume=1.0, seed=score.seed + degree + b);
-            mix.add_wrapped(render(pad, score.rate), start, 0.12);
+            mix.add_wrapped(render(pad, score.rate), start, 0.07);
         }
         for k in range(16) {
             degree = [0, 2, 4, 7, 4, 2, 0, 4][k % 8];
             arp = Voice(wave="square", pitch=hertz(score.note(chord, degree, 2)), duty=0.3, attack=0.002, sustain=sixteenth * 0.4, decay=sixteenth * 0.8, lowpass=2500.0 + 1500.0 * math.sin(float(b * 16 + k) * 0.1), volume=1.0, seed=score.seed + k);
-            mix.add_wrapped(render(arp, score.rate), start + float(k) * sixteenth, 0.08 if b >= 2 else 0.0);
+            mix.add_wrapped(render(arp, score.rate), start + float(k) * sixteenth, 0.05 if b >= 2 else 0.0);
+            if k % 2 == 1 {
+                # A noisy sixteenth: a shaker of filtered noise.
+                mix.add_wrapped(hat(score.rate, score.seed + k * 7 + b, False), start + float(k) * sixteenth, 0.18);
+            }
         }
         for beat in range(4) {
             at = start + float(beat) * score.beat();

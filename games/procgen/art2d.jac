@@ -565,6 +565,12 @@ def picture_2d(name: str, w: int, h: int, game: str) -> Picture | None {
     if "/medals/" in lower {
         return medal(stem, w, h);
     }
+    if game == "q3" and lower.startswith("menu/art/") {
+        drawn_menu = menu_art(stem, w, h);
+        if drawn_menu is not None {
+            return drawn_menu;
+        }
+    }
     if stem == "conchars" or stem == "bigchars" {
         return font_sheet(w, h, game);
     }
@@ -893,4 +899,102 @@ def medal(stem: str, w: int, h: int) -> Picture {
         disc(mask, cx, cy, s * 0.18);
     }
     return cast(mask, Look(ramp=ramp_text(ramp), depth=2.5));
+}
+
+
+"""Quake III's menu pieces by their names: round buttons with their word
+(`_1` lit), arrows, frames and arcs, sliders and their knob, switches,
+colour swatches, the skill marks and the cursor; None for the rest (titles
+and logos stay plaques)."""
+def menu_art(stem: str, w: int, h: int) -> Picture | None {
+    mask = Field(w=w, h=h);
+    s = float(min(w, h));
+    fw = float(w);
+    fh = float(h);
+    cx = fw * 0.5;
+    cy = fh * 0.5;
+    lit = stem.endswith("_1") or stem.endswith("_on") or stem.endswith("selected") or stem.endswith("_left") or stem.endswith("_right") or stem.endswith("_top") or stem.endswith("_bot") or stem.endswith("_l") and "frame" not in stem;
+    red = "3b0303,8b0b0b,e32b1b,ffbbab";
+    chrome = "2b2b33,6b6b7b,c3c3d3,ffffff";
+    gold = "3b2b00,9b7b0b,f3cb2b,ffffbb";
+    buttons = ["accept", "back", "create", "delete", "fight", "load", "menu", "model", "next", "play", "refresh", "replay", "reset", "save", "skirmish", "specify"];
+    word = stem.rsplit("_", 1)[0] if "_" in stem else stem;
+    if word in buttons {
+        # A red ball with a chrome rim, its word across it.
+        disc(mask, cx, cy, s * 0.46);
+        face = cast(mask, Look(ramp=ramp_text(red if lit else "2b0303,6b0b0b,b31b13,e38b7b"), depth=3.0));
+        rim = Field(w=w, h=h);
+        ring2 = Field(w=w, h=h);
+        disc(ring2, cx, cy, s * 0.48);
+        inner = Field(w=w, h=h);
+        disc(inner, cx, cy, s * 0.42);
+        rim = carved(ring2, inner);
+        lettering = text_mask(word.upper(), w, h, 0.62);
+        laid = laid_over(face, cast(rim, Look(ramp=ramp_text(chrome), depth=2.0)));
+        return laid_over(laid, cast(lettering, Look(ramp=ramp_text(gold if lit else "2b2300,7b630b,c3a32b,f3e3ab"), depth=1.5, soft=0)));
+    }
+    if "arrow" in stem {
+        vertical = "vert" in stem;
+        for side in [-1.0, 1.0] {
+            if vertical {
+                polygon(mask, [(cx - s * 0.25, cy + side * s * 0.08), (cx + s * 0.25, cy + side * s * 0.08), (cx, cy + side * s * 0.42)]);
+            } else {
+                polygon(mask, [(cx + side * s * 0.08, cy - s * 0.25), (cx + side * s * 0.08, cy + s * 0.25), (cx + side * fw * 0.45, cy)]);
+            }
+        }
+        return cast(mask, Look(ramp=ramp_text(red if lit else chrome), depth=2.5));
+    }
+    if stem.startswith("narrow") {
+        polygon(mask, [(fw * 0.05, cy), (fw * 0.95, fh * 0.1), (fw * 0.8, cy), (fw * 0.95, fh * 0.9)]);
+        return cast(mask, Look(ramp=ramp_text(red if lit else "2b0303,6b0b0b,b31b13,e38b7b"), depth=2.5));
+    }
+    if "frame" in stem {
+        # An arc of chrome round the menu's middle.
+        ring2 = Field(w=w, h=h);
+        inner = Field(w=w, h=h);
+        if stem.endswith("_l") {
+            disc(ring2, fw * 1.0, cy, fw * 0.98);
+            disc(inner, fw * 1.0, cy, fw * 0.9);
+        } elif stem.endswith("_r") {
+            disc(ring2, 0.0, cy, fw * 0.98);
+            disc(inner, 0.0, cy, fw * 0.9);
+        } else {
+            disc(ring2, cx, cy, s * 0.48);
+            disc(inner, cx, cy, s * 0.44);
+        }
+        return cast(carved(ring2, inner), Look(ramp=ramp_text("2b1b13,7b4b33,c38b6b,ffdbbb"), depth=2.0));
+    }
+    if stem.startswith("slider") and "butt" not in stem {
+        box(mask, fw * 0.02, cy - fh * 0.2, fw * 0.98, cy + fh * 0.2, fh * 0.1);
+        return cast(mask, Look(ramp=ramp_text(chrome), depth=2.0));
+    }
+    if "sliderbutt" in stem or stem.startswith("switch") {
+        disc(mask, cx, cy, s * 0.4);
+        return cast(mask, Look(ramp=ramp_text(("0b2b03,1b7b0b,4bd33b,cbffbb" if stem.endswith("on") else red) if stem.startswith("switch") else (gold if lit else chrome)), depth=2.5));
+    }
+    if stem.startswith("fx_") {
+        colours = {"blue": "03133b,0b3b9b,2b6bf3,bbcbff", "cyan": "033b3b,0b8b9b,3bdbf3,cbffff", "grn": "032b03,0b6b0b,2bb32b,bbffbb", "red": red, "teal": "032b2b,0b6b5b,2bb39b,bbffeb", "white": chrome, "yel": "3b3300,9b8b00,f3e300,ffffab", "base": chrome};
+        disc(mask, cx, cy, s * 0.4);
+        return cast(mask, Look(ramp=ramp_text(colours.get(stem[3:], chrome)), depth=2.0));
+    }
+    if stem.startswith("skill") {
+        # A skill: as many marks as its number.
+        count = int(stem[-1]) if stem[-1].isdigit() else 1;
+        for k in range(count) {
+            x = fw * (0.5 + (float(k) - float(count - 1) * 0.5) * 0.18);
+            disc(mask, x, cy, s * 0.07);
+        }
+        return cast(mask, Look(ramp=ramp_text(red), depth=2.0));
+    }
+    if "cursor" in stem {
+        polygon(mask, [(fw * 0.1, fh * 0.1), (fw * 0.9, fh * 0.5), (fw * 0.5, fh * 0.6), (fw * 0.35, fh * 0.95)]);
+        return cast(mask, Look(ramp=ramp_text(gold), depth=2.0));
+    }
+    if stem.endswith("_select") or stem.endswith("_selected") {
+        box(mask, fw * 0.02, fh * 0.02, fw * 0.98, fh * 0.98, s * 0.06);
+        inner2 = Field(w=w, h=h);
+        box(inner2, fw * 0.07, fh * 0.07, fw * 0.93, fh * 0.93, s * 0.04);
+        return cast(carved(mask, inner2), Look(ramp=ramp_text(gold if lit else red), depth=2.0));
+    }
+    return None;
 }
