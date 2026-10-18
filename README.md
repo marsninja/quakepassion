@@ -18,6 +18,7 @@ Quake (and games in general) is the thing that got me into programming. This pro
 - **Quake II**: the full campaign, 39 maps across its units, with hub returns, the help computer, cinematics, the monster roster and the final bosses.
 - **Quake III Arena**: the single-player ladder from `arenas.txt`: free-for-all matches against botlib-driven bots (AAS routing, fuzzy item and weapon weights, chat), scoring, awards and the podium.
 - **Passion**: a fourth mode of endless seeded runs: real three-dimensional levels built from all three games' assets and measured against the originals, each level's way out leading on to the next, made while the last is played. See [docs/passion.md](docs/passion.md).
+- **Generated assets**: a setting (Settings, "Generated assets", or `QP_GENERATED=1`) under which every texture, sky, palette, font, HUD picture, sprite, model, monster, sound, voice, music track and film of all three games is made by code instead of read from their archives; only the levels' geometry and the games' scripts are kept. See [docs/generated-assets-status.md](docs/generated-assets-status.md).
 
 Save/load, per-game key bindings, the console and settings work in all modes. An editing studio is being built into the engine ([docs/studio-status.md](docs/studio-status.md)). Network multiplayer and mods are out of scope. Known gaps are tracked per area in [docs/](docs/README.md).
 

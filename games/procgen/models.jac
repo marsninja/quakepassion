@@ -87,6 +87,18 @@ def read_model_facts(data: bytes, kind: str, palette: bytes) -> ModelFacts | Non
     } except Exception {
         return None;
     }
+    if kind == "md3" and not model.surfaces and model.tags {
+        # A model of tags alone (a player's hand, where a weapon hangs).
+        held = ModelFacts(kind=kind, frame_names=["frame " + str(k) for k in range(len(model.tags))]);
+        held.tags = [tag.name for tag in model.tags[0].tags];
+        held.low = Vec3(x=-1.0, y=-1.0, z=-1.0);
+        held.high = Vec3(x=1.0, y=1.0, z=1.0);
+        held.first_low = held.low;
+        held.first_high = held.high;
+        held.rest_low = held.low;
+        held.rest_high = held.high;
+        return held;
+    }
     if not model.surfaces or not model.surfaces[0].frames {
         return None;
     }
@@ -172,8 +184,11 @@ def model_family(path: str) -> str {
             return "weapon";
         }
     }
-    if "/weapons/" in lower or "/weapons2/" in lower {
-        if "flash" in leaf {
+    if leaf.endswith("_hand") {
+        return "hand";
+    }
+    if "/weapons/" in lower or "/weapons2/" in lower or "/objects/flash" in lower {
+        if "flash" in leaf or "/flash" in lower {
             return "flash";
         }
         return "weapon";
@@ -392,6 +407,12 @@ def build_shape(family: str, lower: str, seed: int) -> Shaper {
         } else {
             shaper.lathe(Frame(at=Vec3(z=-0.5)), [(0.0, 0.0), (0.35, 0.15), (0.4, 0.5), (0.3, 0.85), (0.0, 1.0)], 8, tile_of(["glow", "glowblue", "brass", "green"][pick]));
         }
+    } elif family == "flash" {
+        # A muzzle flash: a burst of glow along +x.
+        shaper.lathe(Frame(x=Vec3(y=1.0), y=Vec3(z=1.0), z=Vec3(x=1.0)), [(0.0, 0.0), (0.4, 0.15), (0.25, 0.6), (0.0, 1.0)], 8, tile_of("glow"));
+    } elif family == "hand" {
+        # Nothing to see: where a weapon hangs, by its tags.
+        shaper.ball(Frame(), Vec3(x=0.01, y=0.01, z=0.01), 2, 3, tile_of("rubber"));
     } elif family == "flame" {
         shaper.lathe(Frame(at=Vec3(z=-0.5)), [(0.0, 0.0), (0.35, 0.15), (0.3, 0.45), (0.15, 0.75), (0.0, 1.0)], 8, tile_of("glow"));
     } elif family == "explosion" {

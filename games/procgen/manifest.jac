@@ -19,6 +19,8 @@ import from engine.formats.q2.bsp { texture_names }
 import from engine.formats.q1.wad { wad_lumps }
 import from editor.formats.image { image_size }
 import from .models { ModelFacts, read_model_facts }
+import from engine.formats.q1.sprite { parse_spr }
+import from engine.formats.q2.sprite { parse_sp2 }
 
 node Manifest {
     has game: str,
@@ -90,6 +92,10 @@ def slot_kind(name: str, game: str) -> str {
     }
     if extension in [".tga", ".jpg", ".jpeg", ".png"] {
         return "image";
+    }
+    # pop.lmp is a few bytes of data the games check for, not a picture.
+    if lower.endswith("pop.lmp") {
+        return "other";
     }
     kinds = {
         ".wal": "wal",
@@ -452,6 +458,23 @@ def build_manifest(game: str, pack: str, path: str) -> Manifest {
         }
         if kind == "text" and (name.lower().endswith("animation.cfg") or name.lower().endswith(".skin")) {
             slot.notes["text"] = library.read(name).decode("latin-1");
+        }
+        if kind == "spr" and len(palette) == 768 {
+            # A Quake sprite's header and each frame's size and pivot.
+            sprite_data = library.read(name);
+            listed_frames: list[str] = [];
+            for image in parse_spr(sprite_data, palette, name) {
+                listed_frames.append(str(image.frame.width) + "," + str(image.frame.height) + "," + str(image.frame.origin_x) + "," + str(image.frame.origin_y));
+            }
+            slot.notes["frames"] = ";".join(listed_frames);
+            slot.notes["header"] = sprite_data[:36].hex();
+        }
+        if kind == "sp2" {
+            listed_sp2: list[str] = [];
+            for frame in parse_sp2(library.read(name)) {
+                listed_sp2.append(str(frame.width) + "," + str(frame.height) + "," + str(frame.origin_x) + "," + str(frame.origin_y) + "," + frame.image);
+            }
+            slot.notes["frames"] = ";".join(listed_sp2);
         }
         if kind == "wad" {
             # A WAD's lumps: each one's name, kind and (for a picture) size.

@@ -206,13 +206,15 @@ def build_body(path: str, seed: int) -> Body {
     leg_len = 0.45 if plan != "flyer" else 0.2;
     hips = bone("hips", Vec3(), 0.0, 0.0, 0.0, skin);
     torso = bone("torso", Vec3(), 0.5, 0.15 * bulk, 0.19 * bulk, armour);
-    torso.pitch = 180.0;
+    # Turned up by a roll, not a pitch, so it still faces +x as the games'
+    # models do.
+    torso.roll = 180.0;
     hips +>:Child:+> torso;
     neck_up = bone("head", Vec3(z=-0.5), 0.2 + 0.03 * bulk, 0.1 + 0.02 * bulk, 0.08, skin);
     torso +>:Child:+> neck_up;
     for (side, sign) in [("l", 1.0), ("r", -1.0)] {
         upper_arm = bone("arm_" + side, Vec3(z=-0.45, y=(0.2 * bulk + 0.04) * sign), 0.28 * (1.0 + 0.3 * (bulk - 1.0)), 0.06 * bulk, 0.05 * bulk, armour);
-        upper_arm.pitch = 180.0;
+        upper_arm.roll = 180.0;
         torso +>:Child:+> upper_arm;
         fore_arm = bone("fore_" + side, Vec3(z=-0.28 * (1.0 + 0.3 * (bulk - 1.0))), 0.27 * (1.0 + 0.4 * (bulk - 1.0)), 0.05 * bulk, 0.045 * bulk, skin);
         upper_arm +>:Child:+> fore_arm;
@@ -282,9 +284,12 @@ def pose_bones(body: Body, kind: str, t: float, seed: int) -> tuple[float, float
         b.yaw = 0.0;
     }
     # The rest angles each plan's builder set: limbs hang, torsos point up.
-    rest: dict[str, float] = {"torso": 180.0, "arm_l": 180.0, "arm_r": 180.0, "spine": -90.0, "head": 0.0};
+    rest: dict[str, float] = {"spine": -90.0, "head": 0.0};
     for b in body.bones() {
         b.pitch = rest.get(b.name, 0.0);
+        if b.name in ["torso", "arm_l", "arm_r"] and body.plan not in ["quadruped", "fish", "blob"] {
+            b.roll = 180.0;
+        }
         if body.plan == "quadruped" {
             if b.name.startswith("leg_") {
                 b.pitch = 90.0;
@@ -332,7 +337,7 @@ def pose_bones(body: Body, kind: str, t: float, seed: int) -> tuple[float, float
         for (name, sign) in [("arm_l", -1.0), ("arm_r", 1.0)] {
             arm = body.named(name);
             if arm is not None {
-                arm.pitch = 180.0 + swing * amount * 0.7 * sign;
+                arm.pitch = swing * amount * 0.7 * sign;
             }
         }
         for (name, sign) in [("leg_fl", 1.0), ("leg_br", 1.0), ("leg_fr", -1.0), ("leg_bl", -1.0)] {
@@ -353,7 +358,7 @@ def pose_bones(body: Body, kind: str, t: float, seed: int) -> tuple[float, float
         arm_r = body.named("arm_r");
         fore_r = body.named("fore_r");
         if arm_r is not None {
-            arm_r.pitch = 180.0 - 150.0 * strike;
+            arm_r.pitch = -150.0 * strike;
         }
         if fore_r is not None {
             fore_r.pitch = -40.0 * strike;
@@ -370,7 +375,7 @@ def pose_bones(body: Body, kind: str, t: float, seed: int) -> tuple[float, float
         for name in ["arm_l", "arm_r"] {
             arm = body.named(name);
             if arm is not None {
-                arm.pitch = 180.0 - 40.0 * jolt;
+                arm.pitch = -40.0 * jolt;
             }
         }
     } elif kind == "death" {
@@ -392,7 +397,7 @@ def pose_bones(body: Body, kind: str, t: float, seed: int) -> tuple[float, float
         for name in ["arm_l", "arm_r"] {
             arm = body.named(name);
             if arm is not None {
-                arm.pitch = 180.0 - 70.0 * ease;
+                arm.pitch = -70.0 * ease;
             }
         }
         lift = -body.stance * 0.8 * ease;
@@ -436,14 +441,14 @@ def pose_bones(body: Body, kind: str, t: float, seed: int) -> tuple[float, float
     } elif kind == "taunt" {
         arm = body.named("arm_l");
         if arm is not None {
-            arm.pitch = 180.0 - 160.0 * math.sin(t * math.pi);
-            arm.roll = 20.0 * swing;
+            arm.pitch = -160.0 * math.sin(t * math.pi);
+            arm.roll = 180.0 + 20.0 * swing;
         }
     } else {
         # Standing: breathing, a little sway.
         torso = body.named("torso");
-        if torso is not None {
-            torso.roll = 2.0 * swing;
+        if torso is not None and torso.roll != 0.0 {
+            torso.roll = 180.0 + 2.0 * swing;
         }
         lift = 0.01 * swing;
     }

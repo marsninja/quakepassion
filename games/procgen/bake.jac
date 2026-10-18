@@ -27,6 +27,7 @@ import from .characters { character_doc, player_part_doc, animation_ranges }
 import from .music { make_track }
 import from .voices { spoken, spoken_line }
 import from .film { film_recipe }
+import from .sprites { sprite_picture, spr_bytes, sp2_bytes }
 import from .art2d { face }
 import from editor.model.document { ModelDoc }
 import from editor.model.files { write_md2, write_md3 }
@@ -36,7 +37,7 @@ import from .sounds { make_sound }
 
 """Bumped whenever a recipe changes what it makes, so every bake is made
 again."""
-glob GENERATOR_VERSION: str = "10";
+glob GENERATOR_VERSION: str = "13";
 
 """What a bake made, and how it went."""
 obj BakeReport {
@@ -205,6 +206,37 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
             return made;
         }
     }
+    if slot.kind == "spr" and slot.notes.get("frames", "") {
+        frames: list[tuple[int, int, int, int, bytes]] = [];
+        listed = slot.notes["frames"].split(";");
+        for k in range(len(listed)) {
+            sizes = [int(word) for word in listed[k].split(",")];
+            picture = sprite_picture(slot.name, sizes[0], sizes[1], float(k) / float(max(1, len(listed) - 1)));
+            frames.append((sizes[0], sizes[1], sizes[2], sizes[3], indexed(picture, context.palette, 255)));
+        }
+        made.append((slot.name, spr_bytes(bytes.fromhex(slot.notes["header"]), frames)));
+        return made;
+    }
+    if slot.kind == "sp2" and slot.notes.get("frames", "") {
+        sp2_frames: list[tuple[int, int, int, int, str]] = [];
+        for entry_text in slot.notes["frames"].split(";") {
+            fields = entry_text.split(",");
+            sp2_frames.append((int(fields[0]), int(fields[1]), int(fields[2]), int(fields[3]), ",".join(fields[4:])));
+        }
+        made.append((slot.name, sp2_bytes(sp2_frames)));
+        return made;
+    }
+    if slot.kind == "pcx" and slot.name.lower().startswith("sprites/") {
+        w = int(slot.fact("width", 0.0));
+        h = int(slot.fact("height", 0.0));
+        if w > 0 and h > 0 {
+            stem = stem_of(slot.name).split("/")[-1];
+            number = stem.rsplit("_", 1)[-1] if "_" in stem else "0";
+            phase = min(1.0, float(int(number)) / 8.0) if number.isdigit() else 0.0;
+            made.append((slot.name, pcx_bytes(indexed(sprite_picture(slot.name, w, h, phase), context.palette, 255), w, h, context.palette)));
+        }
+        return made;
+    }
     if slot.kind == "film" {
         made.append((slot.name, film_recipe(slot.name, slot.fact("seconds", 8.0))));
         return made;
@@ -269,7 +301,24 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
             h = int(slot.fact("height", 0.0));
             lower = slot.name.lower();
             role = slot.notes.get("role", "base");
-            if w <= 0 or h <= 0 or w > 1024 or h > 1024 or lower.startswith("models/") {
+            if w <= 0 or h <= 0 {
+                return made;
+            }
+            # Quake III's texture coordinates do not depend on an image's
+            # size, so a very large one is made smaller.
+            if w > 1024 or h > 1024 {
+                shrink = 1024.0 / float(max(w, h));
+                w = max(8, int(float(w) * shrink));
+                h = max(8, int(float(h) * shrink));
+            }
+            if lower.startswith("models/") and role == "base" and "weaphits" not in lower {
+                # Every model is generated, so every model skin is the atlas.
+                made.append((slot.name, tga_bytes(material_atlas(slot.name, w, h, "q3"), False)));
+                return made;
+            }
+            if lower.startswith("sprites/") or "weaphits" in lower {
+                painted_glow = paint_role(slot.name, w, h, "add" if role == "base" else role);
+                made.append((slot.name, tga_bytes(painted_glow.picture, False)));
                 return made;
             }
             # The 2D art is drawn as 2D art whatever its shader does with
@@ -283,7 +332,7 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
                     return made;
                 }
             }
-            if lower.startswith("textures/") or role != "base" {
+            if lower.startswith("textures/") or lower.startswith("models/") or role != "base" {
                 painted = paint_role(slot.name, w, h, role);
                 made.append((slot.name, tga_bytes(painted.picture, role in ["alpha", "blend"])));
                 return made;
