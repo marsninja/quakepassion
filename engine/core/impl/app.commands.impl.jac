@@ -20,6 +20,7 @@ impl App.configure() {
     host = self.host;
     host.skill = self.shell.register(host.skill);
     host.god = self.shell.register(host.god);
+    host.generated = self.shell.register(host.generated);
     host.flyspeed = self.shell.register(host.flyspeed);
     host.overlay = self.shell.register(host.overlay);
     host.intro_played = self.shell.register(host.intro_played);
@@ -343,7 +344,9 @@ impl App.host_command(args: list[str]) {
             self.shell.print("writeconfig: a file name, not a path");
             return;
         }
-        path = game_directory(self.level.bsp.game) + "/" + target;
+        # The topmost folder of the game's own, not the generated one over it.
+        folders = [folder for folder in search_folders(game_directory(self.level.bsp.game)) if not is_generated_folder(folder)];
+        path = (folders[-1] if folders else ".") + "/" + target;
         try {
             write_save(
                 path,

@@ -621,9 +621,10 @@ obj Feedback {
             }
             try {
                 data = self.read(name);
-                music = LoadMusicStreamFromMemory(
-                    "." + name.split(".")[-1], data, i32(len(data))
-                );
+                # A generated track is WAV data under the name the game looks
+                # for first (games/procgen/bake.jac): its header says so.
+                kind = ".wav" if data[:4] == b"RIFF" else "." + name.split(".")[-1];
+                music = LoadMusicStreamFromMemory(kind, data, i32(len(data)));
                 if not IsMusicValid(music) {
                     raise ValueError("Cannot decode music: " + name);
                 }

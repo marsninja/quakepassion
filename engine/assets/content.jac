@@ -22,6 +22,7 @@ Everything that opens archives takes a search path: the folders joined by
 """
 
 import os;
+import from .generated { with_generated }
 
 """Joins a search path's folders."""
 glob PATH_SEPARATOR: str = ";";
@@ -319,7 +320,7 @@ def game_directory(game: str) -> str {
     if pack is None {
         return assets_root() + "/" + game;
     }
-    return pack_path(pack);
+    return with_generated(pack_path(pack), pack.id);
 }
 
 """The folders of a search path, base first."""

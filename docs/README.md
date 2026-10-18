@@ -55,3 +55,6 @@ covers building, running and the architecture.
 
 ## Passion
 - [passion.md](passion.md): the generated fourth mode
+
+## Generated assets
+- [generated-assets-status.md](generated-assets-status.md): every texture, model, sound, voice, track and film made by code, switched on in Settings

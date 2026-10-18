@@ -35,7 +35,7 @@ import from vendor.raylib {
         r: u8, g: u8, b: u8, a: u8
     ) -> None;  def rlDrawRenderBatchActive -> None;
 }
-import from ..formats.bsp { Texture }
+import from ..formats.bsp { Texture, sniffed_extension }
 import from ..console.cvar { Cvar, CVAR_ARCHIVE }
 import from ..console.shell { Shell }
 
@@ -260,7 +260,9 @@ obj HudRenderer {
         width = texture.width;
         height = texture.height;
         if texture.encoded {
-            image = LoadImageFromMemory(texture.extension, texture.encoded, i32(len(texture.encoded)));
+            image = LoadImageFromMemory(
+                sniffed_extension(texture.extension, texture.encoded), texture.encoded, i32(len(texture.encoded))
+            );
             if image.data == u64(0) {
                 return;
             }

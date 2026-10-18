@@ -3,6 +3,8 @@ import os;
 import from .pak { PakArchive, open_pak }
 import from .content { archive_paths, loose_file }
 import from .pk3 { Pk3Assets, default_texture }
+import from .generated { generated_on, generated_miptex }
+import from ..formats.q1.bsp { parse_bsp }
 import from ..formats.animated { AnimatedModel }
 import from ..formats.bsp { Texture }
 import from ..formats.q1.model { parse_mdl }
@@ -78,7 +80,12 @@ obj AssetLibrary {
         skins: list[Texture] = [];
         if self.game == "q1" {
             if name.endswith(".bsp") {
-                model = parse_item_bsp(self.read(name), self.read("gfx/palette.lmp"));
+                data = self.read(name);
+                swapped: list[Texture] = [];
+                if generated_on() {
+                    swapped = generated_miptex(parse_bsp(data).textures, self.paks);
+                }
+                model = parse_item_bsp(data, self.read("gfx/palette.lmp"), swapped);
                 for surface in model.surfaces {
                     skins.append(surface.embedded_skins[0]);
                 }
