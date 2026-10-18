@@ -808,8 +808,7 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
             key = source + ":" + rule.model + ":" + str(rule.skin);
             extra = source + ":" + rule.extra_model + ":0" if rule.extra_model else "";
             # cg_weapons.c CG_RegisterItemVisuals: a second model the game
-            # does not have (OpenArena's invisibility has no ring) registers
-            # as nothing and is not drawn.
+            # does not have registers as nothing and is not drawn.
             if extra and extra not in resources and not catalog.source(source).exists(rule.extra_model) {
                 extra = "";
             }

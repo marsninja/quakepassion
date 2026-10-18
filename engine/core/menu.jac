@@ -277,7 +277,7 @@ obj LevelMenu {
                     }
                 }
             }
-            # Map files lying loose beside the paks (LibreQuake's deathmatch maps).
+            # Map files lying loose beside the paks.
             for name in loose_maps(folder) {
                 if name not in names {
                     with open(folder + "/" + name, "rb") as handle {

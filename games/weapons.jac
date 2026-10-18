@@ -907,8 +907,8 @@ def game_effects(game: str) -> list[EffectRule] {
             EffectRule(key="q3_bfg_explosion", flight="", shader="bfgExplosion", sprite_size=30, grow=42.0, explosion=True),
             EffectRule(key="q3_blood", flight="", shader="bloodExplosion", sprite_size=24, explosion=True),
             # cg_main.c CG_RegisterGraphics registers these by shader name;
-            # Quake III's draw gfx/misc/railcorethin_mono, raildisc_mono2 and
-            # lightning3new, OpenArena's its own images.
+            # they draw gfx/misc/railcorethin_mono, raildisc_mono2 and
+            # lightning3new.
             EffectRule(key="q3_railcore", flight="railCore", additive=True),
             EffectRule(key="q3_raildisc", flight="railDisc", additive=True),
             # lightningBoltNew, the 1.32 beam shader.

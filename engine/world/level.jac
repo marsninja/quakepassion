@@ -741,8 +741,7 @@ obj LeafLiquids(LiquidProbe) {
 
 """A file of a Quake or Quake II search path: from its paks, else lying loose
 in its folders (`directory`), as COM_FindFile and FS_FOpenFile search a game
-directory's paks before its files. LibreQuake keeps its deathmatch maps
-loose in maps/."""
+directory's paks before its files."""
 def asset(paks: list[PakArchive], name: str, directory: str = "") -> bytes {
     for pak in reversed(paks) {
         if pak.has_file(name) {

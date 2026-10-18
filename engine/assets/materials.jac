@@ -258,7 +258,7 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
 
 def material_name(name: str) -> str {
     # tr_shader.c generateHashValue: case and either slash name one shader
-    # (OpenArena's models name theirs models\weapons2\...).
+    # (models\weapons2\... is models/weapons2/...).
     name = name.lower().replace("\\", "/");
     for extension in [".tga", ".jpg", ".jpeg", ".png"] {
         if name.endswith(extension) {

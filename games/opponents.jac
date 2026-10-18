@@ -32,7 +32,6 @@ import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.signals { Signal, HasSignal }
 import from engine.world.models { ModelResource, HasModelResource, UsesModel, HasVisual, attach_model }
 import from engine.formats.animated { AnimationFrame }
-import from .frame_order { standard_frames }
 import from engine.assets.catalog { AssetCatalog }
 import from engine.assets.library { AssetLibrary }
 import from engine.formats.aas { parse_aas }
@@ -53,24 +52,14 @@ def named_frame(known: list[str], name: str, result: list[int]) -> int {
     return found;
 }
 
-"""A rule's frames in a model, by name; a Quake model that names its frames
-otherwise, by their number in Quake's standard order (games/frame_order.jac)."""
+"""A rule's frames in a model, by name."""
 def frame_indices(
     frames: list[AnimationFrame], names: list[str], path: str, label: str
 ) -> list[int] {
     known = [frame.name for frame in frames];
-    standard: list[str] = [];
-    looked = False;
     result: list[int] = [];
     for name in names {
         found = named_frame(known, name, result);
-        if found < 0 {
-            if not looked {
-                standard = standard_frames(path, len(frames));
-                looked = True;
-            }
-            found = named_frame(standard, name, result);
-        }
         if found < 0 {
             raise ValueError("Missing " + label + " frame: " + path + ":" + name);
         }

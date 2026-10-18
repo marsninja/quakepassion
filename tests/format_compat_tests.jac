@@ -4,17 +4,14 @@ import tempfile;
 import zipfile;
 import from engine.formats.q3.model { parse_md3 }
 import from engine.formats.q1.bsp { bsp29_child }
-import from engine.formats.animated { AnimationFrame }
 import from engine.assets.materials { material_name }
 import from engine.assets.pk3 { Pk3Assets, file_key }
 import from engine.assets.library { AssetLibrary }
-import from games.frame_order { expand_frames, standard_frames }
-import from games.opponents { frame_indices }
 import from games.arena_character { player_part }
 
 """An MD3 of one frame and one tag, with a triangle surface named `name`
 skinned `models/test`, and after it, when `empty`, a surface with no
-vertices or triangles (OpenArena's telep.md3 and tony's vest)."""
+vertices or triangles."""
 def md3_model(name: str, empty: bool) -> bytes {
     extra = 108 if empty else 0;
     header = b"IDP3"
@@ -54,32 +51,6 @@ test "BSP29 children past 32767 are indices; the rest count leaves and contents 
     assert bsp29_child(data, 6, 100) == 7;
     # A small map reads as Quake's signed shorts did.
     assert bsp29_child(struct.pack("<H", 32768), 0, 155) == -32768;
-}
-
-test "Quake's standard frame order expands its ranges, repeats included" {
-    assert expand_frames("stand1..3 exp attackb1 attackb1..2") == ["stand1", "stand2", "stand3", "exp", "attackb1", "attackb1", "attackb2"];
-    ogre = standard_frames("progs/ogre.mdl", 147);
-    assert len(ogre) == 147 and ogre[0] == "stand1" and ogre[9] == "walk1";
-    shub = standard_frames("progs/oldone.mdl", 67);
-    assert shub[46:48] == ["shake1", "shake2"] and shub.count("shake12") == 2;
-    # Only a model with Quake's own number of frames is read in Quake's order.
-    assert standard_frames("progs/ogre.mdl", 146) == [] and standard_frames("progs/unknown.mdl", 3) == [];
-}
-
-test "a Quake model that names its frames otherwise is animated by frame number" {
-    generic = [AnimationFrame(name="frame" + str(i + 1)) for i in range(147)];
-    ogre = standard_frames("progs/ogre.mdl", 147);
-    found = frame_indices(generic, ["pain1", "pain2", "pain3"], "progs/ogre.mdl", "pain");
-    assert found == [ogre.index("pain1"), ogre.index("pain1") + 1, ogre.index("pain1") + 2];
-    # Its own names still come first.
-    assert frame_indices(generic, ["frame3"], "progs/ogre.mdl", "idle") == [2];
-    failed = False;
-    try {
-        frame_indices(generic[:146], ["pain1"], "progs/ogre.mdl", "pain");
-    } except ValueError {
-        failed = True;
-    }
-    assert failed;
 }
 
 test "Quake III names a file or shader whatever its case, a backslash as a slash" {
