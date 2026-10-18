@@ -1,5 +1,6 @@
 """Namespaced access to independently owned source-game archives."""
 import from .library { AssetLibrary, ModelAsset }
+import from .generated { with_generated }
 obj AssetCatalog {
     has game: str, directory: str, libraries: dict[str, AssetLibrary] = {};
     def source(game: str) -> AssetLibrary {
@@ -7,7 +8,7 @@ obj AssetCatalog {
         if game not in self.libraries {
             library = AssetLibrary(game=game);
             folder = "id1" if game == "q1" else ("baseq2" if game == "q2" else "baseq3");
-            library.open(self.directory + "/" + folder if self.game == "passion" else self.directory);
+            library.open(with_generated(self.directory + "/" + folder, game) if self.game == "passion" else self.directory);
             self.libraries[game] = library;
         }
         return self.libraries[game];

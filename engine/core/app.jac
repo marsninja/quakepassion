@@ -174,7 +174,9 @@ import from ..world.models { PlayerRig, ModelResource, Wears }
 import from ..world.level { Level, load_level, spawn_player, Q1_SERVER_START }
 import from .save_format { SNAPSHOT_HEADER }
 import from .menu { LevelMenu, game_directory }
-import from ..assets.content { play_pack, playing, loose_file }
+import from ..assets.content { play_pack, playing, loose_file, search_folders }
+import from ..assets.generated { set_generated, is_generated_folder }
+import from games.procgen.bake { ensure_generated }
 import from ..render.quake { QuakeRenderer }
 import from .clock { Clock }
 import from ..math.interpolation { TickBlend }
@@ -257,6 +259,13 @@ obj HostCvars {
             high=1920.0,
             flags=CVAR_ARCHIVE,
             description="speed flying (noclip)"
+        ),
+        generated: Cvar = Cvar(
+            name="qp_generated",
+            reset_text="0",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            description="play generated textures, sounds, models and music instead of the games' own (from the next level)"
         ),
         overlay: Cvar = Cvar(
             name="qp_overlay",
@@ -497,6 +506,7 @@ obj App {
     black after a film), Q3's CG_DrawInformation with the arena's
     levelshot."""
     def draw_loading(game: str, name: str);
+    def prepare_generated(game: str);
     """UI_SPPostgameMenu_MenuDraw's third phase: the film for a tier or the
     ladder just completed, the first time. True when one started."""
     def postgame_cinematic(board: Postgame) -> bool;

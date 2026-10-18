@@ -4,6 +4,7 @@ import os;
 import math;
 import from ..assets.pak { open_pak, PakArchive }
 import from ..assets.content { archive_paths, loose_file }
+import from ..assets.generated { generated_miptex }
 import from ..formats.q1.bsp { parse_bsp }
 import from ..formats.bsp {
     Bsp,
@@ -897,6 +898,7 @@ def load_level(
             level.palette = pcx[len(pcx) - 768:];
         } else {
             level.bsp = parse_bsp(data);
+            level.bsp.textures = generated_miptex(level.bsp.textures, paks);
             if entities {
                 level.bsp.entities = parse_entities(entities);
             }

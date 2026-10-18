@@ -40,7 +40,7 @@ import from vendor.raylib {
 }
 import from ..world.level { Level }
 import from ..world.portals { surface_plane }
-import from ..formats.bsp { Face, Texture, FogVolume }
+import from ..formats.bsp { Face, Texture, FogVolume, sniffed_extension }
 import from ..formats.animated { ModelStage, Deform, TexMod, stage_frame }
 import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis }
@@ -259,7 +259,7 @@ obj QuakeRenderer {
 
     def upload_image(texture: Texture) -> int {
         image = LoadImageFromMemory(
-            texture.extension, texture.encoded, i32(len(texture.encoded))
+            sniffed_extension(texture.extension, texture.encoded), texture.encoded, i32(len(texture.encoded))
         );
         if image.data == u64(0) {
             raise ValueError("Image decode failed: " + texture.name);
