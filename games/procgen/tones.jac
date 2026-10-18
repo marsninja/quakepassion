@@ -1,12 +1,11 @@
 """How the games' own surfaces are toned, family by family: for each game
-and each family of wall picture (and the model skins), the median colour,
+and each family of wall picture, the median colour,
 lightness spread and saturation of the game's own pictures of that family.
 The generator's pictures are graded to these (games/procgen/image.jac
 graded) so a family reads as the game's does: Quake II's metal as dark and
 muted as Quake II's, not as bright as a recipe left it.
 
-Each entry is a median over a whole family (its count in the comment), never
-one picture's; the values were measured from the games' archives with the
+Each entry is a median over a whole family, never one picture's; the values were measured from the games' archives with the
 comparison tools and are kept here as numbers: red, green, blue (0-1), luma
 standard deviation, mean saturation."""
 
@@ -47,7 +46,6 @@ glob FAMILY_TONES: dict[str, dict[str, list[float]]] = {
         "metal": [0.163, 0.127, 0.093, 0.039, 0.015],
         "rock": [0.171, 0.139, 0.095, 0.043, 0.014],
         "rune": [0.142, 0.081, 0.054, 0.045, 0.034],
-        "skin": [0.116, 0.083, 0.061, 0.088, 0.019],
         "sky": [0.969, 0.783, 0.339, 0.196, 0.129],
         "stone": [0.155, 0.122, 0.094, 0.048, 0.015],
         "tech": [0.149, 0.111, 0.084, 0.064, 0.022],
@@ -68,7 +66,6 @@ glob FAMILY_TONES: dict[str, dict[str, list[float]]] = {
         "metal": [0.289, 0.238, 0.216, 0.068, 0.010],
         "rock": [0.272, 0.216, 0.173, 0.075, 0.013],
         "rune": [0.213, 0.180, 0.168, 0.087, 0.021],
-        "skin": [0.314, 0.197, 0.195, 0.144, 0.045],
         "stone": [0.281, 0.226, 0.197, 0.081, 0.012],
         "tech": [0.250, 0.209, 0.174, 0.114, 0.011],
         "teleport": [0.744, 0.739, 0.953, 0.091, 0.031],
@@ -87,3 +84,13 @@ def family_tone(game: str, family: str) -> list[float] {
 mean saturation) of those on walls (lamps' glows, screens; 186) and of its
 effects (sprites, weapon hits, flares; 156)."""
 glob GLOW_TONES: dict[str, list[float]] = {"wall": [0.057, 0.023], "effect": [0.088, 0.032]};
+
+
+"""The games' creature and weapon skins, as the median of the painted parts
+of each (the black room round a skin's pieces left out): (red, green,
+blue, spread, saturation). From q1 creature/weapon 16/20, q2 creature/weapon 49/25, q3 creature/weapon 289/44 skins."""
+glob SKIN_TONES: dict[str, dict[str, list[float]]] = {
+    "q1": {"character": [0.261, 0.161, 0.106, 0.096, 0.030], "weapon": [0.186, 0.116, 0.139, 0.105, 0.064]},
+    "q2": {"character": [0.181, 0.133, 0.101, 0.078, 0.027], "weapon": [0.183, 0.150, 0.129, 0.082, 0.022]},
+    "q3": {"character": [0.363, 0.220, 0.218, 0.143, 0.053], "weapon": [0.305, 0.261, 0.188, 0.119, 0.026]}
+};

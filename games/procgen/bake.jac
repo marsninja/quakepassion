@@ -19,7 +19,7 @@ import from editor.formats.archive { write_pak, write_zip }
 import from .manifest { Manifest, AssetSlot, build_manifest, slots_of }
 import from .palette { Palette, quake_palette, quake2_palette, quake_colormap }
 import from .image { Picture, Rgb, graded, glowed }
-import from .tones { family_tone, GLOW_TONES }
+import from .tones { family_tone, GLOW_TONES, SKIN_TONES }
 import from .textures { paint_named, paint_role, texture_family, Paint }
 import from .writers { ArchiveWriter, miptex_bytes, wav_bytes, wal_bytes, pcx_bytes, tga_bytes, qpic_bytes, wad2_bytes, indexed }
 import from .art2d { picture_2d }
@@ -137,16 +137,17 @@ def player_doc(context: BakeContext, slot: AssetSlot) -> ModelDoc | None {
     return player_part_doc(slot.name, part, facts, ranges, legs_facts.first_low, legs_facts.first_high);
 }
 
-"""A model's skin: the material atlas, a creature's graded part way toward the tone of
-the game's own skins."""
+"""A model's skin: the material atlas, toned as the game's own are."""
 def skin_atlas(name: str, w: int, h: int, game: str) -> Picture {
+    # A creature's or a weapon's is toned toward the painted parts of the
+    # game's own (a pickup keeps its colours: the games colour them by kind).
     atlas = material_atlas(name, w, h, game);
-    if model_family(name) != "character" {
-        # Pickups and weapons keep their colours (the games colour them by
-        # kind); only creatures are toned to the game's own.
+    family = model_family(name);
+    kind = "weapon" if family == "weapon" else ("character" if family == "character" else "");
+    if not kind {
         return atlas;
     }
-    return graded(atlas, family_tone(game, "skin"), 0.85);
+    return graded(atlas, SKIN_TONES.get(game, {}).get(kind, []), 0.75);
 }
 
 """A wall picture graded to the tone of its family in the game's own."""

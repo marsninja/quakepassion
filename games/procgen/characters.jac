@@ -22,7 +22,8 @@ import from games.passion.random { hash_label, mix32 }
 import from engine.math.vec3 { Vec3 }
 import from editor.model.document { ModelDoc, Part, Pose, Tag, HasPart, HasPose, HasTag }
 import from .shapes { Shaper, Frame, frame_along }
-import from .models { ModelFacts, tile_of }
+import from .models { ModelFacts, tile_of, sculpt_shaper }
+import from .sculpt { Sculpture, Prim }
 
 node Bone {
     has name: str,
@@ -42,6 +43,9 @@ node Bone {
 }
 
 edge Child: Bone --> Bone {}
+
+"""A solid a bone carries: its flesh, armour or horn."""
+edge Wears: Bone --> Prim {}
 
 """A rotation of `v` about x (roll), y (pitch) and z (yaw), degrees."""
 def turned(v: Vec3, roll: float, pitch: float, yaw: float) -> Vec3 {
@@ -157,8 +161,10 @@ def body_plan(path: str) -> tuple[str, float] {
 def build_body(path: str, seed: int) -> Body {
     (plan, size) = body_plan(path);
     k = float(mix32(seed) % 100) / 100.0;
-    skin = ["flesh", "leather", "green", "darksteel", "brass", "stone"][mix32(seed + 1) % 6];
-    armour = ["steel", "darksteel", "leather", "brass", "red", "blue"][mix32(seed + 2) % 6];
+    # Flesh under gunmetal, mostly, as the games' creatures are; now and
+    # then leather, a green hide or stone, brass or red plate.
+    skin = ["flesh", "flesh", "flesh", "leather", "green", "stone"][mix32(seed + 1) % 6];
+    armour = ["darksteel", "darksteel", "steel", "steel", "brass", "red"][mix32(seed + 2) % 6];
     if plan == "quadruped" {
         hips = bone("hips", Vec3(), 0.0, 0.0, 0.0, skin);
         spine = bone("spine", Vec3(), 0.55, 0.16 + size * 0.08, 0.14 + size * 0.08, skin);
@@ -289,6 +295,20 @@ def pose_bones(body: Body, kind: str, t: float, seed: int) -> tuple[float, float
         b.pitch = rest.get(b.name, 0.0);
         if b.name in ["torso", "arm_l", "arm_r"] and body.plan not in ["quadruped", "fish", "blob"] {
             b.roll = 180.0;
+        }
+        # Arms held a little away from the body, elbows a little bent, and a
+        # brute's back hunched: a body ready to move, not a statue's.
+        if body.plan in ["biped", "brute", "giant", "flyer"] {
+            spread = ARM_SPREAD * (1.8 if body.plan in ["brute", "giant"] else 1.0);
+            if b.name == "arm_l" {
+                b.roll = 180.0 - spread;
+            } elif b.name == "arm_r" {
+                b.roll = 180.0 + spread;
+            } elif b.name in ["fore_l", "fore_r"] {
+                b.pitch = -25.0;
+            } elif b.name == "torso" and body.plan in ["brute", "giant"] {
+                b.pitch = HUNCH;
+            }
         }
         if body.plan == "quadruped" {
             if b.name.startswith("leg_") {
@@ -458,40 +478,344 @@ def pose_bones(body: Body, kind: str, t: float, seed: int) -> tuple[float, float
     return (lift + reach, whole_pitch, whole_roll);
 }
 
-"""The body's mesh at its current pose: each limb a tapered capsule along its
-bone, a gun in a soldier's hands. Each bone's points, at rest, are made in
-its own frame, so the same mesh can be posed again."""
-def body_mesh(body: Body, lift: float, whole_pitch: float, whole_roll: float, armed: bool) -> Shaper {
-    body.hips spawn PoseWalk(root_at=Vec3(z=body.stance + lift), whole_pitch=whole_pitch, whole_roll=whole_roll);
-    shaper = Shaper();
-    for b in body.bones() {
-        if b.length <= 0.0 {
-            continue;
-        }
-        frame = b.world;
-        # The limb runs from the joint down the bone's -z.
-        flipped = Frame(at=frame.at, x=frame.x, y=frame.y.scale(-1.0), z=frame.z.scale(-1.0));
-        segments = 8 if b.name in ["torso", "head", "spine", "hips"] else 6;
-        depth = body_depth(b.name);
-        shaper.lathe(
-            flipped,
-            [(b.radius * 0.6 * depth, -b.radius * 0.4), (b.radius * depth, 0.0), (b.tip_radius * depth, b.length), (b.tip_radius * 0.6 * depth, b.length + b.tip_radius * 0.4)],
-            segments, tile_of(b.material), 1.0 / depth
-        );
-        if b.name == "head" {
-            # Eyes, glowing.
-            for side in [1.0, -1.0] {
-                eye = Frame(at=flipped.place(Vec3(x=b.radius * 0.85, y=b.radius * 0.4 * side, z=b.length * 0.45)));
-                shaper.ball(eye, Vec3(x=b.radius * 0.18, y=b.radius * 0.18, z=b.radius * 0.18), 3, 4, tile_of("glow"));
-            }
-        }
-        if armed and b.name == "fore_r" {
-            hand = flipped.place(Vec3(z=b.length));
-            ahead = hand.add(body.hips.world.x.scale(0.45));
-            shaper.tube(frame_along(hand, ahead), 0.45, 0.04, 0.035, 6, tile_of("darksteel"));
+glob ARM_SPREAD: float = 14.0,
+     HUNCH: float = -12.0;
+
+"""What a creature's name says of how it is made: armoured, helmeted,
+horned, spiked, clawed, lumpy (living flesh, not plate), carrying a pack."""
+obj Traits {
+    has armoured: bool = False,
+        helmet: bool = False,
+        horns: bool = False,
+        spikes: bool = False,
+        claws: bool = False,
+        lumpy: bool = False,
+        pack: bool = False,
+        blade: bool = False;
+}
+
+def:priv says_any(lower: str, words: list[str]) -> bool {
+    for word in words {
+        if word in lower {
+            return True;
         }
     }
-    return shaper;
+    return False;
+}
+
+def traits_of(path: str) -> Traits {
+    lower = path.lower();
+    made = Traits();
+    made.armoured = says_any(lower, ["soldier", "army", "enforcer", "infantry", "gunner", "tank", "gladiator", "medic", "makron", "jorg", "knight", "player", "cyborg", "berserk", "brain", "chick", "bitch"]);
+    made.helmet = says_any(lower, ["soldier", "army", "enforcer", "infantry", "gunner", "knight", "medic", "tank", "visor", "grunt", "crash", "major", "razor", "uriel"]);
+    made.horns = says_any(lower, ["demon", "fiend", "hknight", "makron", "boss", "jorg", "mutant", "anarki", "xaero"]);
+    made.spikes = says_any(lower, ["berserk", "hknight", "gladiator", "tank", "makron", "razor"]);
+    made.claws = says_any(lower, ["shambler", "demon", "fiend", "mutant", "parasite", "dog"]);
+    made.lumpy = says_any(lower, ["ogre", "shambler", "zombie", "demon", "fiend", "mutant", "tarbaby", "oldone", "dog", "fish", "wizard", "shalrath", "parasite", "brain", "boss"]);
+    made.blade = says_any(lower, ["knight", "ogre", "berserk", "hknight"]);
+    made.pack = says_any(lower, ["soldier", "army", "infantry", "gunner", "medic", "enforcer"]);
+    return made;
+}
+
+"""A place on a bone at rest: `f` of the way along it, `ahead` forward of
+it and `side` to its side."""
+def:priv on_bone(b: Bone, f: float, ahead: float = 0.0, side: float = 0.0) -> Vec3 {
+    return b.world.place(Vec3(x=ahead, y=side, z=-f * b.length));
+}
+
+"""A bone's flesh along it: a tapered capsule."""
+def:priv limb(b: Bone, r1: float, r2: float, material: str, blend: float, f0: float = 0.0, f1: float = 1.0) -> Prim {
+    return Prim(kind="capsule", at=on_bone(b, f0), to=on_bone(b, f1), r1=r1, r2=r2, material=material, blend=blend);
+}
+
+"""A lump on a bone: an ellipsoid with the bone's axes (`rx` forward, `ry`
+across, `rz` along it)."""
+def:priv lump(b: Bone, f: float, ahead: float, side: float, rx: float, ry: float, rz: float, material: str, blend: float) -> Prim {
+    return Prim(kind="ellipsoid", at=on_bone(b, f, ahead, side), x=b.world.x, y=b.world.y, z=b.world.z, size=Vec3(x=rx, y=ry, z=rz), material=material, blend=blend);
+}
+
+"""A plate on a bone: a rounded box with the bone's axes."""
+def:priv slab(b: Bone, f: float, ahead: float, side: float, hx: float, hy: float, hz: float, round: float, material: str, blend: float) -> Prim {
+    return Prim(kind="box", at=on_bone(b, f, ahead, side), x=b.world.x, y=b.world.y, z=b.world.z, size=Vec3(x=hx, y=hy, z=hz), round=round, material=material, blend=blend);
+}
+
+"""A horn, spike or claw: a capsule tapering to a point."""
+def:priv point_from(start: Vec3, end: Vec3, r: float, material: str) -> Prim {
+    return Prim(kind="capsule", at=start, to=end, r1=r, r2=r * 0.12, material=material, blend=r * 0.6);
+}
+
+"""Dress a body at rest: every bone `Wears` its solids, by the body's plan
+and its name's traits. The body's bones must stand where the rest pose
+puts them."""
+def dress(body: Body, path: str, seed: int, armed: bool) {
+    t = traits_of(path);
+    bones = body.bones();
+    skin = bones[0].material;
+    armour = "steel";
+    for b in bones {
+        if b.name == "torso" or b.name == "arm_l" {
+            armour = b.material;
+        }
+    }
+    flesh = "flesh" if t.lumpy and skin in ["darksteel", "brass", "steel"] else skin;
+    bumps = 0.012 if t.lumpy else 0.0;
+    bulk = 1.0 + (0.6 if body.plan == "brute" else 0.0) + (1.0 if body.plan == "giant" else 0.0);
+    named: dict[str, Bone] = {};
+    for b in bones {
+        named[b.name] = b;
+    }
+    worn: list[tuple[Bone, Prim]] = [];
+    if body.plan in ["biped", "brute", "giant", "flyer"] and "torso" in named {
+        torso = named["torso"];
+        worn.append((torso, lump(torso, 0.04, 0.0, 0.0, 0.1 * bulk, 0.15 * bulk, 0.09, armour if t.armoured else flesh, 0.05)));
+        worn.append((torso, limb(torso, 0.1 * bulk, 0.115 * bulk, flesh, 0.035, 0.0, 0.55)));
+        # A brute is broad, but not so broad its arms vanish into it.
+        broad = 1.0 + (bulk - 1.0) * 0.45;
+        chest = lump(torso, 0.7, 0.012, 0.0, 0.12 * broad, 0.2 * broad, 0.13 * broad, armour if t.armoured else flesh, 0.035);
+        worn.append((torso, chest));
+        if not t.armoured {
+            for side in [-1.0, 1.0] {
+                worn.append((torso, lump(torso, 0.74, 0.08 * bulk, side * 0.075 * bulk, 0.05 * bulk, 0.08 * bulk, 0.065 * bulk, flesh, 0.04)));
+            }
+        } else {
+            worn.append((torso, slab(torso, 0.7, -0.1 * bulk, 0.0, 0.035, 0.17 * bulk, 0.14 * bulk, 0.03, "darksteel", 0.03)));
+            worn.append((torso, slab(torso, 0.74, 0.11 * bulk, 0.0, 0.025, 0.12 * bulk, 0.1 * bulk, 0.025, armour, 0.025)));
+        }
+        belt = Prim(kind="ring", at=on_bone(torso, 0.12), x=torso.world.x, y=torso.world.y, z=torso.world.z, size=Vec3(x=0.12 * bulk, y=0.024), material="leather", blend=0.02);
+        worn.append((torso, belt));
+        if t.pack {
+            worn.append((torso, slab(torso, 0.62, -0.17 * bulk, 0.0, 0.06, 0.12 * bulk, 0.13, 0.03, "darksteel", 0.03)));
+        }
+        if t.spikes {
+            for side in [-1.0, 1.0] {
+                base = on_bone(torso, 0.9, -0.02, side * 0.18 * bulk);
+                worn.append((torso, point_from(base, on_bone(torso, 1.15, -0.06, side * 0.3 * bulk), 0.035 * bulk, "bone")));
+            }
+        }
+        if "head" in named {
+            head = named["head"];
+            worn.append((torso, limb(torso, 0.055 * bulk, 0.05 * bulk, flesh, 0.04, 0.9, 1.05)));
+            worn.append((head, lump(head, 0.5, 0.0, 0.0, 0.095, 0.085, 0.11, flesh, 0.03)));
+            worn.append((head, lump(head, 0.25, 0.035, 0.0, 0.06, 0.07, 0.05, flesh, 0.03)));
+            if t.helmet {
+                worn.append((head, lump(head, 0.62, -0.005, 0.0, 0.112, 0.102, 0.1, armour, 0.02)));
+                worn.append((head, slab(head, 0.52, 0.09, 0.0, 0.02, 0.075, 0.03, 0.012, "darksteel", 0.01)));
+                worn.append((head, slab(head, 0.53, 0.105, 0.0, 0.008, 0.06, 0.006, 0.003, "glow", 0.004)));
+            } else {
+                # A face: eyes under a heavy brow, a nose, cheekbones, ears.
+                for side in [-1.0, 1.0] {
+                    worn.append((head, lump(head, 0.55, 0.085, side * 0.035, 0.016, 0.016, 0.014, "glow", 0.005)));
+                    worn.append((head, lump(head, 0.42, 0.07, side * 0.05, 0.03, 0.03, 0.025, flesh, 0.015)));
+                    worn.append((head, lump(head, 0.5, -0.005, side * 0.088, 0.022, 0.014, 0.032, flesh, 0.012)));
+                }
+                worn.append((head, lump(head, 0.63, 0.08, 0.0, 0.028, 0.082, 0.02, flesh, 0.015)));
+                worn.append((head, Prim(kind="capsule", at=on_bone(head, 0.55, 0.088), to=on_bone(head, 0.43, 0.112), r1=0.014, r2=0.017, material=flesh, blend=0.012)));
+            }
+            if t.horns {
+                for side in [-1.0, 1.0] {
+                    worn.append((head, point_from(on_bone(head, 0.75, 0.0, side * 0.06), on_bone(head, 1.4, -0.07, side * 0.16), 0.032, "bone")));
+                }
+            }
+        }
+        for side_name in ["l", "r"] {
+            if ("arm_" + side_name) not in named {
+                continue;
+            }
+            arm = named["arm_" + side_name];
+            fore = named["fore_" + side_name];
+            worn.append((arm, lump(arm, 0.08, 0.0, 0.0, 0.085 * bulk, 0.085 * bulk, 0.075 * bulk, armour if t.armoured else flesh, 0.04)));
+            if t.armoured {
+                worn.append((arm, slab(arm, 0.02, 0.0, 0.0, 0.1 * bulk, 0.09 * bulk, 0.03, 0.02, armour, 0.02)));
+            }
+            worn.append((arm, limb(arm, 0.06 * bulk, 0.05 * bulk, flesh, 0.04)));
+            worn.append((arm, lump(arm, 0.45, 0.025, 0.0, 0.05 * bulk, 0.05 * bulk, 0.09 * bulk, flesh, 0.03)));
+            worn.append((fore, limb(fore, 0.05 * bulk, 0.04 * bulk, flesh, 0.035)));
+            if t.armoured {
+                worn.append((fore, lump(fore, 0.55, 0.0, 0.0, 0.058 * bulk, 0.058 * bulk, 0.1 * bulk, armour, 0.025)));
+            }
+            worn.append((fore, lump(fore, 1.05, 0.01, 0.0, 0.042 * bulk, 0.036 * bulk, 0.055 * bulk, "leather" if t.armoured else flesh, 0.025)));
+            if t.claws {
+                for k in [-1.0, 0.0, 1.0] {
+                    worn.append((fore, point_from(on_bone(fore, 1.1, 0.02, k * 0.022 * bulk), on_bone(fore, 1.35, 0.08, k * 0.035 * bulk), 0.014 * bulk, "bone")));
+                }
+            }
+            if side_name == "r" and t.blade {
+                # A blade held forward and up from the fist.
+                worn.append((fore, slab(fore, 1.05, 0.06, 0.0, 0.03, 0.03, 0.04, 0.01, "darksteel", 0.01)));
+                blade = slab(fore, 1.05, 0.32, 0.0, 0.26, 0.012, 0.035, 0.006, "steel", 0.006);
+                worn.append((fore, blade));
+            }
+            if armed and side_name == "r" {
+                worn.append((fore, slab(fore, 1.05, 0.16, 0.0, 0.17, 0.03, 0.04, 0.012, "darksteel", 0.012)));
+                worn.append((fore, Prim(kind="capsule", at=on_bone(fore, 1.05, 0.3, 0.0), to=on_bone(fore, 1.05, 0.52, 0.0), r1=0.022, r2=0.02, material="steel", blend=0.01)));
+            }
+        }
+        for side_name in ["l", "r"] {
+            if ("thigh_" + side_name) not in named {
+                continue;
+            }
+            thigh = named["thigh_" + side_name];
+            shin = named["shin_" + side_name];
+            worn.append((thigh, limb(thigh, 0.085 * bulk, 0.064 * bulk, armour if t.armoured else flesh, 0.05)));
+            worn.append((thigh, lump(thigh, 0.4, 0.02, 0.0, 0.07 * bulk, 0.068 * bulk, 0.12, flesh if not t.armoured else armour, 0.04)));
+            worn.append((shin, lump(shin, 0.03, 0.035, 0.0, 0.05, 0.05, 0.05, armour if t.armoured else flesh, 0.02)));
+            worn.append((shin, limb(shin, 0.06 * bulk, 0.045 * bulk, flesh, 0.035)));
+            worn.append((shin, slab(shin, 0.97, 0.045, 0.0, 0.085 * bulk, 0.045 * bulk, 0.045, 0.02, "darksteel" if t.armoured else flesh, 0.03)));
+        }
+        if body.plan == "flyer" {
+            for side_name in ["l", "r"] {
+                if ("wing_" + side_name) in named {
+                    wing = named["wing_" + side_name];
+                    worn.append((wing, slab(wing, 0.5, 0.0, 0.0, 0.14, 0.008, wing.length * 0.5, 0.006, "leather", 0.02)));
+                    worn.append((wing, limb(wing, 0.025, 0.008, "bone", 0.015)));
+                }
+            }
+        }
+    } elif body.plan == "quadruped" and "spine" in named {
+        spine = named["spine"];
+        worn.append((spine, lump(spine, 0.45, 0.0, 0.0, 0.1, 0.09, 0.3, flesh, 0.04)));
+        worn.append((spine, lump(spine, 0.8, 0.03, 0.0, 0.13, 0.1, 0.15, flesh, 0.04)));
+        worn.append((spine, lump(spine, 0.12, 0.0, 0.0, 0.09, 0.085, 0.1, flesh, 0.035)));
+        if "head" in named {
+            head = named["head"];
+            worn.append((head, lump(head, 0.3, 0.0, 0.0, 0.085, 0.075, 0.085, flesh, 0.03)));
+            worn.append((head, limb(head, 0.055, 0.03, flesh, 0.02, 0.4, 1.3)));
+            worn.append((head, limb(head, 0.035, 0.02, flesh, 0.015, 0.5, 1.2)));
+            for side in [-1.0, 1.0] {
+                worn.append((head, point_from(on_bone(head, 0.2, -0.04, side * 0.05), on_bone(head, 0.0, -0.12, side * 0.1), 0.03, flesh)));
+                worn.append((head, lump(head, 0.55, 0.06, side * 0.04, 0.012, 0.012, 0.012, "glow", 0.004)));
+            }
+        }
+        for b in bones {
+            if b.name.startswith("leg_") {
+                worn.append((b, limb(b, 0.035, 0.02, flesh, 0.02)));
+                worn.append((b, lump(b, 0.25, 0.02, 0.0, 0.045, 0.035, 0.09, flesh, 0.02)));
+                worn.append((b, lump(b, 1.02, 0.025, 0.0, 0.035, 0.028, 0.02, flesh, 0.012)));
+                if t.claws {
+                    worn.append((b, point_from(on_bone(b, 1.02, 0.06, 0.0), on_bone(b, 1.08, 0.12, 0.0), 0.012, "bone")));
+                }
+            } elif b.name == "tail" {
+                worn.append((b, limb(b, 0.04, 0.012, flesh, 0.03)));
+            }
+        }
+    } elif body.plan == "fish" and "spine" in named {
+        spine = named["spine"];
+        worn.append((spine, lump(spine, 0.45, 0.0, 0.0, 0.16, 0.08, 0.4, flesh, 0.05)));
+        worn.append((spine, slab(spine, 0.45, 0.16, 0.0, 0.08, 0.008, 0.18, 0.006, flesh, 0.03)));
+        if "head" in named {
+            head = named["head"];
+            worn.append((head, lump(head, 0.4, 0.0, 0.0, 0.13, 0.08, 0.15, flesh, 0.05)));
+            worn.append((head, slab(head, 0.9, -0.03, 0.0, 0.03, 0.06, 0.02, 0.01, "bone", 0.01)));
+        }
+        if "tail" in named {
+            tail = named["tail"];
+            worn.append((tail, slab(tail, 0.7, 0.0, 0.0, 0.14, 0.008, 0.1, 0.006, flesh, 0.03)));
+        }
+    } else {
+        hips = bones[0];
+        worn.append((hips, lump(hips, 0.5, 0.0, 0.0, 0.42 * (0.6 + body.size), 0.4 * (0.6 + body.size), 0.38 * (0.6 + body.size), flesh, 0.1)));
+        for b in bones[1:] {
+            worn.append((b, limb(b, 0.08, 0.02, flesh, 0.06)));
+        }
+        bumps = max(bumps, 0.03);
+    }
+    for (b, prim) in worn {
+        if prim.material in ["flesh", "green", "leather", "stone"] {
+            prim.bumps = bumps;
+        }
+        b +>:Wears:+> prim;
+    }
+}
+
+"""A body's mesh carried by its bones: each point at rest, the two bones
+that hold it most and how much, and where it sits in each one's frame at
+rest, so it can be posed with them."""
+obj Skin {
+    has shaper: Shaper,
+        holders: list[Bone] = [],
+        firsts: list[int] = [],
+        seconds: list[int] = [],
+        shares: list[float] = [],
+        first_places: list[Vec3] = [],
+        second_places: list[Vec3] = [];
+
+    """Its points at the bones' present pose."""
+    def posed -> list[Vec3] {
+        made: list[Vec3] = [];
+        for k in range(len(self.firsts)) {
+            a = self.holders[self.firsts[k]].world.place(self.first_places[k]);
+            b = self.holders[self.seconds[k]].world.place(self.second_places[k]);
+            made.append(a.lerp(b, 1.0 - self.shares[k]));
+        }
+        return made;
+    }
+}
+
+"""The skin of a dressed body at rest, its points those of the bones in
+`names` (all of them when empty), at most `budget` of them."""
+def skin_of(body: Body, names: list[str], budget: int, seed: int) -> Skin {
+    sculpture = Sculpture(seed=seed);
+    owners: list[Bone] = [];
+    for b in body.bones() {
+        if names and b.name not in names {
+            continue;
+        }
+        for prim in [b->:Wears:->] {
+            if isinstance(prim, Prim) {
+                prim.owner = len(owners);
+                owners.append(b);
+                sculpture.prims.append(prim);
+            }
+        }
+    }
+    if not sculpture.prims {
+        empty = Shaper();
+        empty.ball(Frame(), Vec3(x=0.01, y=0.01, z=0.01), 2, 3, tile_of("rubber"));
+        made_empty = Skin(shaper=empty, holders=body.bones()[:1]);
+        for k in range(len(empty.points)) {
+            made_empty.firsts.append(0);
+            made_empty.seconds.append(0);
+            made_empty.shares.append(1.0);
+            made_empty.first_places.append(in_frame([empty.points[k]], made_empty.holders[0].world)[0]);
+            made_empty.second_places.append(made_empty.first_places[-1]);
+        }
+        return made_empty;
+    }
+    # Where materials meet a point is made once for each, so the mesh is
+    # sampled more coarsely until the whole still fits.
+    sculpted = sculpture.mesh(budget, 46);
+    (shaper, sources) = sculpt_shaper(sculpted);
+    tries = budget;
+    while len(shaper.points) > budget and tries > 200 {
+        tries = int(float(tries) * 0.85);
+        sculpted = sculpture.mesh(tries, 46);
+        (shaper, sources) = sculpt_shaper(sculpted);
+    }
+    made = Skin(shaper=shaper, holders=owners);
+    for (k, source) in enumerate(sources) {
+        first = sculpted.holders[source * 2];
+        second = sculpted.holders[source * 2 + 1];
+        made.firsts.append(first);
+        made.seconds.append(second);
+        made.shares.append(sculpted.shares[source * 2]);
+        point = shaper.points[k];
+        made.first_places.append(in_frame([point], owners[first].world)[0]);
+        made.second_places.append(in_frame([point], owners[second].world)[0]);
+    }
+    return made;
+}
+
+"""How many points a model of `kind` may have (Quake's 1024, Quake II's
+2048, about a thousand a Quake III surface), room left for its other
+surfaces' tokens."""
+def point_budget(kind: str) -> int {
+    if kind == "mdl" {
+        return 990;
+    }
+    if kind == "md2" {
+        return 1600;
+    }
+    return 990;
 }
 
 """Whether a character carries a gun in its hands."""
@@ -523,18 +847,6 @@ def fit_to(points: list[Vec3], rest_low: Vec3, rest_high: Vec3, low: Vec3, high:
     ];
 }
 
-"""How deep a bone's flesh is from front to back, against its width: a
-torso or a head is shallower than it is wide; a limb is round."""
-def body_depth(name: str) -> float {
-    if name == "torso" or name == "spine" {
-        return 0.65;
-    }
-    if name == "head" {
-        return 0.85;
-    }
-    return 1.0;
-}
-
 def:priv bounds_of(points: list[Vec3]) -> tuple[Vec3, Vec3] {
     low = Vec3(x=1.0e9, y=1.0e9, z=1.0e9);
     high = Vec3(x=-1.0e9, y=-1.0e9, z=-1.0e9);
@@ -552,7 +864,11 @@ def character_doc(path: str, facts: ModelFacts, first_low: Vec3, first_high: Vec
     seed = hash_label(14, path.lower());
     body = build_body(path, seed);
     armed = armed_kind(path);
-    rest = body_mesh(body, 0.0, 0.0, 0.0, armed);
+    (lift0, pitch0, roll0) = pose_bones(body, "stand", 0.0, seed);
+    body.hips spawn PoseWalk(root_at=Vec3(z=body.stance + lift0), whole_pitch=pitch0, whole_roll=roll0);
+    dress(body, path, seed, armed);
+    skin = skin_of(body, [], point_budget(facts.kind), seed);
+    rest = skin.shaper;
     (rest_low, rest_high) = bounds_of(rest.points);
     doc = ModelDoc(name=path);
     surfaces = facts.surfaces if facts.surfaces else ["model"];
@@ -562,9 +878,9 @@ def character_doc(path: str, facts: ModelFacts, first_low: Vec3, first_high: Vec
     for frame in range(len(facts.frame_names)) {
         (stem, t) = actions[frame];
         (lift, whole_pitch, whole_roll) = pose_bones(body, action_kind(stem), t, seed);
-        posed = body_mesh(body, lift, whole_pitch, whole_roll, armed);
+        body.hips spawn PoseWalk(root_at=Vec3(z=body.stance + lift), whole_pitch=whole_pitch, whole_roll=whole_roll);
         part +>:HasPose(index=frame):+> Pose(
-            name=facts.frame_names[frame], points=fit_to(posed.points, rest_low, rest_high, first_low, first_high)
+            name=facts.frame_names[frame], points=fit_to(skin.posed(), rest_low, rest_high, first_low, first_high)
         );
     }
     # Any further surfaces keep their names with a token piece each.
@@ -656,31 +972,6 @@ def in_frame(points: list[Vec3], frame: Frame) -> list[Vec3] {
     return made;
 }
 
-"""Only the bones of a body some of whose names start with one of
-`prefixes`, as a mesh at the current pose."""
-def part_mesh(body: Body, names: list[str], armed: bool) -> Shaper {
-    shaper = Shaper();
-    for b in body.bones() {
-        if b.length <= 0.0 or b.name not in names {
-            continue;
-        }
-        flipped = Frame(at=b.world.at, x=b.world.x, y=b.world.y.scale(-1.0), z=b.world.z.scale(-1.0));
-        depth = body_depth(b.name);
-        shaper.lathe(
-            flipped,
-            [(b.radius * 0.6 * depth, -b.radius * 0.4), (b.radius * depth, 0.0), (b.tip_radius * depth, b.length), (b.tip_radius * 0.6 * depth, b.length + b.tip_radius * 0.4)],
-            8 if b.name in ["torso", "head"] else 6, tile_of(b.material), 1.0 / depth
-        );
-        if b.name == "head" {
-            for side in [1.0, -1.0] {
-                eye = Frame(at=flipped.place(Vec3(x=b.radius * 0.85, y=b.radius * 0.4 * side, z=b.length * 0.45)));
-                shaper.ball(eye, Vec3(x=b.radius * 0.18, y=b.radius * 0.18, z=b.radius * 0.18), 3, 4, tile_of("glow"));
-            }
-        }
-    }
-    return shaper;
-}
-
 glob LEGS_BONES: list[str] = ["thigh_l", "thigh_r", "shin_l", "shin_r"],
      TORSO_BONES: list[str] = ["torso", "arm_l", "arm_r", "fore_l", "fore_r"],
      HEAD_BONES: list[str] = ["head"];
@@ -702,6 +993,10 @@ def player_part_doc(path: str, part_name: str, facts: ModelFacts, ranges: list[t
     doc = ModelDoc(name=path);
     surfaces = facts.surfaces if facts.surfaces else [part_name];
     names = LEGS_BONES if part_name == "lower" else (TORSO_BONES if part_name == "upper" else HEAD_BONES);
+    (lift0, pitch0, roll0) = pose_bones(body, "stand", 0.0, seed);
+    body.hips spawn PoseWalk(root_at=Vec3(z=body.stance + lift0), whole_pitch=pitch0, whole_roll=roll0);
+    dress(body, character + "/player", seed, False);
+    skin = skin_of(body, names, point_budget("md3"), seed);
     shaped: list[list[Vec3]] = [];
     corners: list[int] = [];
     uvs: list[float] = [];
@@ -719,12 +1014,12 @@ def player_part_doc(path: str, part_name: str, facts: ModelFacts, ranges: list[t
             lift = 0.0;
         }
         body.hips spawn PoseWalk(root_at=Vec3(z=body.stance + lift), whole_pitch=whole_pitch, whole_roll=whole_roll);
-        mesh = part_mesh(body, names, False);
+        mesh = skin.shaper;
         hips_frame = body.hips.world;
         torso = body.named("torso");
         head = body.named("head");
         hand = body.named("fore_r");
-        points = mesh.points;
+        points = skin.posed();
         if part_name == "upper" {
             points = in_frame(points, hips_frame);
         } elif part_name == "head" and head is not None {
