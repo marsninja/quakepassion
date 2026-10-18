@@ -11,7 +11,7 @@ import math;
 import from games.passion.random { hash_label, mix32 }
 import from .families { Families, families_of, choose_family }
 import from .synth {
-    Wave, Voice, render, layered, echoed, driven, peaked, looped, fitted, resampled, muffled
+    Wave, Voice, render, layered, echoed, driven, peaked, looped, fitted, resampled, muffled, made_loud
 }
 
 """What a sound may vary on, from its name."""
@@ -46,10 +46,11 @@ obj SoundBook {
         made = families_of(
             [
                 ("explosion", ["exp", "explod", "blast", "boom", "r_exp", "bfg__x", "x1"]),
-                ("gunshot", ["sgun", "shotg", "shotgn", "gun", "mach", "hyprb", "chain", "fire", "shoot", "bullet", "ssg", "railg", "sg_", "mg_"]),
+                ("gunshot", ["sgun", "shotg", "shotgn", "gun", "mach", "chain", "fire", "shoot", "bullet", "ssg", "railg", "sg_", "mg_"]),
                 ("launch", ["rocket", "grenade", "gren", "launch", "rocklf", "rlaunch", "glaunch"]),
                 ("spike", ["spike", "nail", "spik", "needle"]),
-                ("lightning", ["lstart", "lhit", "lightn", "lgun", "thunder", "electr", "zap", "spark", "lbolt", "lg_", "plasma", "laser", "blaster", "bfg"]),
+                ("lightning", ["lstart", "lhit", "lightn", "lgun", "thunder", "electr", "zap", "spark", "lbolt", "lg_"]),
+                ("energy", ["plasma", "laser", "blaster", "hyprb", "bfg"]),
                 ("ricochet", ["ric", "tink", "bounce", "clank", "ping", "metal"]),
                 ("melee", ["ax1", "axhit", "punch", "swing", "claw", "bite", "melee", "smack", "slash", "gaunt", "whip", "chop"]),
                 ("pickup", ["items/", "pkup", "pickup", "health", "armor", "ammo", "item", "powerup", "quad", "protect", "inv", "key", "medkey", "runekey", "rune", "s_health", "n_health", "m_health", "l_health", "ar1", "ar2", "ar3", "wpkup", "weapon"]),
@@ -433,7 +434,7 @@ def:priv fire(tone: Tone) -> Wave {
 
 """Make the sound a game names `path`, as long as `seconds`, at `rate`;
 looping (its end joined to its beginning) when `loops`."""
-def make_sound(path: str, seconds: float, rate: int, loops: bool, game: str) -> Wave {
+def make_sound(path: str, seconds: float, rate: int, loops: bool, game: str, loudness: float = 0.0) -> Wave {
     tone = Tone(seed=hash_label(3, game + ":" + path.lower()), seconds=max(0.05, seconds), rate=rate, words=path.lower());
     family = sound_family(path);
     made = Wave(rate=rate);
@@ -445,7 +446,9 @@ def make_sound(path: str, seconds: float, rate: int, loops: bool, game: str) -> 
         made = launch(tone);
     } elif family == "spike" {
         made = spike(tone);
-    } elif family == "lightning" {
+    } elif family == "lightning" or family == "energy" {
+        # The energy weapons' bolts are made by the lightning's recipe (its
+        # zap), but are coloured and levelled as a family of their own.
         made = lightning(tone);
     } elif family == "ricochet" {
         made = ricochet(tone);
@@ -474,7 +477,7 @@ def make_sound(path: str, seconds: float, rate: int, loops: bool, game: str) -> 
     } else {
         made = interface(tone);
     }
-    (tilt, level) = q3_calibration(family) if game == "q3" else (0.0, 0.0);
+    (tilt, level) = sound_calibration(game, family);
     made = tilted(made, tilt);
     if loops {
         # Made a little long, then its tail faded into its head.
@@ -483,25 +486,33 @@ def make_sound(path: str, seconds: float, rate: int, loops: bool, game: str) -> 
     } else {
         made = fitted(made, tone.seconds);
     }
+    if loudness > 0.0 {
+        # As loud as the sound it stands in for.
+        return made_loud(made, loudness);
+    }
     return peaked(made, 0.9 * math.pow(10.0, level / 20.0));
 }
 
-"""How each family of Quake III's sounds is coloured and how loud it is,
+"""How each family of a game's sounds is coloured and how loud it is,
 against the game's own: a tilt (above 0 darker, a one-pole low-pass keeping
 1 - tilt of each step; below 0 brighter, each sample less -tilt of the one
 before) and a level in decibels below full. Each was found by matching the
-median brightness and loudness of every generated sound of the family to the
-median of the game's sounds of that family (none fitted to a single sound);
-a family the game plays louder than its generated sounds can go is left at
-full level."""
-def q3_calibration(family: str) -> tuple[float, float] {
-    table: dict[str, tuple[float, float]] = {
-        "ambient": (-0.85, -4.3), "button": (0.937, -4.9), "creature": (-0.25, -3.1), "gore": (-0.8, 0.0),
-        "gunshot": (0.736, 0.0), "interface": (0.97, 0.0), "launch": (-0.8, 0.0), "lightning": (-0.75, 0.0),
-        "mover": (-0.35, -2.5), "pickup": (0.803, -3.2), "step": (-0.55, -12.1), "teleport": (0.903, -2.2),
-        "water": (0.97, -1.8)
+median brightness and loudness of the family's generated sounds to the
+median of the game's own sounds of that family (none fitted to a single
+sound, and only for families of four sounds or more); a family the game
+plays louder than its generated sounds can go is left at full level."""
+def sound_calibration(game: str, family: str) -> tuple[float, float] {
+    tables: dict[str, dict[str, tuple[float, float]]] = {
+        "q1": {"ambient": (-0.9, -7.2), "button": (0.97, 0.0), "creature": (0.702, -5.7), "interface": (0.736, -4.0), "melee": (0.602, 0.0), "mover": (-0.65, 0.0), "pickup": (0.769, -2.7), "step": (-0.1, 0.0), "teleport": (-0.05, -6.8), "water": (0.937, -4.8)},
+        "q2": {"ambient": (-0.85, -1.6), "creature": (-0.15, -4.8), "gunshot": (0.87, 0.0), "interface": (0.87, -3.2), "melee": (-0.6, 0.0), "mover": (-0.1, -0.4), "pickup": (0.636, 0.0), "step": (-0.45, 0.0)},
+        "q3": {
+            "ambient": (-0.85, -4.3), "button": (0.937, -4.9), "creature": (-0.25, -3.1), "gore": (-0.8, 0.0),
+            "gunshot": (0.736, 0.0), "interface": (0.97, 0.0), "launch": (-0.8, 0.0), "lightning": (-0.75, 0.0),
+            "mover": (-0.35, -2.5), "pickup": (0.803, -3.2), "step": (-0.55, -12.1), "teleport": (0.903, -2.2),
+            "water": (0.97, -1.8)
+        }
     };
-    return table.get(family, (0.0, 0.0));
+    return tables.get(game, {}).get(family, (0.0, 0.0));
 }
 
 """A sound made darker (tilt above 0) or brighter (below 0)."""

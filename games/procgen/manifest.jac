@@ -148,6 +148,7 @@ def wav_facts(data: bytes) -> dict[str, float] {
             per = int(facts["width"] * facts["channels"]);
             frames = min(size, len(data) - body) // max(1, per);
             facts["seconds"] = float(frames) / max(1.0, facts["rate"]);
+            facts["loudness"] = wav_loudness(data, body, frames, per, int(facts["width"]));
         } elif kind == b"cue " and body + 28 <= len(data) {
             facts["loop"] = float(i32_at(data, body + 24)) / max(1.0, facts["rate"]);
         }
@@ -157,6 +158,51 @@ def wav_facts(data: bytes) -> dict[str, float] {
         at = body + size + (size & 1);
     }
     return facts;
+}
+
+"""How loud a sound is while it sounds, from 0 to 1 (full scale): the root
+mean square over the stretches (512 frames each) at least a tenth as loud
+as its loudest stretch. It is the extent of the sound, as a model's box is
+the extent of the model, and a generated sound is made as loud (a hum kept
+quiet stays quiet). Every second frame is enough to measure it."""
+def wav_loudness(data: bytes, body: int, frames: int, per: int, width: int) -> float {
+    stretches: list[float] = [];
+    total = 0.0;
+    counted = 0;
+    k = 0;
+    while k < frames {
+        at = body + k * max(1, per);
+        if at + width > len(data) {
+            break;
+        }
+        value = 0.0;
+        if width == 1 {
+            value = float(int(data[at]) - 128) / 128.0;
+        } else {
+            raw = int(data[at]) | (int(data[at + 1]) << 8);
+            if raw >= 32768 {
+                raw -= 65536;
+            }
+            value = float(raw) / 32768.0;
+        }
+        total += value * value;
+        counted += 1;
+        if counted == 256 {
+            stretches.append(total / float(counted));
+            total = 0.0;
+            counted = 0;
+        }
+        k += 2;
+    }
+    if counted > 0 {
+        stretches.append(total / float(counted));
+    }
+    if not stretches {
+        return 0.0;
+    }
+    loudest = max(stretches);
+    kept = [power for power in stretches if power >= loudest * 0.01];
+    return (sum(kept) / float(max(1, len(kept)))) ** 0.5;
 }
 
 """What a model's header says: frames, skins and the skin's size (MDL and

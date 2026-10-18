@@ -198,3 +198,97 @@ def enlarged(source: Picture, w: int, h: int) -> Picture {
     }
     return made;
 }
+
+"""The picture graded toward a tone (red, green, blue, spread, saturation;
+games/procgen/tones.jac): its mean colour moved to the tone's, its lightness
+spread about that mean scaled to the tone's spread and its colours' distance
+from grey scaled to the tone's saturation, each by `strength` (1 all the
+way). Measured over the texels it shows (coverage of a half or more); its
+coverage is kept."""
+def graded(source: Picture, tone: list[float], strength: float = 0.8) -> Picture {
+    count = source.w * source.h;
+    if len(tone) < 5 or count == 0 {
+        return source;
+    }
+    shown = 0;
+    mr = 0.0;
+    mg = 0.0;
+    mb = 0.0;
+    for i in range(count) {
+        if source.a[i] >= 0.5 {
+            shown += 1;
+            mr += source.r[i];
+            mg += source.g[i];
+            mb += source.b[i];
+        }
+    }
+    every = shown < 4;
+    if every {
+        shown = count;
+        mr = sum(source.r);
+        mg = sum(source.g);
+        mb = sum(source.b);
+    }
+    mr /= float(shown);
+    mg /= float(shown);
+    mb /= float(shown);
+    mean_luma = 0.299 * mr + 0.587 * mg + 0.114 * mb;
+    spread = 0.0;
+    saturation = 0.0;
+    for i in range(count) {
+        if every or source.a[i] >= 0.5 {
+            luma = 0.299 * source.r[i] + 0.587 * source.g[i] + 0.114 * source.b[i];
+            spread += (luma - mean_luma) * (luma - mean_luma);
+            saturation += (abs(source.r[i] - luma - (mr - mean_luma)) + abs(source.g[i] - luma - (mg - mean_luma)) + abs(source.b[i] - luma - (mb - mean_luma))) / 3.0;
+        }
+    }
+    spread = (spread / float(shown)) ** 0.5;
+    saturation /= float(shown);
+    k = 1.0 + (tone[3] / max(spread, 0.001) - 1.0) * strength;
+    ks = 1.0 + (tone[4] / max(saturation, 0.001) - 1.0) * strength;
+    tr = mr + (tone[0] - mr) * strength;
+    tg = mg + (tone[1] - mg) * strength;
+    tb = mb + (tone[2] - mb) * strength;
+    made = Picture(w=source.w, h=source.h, a=list(source.a));
+    for i in range(count) {
+        luma = 0.299 * source.r[i] + 0.587 * source.g[i] + 0.114 * source.b[i];
+        lift = (luma - mean_luma) * k;
+        made.r[i] = max(0.0, min(1.0, tr + lift + (source.r[i] - luma - (mr - mean_luma)) * ks));
+        made.g[i] = max(0.0, min(1.0, tg + lift + (source.g[i] - luma - (mg - mean_luma)) * ks));
+        made.b[i] = max(0.0, min(1.0, tb + lift + (source.b[i] - luma - (mb - mean_luma)) * ks));
+    }
+    return made;
+}
+
+"""A glow (a picture added over what is behind it) brought to a mean
+brightness and saturation by a gain alone, so its black stays black:
+`luma` the mean the picture should have, `saturation` its mean distance
+from grey."""
+def glowed(source: Picture, luma: float, saturation: float) -> Picture {
+    count = source.w * source.h;
+    if count == 0 {
+        return source;
+    }
+    mean = 0.0;
+    spread = 0.0;
+    for i in range(count) {
+        y = 0.299 * source.r[i] + 0.587 * source.g[i] + 0.114 * source.b[i];
+        mean += y;
+        spread += (abs(source.r[i] - y) + abs(source.g[i] - y) + abs(source.b[i] - y)) / 3.0;
+    }
+    mean /= float(count);
+    spread /= float(count);
+    if mean <= 1.0e-4 {
+        return source;
+    }
+    k = max(0.25, min(2.0, luma / mean));
+    c = max(0.2, min(2.0, saturation / max(1.0e-4, spread * k)));
+    made = Picture(w=source.w, h=source.h, a=list(source.a));
+    for i in range(count) {
+        y = 0.299 * source.r[i] + 0.587 * source.g[i] + 0.114 * source.b[i];
+        made.r[i] = max(0.0, min(1.0, k * (y + (source.r[i] - y) * c)));
+        made.g[i] = max(0.0, min(1.0, k * (y + (source.g[i] - y) * c)));
+        made.b[i] = max(0.0, min(1.0, k * (y + (source.b[i] - y) * c)));
+    }
+    return made;
+}

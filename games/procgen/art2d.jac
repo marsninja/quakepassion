@@ -420,7 +420,38 @@ def plaque(words: str, w: int, h: int, game: str) -> Picture {
         # Small letters are drawn thin, or their strokes run together.
         draw_text(mask, line, x, y, unit, max(1.0, unit * (1.2 if unit >= 6.0 else 0.55)));
     }
+    if game == "q1" {
+        return carved_plaque(mask, words, w, h);
+    }
     return cast(mask, look_of(game, "icon" if smallest >= 6.0 else "text"));
+}
+
+"""Quake's titles: a board of dark wood, its edge bevelled, the words cut
+into it (dark in the cut, lit along its lower edge)."""
+def carved_plaque(mask: Field, words: str, w: int, h: int) -> Picture {
+    board = paint_named("plaque_" + words.lower().replace("|", "_"), w, h, "q1", "wood").picture;
+    made = Picture(w=w, h=h);
+    for y in range(h) {
+        for x in range(w) {
+            i = y * w + x;
+            k = 0.8;
+            rim = min(min(x, y), min(w - 1 - x, h - 1 - y));
+            if rim < 2 {
+                k = 1.25 if (x < 2 or y < 2) else 0.45;
+            }
+            cut = mask.v[i] > 0.5;
+            above = y > 0 and x > 0 and mask.v[i - w - 1] > 0.5;
+            if cut {
+                k = 0.3;
+            } elif above {
+                k = 1.3;
+            }
+            made.r[i] = min(1.0, board.r[i] * k);
+            made.g[i] = min(1.0, board.g[i] * k);
+            made.b[i] = min(1.0, board.b[i] * k);
+        }
+    }
+    return made;
 }
 
 """A crosshair: a cross, a ring, a dot or brackets, by its letter."""
