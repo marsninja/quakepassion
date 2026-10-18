@@ -46,7 +46,7 @@ def player_part(
         skin_file = prefix + part + "_default.skin";
     }
     # tr_image.c RE_RegisterSkin and tr_model.c R_LoadMD3 lowercase the
-    # surface names on both sides (OpenArena's neko names hers "Skirt").
+    # surface names on both sides ("Skirt" is skinned as "skirt").
     for line in library.read(skin_file).decode("utf-8").splitlines() {
         fields = line.split(",");
         if len(fields) == 2 and fields[1].strip() {
@@ -62,7 +62,7 @@ def player_part(
     skins: list[Texture] = [];
     for surface in model.surfaces {
         # tr_mesh.c R_AddMD3Surfaces: a surface the skin does not name draws
-        # with the default shader (OpenArena's tony has no u_vest skin).
+        # with the default shader.
         if surface.name.lower() not in mappings {
             skins.append(default_texture());
             continue;

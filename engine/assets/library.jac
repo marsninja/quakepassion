@@ -126,9 +126,7 @@ obj AssetLibrary {
                 self.pk3.texture(texture);
                 if not texture.encoded {
                     # tr_shader.c R_FindShader: a shader with neither a
-                    # script nor an image is the default shader (OpenArena's
-                    # bullet.md3 names "poopypants"; it is drawn with a
-                    # custom shader anyway).
+                    # script nor an image is the default shader.
                     print("Missing model material:", texture.name, "in", name);
                     skins.append(default_texture());
                     continue;

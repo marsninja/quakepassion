@@ -57,9 +57,8 @@ def parse_md3(data: bytes) -> AnimatedModel {
             raise ValueError("Invalid MD3 surface header");
         }
         shaders = model_count(i32_at(body, p + 76), 256, "shaders", 0);
-        # tr_model.c R_LoadMD3 takes a surface with no vertices or triangles
-        # (OpenArena's telep.md3 and tony's belt and vest), which draws
-        # nothing; it is left out of the model below.
+        # tr_model.c R_LoadMD3 takes a surface with no vertices or triangles,
+        # which draws nothing; it is left out of the model below.
         vertices = model_count(i32_at(body, p + 80), 4096, "vertices", 0);
         triangles = model_count(i32_at(body, p + 84), 8192, "triangles", 0);
         size = i32_at(body, p + 104);

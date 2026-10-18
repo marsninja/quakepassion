@@ -198,9 +198,8 @@ obj AssetIndex {
         } except Exception {
             seen = {};
         }
-        # A name that climbs out of its folder (OpenArena's mp-pak0.pk3 holds
-        # ../COPYING) is never listed, so nothing extracts it outside the
-        # folder it is written under.
+        # A name that climbs out of its folder (../COPYING) is never listed,
+        # so nothing extracts it outside the folder it is written under.
         found = [
             name for name in seen.keys()
             if name and not name.endswith("/") and not name.startswith("/") and ".." not in name.split("/")
