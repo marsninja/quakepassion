@@ -6,6 +6,7 @@ A Quake or Quake II texture keeps four sizes of its picture, each half the
 last; each is made by averaging the size above it (glow too), then put into
 the palette, so a light stays a light as it shrinks."""
 import struct;
+import from editor.formats.archive { crc32_of }
 import from .image { Picture, Rgb }
 import from .palette { Palette }
 import from .textures { Paint }
@@ -212,4 +213,132 @@ def wav_bytes(samples: list[float], rate: int, bits: int = 16, loop: int = -1) -
     made.extend(struct.pack("<I", data_size));
     made.extend(body);
     return bytes(made);
+}
+
+"""A Quake picture lump (a qpic: its width, its height, its texels as
+palette numbers)."""
+def qpic_bytes(indices: bytes, w: int, h: int) -> bytes {
+    return struct.pack("<ii", w, h) + indices;
+}
+
+"""A Quake WAD2 of lumps: each (name, kind, bytes)."""
+def wad2_bytes(lumps: list[tuple[str, int, bytes]]) -> bytes {
+    body = bytearray();
+    table = bytearray();
+    at = 12;
+    for (name, kind, data) in lumps {
+        table.extend(struct.pack("<iii", at, len(data), len(data)));
+        table.append(kind);
+        table.append(0);
+        table.extend(bytes(2));
+        table.extend(fixed_name(name, 16));
+        body.extend(data);
+        at += len(data);
+        while len(body) % 4 != 0 {
+            body.append(0);
+            at += 1;
+        }
+    }
+    made = bytearray(b"WAD2");
+    made.extend(struct.pack("<ii", len(lumps), 12 + len(body)));
+    made.extend(body);
+    made.extend(table);
+    return bytes(made);
+}
+
+"""A picture as palette numbers with `clear` where it is clear, never using
+`clear` (nor, when `avoid_zero`, colour 0) where it is not."""
+def indexed(picture: Picture, palette: Palette, clear: int, avoid_zero: bool = False) -> bytes {
+    numbers = bytearray(palette.indices(picture, [], clear));
+    for i in range(len(numbers)) {
+        if picture.a[i] >= 0.5 {
+            if numbers[i] == clear {
+                numbers[i] = 1 if clear != 1 else 2;
+            }
+            if avoid_zero and numbers[i] == 0 {
+                numbers[i] = 1;
+            }
+        }
+    }
+    return bytes(numbers);
+}
+
+"""An archive written as it is filled: each file goes to disk as it is
+added, and only the directory is held until the end. A Quake or Quake II
+PAK, or a Quake III PK3 (a zip, stored)."""
+obj ArchiveWriter {
+    has path: str,
+        zip: bool = False,
+        at: int = 0,
+        directory: bytearray = bytearray(),
+        count: int = 0,
+        names: set[str] = set();
+
+    def begin {
+        with open(self.path, "wb") as handle {
+            if not self.zip {
+                # The header is written again at the end, when the
+                # directory's place is known.
+                handle.write(b"PACK" + bytes(8));
+                self.at = 12;
+            }
+        }
+    }
+
+    """Add a file; a name already added is skipped (the first stands)."""
+    def add(name: str, data: bytes) {
+        key = name.lower();
+        if key in self.names {
+            return;
+        }
+        self.names.add(key);
+        raw = name.encode("utf-8");
+        if self.zip {
+            check = crc32_of(data);
+            local = bytearray(b"PK\x03\x04");
+            local.extend(struct.pack("<HHHHH", 20, 0, 0, 0, 33));
+            local.extend(struct.pack("<III", check, len(data), len(data)));
+            local.extend(struct.pack("<HH", len(raw), 0));
+            local.extend(raw);
+            with open(self.path, "ab") as handle {
+                handle.write(bytes(local));
+                handle.write(data);
+            }
+            self.directory.extend(b"PK\x01\x02");
+            self.directory.extend(struct.pack("<HHHHHH", 20, 20, 0, 0, 0, 33));
+            self.directory.extend(struct.pack("<III", check, len(data), len(data)));
+            self.directory.extend(struct.pack("<HHHHHII", len(raw), 0, 0, 0, 0, 0, self.at));
+            self.directory.extend(raw);
+            self.at += len(local) + len(data);
+        } else {
+            if len(raw) > 55 {
+                return;
+            }
+            with open(self.path, "ab") as handle {
+                handle.write(data);
+            }
+            self.directory.extend(raw + bytes(56 - len(raw)));
+            self.directory.extend(struct.pack("<ii", self.at, len(data)));
+            self.at += len(data);
+        }
+        self.count += 1;
+    }
+
+    """Write the directory and close the file."""
+    def finish {
+        with open(self.path, "ab") as handle {
+            handle.write(bytes(self.directory));
+            if self.zip {
+                handle.write(b"PK\x05\x06");
+                handle.write(struct.pack("<HHHHIIH", 0, 0, self.count, self.count, len(self.directory), self.at, 0));
+            }
+        }
+        if not self.zip {
+            # Opened for update, a file is written from its start: the header
+            # again, now with the directory's place.
+            with open(self.path, "r+b") as handle {
+                handle.write(b"PACK" + struct.pack("<ii", self.at, len(self.directory)));
+            }
+        }
+    }
 }

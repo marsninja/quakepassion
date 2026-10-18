@@ -9,7 +9,7 @@ tracked the local patch stacks used while each fix was in review.
 ## Current compiler
 
 The `jaseci` submodule pins the compiler source. It points at the
-`qp-pin-v9` branch of `marsninja/jac`: upstream main `875ef9d29` plus
+`qp-pin-v11` branch of `marsninja/jac`: upstream main `875ef9d29` plus
 [jaseci-labs/jac#10002](https://github.com/jaseci-labs/jac/pull/10002), which
 has since merged, and
 [jaseci-labs/jac#10061](https://github.com/jaseci-labs/jac/pull/10061), which
@@ -18,8 +18,10 @@ has merged too, and
 has merged, and
 [jaseci-labs/jac#10017](https://github.com/jaseci-labs/jac/pull/10017),
 [jaseci-labs/jac#10090](https://github.com/jaseci-labs/jac/pull/10090),
-[jaseci-labs/jac#10168](https://github.com/jaseci-labs/jac/pull/10168) and
-[jaseci-labs/jac#10170](https://github.com/jaseci-labs/jac/pull/10170), which
+[jaseci-labs/jac#10168](https://github.com/jaseci-labs/jac/pull/10168),
+[jaseci-labs/jac#10170](https://github.com/jaseci-labs/jac/pull/10170),
+[jaseci-labs/jac#10173](https://github.com/jaseci-labs/jac/pull/10173) and
+[jaseci-labs/jac#10174](https://github.com/jaseci-labs/jac/pull/10174), which
 are open (below). Everything earlier pins carried has merged upstream too,
 the Windows target work (#9991) among it. `scripts/stage_compiler.sh` prepares
 that source (and the typeshed stubs it needs) and prints the `JAC_DEV_SOURCE`
@@ -27,7 +29,7 @@ to export, so the released `jac` 0.37.25 binary compiles QuakePassion with
 the pinned source. CI (`.github/workflows/jac-test.yml`) does the same and
 caches the native compiler kernel per pin. No local patch stacks or compiler
 worktrees are needed, and the submodule can return to `jaseci-labs/jac` main
-once #10017, #10090, #10168 and #10170 have merged.
+once #10017, #10090, #10168, #10170, #10173 and #10174 have merged.
 
 ## Open upstream
 
@@ -40,6 +42,8 @@ Open upstream and in the pin:
 | `list.pop()` on a list whose elements live in pointer slots (lists of lists, objects, strings, dicts) returned the bare `i8*`, so a local bound from it without an annotation took that type and a subscript on it failed to lower ("Type of #1 arg mismatch"); the function was demoted to Python, and everything that called it with it | [#10090](https://github.com/jaseci-labs/jac/pull/10090) | Passion's massing flood (`floor_reached`) and corridor search pop cells from a `list[list[int]]`: the demotion spread up to `generate`, and `jac build main.jac --native` failed |
 | A module's own function named like a fixed-width type (`def u16(data, at)`) or a `wrapping_*` builtin was lowered as the cast or the wrapping operation: a two-argument call failed with E5092 "Native lowering failed for fixed-width cast 'u16'" and its function was demoted (a one-argument call was silently cast) | [#10168](https://github.com/jaseci-labs/jac/pull/10168) | The generated-assets manifest (`games/procgen/manifest.jac`), whose little-endian header readers are named `u16` |
 | `bytes(range(n))`, `bytes(a_tuple)` and `bytearray(range(n))` were refused (E5092 "Native lowering failed for builtin call 'bytes'") while a list, a list variable and a generator lowered | [#10170](https://github.com/jaseci-labs/jac/pull/10170) | The generated palettes (`games/procgen/palette.jac`), whose colormap ends with the identity row `bytes(range(256))` |
+| A `for` whose tuple target rebinds a name the function already holds with another type (`for (side, sign) in ...` after `for (name, side) in ...`) stored into the old slot: "cannot store i8* to double*" (the function sent to Python), or a silent conversion (a string kept as a pointer's integer value) | [#10173](https://github.com/jaseci-labs/jac/pull/10173) | The generated characters' skeleton builder (`games/procgen/characters.jac` `build_body`) |
+| A conditional expression between a function's tuple result and a tuple literal (`named(2) if flag else ("s", 0.5)`) met a boxed tuple and a tuple value, was taken for an `any`, and failed to lower | [#10174](https://github.com/jaseci-labs/jac/pull/10174) | The generated Quake III players (`games/procgen/characters.jac` `player_part_doc`), which pick each frame's animation that way |
 
 Merged upstream and in the pin, not yet in a release:
 

@@ -22,6 +22,7 @@ import from ..formats.film { Film, FilmPicture }
 import from ..formats.q2.cin { open_cin, cinematic_rgba }
 import from ..formats.q3.roq { open_roq }
 import from ..formats.q2.model { parse_pcx }
+import from games.procgen.film { is_film_recipe, open_generated_film }
 import from ..audio.feedback { Feedback }
 import from vendor.raylib {
     def rlLoadTexture(
@@ -44,6 +45,11 @@ glob HELD_FILMS: list[str] = ["end.roq", "demoend.roq"];
 or Quake III's .RoQ."""
 def open_film(name: str, data: bytes) -> Film {
     lowered = name.lower();
+    # A generated film (games/procgen/film.jac) is its recipe, under the
+    # film's own name.
+    if is_film_recipe(data) {
+        return open_generated_film(data);
+    }
     if lowered.endswith(".roq") {
         return open_roq(data, lowered.split("/")[-1] in HELD_FILMS);
     }

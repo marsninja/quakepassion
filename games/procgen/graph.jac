@@ -107,7 +107,21 @@ obj Recipe {
     has seed: int = 0,
         w: int = 64,
         h: int = 64,
-        count: int = 0;
+        count: int = 0,
+        ops: list[Op] = [];
+
+    """Let go of everything the recipe made and of its graph: each op's
+    result, and the edges between the ops, so a bake that makes thousands of
+    pictures does not keep every step of every one."""
+    def release() {
+        for made_op in self.ops {
+            for source in [made_op<-:Feeds:<-] {
+                source del --> made_op;
+            }
+            made_op.made = None;
+        }
+        self.ops = [];
+    }
 
     """A new op of `kind` taking `inputs` in order. Each op draws its own seed
     from the recipe's, by its place in the recipe, unless `numbers` gives
@@ -119,6 +133,7 @@ obj Recipe {
             seed = mix32(self.seed ^ int(numbers["seed"]));
         }
         made = Op(kind=kind, numbers=dict(numbers), text=text, arity=len(inputs), w=self.w, h=self.h, seed=seed);
+        self.ops.append(made);
         for slot in range(len(inputs)) {
             inputs[slot] +>:Feeds:slot=slot:+> made;
         }

@@ -139,13 +139,20 @@ def render(voice: Voice, rate: int = 22050) -> Wave {
             ) * 0.45;
         }
         if voice.lowpass > 0.0 {
-            cutoff = max(20.0, min(float(rate) * 0.45, voice.lowpass * math.pow(2.0, voice.lowpass_sweep * t)));
-            f = 2.0 * math.sin(math.pi * cutoff / float(rate));
-            q = 1.0 - max(0.0, min(0.95, voice.resonance));
-            low += f * band;
-            hp = sample - low - q * band;
-            band += f * hp;
-            sample = low;
+            cutoff = max(20.0, voice.lowpass * math.pow(2.0, voice.lowpass_sweep * t));
+            # The state-variable filter is stable only well below a sixth
+            # of the rate; above that it is left open.
+            if cutoff < float(rate) / 6.5 {
+                f = 2.0 * math.sin(math.pi * cutoff / float(rate));
+                q = 1.0 - max(0.0, min(0.95, voice.resonance));
+                low += f * band;
+                hp = sample - low - q * band;
+                band += f * hp;
+                sample = low;
+            } else {
+                low = sample;
+                band = 0.0;
+            }
         }
         if voice.highpass > 0.0 {
             k = 1.0 / (1.0 + 2.0 * math.pi * voice.highpass / float(rate));

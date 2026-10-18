@@ -38,10 +38,21 @@ obj Variation {
         frames: int = 1,
         colouring: int = 0,
         words: list[str] = [],
-        game: str = "q1";
+        game: str = "q1",
+        recipes: list[Recipe] = [];
 
     def recipe() -> Recipe {
-        return Recipe(seed=self.seed, w=self.w, h=self.h);
+        made = Recipe(seed=self.seed, w=self.w, h=self.h);
+        self.recipes.append(made);
+        return made;
+    }
+
+    """Let go of every recipe this painting made."""
+    def release() {
+        for made in self.recipes {
+            made.release();
+        }
+        self.recipes = [];
     }
 
     """Of `count` choices, the one this texture takes."""
@@ -540,7 +551,8 @@ def:priv sky_paint(v: Variation, family: str) -> Paint {
     deep = r.op("noise", {"cells": 4.0, "octaves": 6.0, "keep": 0.6});
     far_colour = r.op("ramp", {}, [deep], ramp_for(family, v));
     far = r.picture(far_colour);
-    rn = Variation(w=half, h=v.h, seed=mix32(v.seed + 1), group=v.group, words=v.words, game=v.game).recipe();
+    near_v = Variation(w=half, h=v.h, seed=mix32(v.seed + 1), group=v.group, words=v.words, game=v.game);
+    rn = near_v.recipe();
     puffs = rn.op("noise", {"cells": 4.0, "octaves": 6.0, "keep": 0.65});
     mask = rn.op("levels", {"low": 0.5, "high": 0.7}, [puffs]);
     cloud = rn.op("ramp", {}, [puffs], "3b3b4b,8b8b9b,c7c7d7");
@@ -558,6 +570,8 @@ def:priv sky_paint(v: Variation, family: str) -> Paint {
             made.put(right, far.colour(i));
         }
     }
+    far_v.release();
+    near_v.release();
     return Paint(picture=made);
 }
 
@@ -660,7 +674,9 @@ def paint_named(name: str, w: int, h: int, game: str, family_hint: str = "") -> 
         words=words,
         game=game
     );
-    return paint(family, v);
+    painted = paint(family, v);
+    v.release();
+    return painted;
 }
 
 """A Quake III image painted for the way its shaders draw it (games/procgen/
@@ -675,6 +691,12 @@ def paint_role(path: str, w: int, h: int, role: str) -> Paint {
     seed = hash_label(1, "q3:" + stem);
     group = hash_label(2, "q3:" + stem.rstrip("0123456789_"));
     v = Variation(w=w, h=h, seed=seed, group=group, words=[stem], game="q3");
+    painted_role = paint_role_with(v, path, stem, w, h, role);
+    v.release();
+    return painted_role;
+}
+
+def:priv paint_role_with(v: Variation, path: str, stem: str, w: int, h: int, role: str) -> Paint {
     if role == "add" {
         return glow_paint(v, stem);
     }

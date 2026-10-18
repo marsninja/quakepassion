@@ -10,17 +10,22 @@ and vertices themselves are never read.
 Most slots are simply the files a game's archives hold. Quake's wall
 textures are not files: each map carries its own, so the manifest reads
 each map's texture table and makes a slot for every texture named there."""
+import os;
 import struct;
 import from engine.assets.library { AssetLibrary }
 import from engine.formats.bsp { i32_at }
 import from engine.formats.q1.bsp { parse_textures }
 import from engine.formats.q2.bsp { texture_names }
+import from engine.formats.q1.wad { wad_lumps }
 import from editor.formats.image { image_size }
+import from .models { ModelFacts, read_model_facts }
 
 node Manifest {
     has game: str,
         pack: str,
-        slot_count: int = 0;
+        slot_count: int = 0,
+        # Quake III: the images each shader draws, by shader name.
+        shader_images: dict[str, list[str]] = {};
 }
 
 """Where names come from: an archive's listing, or a map."""
@@ -36,7 +41,8 @@ node AssetSlot {
     has name: str,
         kind: str,
         facts: dict[str, float] = {},
-        notes: dict[str, str] = {};
+        notes: dict[str, str] = {},
+        model: ModelFacts | None = None;
 
     def fact(key: str, fallback: float = 0.0) -> float {
         return self.facts.get(key, fallback);
@@ -269,6 +275,43 @@ def shader_roles(text: str) -> dict[str, str] {
     return roles;
 }
 
+"""The images each shader of a Quake III shader script draws, by shader
+name (lower case)."""
+def shader_images(text: str) -> dict[str, list[str]] {
+    found: dict[str, list[str]] = {};
+    depth = 0;
+    name = "";
+    for raw in text.replace("\r", "\n").split("\n") {
+        line = raw.strip();
+        cut = line.find("//");
+        if cut >= 0 {
+            line = line[:cut].strip();
+        }
+        if not line {
+            continue;
+        }
+        words = line.replace("{", " { ").replace("}", " } ").split();
+        if depth == 0 and words and words[0] != "{" and words[0] != "}" {
+            name = words[0].lower();
+        }
+        for token in words {
+            if token == "{" {
+                depth += 1;
+            } elif token == "}" {
+                depth = max(0, depth - 1);
+            }
+        }
+        if depth == 2 and len(words) > 1 and words[0].lower() in ["map", "clampmap"] and not words[1].startswith("$") {
+            found.setdefault(name, []).append(words[1].lower());
+        } elif depth == 2 and len(words) > 2 and words[0].lower() == "animmap" {
+            for word in words[2:] {
+                found.setdefault(name, []).append(word.lower());
+            }
+        }
+    }
+    return found;
+}
+
 """A Quake map's textures, read from its texture table alone."""
 def q1_map_textures(data: bytes) -> list[tuple[str, int, int]] {
     found: list[tuple[str, int, int]] = [];
@@ -347,10 +390,18 @@ def build_manifest(game: str, pack: str, path: str) -> Manifest {
     }
     listing = builder.source(path, "archive");
     roles: dict[str, str] = {};
+    palette = b"";
+    if game == "q1" and library.exists("gfx/palette.lmp") {
+        palette = library.read("gfx/palette.lmp");
+    }
     if game == "q3" {
         for name in names {
             if name.lower().startswith("scripts/") and name.lower().endswith(".shader") {
-                for (image, role) in shader_roles(library.read(name).decode("latin-1")).items() {
+                text = library.read(name).decode("latin-1");
+                for (shader, images) in shader_images(text).items() {
+                    builder.manifest.shader_images[shader] = images;
+                }
+                for (image, role) in shader_roles(text).items() {
                     if roles.get(image, "base") == "base" {
                         roles[image] = role;
                     }
@@ -361,12 +412,14 @@ def build_manifest(game: str, pack: str, path: str) -> Manifest {
     for name in names {
         kind = slot_kind(name, game);
         facts: dict[str, float] = {};
+        model: ModelFacts | None = None;
         if wants_facts(kind) {
             data = library.read(name);
             if kind == "sound" or kind == "music" {
                 facts = wav_facts(data) if name.lower().endswith(".wav") else {};
             } elif kind in ["mdl", "md2", "md3"] {
                 facts = model_facts(data, kind);
+                model = read_model_facts(data, kind, palette if palette else bytes(768));
             } elif kind == "map" {
                 if game == "q1" {
                     level = builder.source(name, "map");
@@ -386,6 +439,9 @@ def build_manifest(game: str, pack: str, path: str) -> Manifest {
             }
         }
         slot = builder.want(listing, name, kind, facts);
+        if kind in ["mdl", "md2", "md3"] and wants_facts(kind) {
+            slot.model = model;
+        }
         if kind == "image" and roles {
             stem = name.lower().rsplit(".", 1)[0];
             for extension in [".tga", ".jpg"] {
@@ -393,6 +449,27 @@ def build_manifest(game: str, pack: str, path: str) -> Manifest {
                     slot.notes["role"] = roles[stem + extension];
                 }
             }
+        }
+        if kind == "text" and (name.lower().endswith("animation.cfg") or name.lower().endswith(".skin")) {
+            slot.notes["text"] = library.read(name).decode("latin-1");
+        }
+        if kind == "wad" {
+            # A WAD's lumps: each one's name, kind and (for a picture) size.
+            data = library.read(name);
+            listed: list[str] = [];
+            for lump in wad_lumps(data) {
+                lw = 0;
+                lh = 0;
+                if lump.kind == 66 and lump.size >= 8 {
+                    lw = i32_at(data, lump.offset);
+                    lh = i32_at(data, lump.offset + 4);
+                } elif lump.name == "conchars" {
+                    lw = 128;
+                    lh = 128;
+                }
+                listed.append(lump.name + ":" + str(lump.kind) + ":" + str(lw) + ":" + str(lh));
+            }
+            slot.notes["lumps"] = ";".join(listed);
         }
         if kind == "wal" and wants_facts(kind) {
             header = library.read(name);
@@ -403,6 +480,28 @@ def build_manifest(game: str, pack: str, path: str) -> Manifest {
                 }
                 slot.notes["next"] = header[56:cut].decode("latin-1");
             }
+        }
+    }
+    # Films lying loose in the pack's folders (Quake II keeps them in video/).
+    loose = builder.source("loose", "loose");
+    for folder in path.split(";") {
+        films = folder + "/video";
+        if os.path.isdir(films) {
+            for leaf in sorted(os.listdir(films)) {
+                if leaf.lower().endswith(".cin") or leaf.lower().endswith(".roq") {
+                    builder.want(loose, "video/" + leaf, "film", {"seconds": 10.0});
+                }
+            }
+        }
+    }
+    # Quake's and Quake II's music was on the CD, not in their archives:
+    # tracks 2 to 11 are slots of their own (music/trackNN.ogg, as the
+    # re-releases name them, so they are found before a loose one).
+    if game == "q1" or game == "q2" {
+        disc = builder.source("cd", "cd");
+        for track in range(2, 12) {
+            number = ("0" if track < 10 else "") + str(track);
+            builder.want(disc, "music/track" + number + ".ogg", "music", {"seconds": 150.0, "rate": 22050.0});
         }
     }
     library.close();

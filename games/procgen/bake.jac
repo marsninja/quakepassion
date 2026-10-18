@@ -20,13 +20,23 @@ import from .manifest { Manifest, AssetSlot, build_manifest, slots_of }
 import from .palette { Palette, quake_palette, quake2_palette, quake_colormap }
 import from .image { Picture, Rgb }
 import from .textures { paint_named, paint_role, Paint }
-import from .writers { miptex_bytes, wav_bytes, wal_bytes, pcx_bytes, tga_bytes }
+import from .writers { ArchiveWriter, miptex_bytes, wav_bytes, wal_bytes, pcx_bytes, tga_bytes, qpic_bytes, wad2_bytes, indexed }
+import from .art2d { picture_2d }
+import from .models { model_doc, model_family, material_atlas, mdl_bytes, MATERIALS, release_doc }
+import from .characters { character_doc, player_part_doc, animation_ranges }
+import from .music { make_track }
+import from .voices { spoken, spoken_line }
+import from .film { film_recipe }
+import from .art2d { face }
+import from editor.model.document { ModelDoc }
+import from editor.model.files { write_md2, write_md3 }
+import from .textures { Paint }
 import from .skies { sky_side, side_of }
 import from .sounds { make_sound }
 
 """Bumped whenever a recipe changes what it makes, so every bake is made
 again."""
-glob GENERATOR_VERSION: str = "1";
+glob GENERATOR_VERSION: str = "10";
 
 """What a bake made, and how it went."""
 obj BakeReport {
@@ -51,12 +61,180 @@ obj BakeReport {
 """What every recipe of a bake shares: the game, its palette."""
 obj BakeContext {
     has game: str,
-        palette: Palette;
+        palette: Palette,
+        # The skins (by name, lower case, without an extension) of the models
+        # the bake makes: painted as the material atlas.
+        atlas: set[str] = set(),
+        # Every slot by its name (lower case): a model's siblings.
+        slots: dict[str, AssetSlot] = {},
+        # Model families left to the game's own (QP_GENERATED_SKIP, for
+        # finding which generated asset a fault follows).
+        left_out: list[str] = [];
+}
+
+"""A name without its extension, lower case: how skins are matched."""
+def stem_of(name: str) -> str {
+    lower = name.lower();
+    cut = lower.rfind(".");
+    slash = lower.rfind("/");
+    return lower[:cut] if cut > slash else lower;
+}
+
+"""The skins of the models a bake makes (those not left to the game: its
+characters until they are made too)."""
+def atlas_skins(manifest: Manifest) -> set[str] {
+    found: set[str] = set();
+    for slot in slots_of(manifest) {
+        facts = slot.model;
+        if facts is None {
+            continue;
+        }
+        for skins in facts.surface_skins {
+            for skin in skins {
+                images = manifest.shader_images.get(stem_of(skin), []) + manifest.shader_images.get(skin.lower(), []);
+                if not images {
+                    images = [skin];
+                }
+                for image in images {
+                    found.add(stem_of(image));
+                }
+            }
+        }
+    }
+    # Players' skins are named by their .skin files, not their models.
+    for slot in slots_of(manifest) {
+        lower = slot.name.lower();
+        if lower.startswith("models/players/") and slot.kind in ["image", "pcx"] {
+            leaf = lower.split("/")[-1];
+            if not leaf.startswith("icon_") and not stem_of(leaf).endswith("_i") {
+                found.add(stem_of(lower));
+            }
+        }
+    }
+    return found;
+}
+
+"""A Quake III player's part, made with its siblings' facts: the legs' box
+and the animation.cfg beside them."""
+def player_doc(context: BakeContext, slot: AssetSlot) -> ModelDoc | None {
+    facts = slot.model;
+    if facts is None {
+        return None;
+    }
+    folder = slot.name.lower().rsplit("/", 1)[0];
+    leaf = slot.name.lower().rsplit("/", 1)[1];
+    part = "lower" if leaf.startswith("lower") else ("upper" if leaf.startswith("upper") else "head");
+    legs = context.slots.get("md3:" + folder + "/lower.md3");
+    config = context.slots.get("text:" + folder + "/animation.cfg");
+    legs_facts = legs.model if legs is not None else None;
+    if legs_facts is None {
+        return None;
+    }
+    ranges = animation_ranges(config.notes.get("text", "")) if config is not None else [];
+    return player_part_doc(slot.name, part, facts, ranges, legs_facts.first_low, legs_facts.first_high);
+}
+
+"""The material atlas as palette numbers: its glowing tiles drawn in
+Quake's fullbright colours."""
+def atlas_indices(name: str, w: int, h: int, context: BakeContext) -> bytes {
+    picture = material_atlas(name, w, h, context.game);
+    glow: list[float] = [];
+    if context.game == "q1" {
+        glow = [0.0] * (w * h);
+        for y in range(h) {
+            for x in range(w) {
+                tile = (y * 4 // h) * 4 + (x * 4 // w);
+                if MATERIALS[tile] == "glow" or MATERIALS[tile] == "glowblue" {
+                    glow[y * w + x] = 1.0;
+                }
+            }
+        }
+    }
+    return context.palette.indices(picture, glow, 255);
 }
 
 """The files a slot is filled with; none when no recipe covers it."""
 def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
     made: list[tuple[str, bytes]] = [];
+    facts = slot.model;
+    if facts is not None and slot.kind in ["mdl", "md2", "md3"] {
+        if model_family(slot.name) in context.left_out {
+            return made;
+        }
+        doc: ModelDoc | None = None;
+        if model_family(slot.name) == "character" {
+            if slot.kind == "md3" and slot.name.lower().startswith("models/players/") {
+                doc = player_doc(context, slot);
+            } elif slot.kind != "md3" {
+                doc = character_doc(slot.name, facts, facts.first_low, facts.first_high);
+            }
+        } else {
+            doc = model_doc(slot.name, facts);
+        }
+        if doc is None {
+            return made;
+        }
+        data = b"";
+        if slot.kind == "mdl" {
+            count = 0;
+            for (first, number, intervals) in facts.skin_groups {
+                count = max(count, first + number);
+            }
+            skins = [atlas_indices(slot.name + "#" + str(k), facts.skin_w, facts.skin_h, context) for k in range(max(1, count))];
+            data = mdl_bytes(doc, facts, skins);
+        } elif slot.kind == "md2" {
+            data = write_md2(doc, facts.skin_w, facts.skin_h);
+        } else {
+            data = write_md3(doc);
+        }
+        release_doc(doc);
+        if data {
+            made.append((slot.name, data));
+        }
+        return made;
+    }
+    if stem_of(slot.name) in context.atlas and slot.kind in ["pcx", "image"] {
+        w = int(slot.fact("width", 0.0));
+        h = int(slot.fact("height", 0.0));
+        if w > 0 and h > 0 and slot.notes.get("role", "base") == "base" {
+            if slot.kind == "pcx" {
+                made.append((slot.name, pcx_bytes(atlas_indices(slot.name, w, h, context), w, h, context.palette)));
+            } else {
+                made.append((slot.name, tga_bytes(material_atlas(slot.name, w, h, context.game), False)));
+            }
+            return made;
+        }
+    }
+    if slot.kind == "film" {
+        made.append((slot.name, film_recipe(slot.name, slot.fact("seconds", 8.0))));
+        return made;
+    }
+    if slot.kind == "music" {
+        if "music" in context.left_out {
+            return made;
+        }
+        seconds = min(150.0, max(30.0, slot.fact("seconds", 120.0)));
+        track = make_track(slot.name, context.game, seconds);
+        made.append((slot.name, wav_bytes(track.samples, track.rate, 16, -1)));
+        return made;
+    }
+    lower_name = slot.name.lower();
+    if lower_name.startswith("models/players/") and slot.kind in ["image", "pcx"] {
+        leaf_name = lower_name.split("/")[-1];
+        if leaf_name.startswith("icon_") or stem_of(leaf_name).endswith("_i") {
+            w = int(slot.fact("width", 0.0));
+            h = int(slot.fact("height", 0.0));
+            if w > 0 and h > 0 {
+                pictured = face(lower_name, w, h);
+                if slot.kind == "pcx" {
+                    made.append((slot.name, pcx_bytes(indexed(pictured, context.palette, 255), w, h, context.palette)));
+                } else {
+                    made.append((slot.name, tga_bytes(pictured, True)));
+                }
+            }
+            return made;
+        }
+    }
     if slot.kind == "sound" and slot.name.lower().endswith(".wav") {
         rate = int(slot.fact("rate", 11025.0 if context.game == "q1" else 22050.0));
         if rate < 8000 or rate > 48000 {
@@ -64,6 +242,9 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
         }
         loops = slot.fact("loop", -1.0) >= 0.0;
         wave = make_sound(slot.name, slot.fact("seconds", 0.5), rate, loops, context.game);
+        if spoken(slot.name) {
+            wave = spoken_line(slot.name, slot.fact("seconds", 0.8), rate);
+        }
         bits = 8 if slot.fact("width", 2.0) < 1.5 else 16;
         made.append((slot.name, wav_bytes(wave.samples, wave.rate, bits, 0 if loops else -1)));
         return made;
@@ -83,13 +264,33 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
         return made;
     }
     if context.game == "q3" {
-        if slot.kind == "image" and slot.name.lower().startswith("textures/") {
+        if slot.kind == "image" {
             w = int(slot.fact("width", 0.0));
             h = int(slot.fact("height", 0.0));
-            if w > 0 and h > 0 and w <= 1024 and h <= 1024 {
-                role = slot.notes.get("role", "base");
+            lower = slot.name.lower();
+            role = slot.notes.get("role", "base");
+            if w <= 0 or h <= 0 or w > 1024 or h > 1024 or lower.startswith("models/") {
+                return made;
+            }
+            # The 2D art is drawn as 2D art whatever its shader does with
+            # it (the console font and the status numbers are blended).
+            two_d = lower.startswith("gfx/2d/") or lower.startswith("menu/") or lower.startswith("icons/")
+                or lower.startswith("ui/") or lower.startswith("levelshots/");
+            if two_d {
+                drawn_2d = picture_2d(slot.name, w, h, "q3");
+                if drawn_2d is not None {
+                    made.append((slot.name, tga_bytes(drawn_2d, True)));
+                    return made;
+                }
+            }
+            if lower.startswith("textures/") or role != "base" {
                 painted = paint_role(slot.name, w, h, role);
                 made.append((slot.name, tga_bytes(painted.picture, role in ["alpha", "blend"])));
+                return made;
+            }
+            drawn = picture_2d(slot.name, w, h, "q3");
+            if drawn is not None {
+                made.append((slot.name, tga_bytes(drawn, True)));
             }
         }
         return made;
@@ -120,6 +321,13 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
             if data {
                 made.append((slot.name, data));
             }
+        } elif slot.kind == "pcx" and slot.name.lower().startswith("pics/") and slot.name.lower() != "pics/colormap.pcx" {
+            w = int(slot.fact("width", 0.0));
+            h = int(slot.fact("height", 0.0));
+            drawn = picture_2d(slot.name, w, h, "q2");
+            if drawn is not None {
+                made.append((slot.name, pcx_bytes(indexed(drawn, context.palette, 255), w, h, context.palette)));
+            }
         } elif slot.name.lower() == "pics/colormap.pcx" {
             # The colours at 64 levels of light, as the file keeps them; the
             # engine reads only the palette after them.
@@ -142,6 +350,39 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
             data = miptex_bytes(slot.name, painted, context.palette, slot.name.lower().startswith("sky"));
             if data {
                 made.append((miptex_path(slot.name), data));
+            }
+        } elif slot.kind == "wad" and slot.notes.get("lumps", "") {
+            lumps: list[tuple[str, int, bytes]] = [];
+            for entry_text in slot.notes["lumps"].split(";") {
+                parts = entry_text.split(":");
+                if len(parts) != 4 {
+                    continue;
+                }
+                lump = parts[0];
+                lump_kind = int(parts[1]);
+                w = int(parts[2]);
+                h = int(parts[3]);
+                if lump == "conchars" {
+                    sheet = picture_2d("conchars", 128, 128, "q1");
+                    if sheet is not None {
+                        lumps.append((lump, lump_kind, indexed(sheet, context.palette, 0, True)));
+                    }
+                } elif lump_kind == 64 or lump == "palette" {
+                    lumps.append((lump, lump_kind, context.palette.bytes768()));
+                } elif lump_kind == 66 and w > 0 and h > 0 {
+                    drawn = picture_2d(lump, w, h, "q1");
+                    if drawn is not None {
+                        lumps.append((lump, lump_kind, qpic_bytes(indexed(drawn, context.palette, 255), w, h)));
+                    }
+                }
+            }
+            made.append((slot.name, wad2_bytes(lumps)));
+        } elif slot.kind == "lmp" and slot.fact("width", 0.0) > 0.0 {
+            w = int(slot.fact("width", 0.0));
+            h = int(slot.fact("height", 0.0));
+            drawn = picture_2d(slot.name, w, h, "q1");
+            if drawn is not None {
+                made.append((slot.name, qpic_bytes(indexed(drawn, context.palette, 255), w, h)));
             }
         } elif slot.kind == "lmp" and slot.name.lower() == "gfx/palette.lmp" {
             made.append((slot.name, context.palette.bytes768()));
@@ -183,9 +424,16 @@ def bake_pack(game: str, pack: str, path: str) -> BakeReport {
     record = BakeReport(pack=pack, game=game);
     manifest = build_manifest(game, pack, path);
     palette = quake2_palette() if game == "q2" else quake_palette();
-    context = BakeContext(game=game, palette=palette);
-    files: list[tuple[str, bytes]] = [];
-    written: set[str] = set();
+    context = BakeContext(game=game, palette=palette, atlas=atlas_skins(manifest), left_out=os.getenv("QP_GENERATED_SKIP", "").split(","));
+    for slot in slots_of(manifest) {
+        context.slots[slot.kind + ":" + slot.name.lower()] = slot;
+    }
+    folder = generated_folder(pack);
+    os.makedirs(folder, exist_ok=True);
+    target = folder + "/" + generated_archive_name(game);
+    staged = target + ".part";
+    archive = ArchiveWriter(path=staged, zip=game == "q3");
+    archive.begin();
     for slot in slots_of(manifest) {
         filled = fill(context, slot);
         if filled {
@@ -194,25 +442,15 @@ def bake_pack(game: str, pack: str, path: str) -> BakeReport {
             record.left[slot.kind] = record.left.get(slot.kind, 0) + 1;
         }
         for (name, data) in filled {
-            if name.lower() not in written {
-                written.add(name.lower());
-                files.append((name, data));
-            }
+            archive.add(name, data);
         }
     }
-    folder = generated_folder(pack);
-    os.makedirs(folder, exist_ok=True);
-    target = folder + "/" + generated_archive_name(game);
-    archive = write_zip(files) if game == "q3" else write_pak(files);
-    staged = target + ".part";
-    with open(staged, "wb") as handle {
-        handle.write(archive);
-    }
+    archive.finish();
     os.replace(staged, target);
     with open(folder + "/stamp.txt", "w") as handle {
         handle.write(stamp_of(path, game));
     }
-    record.files = len(files);
+    record.files = archive.count;
     record.seconds = time.time() - began;
     record.baked = True;
     return record;
