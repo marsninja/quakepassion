@@ -18,8 +18,9 @@ import from engine.assets.generated {
 import from editor.formats.archive { write_pak, write_zip }
 import from .manifest { Manifest, AssetSlot, build_manifest, slots_of }
 import from .palette { Palette, quake_palette, quake2_palette, quake_colormap }
-import from .image { Picture, Rgb }
-import from .textures { paint_named, paint_role, Paint }
+import from .image { Picture, Rgb, graded, glowed }
+import from .tones { family_tone, GLOW_TONES, SKIN_TONES }
+import from .textures { paint_named, paint_role, texture_family, Paint }
 import from .writers { ArchiveWriter, miptex_bytes, wav_bytes, wal_bytes, pcx_bytes, tga_bytes, qpic_bytes, wad2_bytes, indexed }
 import from .art2d { picture_2d }
 import from .models { model_doc, model_family, material_atlas, mdl_bytes, MATERIALS, release_doc }
@@ -34,10 +35,11 @@ import from editor.model.files { write_md2, write_md3 }
 import from .textures { Paint }
 import from .skies { sky_side, side_of }
 import from .sounds { make_sound }
+import from .synth { made_loud }
 
 """Bumped whenever a recipe changes what it makes, so every bake is made
 again."""
-glob GENERATOR_VERSION: str = "13";
+glob GENERATOR_VERSION: str = "16";
 
 """What a bake made, and how it went."""
 obj BakeReport {
@@ -135,10 +137,32 @@ def player_doc(context: BakeContext, slot: AssetSlot) -> ModelDoc | None {
     return player_part_doc(slot.name, part, facts, ranges, legs_facts.first_low, legs_facts.first_high);
 }
 
+"""A model's skin: the material atlas, toned as the game's own are."""
+def skin_atlas(name: str, w: int, h: int, game: str) -> Picture {
+    # A creature's or a weapon's is toned toward the painted parts of the
+    # game's own (a pickup keeps its colours: the games colour them by kind).
+    atlas = material_atlas(name, w, h, game);
+    family = model_family(name);
+    kind = "weapon" if family == "weapon" else ("character" if family == "character" else "");
+    if not kind {
+        return atlas;
+    }
+    return graded(atlas, SKIN_TONES.get(game, {}).get(kind, []), 0.75);
+}
+
+"""A wall picture graded to the tone of its family in the game's own."""
+def toned(paint: Paint, game: str, family: str) -> Paint {
+    tone = family_tone(game, family);
+    if not tone {
+        return paint;
+    }
+    return Paint(picture=graded(paint.picture, tone, 1.0), glow=paint.glow);
+}
+
 """The material atlas as palette numbers: its glowing tiles drawn in
 Quake's fullbright colours."""
 def atlas_indices(name: str, w: int, h: int, context: BakeContext) -> bytes {
-    picture = material_atlas(name, w, h, context.game);
+    picture = skin_atlas(name, w, h, context.game);
     glow: list[float] = [];
     if context.game == "q1" {
         glow = [0.0] * (w * h);
@@ -201,7 +225,7 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
             if slot.kind == "pcx" {
                 made.append((slot.name, pcx_bytes(atlas_indices(slot.name, w, h, context), w, h, context.palette)));
             } else {
-                made.append((slot.name, tga_bytes(material_atlas(slot.name, w, h, context.game), False)));
+                made.append((slot.name, tga_bytes(skin_atlas(slot.name, w, h, context.game), False)));
             }
             return made;
         }
@@ -273,9 +297,12 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
             rate = 22050;
         }
         loops = slot.fact("loop", -1.0) >= 0.0;
-        wave = make_sound(slot.name, slot.fact("seconds", 0.5), rate, loops, context.game);
+        wave = make_sound(slot.name, slot.fact("seconds", 0.5), rate, loops, context.game, slot.fact("loudness", 0.0));
         if spoken(slot.name) {
             wave = spoken_line(slot.name, slot.fact("seconds", 0.8), rate);
+            if slot.fact("loudness", 0.0) > 0.0 {
+                wave = made_loud(wave, slot.fact("loudness", 0.0));
+            }
         }
         bits = 8 if slot.fact("width", 2.0) < 1.5 else 16;
         made.append((slot.name, wav_bytes(wave.samples, wave.rate, bits, 0 if loops else -1)));
@@ -313,18 +340,21 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
             }
             if lower.startswith("models/") and role == "base" and "weaphits" not in lower {
                 # Every model is generated, so every model skin is the atlas.
-                made.append((slot.name, tga_bytes(material_atlas(slot.name, w, h, "q3"), False)));
+                made.append((slot.name, tga_bytes(skin_atlas(slot.name, w, h, "q3"), False)));
                 return made;
             }
             if lower.startswith("sprites/") or "weaphits" in lower {
                 painted_glow = paint_role(slot.name, w, h, "add" if role == "base" else role);
-                made.append((slot.name, tga_bytes(painted_glow.picture, False)));
+                if role in ["base", "add"] {
+                    painted_glow = Paint(picture=glowed(painted_glow.picture, GLOW_TONES["effect"][0], GLOW_TONES["effect"][1]));
+                }
+                made.append((slot.name, tga_bytes(painted_glow.picture, role in ["blend", "alpha"])));
                 return made;
             }
             # The 2D art is drawn as 2D art whatever its shader does with
             # it (the console font and the status numbers are blended).
             two_d = lower.startswith("gfx/2d/") or lower.startswith("menu/") or lower.startswith("icons/")
-                or lower.startswith("ui/") or lower.startswith("levelshots/");
+                or lower.startswith("ui/") or lower.startswith("levelshots/") or lower.startswith("gfx/damage/");
             if two_d {
                 drawn_2d = picture_2d(slot.name, w, h, "q3");
                 if drawn_2d is not None {
@@ -334,7 +364,13 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
             }
             if lower.startswith("textures/") or lower.startswith("models/") or role != "base" {
                 painted = paint_role(slot.name, w, h, role);
-                made.append((slot.name, tga_bytes(painted.picture, role in ["alpha", "blend"])));
+                if lower.startswith("textures/") and role in ["base", "blend", "unblend", "alpha"] {
+                    painted = toned(painted, "q3", texture_family(slot.name, "q3"));
+                } elif role == "add" {
+                    which = "wall" if lower.startswith("textures/") else "effect";
+                    painted = Paint(picture=glowed(painted.picture, GLOW_TONES[which][0], GLOW_TONES[which][1]));
+                }
+                made.append((slot.name, tga_bytes(painted.picture, role in ["alpha", "blend", "unblend"])));
                 return made;
             }
             drawn = picture_2d(slot.name, w, h, "q3");
@@ -362,7 +398,7 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
             }
             leaf = slot.name[9:] if slot.name.lower().startswith("textures/") else slot.name;
             leaf = leaf[:-4] if leaf.lower().endswith(".wal") else leaf;
-            painted = paint_named(leaf, w, h, "q2", hint);
+            painted = toned(paint_named(leaf, w, h, "q2", hint), "q2", hint if hint else texture_family(slot.name, "q2"));
             data = wal_bytes(
                 leaf, painted, context.palette, slot.notes.get("next", ""), flags, contents,
                 int(slot.fact("value", 0.0))
@@ -396,6 +432,9 @@ def fill(context: BakeContext, slot: AssetSlot) -> list[tuple[str, bytes]] {
             w = int(slot.fact("width", 64.0));
             h = int(slot.fact("height", 64.0));
             painted = paint_named(slot.name, w, h, "q1");
+            if not slot.name.lower().startswith("sky") and not slot.name.startswith("*") {
+                painted = toned(painted, "q1", texture_family(slot.name, "q1"));
+            }
             data = miptex_bytes(slot.name, painted, context.palette, slot.name.lower().startswith("sky"));
             if data {
                 made.append((miptex_path(slot.name), data));

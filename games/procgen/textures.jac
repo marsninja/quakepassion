@@ -15,8 +15,8 @@ sixteen texels tall whatever the texture's size, so the world keeps one
 scale."""
 import math;
 import from games.passion.random { hash_label, mix32 }
-import from .field { Field, lattice }
-import from .image { Picture, Rgb, hex_rgb, filled, along }
+import from .field { Field, lattice, value_noise }
+import from .image { Picture, Rgb, hex_rgb, filled, along, enlarged }
 import from .graph { Recipe, Op }
 import from .families { Families, families_of, choose_family }
 
@@ -643,16 +643,16 @@ def animation_of(name: str) -> tuple[str, int] {
     return (name, 0);
 }
 
-"""Paint the texture a game names `name` at its size: its family chosen from
-its name (and, for Quake II, its surface flags), seeded by its name."""
-def paint_named(name: str, w: int, h: int, game: str, family_hint: str = "") -> Paint {
+"""The family a texture a game names `name` is painted as: the file's own
+name first, then its folder's (base_floor/diamond2c), else a fallback by
+its seed."""
+def texture_family(name: str, game: str) -> str {
     (base, frame) = animation_of(name);
     stem = base.lower();
     cut = stem.rfind("/");
     leaf = stem[cut + 1:] if cut >= 0 else stem;
-    family = family_hint;
-    if not family and game != "q1" and not leaf.startswith("sky") and not leaf.startswith("*") {
-        # The file's own name first, then its folder's (base_floor/diamond2c).
+    family = "";
+    if game != "q1" and not leaf.startswith("sky") and not leaf.startswith("*") {
         family = _book.matched(leaf);
         if not family {
             family = _book.matched(stem);
@@ -661,6 +661,22 @@ def paint_named(name: str, w: int, h: int, game: str, family_hint: str = "") -> 
     if not family {
         family = family_of(leaf if game != "q1" else stem);
     }
+    if game == "q3" and q3_set(stem) == "base" and family in ["stone", "brick", "rock", "ground"] {
+        # Quake III's base sets are an industrial base: their walls and
+        # floors are metal, whatever the name says of where they go.
+        family = "metal";
+    }
+    return family;
+}
+
+"""Paint the texture a game names `name` at its size: its family chosen from
+its name (and, for Quake II, its surface flags), seeded by its name."""
+def paint_named(name: str, w: int, h: int, game: str, family_hint: str = "") -> Paint {
+    (base, frame) = animation_of(name);
+    stem = base.lower();
+    cut = stem.rfind("/");
+    leaf = stem[cut + 1:] if cut >= 0 else stem;
+    family = family_hint if family_hint else texture_family(name, game);
     words = [stem];
     if name.startswith("+a") or (len(name) > 1 and name[0] == "+" and name[1] >= "a") {
         words.append("+a");
@@ -690,14 +706,57 @@ def paint_role(path: str, w: int, h: int, role: str) -> Paint {
     stem = lower.rsplit(".", 1)[0];
     seed = hash_label(1, "q3:" + stem);
     group = hash_label(2, "q3:" + stem.rstrip("0123456789_"));
-    v = Variation(w=w, h=h, seed=seed, group=group, words=[stem], game="q3");
-    painted_role = paint_role_with(v, path, stem, w, h, role);
+    # Quake III's wall pictures hold finer texels than Quake's (most are
+    # drawn at two to a unit), and the recipes measure in Quake's texels:
+    # such a picture is painted at two thirds of its size and enlarged, with
+    # a fine grain over it (its features then come out the size of the
+    # game's own).
+    shrunk = lower.startswith("textures/") and w >= 64 and h >= 64 and role != "env";
+    pw = w * 2 // 3 if shrunk else w;
+    ph = h * 2 // 3 if shrunk else h;
+    v = Variation(w=pw, h=ph, seed=seed, group=group, words=[stem], game="q3");
+    painted_role = paint_role_with(v, path, stem, pw, ph, role);
     v.release();
-    return painted_role;
+    if not shrunk {
+        return painted_role;
+    }
+    big = enlarged(painted_role.picture, w, h);
+    grain = value_noise(w, h, w // 2, h // 2, seed ^ 91);
+    for i in range(w * h) {
+        k = 0.94 + grain.v[i] * 0.12;
+        big.r[i] = min(1.0, big.r[i] * k);
+        big.g[i] = min(1.0, big.g[i] * k);
+        big.b[i] = min(1.0, big.b[i] * k);
+    }
+    return Paint(picture=big);
+}
+
+"""A Quake III texture's set: the word before the underscore of its folder
+(textures/base_wall/... is "base", textures/gothic_block/... "gothic")."""
+def q3_set(stem: str) -> str {
+    parts = stem.split("/");
+    if len(parts) < 3 or parts[0] != "textures" {
+        return "";
+    }
+    return parts[1].split("_")[0];
 }
 
 def:priv paint_role_with(v: Variation, path: str, stem: str, w: int, h: int, role: str) -> Paint {
+    if role in ["blend", "alpha"] and (stem.startswith("models/weaphits/") or stem.startswith("sprites/") or "blood" in stem) {
+        # A puff, a splash or a spark laid over by its coverage: the glow's
+        # shape, solid where it is bright, clear where it is black.
+        puff = glow_paint(v, stem);
+        for i in range(w * h) {
+            bright = max(puff.picture.r[i], max(puff.picture.g[i], puff.picture.b[i]));
+            puff.picture.a[i] = min(1.0, bright * 2.0);
+        }
+        return puff;
+    }
     if role == "add" {
+        fixture = fixture_of(stem);
+        if fixture {
+            return fixture_glow(fixture, w, h);
+        }
         return glow_paint(v, stem);
     }
     if role == "filter" {
@@ -714,13 +773,26 @@ def:priv paint_role_with(v: Variation, path: str, stem: str, w: int, h: int, rol
     painted = paint_named(stem, w, h, "q3");
     if role == "alpha" {
         r = v.recipe();
-        cut = r.op("panels", {"rows": float(v.fit(h, 8.0)), "cols": float(v.fit(w, 8.0)), "mortar": 3.0, "bevel": 0.5});
+        cut = r.op("panels", {"rows": float(v.fit(h, 8.0)), "cols": float(v.fit(w, 8.0)), "mortar": 2.0, "bevel": 0.5});
         if "leaf" in stem or "plant" in stem or "vine" in stem or "ivy" in stem or "tree" in stem {
             cut = r.op("cells", {"count": float(max(8, w * h // 128))});
         }
         holes = r.field(cut);
         for i in range(w * h) {
             painted.picture.a[i] = 0.0 if holes.v[i] > 0.5 else 1.0;
+        }
+    } elif (role == "blend" or role == "unblend") and stem.startswith("textures/") {
+        # A wall picture over a shine or a screen: solid but for worn
+        # patches on its panels' faces, where what is under it shows (the
+        # games' own leave about a tenth of such a picture open).
+        r = v.recipe();
+        size = [32.0, 64.0][v.pick(2, "inset")];
+        faces = r.field(r.op("panels", {"rows": float(v.fit(h, size)), "cols": float(v.fit(w, size)), "mortar": 5.0, "bevel": 3.0}));
+        speckle = r.field(r.op("noise", {"cells": float(v.fit(w, 12.0)), "octaves": 3.0, "keep": 0.5}));
+        for i in range(w * h) {
+            worn = faces.v[i] * max(0.0, min(1.0, (speckle.v[i] - 0.55) / 0.3));
+            solid = 1.0 - 0.85 * worn;
+            painted.picture.a[i] = (1.0 - solid) if role == "unblend" else solid;
         }
     } elif role == "blend" {
         r = v.recipe();
@@ -737,6 +809,43 @@ def:priv paint_role_with(v: Variation, path: str, stem: str, w: int, h: int, rol
     return painted;
 }
 
+"""The picture a light's glow belongs to: Quake III adds `name.blend`,
+`name.glow`, `name_glow` or `name_glo` over `name` to make its lamps shine;
+"" for anything else."""
+def fixture_of(stem: str) -> str {
+    if not stem.startswith("textures/") {
+        return "";
+    }
+    for ending in [".blend", ".glow", "_glow", "_glo"] {
+        if stem.endswith(ending) and len(stem) > len(ending) + 9 {
+            return stem[:len(stem) - len(ending)];
+        }
+    }
+    return "";
+}
+
+"""A light's glow: its fixture painted again as it is painted for itself,
+kept only where it shines (the lamps a recipe marks, else its brightest
+texels), on black."""
+def:priv fixture_glow(fixture: str, w: int, h: int) -> Paint {
+    lit_up = paint_named(fixture, w, h, "q3");
+    made = Picture(w=w, h=h);
+    picture = lit_up.picture;
+    for i in range(w * h) {
+        shine = 0.0;
+        if len(lit_up.glow) == w * h {
+            shine = lit_up.glow[i];
+        } else {
+            luminance = picture.r[i] * 0.3 + picture.g[i] * 0.59 + picture.b[i] * 0.11;
+            shine = max(0.0, min(1.0, (luminance - 0.5) / 0.3));
+        }
+        made.r[i] = min(1.0, picture.r[i] * shine * 1.3);
+        made.g[i] = min(1.0, picture.g[i] * shine * 1.3);
+        made.b[i] = min(1.0, picture.b[i] * shine * 1.3);
+    }
+    return Paint(picture=made);
+}
+
 """Something that glows, on black: a flame, a flare, a beam or a lamp's
 light, as the name says."""
 def:priv glow_paint(v: Variation, stem: str) -> Paint {
@@ -751,6 +860,16 @@ def:priv glow_paint(v: Variation, stem: str) -> Paint {
     if "red" in stem {
         hue = "ff2b1b,ffab8b";
     }
+    leaf = stem.split("/")[-1];
+    explosive = "expl" in stem or "boom" in stem or "blast" in stem or "smoke" in stem;
+    muzzle = leaf.startswith("f_") or "flash" in leaf or "muzzle" in leaf;
+    if explosive {
+        hue = "8b1b03,ff7b1b,ffdb8b,ffffdb";
+    }
+    if "blood" in stem {
+        hue = "4b0303,8b0b0b";
+        explosive = True;
+    }
     shape = Field(w=v.w, h=v.h);
     flicker = r.field(r.op("noise", {"cells": float(v.fit(v.w, 8.0)), "octaves": 4.0, "keep": 0.6}));
     for y in range(v.h) {
@@ -759,17 +878,25 @@ def:priv glow_paint(v: Variation, stem: str) -> Paint {
             t = (float(y) + 0.5) / float(v.h) * 2.0 - 1.0;
             i = y * v.w + x;
             value = 0.0;
+            d = math.sqrt(u * u + t * t);
             if "flame" in stem or "fire" in stem {
                 # A tongue of flame rising from the bottom.
                 width = 0.6 * (1.0 - (1.0 - t) * 0.5) + (flicker.v[i] - 0.5) * 0.5;
                 value = max(0.0, 1.0 - abs(u) / max(0.05, width)) * max(0.0, (t + 1.0) * 0.5);
-            } elif "beam" in stem or "ray" in stem or "bolt" in stem or "line" in stem {
+            } elif "beam" in stem or "ray" in stem or "bolt" in stem or "line" in stem or "rail" in stem {
                 value = max(0.0, 1.0 - abs(t) * 2.0) * (0.6 + 0.4 * flicker.v[i]);
-            } elif "flare" in stem or "glow" in stem or "light" in stem or "spot" in stem {
-                d = math.sqrt(u * u + t * t);
-                value = max(0.0, 1.0 - d) ** 2;
+            } elif explosive {
+                # A fireball: a hot heart, billows thinning to its edge.
+                reach = 0.55 + (flicker.v[i] - 0.5) * 0.5;
+                value = max(0.0, 1.0 - d / max(0.1, reach)) ** 0.8 * (0.55 + 0.45 * flicker.v[i]);
+            } elif muzzle {
+                # A muzzle flash: a hot point and four spikes.
+                spikes = max(0.0, 1.0 - abs(u) * 6.0) * max(0.0, 1.0 - abs(t)) + max(0.0, 1.0 - abs(t) * 6.0) * max(0.0, 1.0 - abs(u));
+                value = max(spikes * 0.8, max(0.0, 1.0 - d * 2.2) ** 1.5);
             } else {
-                value = max(0.0, flicker.v[i] * 1.6 - 0.6);
+                # A glow: soft and round, brightest at its heart, its edge
+                # broken by flicker (the games' are black at their borders).
+                value = max(0.0, 1.0 - d) ** 2 * (0.6 + 0.4 * flicker.v[i]) * 1.2;
             }
             shape.v[i] = max(0.0, min(1.0, value));
         }

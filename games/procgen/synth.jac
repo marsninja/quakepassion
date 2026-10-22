@@ -277,3 +277,46 @@ def muffled(source: Wave, cutoff: float) -> Wave {
     }
     return Wave(rate=source.rate, samples=samples);
 }
+
+
+"""How loud a wave is while it sounds: the root mean square over its
+stretches of 512 samples at least a tenth as loud as its loudest (as
+games/procgen/manifest.jac measures the games' own)."""
+def loudness_of(source: Wave) -> float {
+    stretches: list[float] = [];
+    total = 0.0;
+    counted = 0;
+    for sample in source.samples {
+        total += sample * sample;
+        counted += 1;
+        if counted == 512 {
+            stretches.append(total / 512.0);
+            total = 0.0;
+            counted = 0;
+        }
+    }
+    if counted > 0 {
+        stretches.append(total / float(counted));
+    }
+    if not stretches {
+        return 0.0;
+    }
+    loudest = max(stretches);
+    kept = [power for power in stretches if power >= loudest * 0.01];
+    return (sum(kept) / float(max(1, len(kept)))) ** 0.5;
+}
+
+"""A wave made `loudness` loud while it sounds (see loudness_of), its
+loudest sample kept below full scale."""
+def made_loud(source: Wave, loudness: float) -> Wave {
+    now = loudness_of(source);
+    loudest = 0.0;
+    for sample in source.samples {
+        loudest = max(loudest, abs(sample));
+    }
+    if now <= 1.0e-6 or loudest <= 1.0e-6 {
+        return source;
+    }
+    k = min(loudness / now, 0.98 / loudest);
+    return Wave(rate=source.rate, samples=[sample * k for sample in source.samples]);
+}

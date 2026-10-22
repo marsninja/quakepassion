@@ -148,6 +148,7 @@ def wav_facts(data: bytes) -> dict[str, float] {
             per = int(facts["width"] * facts["channels"]);
             frames = min(size, len(data) - body) // max(1, per);
             facts["seconds"] = float(frames) / max(1.0, facts["rate"]);
+            facts["loudness"] = wav_loudness(data, body, frames, per, int(facts["width"]));
         } elif kind == b"cue " and body + 28 <= len(data) {
             facts["loop"] = float(i32_at(data, body + 24)) / max(1.0, facts["rate"]);
         }
@@ -157,6 +158,51 @@ def wav_facts(data: bytes) -> dict[str, float] {
         at = body + size + (size & 1);
     }
     return facts;
+}
+
+"""How loud a sound is while it sounds, from 0 to 1 (full scale): the root
+mean square over the stretches (512 frames each) at least a tenth as loud
+as its loudest stretch. It is the extent of the sound, as a model's box is
+the extent of the model, and a generated sound is made as loud (a hum kept
+quiet stays quiet). Every second frame is enough to measure it."""
+def wav_loudness(data: bytes, body: int, frames: int, per: int, width: int) -> float {
+    stretches: list[float] = [];
+    total = 0.0;
+    counted = 0;
+    k = 0;
+    while k < frames {
+        at = body + k * max(1, per);
+        if at + width > len(data) {
+            break;
+        }
+        value = 0.0;
+        if width == 1 {
+            value = float(int(data[at]) - 128) / 128.0;
+        } else {
+            raw = int(data[at]) | (int(data[at + 1]) << 8);
+            if raw >= 32768 {
+                raw -= 65536;
+            }
+            value = float(raw) / 32768.0;
+        }
+        total += value * value;
+        counted += 1;
+        if counted == 256 {
+            stretches.append(total / float(counted));
+            total = 0.0;
+            counted = 0;
+        }
+        k += 2;
+    }
+    if counted > 0 {
+        stretches.append(total / float(counted));
+    }
+    if not stretches {
+        return 0.0;
+    }
+    loudest = max(stretches);
+    kept = [power for power in stretches if power >= loudest * 0.01];
+    return (sum(kept) / float(max(1, len(kept)))) ** 0.5;
 }
 
 """What a model's header says: frames, skins and the skin's size (MDL and
@@ -215,12 +261,19 @@ def picture_facts(data: bytes, kind: str, name: str) -> dict[str, float] {
 """How each image a set of Quake III shader scripts names is drawn: "alpha"
 (cut out where its alpha is low), "blend" (laid over by its alpha), "add"
 (added, so black is clear: glows and flames), "filter" (multiplied: detail
-and light), "env" (an environment map's sheen), else "base"."""
+and light), "unblend" (laid over where its alpha is low), "env" (an environment map's sheen), else "base".
+
+Most of Quake III's walls draw the lightmap first and then multiply their
+picture over it (`blendFunc filter` after `map $lightmap`): that picture is
+the surface's colour, so it is "base"; only a filter over another picture,
+or one marked `detail`, is a light detail."""
 def shader_roles(text: str) -> dict[str, str] {
     roles: dict[str, str] = {};
     depth = 0;
     images: list[str] = [];
     role = "base";
+    lit_first = False;
+    detail = False;
     for raw in text.replace("\r", "\n").split("\n") {
         line = raw.strip();
         cut = line.find("//");
@@ -233,12 +286,19 @@ def shader_roles(text: str) -> dict[str, str] {
         for token in line.replace("{", " { ").replace("}", " } ").split() {
             if token == "{" {
                 depth += 1;
+                if depth == 1 {
+                    lit_first = False;
+                }
                 if depth == 2 {
                     images = [];
                     role = "base";
+                    detail = False;
                 }
             } elif token == "}" {
                 if depth == 2 {
+                    if role == "filter" and lit_first and not detail {
+                        role = "base";
+                    }
                     for image in images {
                         known = roles.get(image, "base");
                         if known == "base" {
@@ -257,6 +317,11 @@ def shader_roles(text: str) -> dict[str, str] {
             continue;
         }
         key = words[0].lower();
+        if key == "map" and len(words) > 1 and words[1].lower() == "$lightmap" and not images {
+            lit_first = True;
+        } elif key == "detail" {
+            detail = True;
+        }
         if key in ["map", "clampmap"] and len(words) > 1 and not words[1].startswith("$") {
             images.append(words[1].lower());
         } elif key == "animmap" and len(words) > 2 {
@@ -273,6 +338,8 @@ def shader_roles(text: str) -> dict[str, str] {
                 role = "filter";
             } elif joined == "blend" or joined == "gl_src_alpha gl_one_minus_src_alpha" {
                 role = "blend";
+            } elif joined == "gl_one_minus_src_alpha gl_src_alpha" {
+                role = "unblend";
             }
         } elif key == "tcgen" and len(words) > 1 and words[1].lower() == "environment" and role == "base" {
             role = "env";

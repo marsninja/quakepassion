@@ -124,6 +124,12 @@ def big_character(character: str, w: int, h: int, look: Look) -> Picture {
 """An icon, drawn from what its name says it shows."""
 def icon(name: str, w: int, h: int, game: str) -> Picture {
     lower = name.lower();
+    if game == "q3" {
+        drawn_q3 = q3_icon(lower, w, h);
+        if drawn_q3 is not None {
+            return drawn_q3;
+        }
+    }
     mask = Field(w=w, h=h);
     fw = float(w);
     fh = float(h);
@@ -414,7 +420,38 @@ def plaque(words: str, w: int, h: int, game: str) -> Picture {
         # Small letters are drawn thin, or their strokes run together.
         draw_text(mask, line, x, y, unit, max(1.0, unit * (1.2 if unit >= 6.0 else 0.55)));
     }
+    if game == "q1" {
+        return carved_plaque(mask, words, w, h);
+    }
     return cast(mask, look_of(game, "icon" if smallest >= 6.0 else "text"));
+}
+
+"""Quake's titles: a board of dark wood, its edge bevelled, the words cut
+into it (dark in the cut, lit along its lower edge)."""
+def carved_plaque(mask: Field, words: str, w: int, h: int) -> Picture {
+    board = paint_named("plaque_" + words.lower().replace("|", "_"), w, h, "q1", "wood").picture;
+    made = Picture(w=w, h=h);
+    for y in range(h) {
+        for x in range(w) {
+            i = y * w + x;
+            k = 0.8;
+            rim = min(min(x, y), min(w - 1 - x, h - 1 - y));
+            if rim < 2 {
+                k = 1.25 if (x < 2 or y < 2) else 0.45;
+            }
+            cut = mask.v[i] > 0.5;
+            above = y > 0 and x > 0 and mask.v[i - w - 1] > 0.5;
+            if cut {
+                k = 0.3;
+            } elif above {
+                k = 1.3;
+            }
+            made.r[i] = min(1.0, board.r[i] * k);
+            made.g[i] = min(1.0, board.g[i] * k);
+            made.b[i] = min(1.0, board.b[i] * k);
+        }
+    }
+    return made;
 }
 
 """A crosshair: a cross, a ring, a dot or brackets, by its letter."""
@@ -522,6 +559,18 @@ def picture_2d(name: str, w: int, h: int, game: str) -> Picture | None {
     if w <= 0 or h <= 0 {
         return None;
     }
+    if "/damage/" in lower or stem.endswith("_mrk") or stem == "shadow" or stem.startswith("blood_") {
+        return mark(stem, w, h);
+    }
+    if "/medals/" in lower {
+        return medal(stem, w, h);
+    }
+    if game == "q3" and lower.startswith("menu/art/") {
+        drawn_menu = menu_art(stem, w, h);
+        if drawn_menu is not None {
+            return drawn_menu;
+        }
+    }
     if stem == "conchars" or stem == "bigchars" {
         return font_sheet(w, h, game);
     }
@@ -576,6 +625,376 @@ def picture_2d(name: str, w: int, h: int, game: str) -> Picture | None {
     }
     if lower.startswith("gfx/") or lower.startswith("pics/") or lower.startswith("menu/") or lower.startswith("ui/") {
         return plaque(words_of(lower), w, h, game);
+    }
+    return None;
+}
+
+
+"""A weapon's colour in Quake III's icons and ammo boxes."""
+def:priv q3_weapon_colour(lower: str) -> str {
+    table = [
+        ("machinegun", "3b3300,9b8b00,f3e300,ffffab"), ("shotgun", "3b1b00,9b4b00,f39b1b,ffdbab"),
+        ("grenade", "032b03,0b6b0b,2bb32b,bbffbb"), ("rocket", "3b0303,9b0b0b,f32b1b,ffbbab"),
+        ("lightning", "3b3b1b,9b9b5b,f3f3bb,ffffff"), ("railgun", "033b03,0b9b1b,3bf34b,cbffcb"),
+        ("plasma", "1b033b,5b1b9b,a35bf3,e3cbff"), ("bfg", "03133b,0b3b9b,2b7bf3,bbdbff"),
+        ("gauntlet", "033b3b,0b8b8b,3bdbdb,cbffff")
+    ];
+    for (word, ramp) in table {
+        if word in lower {
+            return ramp;
+        }
+    }
+    return "2b2b33,6b6b7b,c3c3d3,ffffff";
+}
+
+"""A weapon's sign in Quake III's icons: its rounds or what it throws (three
+shells, a belt of bullets, a rocket, a grenade, a bolt, a coil, a ball of
+plasma, the BFG's trefoil, a fist), drawn into `mask` within the square of
+side `s` about (cx, cy)."""
+def:priv weapon_sign(mask: Field, lower: str, cx: float, cy: float, s: float) {
+    if "shotgun" in lower {
+        for k in range(3) {
+            x = cx + (float(k) - 1.0) * s * 0.26;
+            box(mask, x - s * 0.09, cy - s * 0.32, x + s * 0.09, cy + s * 0.32, s * 0.04);
+        }
+    } elif "machinegun" in lower {
+        for k in range(3) {
+            y = cy + (float(k) - 1.0) * s * 0.26;
+            box(mask, cx - s * 0.34, y - s * 0.08, cx + s * 0.12, y + s * 0.08, s * 0.02);
+            polygon(mask, [(cx + s * 0.12, y - s * 0.08), (cx + s * 0.36, y), (cx + s * 0.12, y + s * 0.08)]);
+        }
+    } elif "rocket" in lower {
+        polygon(mask, [(cx - s * 0.36, cy + s * 0.3), (cx + s * 0.2, cy - s * 0.26), (cx + s * 0.38, cy - s * 0.38), (cx + s * 0.26, cy - s * 0.2), (cx - s * 0.3, cy + s * 0.36)]);
+        polygon(mask, [(cx - s * 0.3, cy + s * 0.06), (cx - s * 0.08, cy + s * 0.08), (cx - s * 0.36, cy + s * 0.36)]);
+        polygon(mask, [(cx - s * 0.06, cy + s * 0.3), (cx - s * 0.08, cy + s * 0.08), (cx - s * 0.36, cy + s * 0.36)]);
+    } elif "grenade" in lower {
+        disc(mask, cx, cy + s * 0.06, s * 0.28);
+        box(mask, cx - s * 0.06, cy - s * 0.3, cx + s * 0.08, cy - s * 0.18, s * 0.02);
+        stroke(mask, [[(cx + s * 0.06, cy - s * 0.28), (cx + s * 0.2, cy - s * 0.36), (cx + s * 0.28, cy - s * 0.26)]], s * 0.05);
+    } elif "lightning" in lower {
+        polygon(mask, [(cx + s * 0.1, cy - s * 0.42), (cx - s * 0.24, cy + s * 0.04), (cx - s * 0.02, cy + s * 0.04), (cx - s * 0.14, cy + s * 0.42), (cx + s * 0.24, cy - s * 0.08), (cx + s * 0.02, cy - s * 0.08)]);
+    } elif "railgun" in lower {
+        coil: list[tuple[float, float]] = [];
+        other: list[tuple[float, float]] = [];
+        for k in range(25) {
+            t = float(k) / 24.0;
+            x = cx - s * 0.4 + t * s * 0.8;
+            coil.append((x, cy + math.sin(t * math.pi * 4.0) * s * 0.18));
+            other.append((x, cy - math.sin(t * math.pi * 4.0) * s * 0.18));
+        }
+        stroke(mask, [coil, other], s * 0.05);
+    } elif "plasma" in lower {
+        disc(mask, cx, cy, s * 0.16);
+        for k in range(6) {
+            a = float(k) * math.pi / 3.0 + 0.3;
+            stroke(mask, [[(cx + math.cos(a) * s * 0.22, cy + math.sin(a) * s * 0.22), (cx + math.cos(a + 0.25) * s * 0.4, cy + math.sin(a + 0.25) * s * 0.4)]], s * 0.04);
+        }
+    } elif "bfg" in lower {
+        disc(mask, cx, cy, s * 0.07);
+        for k in range(3) {
+            a = float(k) * math.pi * 2.0 / 3.0 - math.pi * 0.5;
+            points: list[tuple[float, float]] = [(cx + math.cos(a - 0.5) * s * 0.12, cy + math.sin(a - 0.5) * s * 0.12)];
+            for j in range(7) {
+                b = a - 0.5 + float(j) / 6.0;
+                points.append((cx + math.cos(b) * s * 0.38, cy + math.sin(b) * s * 0.38));
+            }
+            points.append((cx + math.cos(a + 0.5) * s * 0.12, cy + math.sin(a + 0.5) * s * 0.12));
+            polygon(mask, points);
+        }
+    } elif "gauntlet" in lower {
+        box(mask, cx - s * 0.22, cy - s * 0.1, cx + s * 0.22, cy + s * 0.3, s * 0.06);
+        for k in range(4) {
+            x = cx - s * 0.17 + float(k) * s * 0.113;
+            box(mask, x - s * 0.045, cy - s * 0.3, x + s * 0.045, cy - s * 0.04, s * 0.03);
+        }
+    } else {
+        box(mask, cx - s * 0.3, cy - s * 0.1, cx + s * 0.3, cy + s * 0.1, s * 0.03);
+    }
+}
+
+"""A ring around the square of side `s` about (cx, cy)."""
+def:priv ring_around(mask: Field, cx: float, cy: float, outer: float, width: float) {
+    ring = Field(w=mask.w, h=mask.h);
+    disc(ring, cx, cy, outer);
+    hole = Field(w=mask.w, h=mask.h);
+    disc(hole, cx, cy, outer - width);
+    cut = carved(ring, hole);
+    for i in range(mask.w * mask.h) {
+        mask.v[i] = max(mask.v[i], cut.v[i]);
+    }
+}
+
+"""Quake III's icons by their names; None for one this does not know."""
+def q3_icon(lower: str, w: int, h: int) -> Picture | None {
+    mask = Field(w=w, h=h);
+    s = float(min(w, h));
+    cx = float(w) * 0.5;
+    cy = float(h) * 0.5;
+    leaf = lower.split("/")[-1];
+    ramp = "";
+    if leaf.startswith("iconh_") {
+        # Health: a cross in a ring, green, yellow, red as it grows; the
+        # mega health an M.
+        if "mega" in leaf {
+            ring_around(mask, cx, cy, s * 0.46, s * 0.08);
+            stroke(mask, [[(cx - s * 0.22, cy + s * 0.2), (cx - s * 0.18, cy - s * 0.2), (cx, cy + s * 0.04), (cx + s * 0.18, cy - s * 0.2), (cx + s * 0.22, cy + s * 0.2)]], s * 0.1);
+            ramp = "03133b,0b3b9b,2b6bf3,bbcbff";
+        } else {
+            ring_around(mask, cx, cy, s * 0.46, s * 0.05);
+            box(mask, cx - s * 0.1, cy - s * 0.3, cx + s * 0.1, cy + s * 0.3, s * 0.02);
+            box(mask, cx - s * 0.3, cy - s * 0.1, cx + s * 0.3, cy + s * 0.1, s * 0.02);
+            ramp = "3b1b00,9b4b00,f37b1b,ffcbab" if "red" in leaf else ("3b3300,9b8b00,f3e300,ffffab" if "yellow" in leaf else "0b2b03,2b6b13,5bb33b,cbffbb");
+        }
+    } elif leaf.startswith("iconr_") {
+        # Armor: a breastplate, yellow or red; a shard a green diamond.
+        if "shard" in leaf {
+            polygon(mask, [(cx, cy - s * 0.4), (cx + s * 0.26, cy), (cx, cy + s * 0.4), (cx - s * 0.26, cy)]);
+            ramp = "0b2b03,2b6b13,5bb33b,cbffbb";
+        } else {
+            polygon(mask, [(cx - s * 0.44, cy - s * 0.3), (cx - s * 0.2, cy - s * 0.38), (cx, cy - s * 0.3), (cx + s * 0.2, cy - s * 0.38), (cx + s * 0.44, cy - s * 0.3), (cx + s * 0.38, cy - s * 0.04), (cx + s * 0.26, cy - s * 0.02), (cx + s * 0.22, cy + s * 0.38), (cx - s * 0.22, cy + s * 0.38), (cx - s * 0.26, cy - s * 0.02), (cx - s * 0.38, cy - s * 0.04)]);
+            ramp = "3b0303,9b0b0b,f32b1b,ffbbab" if "red" in leaf else "3b3300,9b8b00,f3e300,ffffab";
+        }
+    } elif leaf.startswith("icona_") or leaf.startswith("iconw_") {
+        # A weapon's sign; its ammo's the same sign in a frame.
+        if leaf.startswith("icona_") {
+            box(mask, s * 0.04, s * 0.04, float(w) - s * 0.04, float(h) - s * 0.04, 0.0);
+            inner = Field(w=w, h=h);
+            box(inner, s * 0.1, s * 0.1, float(w) - s * 0.1, float(h) - s * 0.1, 0.0);
+            mask = carved(mask, inner);
+            weapon_sign(mask, leaf, cx, cy, s * 0.8);
+        } else {
+            weapon_sign(mask, leaf, cx, cy, s);
+        }
+        ramp = q3_weapon_colour(leaf);
+    } elif leaf.startswith("haste") {
+        polygon(mask, [(cx + s * 0.12, cy - s * 0.44), (cx - s * 0.3, cy + s * 0.06), (cx - s * 0.04, cy + s * 0.06), (cx - s * 0.16, cy + s * 0.44), (cx + s * 0.3, cy - s * 0.1), (cx + s * 0.04, cy - s * 0.1)]);
+        ramp = "2b3300,7b8b00,cbe31b,f3ffab";
+    } elif leaf.startswith("flight") {
+        for side in [-1.0, 1.0] {
+            polygon(mask, [(cx, cy + s * 0.1), (cx + side * s * 0.44, cy - s * 0.36), (cx + side * s * 0.36, cy - s * 0.06), (cx + side * s * 0.42, cy + s * 0.02), (cx + side * s * 0.3, cy + s * 0.12), (cx + side * s * 0.34, cy + s * 0.22), (cx + side * s * 0.06, cy + s * 0.3)]);
+        }
+        ramp = "2b033b,6b1b8b,b35bd3,ebcbff";
+    } elif leaf.startswith("regen") {
+        box(mask, cx - s * 0.05, cy - s * 0.42, cx + s * 0.05, cy + s * 0.42, s * 0.02);
+        for side in [-1.0, 1.0] {
+            polygon(mask, [(cx, cy - s * 0.2), (cx + side * s * 0.44, cy - s * 0.36), (cx + side * s * 0.3, cy - s * 0.1), (cx, cy - s * 0.04)]);
+        }
+        stroke(mask, [[(cx - s * 0.14, cy), (cx + s * 0.14, cy + s * 0.12), (cx - s * 0.14, cy + s * 0.24), (cx + s * 0.1, cy + s * 0.36)]], s * 0.05);
+        ramp = "3b0303,9b0b0b,e31b1b,ffabab";
+    } elif leaf.startswith("invis") {
+        disc(mask, cx, cy - s * 0.3, s * 0.1);
+        stroke(mask, [[(cx, cy - s * 0.18), (cx, cy + s * 0.12)], [(cx - s * 0.24, cy - s * 0.1), (cx, cy - s * 0.12), (cx + s * 0.24, cy - s * 0.1)], [(cx - s * 0.16, cy + s * 0.44), (cx, cy + s * 0.12), (cx + s * 0.16, cy + s * 0.44)]], s * 0.07);
+        ramp = "0b0b3b,2b2b9b,6b6bf3,cbcbff";
+    } elif leaf.startswith("teleporter") {
+        box(mask, cx - s * 0.36, cy - s * 0.4, cx + s * 0.36, cy - s * 0.24, s * 0.04);
+        box(mask, cx - s * 0.08, cy - s * 0.3, cx + s * 0.08, cy + s * 0.36, s * 0.03);
+        box(mask, cx - s * 0.2, cy + s * 0.28, cx + s * 0.2, cy + s * 0.42, s * 0.04);
+        ramp = "033b3b,0b8b9b,3bdbf3,cbffff";
+    } else {
+        return None;
+    }
+    return cast(mask, Look(ramp=ramp_text(ramp), depth=2.5));
+}
+
+"""A mark left on a wall, or a shadow: Quake III takes most of them away
+from what is under them (white takes away the most), so they are white on
+black; the plasma's scorch and blood are laid over by their coverage, in
+their colours."""
+def mark(stem: str, w: int, h: int) -> Picture {
+    made = Picture(w=w, h=h);
+    seed = hash_label(23, stem);
+    rough = fbm(w, h, 4, 4, 0.55, seed);
+    fine = fbm(w, h, 16, 3, 0.5, seed ^ 7);
+    colour = hex_rgb("ffffff");
+    coverage = True;
+    if "plasma" in stem {
+        colour = hex_rgb("7b9bff");
+    } elif "blood" in stem {
+        colour = hex_rgb("6b0303");
+    } else {
+        coverage = False;
+    }
+    for y in range(h) {
+        for x in range(w) {
+            i = y * w + x;
+            u = (float(x) + 0.5) / float(w) * 2.0 - 1.0;
+            v = (float(y) + 0.5) / float(h) * 2.0 - 1.0;
+            d = math.sqrt(u * u + v * v);
+            a = math.atan2(v, u);
+            value = 0.0;
+            if stem == "shadow" {
+                value = max(0.0, 1.0 - d) ** 1.5 * 0.85;
+            } elif "bullet" in stem {
+                # A small dark pit and a ragged ring of chipped paint.
+                value = max(0.0, 1.0 - d / (0.55 + (rough.v[i] - 0.5) * 0.4)) ** 0.7;
+            } elif "burn" in stem {
+                # Soot: dark in the middle, streaks running outward.
+                rays = 0.5 + 0.5 * math.sin(a * 9.0 + rough.v[i] * 6.0);
+                value = max(0.0, 1.0 - d / (0.75 + rays * 0.2 + (rough.v[i] - 0.5) * 0.3)) ** 1.2 * (0.7 + 0.3 * fine.v[i]);
+            } elif "hole" in stem {
+                pit = max(0.0, 1.0 - d / 0.35) ** 0.5;
+                soot = max(0.0, 1.0 - d / (0.85 + (rough.v[i] - 0.5) * 0.3)) * (0.5 + 0.4 * fine.v[i]);
+                value = max(pit, soot);
+            } elif "plasma" in stem {
+                ring = max(0.0, 1.0 - abs(d - 0.55) / 0.22) * (0.6 + 0.4 * fine.v[i]);
+                value = max(ring, max(0.0, 1.0 - d / 0.3) * 0.6);
+            } elif "blood" in stem {
+                # A splash: a ragged middle and drops thrown out of it.
+                reach = 0.45 + (rough.v[i] - 0.5) * 0.6 + max(0.0, math.sin(a * 7.0 + float(seed % 11))) * 0.35;
+                value = 1.0 if d < reach else 0.0;
+                value = value * (0.7 + 0.3 * fine.v[i]);
+            } else {
+                value = max(0.0, 1.0 - d) * (0.6 + 0.4 * fine.v[i]);
+            }
+            value = max(0.0, min(1.0, value));
+            if coverage {
+                made.put(i, colour);
+                made.a[i] = value;
+            } else {
+                made.put(i, colour.scaled(value));
+                made.a[i] = value;
+            }
+        }
+    }
+    return made;
+}
+
+"""A medal: a laurel ring and its sign (a skull for frags and excellence,
+a fist for the gauntlet, cross hairs for accuracy and impressiveness,
+crossed blades for victory)."""
+def medal(stem: str, w: int, h: int) -> Picture {
+    mask = Field(w=w, h=h);
+    s = float(min(w, h));
+    cx = float(w) * 0.5;
+    cy = float(h) * 0.5;
+    ring_around(mask, cx, cy, s * 0.46, s * 0.07);
+    for k in range(10) {
+        a = math.pi * (0.15 + float(k) * 0.07);
+        for side in [-1.0, 1.0] {
+            x = cx + side * math.cos(a) * s * 0.4;
+            y = cy + math.sin(a) * s * 0.4;
+            disc(mask, x, y, s * 0.05);
+        }
+    }
+    ramp = "3b2b00,9b7b0b,f3cb2b,ffffbb";
+    if "frags" in stem or "excellent" in stem {
+        disc(mask, cx, cy - s * 0.04, s * 0.2);
+        box(mask, cx - s * 0.12, cy + s * 0.08, cx + s * 0.12, cy + s * 0.22, s * 0.03);
+        hole = Field(w=w, h=h);
+        disc(hole, cx - s * 0.08, cy - s * 0.04, s * 0.05);
+        disc(hole, cx + s * 0.08, cy - s * 0.04, s * 0.05);
+        mask = carved(mask, hole);
+        ramp = "3b0303,9b0b0b,f32b1b,ffbbab" if "frags" in stem else ramp;
+    } elif "gauntlet" in stem {
+        weapon_sign(mask, "gauntlet", cx, cy, s * 0.6);
+        ramp = "3b0b03,9b2b0b,f35b2b,ffcbab";
+    } elif "accuracy" in stem or "impressive" in stem {
+        ring_around(mask, cx, cy, s * 0.2, s * 0.04);
+        stroke(mask, [[(cx - s * 0.28, cy), (cx + s * 0.28, cy)], [(cx, cy - s * 0.28), (cx, cy + s * 0.28)]], s * 0.04);
+        ramp = "033b3b,0b8b9b,3bdbf3,cbffff" if "impressive" in stem else "2b033b,6b1b8b,b35bd3,ebcbff";
+    } elif "victory" in stem {
+        stroke(mask, [[(cx - s * 0.24, cy + s * 0.24), (cx + s * 0.24, cy - s * 0.24)], [(cx + s * 0.24, cy + s * 0.24), (cx - s * 0.24, cy - s * 0.24)]], s * 0.06);
+        ramp = "033b0b,0b9b2b,3bf35b,cbffcb";
+    } else {
+        disc(mask, cx, cy, s * 0.18);
+    }
+    return cast(mask, Look(ramp=ramp_text(ramp), depth=2.5));
+}
+
+
+"""Quake III's menu pieces by their names: round buttons with their word
+(`_1` lit), arrows, frames and arcs, sliders and their knob, switches,
+colour swatches, the skill marks and the cursor; None for the rest (titles
+and logos stay plaques)."""
+def menu_art(stem: str, w: int, h: int) -> Picture | None {
+    mask = Field(w=w, h=h);
+    s = float(min(w, h));
+    fw = float(w);
+    fh = float(h);
+    cx = fw * 0.5;
+    cy = fh * 0.5;
+    lit = stem.endswith("_1") or stem.endswith("_on") or stem.endswith("selected") or stem.endswith("_left") or stem.endswith("_right") or stem.endswith("_top") or stem.endswith("_bot") or stem.endswith("_l") and "frame" not in stem;
+    red = "3b0303,8b0b0b,e32b1b,ffbbab";
+    chrome = "2b2b33,6b6b7b,c3c3d3,ffffff";
+    gold = "3b2b00,9b7b0b,f3cb2b,ffffbb";
+    buttons = ["accept", "back", "create", "delete", "fight", "load", "menu", "model", "next", "play", "refresh", "replay", "reset", "save", "skirmish", "specify"];
+    word = stem.rsplit("_", 1)[0] if "_" in stem else stem;
+    if word in buttons {
+        # A red ball with a chrome rim, its word across it.
+        disc(mask, cx, cy, s * 0.46);
+        face = cast(mask, Look(ramp=ramp_text(red if lit else "2b0303,6b0b0b,b31b13,e38b7b"), depth=3.0));
+        rim = Field(w=w, h=h);
+        ring2 = Field(w=w, h=h);
+        disc(ring2, cx, cy, s * 0.48);
+        inner = Field(w=w, h=h);
+        disc(inner, cx, cy, s * 0.42);
+        rim = carved(ring2, inner);
+        lettering = text_mask(word.upper(), w, h, 0.62);
+        laid = laid_over(face, cast(rim, Look(ramp=ramp_text(chrome), depth=2.0)));
+        return laid_over(laid, cast(lettering, Look(ramp=ramp_text(gold if lit else "2b2300,7b630b,c3a32b,f3e3ab"), depth=1.5, soft=0)));
+    }
+    if "arrow" in stem {
+        vertical = "vert" in stem;
+        for side in [-1.0, 1.0] {
+            if vertical {
+                polygon(mask, [(cx - s * 0.25, cy + side * s * 0.08), (cx + s * 0.25, cy + side * s * 0.08), (cx, cy + side * s * 0.42)]);
+            } else {
+                polygon(mask, [(cx + side * s * 0.08, cy - s * 0.25), (cx + side * s * 0.08, cy + s * 0.25), (cx + side * fw * 0.45, cy)]);
+            }
+        }
+        return cast(mask, Look(ramp=ramp_text(red if lit else chrome), depth=2.5));
+    }
+    if stem.startswith("narrow") {
+        polygon(mask, [(fw * 0.05, cy), (fw * 0.95, fh * 0.1), (fw * 0.8, cy), (fw * 0.95, fh * 0.9)]);
+        return cast(mask, Look(ramp=ramp_text(red if lit else "2b0303,6b0b0b,b31b13,e38b7b"), depth=2.5));
+    }
+    if "frame" in stem {
+        # An arc of chrome round the menu's middle.
+        ring2 = Field(w=w, h=h);
+        inner = Field(w=w, h=h);
+        if stem.endswith("_l") {
+            disc(ring2, fw * 1.0, cy, fw * 0.98);
+            disc(inner, fw * 1.0, cy, fw * 0.9);
+        } elif stem.endswith("_r") {
+            disc(ring2, 0.0, cy, fw * 0.98);
+            disc(inner, 0.0, cy, fw * 0.9);
+        } else {
+            disc(ring2, cx, cy, s * 0.48);
+            disc(inner, cx, cy, s * 0.44);
+        }
+        return cast(carved(ring2, inner), Look(ramp=ramp_text("2b1b13,7b4b33,c38b6b,ffdbbb"), depth=2.0));
+    }
+    if stem.startswith("slider") and "butt" not in stem {
+        box(mask, fw * 0.02, cy - fh * 0.2, fw * 0.98, cy + fh * 0.2, fh * 0.1);
+        return cast(mask, Look(ramp=ramp_text(chrome), depth=2.0));
+    }
+    if "sliderbutt" in stem or stem.startswith("switch") {
+        disc(mask, cx, cy, s * 0.4);
+        return cast(mask, Look(ramp=ramp_text(("0b2b03,1b7b0b,4bd33b,cbffbb" if stem.endswith("on") else red) if stem.startswith("switch") else (gold if lit else chrome)), depth=2.5));
+    }
+    if stem.startswith("fx_") {
+        colours = {"blue": "03133b,0b3b9b,2b6bf3,bbcbff", "cyan": "033b3b,0b8b9b,3bdbf3,cbffff", "grn": "032b03,0b6b0b,2bb32b,bbffbb", "red": red, "teal": "032b2b,0b6b5b,2bb39b,bbffeb", "white": chrome, "yel": "3b3300,9b8b00,f3e300,ffffab", "base": chrome};
+        disc(mask, cx, cy, s * 0.4);
+        return cast(mask, Look(ramp=ramp_text(colours.get(stem[3:], chrome)), depth=2.0));
+    }
+    if stem.startswith("skill") {
+        # A skill: as many marks as its number.
+        count = int(stem[-1]) if stem[-1].isdigit() else 1;
+        for k in range(count) {
+            x = fw * (0.5 + (float(k) - float(count - 1) * 0.5) * 0.18);
+            disc(mask, x, cy, s * 0.07);
+        }
+        return cast(mask, Look(ramp=ramp_text(red), depth=2.0));
+    }
+    if "cursor" in stem {
+        polygon(mask, [(fw * 0.1, fh * 0.1), (fw * 0.9, fh * 0.5), (fw * 0.5, fh * 0.6), (fw * 0.35, fh * 0.95)]);
+        return cast(mask, Look(ramp=ramp_text(gold), depth=2.0));
+    }
+    if stem.endswith("_select") or stem.endswith("_selected") {
+        box(mask, fw * 0.02, fh * 0.02, fw * 0.98, fh * 0.98, s * 0.06);
+        inner2 = Field(w=w, h=h);
+        box(inner2, fw * 0.07, fh * 0.07, fw * 0.93, fh * 0.93, s * 0.04);
+        return cast(carved(mask, inner2), Look(ramp=ramp_text(gold if lit else red), depth=2.0));
     }
     return None;
 }

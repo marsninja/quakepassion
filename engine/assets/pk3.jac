@@ -17,9 +17,13 @@ obj Pk3Assets {
         alpha_tests: dict[str, int] = {},
         additive: dict[str, bool] = {},
         two_sided: dict[str, bool] = {},
-        model_shaders: dict[str, ModelMaterial] = {};
+        model_shaders: dict[str, ModelMaterial] = {},
+        # QP_ASSET_TRACE=<file>: every name read is appended to it with the
+        # archive it came from (which assets a level really draws on).
+        trace: str = "";
 
     def open(directory: str) {
+        self.trace = os.getenv("QP_ASSET_TRACE", "");
         for path in archive_paths(directory, ".pk3") {
             archive = ZipFile(path);
             index = len(self.archives);
@@ -44,6 +48,11 @@ obj Pk3Assets {
         name = self.canonical_names.get(file_key(name), name);
         if name not in self.owners {
             raise ValueError("Missing PK3 asset: " + name);
+        }
+        if self.trace {
+            with open(self.trace, "a") as log {
+                log.write(name + "\t" + str(self.archives[self.owners[name]].filename) + "\n");
+            }
         }
         return self.archives[self.owners[name]].read(name);
     }
