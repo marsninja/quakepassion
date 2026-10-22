@@ -27,7 +27,8 @@ import from editor.model.mesh { Mesh }
 import from editor.model.document { ModelDoc, Part, Pose, Tag, HasPart, HasPose, HasTag }
 import from .shapes { Shaper, Frame, Tile, grid_tile, frame_along }
 import from .image { Picture, Rgb, hex_rgb }
-import from .textures { paint_named }
+import from .field { fbm, streaks, panels, rivets }
+import from .sculpt { Sculpture, Prim, SculptMesh }
 
 """The atlas's tiles, by material."""
 glob MATERIALS: list[str] = [
@@ -331,49 +332,190 @@ obj Motion {
     }
 }
 
-"""A gun, along +x: a body, one or two barrels, a grip, and what the kind of
-gun adds (a drum, coils, a fat tube)."""
-def build_gun(shaper: Shaper, lower: str, seed: int) {
-    length = 1.0;
-    bulk = 0.22;
-    barrels = 2 if ("super" in lower or "shot2" in lower or "sshot" in lower or "nail2" in lower or "chain" in lower) else 1;
-    tube = 0.06;
-    if "rock" in lower or "launch" in lower or "rl" in lower.split("/")[-1][:3] {
-        tube = 0.16;
-        bulk = 0.3;
-    } elif "gren" in lower {
-        tube = 0.13;
-        length = 0.7;
-    } elif "light" in lower or "lg" in lower {
-        tube = 0.09;
-    } elif "rail" in lower {
-        length = 1.3;
-        tube = 0.05;
-    } elif "bfg" in lower {
-        bulk = 0.4;
-        tube = 0.18;
-        length = 0.8;
-    } elif "axe" in lower or "gauntlet" in lower {
-        shaper.tube(frame_along(Vec3(x=-0.4), Vec3(x=0.6)), 1.0, 0.04, 0.04, 6, tile_of("wood"));
-        shaper.slab(Frame(at=Vec3(x=0.5, z=0.1), x=Vec3(x=1.0), y=Vec3(z=1.0), z=Vec3(y=1.0)), [(-0.12, -0.3), (0.12, -0.2), (0.15, 0.25), (-0.1, 0.3)], 0.04, tile_of("steel"));
-        return;
-    }
-    body_len = length * 0.45;
-    shaper.box(Frame(at=Vec3(x=-body_len * 0.5)), Vec3(x=body_len, y=bulk, z=bulk * 1.1), tile_of("darksteel"));
-    for k in range(barrels) {
-        offset = (float(k) - float(barrels - 1) * 0.5) * tube * 2.4;
-        shaper.tube(frame_along(Vec3(y=offset, z=bulk * 0.2), Vec3(x=1.0, y=offset, z=bulk * 0.2)), length * 0.65, tube, tube, 8, tile_of("steel"));
-    }
-    shaper.box(Frame(at=Vec3(x=-body_len * 0.7, z=-bulk * 0.8)), Vec3(x=bulk * 0.6, y=bulk * 0.6, z=bulk * 1.4), tile_of("leather"));
-    if "nail" in lower or "chain" in lower or "machine" in lower {
-        shaper.tube(frame_along(Vec3(x=-body_len * 0.3, y=-bulk * 0.6), Vec3(x=-body_len * 0.3, y=bulk * 0.6)), bulk * 1.2, bulk * 0.45, bulk * 0.45, 10, tile_of("brass"));
-    }
-    if "light" in lower or "lg" in lower or "plasma" in lower or "bfg" in lower {
-        for k in range(3) {
-            x = float(k) * 0.15 + 0.1;
-            shaper.ring(frame_along(Vec3(x=x, z=bulk * 0.2), Vec3(x=x + 1.0, z=bulk * 0.2)), tube * 1.6, tube * 0.4, 10, 5, tile_of("glowblue"));
+"""A sculpted mesh as a shaper's: each triangle takes the material most of
+its corners have, and a point where materials meet is made once for each,
+so every material keeps to its own tile. Returns the shaper and, for each
+of its points, the sculpted point it came from."""
+def sculpt_shaper(made: SculptMesh) -> tuple[Shaper, list[int]] {
+    shaper = Shaper();
+    sources: list[int] = [];
+    made_for: dict[str, int] = {};
+    for f in range(len(made.corners) // 3) {
+        a = made.corners[f * 3];
+        b = made.corners[f * 3 + 1];
+        c = made.corners[f * 3 + 2];
+        material = made.materials[a];
+        if made.materials[b] == made.materials[c] {
+            material = made.materials[b];
         }
+        picked: list[int] = [];
+        for corner in [a, b, c] {
+            key = str(corner) + ":" + material;
+            if key not in made_for {
+                made_for[key] = shaper.point(made.points[corner], tile_of(material), made.tiles[corner * 2], made.tiles[corner * 2 + 1]);
+                sources.append(corner);
+            }
+            picked.append(made_for[key]);
+        }
+        shaper.triangle(picked[0], picked[1], picked[2]);
     }
+    return (shaper, sources);
+}
+
+"""A sculpted solid on the gun's line (+x forward, z up)."""
+def:priv part(kind: str, at: Vec3, size: Vec3, material: str, round: float = 0.01, blend: float = 0.012) -> Prim {
+    return Prim(kind=kind, at=at, size=size, material=material, round=round, blend=blend);
+}
+
+"""A cylinder along the gun's line from `x0` to `x1`."""
+def:priv barrel(x0: float, x1: float, y: float, z: float, radius: float, material: str, carve: bool = False) -> Prim {
+    return Prim(kind="cylinder", at=Vec3(x=(x0 + x1) * 0.5, y=y, z=z), x=Vec3(y=1.0), y=Vec3(z=1.0), z=Vec3(x=1.0), size=Vec3(x=radius, y=abs(x1 - x0) * 0.5), round=min(radius * 0.3, 0.01), material=material, blend=0.008, carve=carve);
+}
+
+"""A ring round the gun's line at `x`."""
+def:priv band(x: float, z: float, radius: float, tube: float, material: str) -> Prim {
+    return Prim(kind="ring", at=Vec3(x=x, z=z), x=Vec3(y=1.0), y=Vec3(z=1.0), z=Vec3(x=1.0), size=Vec3(x=radius, y=tube), material=material, blend=0.006);
+}
+
+"""A weapon sculpted from parts by what its name says it is: a receiver,
+a grip and a trigger guard, then the parts of its kind (a shotgun's pump
+and long barrels, a machinegun's barrel cluster and drum, a rocket
+launcher's tube and sight, the lightning gun's prongs and coils, the
+railgun's rings, the plasma gun's cell, the BFG's bulk and dish, an axe's
+head, a gauntlet's blade). Measured along +x, about a unit long."""
+def sculpt_gun(lower: str, seed: int, held: bool) -> Shaper {
+    s = Sculpture(seed=seed);
+    p = s.prims;
+    leaf = lower.split("/")[-1];
+    if "axe" in lower {
+        p.append(barrel(-0.5, 0.45, 0.0, 0.0, 0.035, "wood"));
+        p.append(part("box", Vec3(x=0.4, z=0.12), Vec3(x=0.09, y=0.02, z=0.16), "steel", 0.008));
+        p.append(part("box", Vec3(x=0.33, z=0.0), Vec3(x=0.05, y=0.035, z=0.05), "darksteel"));
+        return sculpt_shaper(s.mesh(700, 40))[0];
+    }
+    if "gauntlet" in lower {
+        p.append(part("box", Vec3(x=-0.15), Vec3(x=0.25, y=0.11, z=0.1), "darksteel", 0.03));
+        p.append(barrel(0.05, 0.3, 0.0, 0.0, 0.06, "steel"));
+        p.append(Prim(kind="cylinder", at=Vec3(x=0.38), x=Vec3(y=1.0), y=Vec3(z=1.0), z=Vec3(x=1.0), size=Vec3(x=0.2, y=0.01), material="steel", blend=0.004));
+        p.append(band(0.0, 0.0, 0.09, 0.02, "glowblue"));
+        return sculpt_shaper(s.mesh(700, 44))[0];
+    }
+    # The kind decides the body's bulk and the barrel's reach and bore.
+    bulk = 0.085;
+    reach = 0.55;
+    bore = 0.03;
+    if "rocket" in lower or "rl" in leaf[:3] or "launch" in lower {
+        bulk = 0.11;
+        bore = 0.085;
+    } elif "gren" in lower {
+        bulk = 0.1;
+        reach = 0.3;
+        bore = 0.05;
+    } elif "rail" in lower {
+        reach = 0.7;
+        bore = 0.022;
+    } elif "bfg" in lower {
+        bulk = 0.16;
+        reach = 0.3;
+        bore = 0.1;
+    } elif "plasma" in lower or "hyper" in lower or "blast" in lower {
+        bulk = 0.1;
+        reach = 0.35;
+        bore = 0.04;
+    } elif "light" in lower or "lg" in leaf[:3] {
+        reach = 0.4;
+        bore = 0.04;
+    }
+    # The receiver, a rail along its top, the grip and its guard.
+    p.append(part("box", Vec3(x=-0.12, z=0.0), Vec3(x=0.26, y=bulk * 0.8, z=bulk), "darksteel", 0.02));
+    p.append(part("box", Vec3(x=-0.1, z=bulk * 0.95), Vec3(x=0.2, y=bulk * 0.3, z=0.015), "steel", 0.006));
+    grip = Prim(kind="box", at=Vec3(x=-0.2, z=-bulk - 0.08), size=Vec3(x=0.04, y=bulk * 0.45, z=0.1), material="rubber", round=0.015, blend=0.02);
+    grip_axes = turned_axes_for(15.0);
+    grip.x = grip_axes[0];
+    grip.y = grip_axes[1];
+    grip.z = grip_axes[2];
+    p.append(grip);
+    p.append(Prim(kind="ring", at=Vec3(x=-0.12, z=-bulk - 0.03), x=Vec3(x=1.0), y=Vec3(z=1.0), z=Vec3(y=1.0), size=Vec3(x=0.05, y=0.008), material="steel", blend=0.004));
+    if "shot" in lower or "sg" in leaf[:3] or "ssg" in lower {
+        double = "super" in lower or "sshot" in lower or "ssg" in lower;
+        p.append(part("box", Vec3(x=-0.5, z=-0.02), Vec3(x=0.16, y=bulk * 0.6, z=bulk * 0.9), "wood", 0.03));
+        for side in ([-1.0, 1.0] if double else [0.0]) {
+            p.append(barrel(0.1, 0.62, side * 0.035, 0.03, 0.03, "steel"));
+            p.append(barrel(0.55, 0.64, side * 0.035, 0.03, 0.018, "steel", True));
+        }
+        if not double {
+            p.append(part("box", Vec3(x=0.3, z=-0.04), Vec3(x=0.12, y=0.04, z=0.03), "wood", 0.015));
+        }
+    } elif "machine" in lower or "chain" in lower or "nail" in lower or "mg" in leaf[:3] {
+        count = 6 if "chain" in lower or "super" in lower or "nail2" in lower else 3;
+        for k in range(count) {
+            a = float(k) / float(count) * 2.0 * math.pi;
+            p.append(barrel(0.1, 0.5, math.cos(a) * 0.035, math.sin(a) * 0.035 + 0.01, 0.016, "steel"));
+        }
+        p.append(band(0.15, 0.01, 0.05, 0.015, "darksteel"));
+        p.append(band(0.45, 0.01, 0.05, 0.012, "darksteel"));
+        p.append(barrel(-0.05, 0.0, 0.0, -bulk - 0.06, 0.07, "brass"));
+    } elif "rocket" in lower or "rl" in leaf[:3] or "launch" in lower {
+        p.append(barrel(-0.4, 0.55, 0.0, 0.02, 0.09, "darksteel"));
+        p.append(barrel(0.5, 0.6, 0.0, 0.02, 0.11, "steel"));
+        p.append(barrel(-0.45, -0.38, 0.0, 0.02, 0.1, "steel"));
+        p.append(barrel(0.45, 0.62, 0.0, 0.02, 0.065, "steel", True));
+        p.append(part("box", Vec3(x=0.0, y=0.08, z=0.12), Vec3(x=0.08, y=0.02, z=0.03), "steel", 0.008));
+        p.append(band(0.2, 0.02, 0.09, 0.012, "red"));
+    } elif "gren" in lower {
+        p.append(barrel(-0.05, 0.15, 0.0, 0.0, 0.1, "darksteel"));
+        for k in range(6) {
+            a = float(k) / 6.0 * 2.0 * math.pi;
+            p.append(barrel(-0.04, 0.14, math.cos(a) * 0.06, math.sin(a) * 0.06, 0.022, "green", True));
+        }
+        p.append(barrel(0.1, 0.35, 0.0, 0.02, 0.05, "steel"));
+    } elif "light" in lower or "lg" in leaf[:3] {
+        p.append(barrel(0.1, 0.3, 0.0, 0.0, 0.05, "darksteel"));
+        for k in range(3) {
+            a = float(k) / 3.0 * 2.0 * math.pi;
+            p.append(Prim(kind="capsule", at=Vec3(x=0.28, y=math.cos(a) * 0.03, z=math.sin(a) * 0.03), to=Vec3(x=0.45, y=math.cos(a) * 0.055, z=math.sin(a) * 0.055), r1=0.012, r2=0.006, material="steel", blend=0.006));
+        }
+        for x in [0.0, 0.08, 0.16] {
+            p.append(band(x, 0.0, 0.07, 0.012, "glowblue"));
+        }
+    } elif "rail" in lower {
+        p.append(barrel(0.1, 0.75, 0.0, 0.02, 0.025, "steel"));
+        p.append(part("box", Vec3(x=0.42, y=0.0, z=-0.03), Vec3(x=0.3, y=0.018, z=0.012), "darksteel", 0.004));
+        for k in range(5) {
+            p.append(band(0.18 + float(k) * 0.12, 0.02, 0.045, 0.01, "glowblue"));
+        }
+        p.append(part("box", Vec3(x=-0.45, z=-0.01), Vec3(x=0.12, y=0.035, z=0.06), "darksteel", 0.02));
+    } elif "bfg" in lower {
+        p.append(part("box", Vec3(x=-0.05, z=0.03), Vec3(x=0.3, y=0.16, z=0.14), "darksteel", 0.05));
+        p.append(barrel(0.2, 0.32, 0.0, 0.03, 0.15, "steel"));
+        p.append(Prim(kind="ellipsoid", at=Vec3(x=0.28, z=0.03), size=Vec3(x=0.05, y=0.1, z=0.1), material="glow", blend=0.01));
+        p.append(barrel(0.28, 0.4, 0.0, 0.03, 0.09, "steel", True));
+    } elif "plasma" in lower or "hyper" in lower or "blast" in lower {
+        p.append(barrel(0.05, 0.38, 0.0, 0.02, 0.05, "darksteel"));
+        p.append(barrel(0.34, 0.4, 0.0, 0.02, 0.03, "steel", True));
+        p.append(Prim(kind="ellipsoid", at=Vec3(x=-0.05, z=bulk + 0.03), size=Vec3(x=0.09, y=0.05, z=0.05), material="glowblue", blend=0.015));
+        for x in [0.12, 0.2, 0.28] {
+            p.append(band(x, 0.02, 0.055, 0.012, "darksteel"));
+        }
+    } else {
+        p.append(barrel(0.1, 0.1 + reach, 0.0, 0.02, bore + 0.01, "steel"));
+        p.append(barrel(0.05 + reach, 0.12 + reach, 0.0, 0.02, bore, "steel", True));
+    }
+    if held {
+        # The hand that holds it, gloved, and the forearm behind it.
+        p.append(Prim(kind="ellipsoid", at=Vec3(x=-0.2, y=0.0, z=-bulk - 0.06), size=Vec3(x=0.07, y=0.065, z=0.06), material="leather", blend=0.02));
+        # The forearm runs back and a little down, most of the length
+        # of what the player sees (the gun at its end).
+        p.append(Prim(kind="capsule", at=Vec3(x=-0.26, y=0.02, z=-bulk - 0.08), to=Vec3(x=-1.0, y=0.1, z=-bulk - 0.25), r1=0.055, r2=0.068, material="leather", blend=0.03));
+        p.append(Prim(kind="capsule", at=Vec3(x=-1.0, y=0.1, z=-bulk - 0.25), to=Vec3(x=-1.6, y=0.14, z=-bulk - 0.38), r1=0.068, r2=0.08, material="flesh", blend=0.04));
+    }
+    return sculpt_shaper(s.mesh(900, 52))[0];
+}
+
+"""A grip's axes: tilted back `degrees` about the gun's side."""
+def:priv turned_axes_for(degrees: float) -> list[Vec3] {
+    r = math.radians(degrees);
+    return [Vec3(x=math.cos(r), z=-math.sin(r)), Vec3(y=1.0), Vec3(x=math.sin(r), z=math.cos(r))];
 }
 
 """Build the rest shape of a model of `family`; empty for one this does not
@@ -382,7 +524,10 @@ def build_shape(family: str, lower: str, seed: int) -> Shaper {
     shaper = Shaper();
     pick = mix32(seed) % 4;
     if family == "weapon" {
-        build_gun(shaper, lower, seed);
+        # Quake II's view weapons are held in a hand (Quake's show the gun
+        # alone).
+        held = "/weapons/v_" in lower;
+        shaper = sculpt_gun(lower, seed, held);
     } elif family == "projectile" {
         if "rocket" in lower or "missile" in lower {
             shaper.lathe(Frame(at=Vec3(x=-0.5), x=Vec3(y=1.0), y=Vec3(z=1.0), z=Vec3(x=1.0)), [(0.0, 0.0), (0.1, 0.05), (0.1, 0.75), (0.0, 1.0)], 8, tile_of("steel"));
@@ -649,35 +794,92 @@ def material_atlas(name: str, w: int, h: int, game: str) -> Picture {
     made = Picture(w=w, h=h);
     tile_w = max(16, (w // 4 + 15) // 16 * 16);
     tile_h = max(16, (h // 4 + 15) // 16 * 16);
-    words = {
-        "steel": "metal", "darksteel": "metal", "brass": "metal", "wood": "wood", "flesh": "flesh", "bone": "rock",
-        "red": "metal", "blue": "metal", "green": "metal", "yellow": "metal", "glow": "light", "glowblue": "light",
-        "stone": "stone", "leather": "ground", "rubber": "metal", "white": "tile"
-    };
     tints = {
-        "steel": "8b939b", "darksteel": "4b4f57", "brass": "c39b4b", "wood": "8b6b43", "flesh": "b3634b", "bone": "d3c3a3",
+        "steel": "8b939b", "darksteel": "4b4f57", "brass": "c39b4b", "wood": "8b6b43", "flesh": "9b6b53", "bone": "d3c3a3",
         "red": "b32b1b", "blue": "2b4bb3", "green": "3b8b2b", "yellow": "d3b32b", "glow": "ffb34b", "glowblue": "6bb3ff",
         "stone": "7b7b73", "leather": "5b3b23", "rubber": "232323", "white": "dbdbdb"
     };
+    seed = hash_label(19, name.lower());
     for k in range(16) {
         material = MATERIALS[k];
-        painted = paint_named(material + "_" + name.lower(), tile_w, tile_h, game, words[material]);
-        tint = hex_rgb(tints[material]);
+        tile = material_tile(material, tile_w, tile_h, seed + k * 101, hex_rgb(tints[material]));
         x0 = (k % 4) * w // 4;
         y0 = (k // 4) * h // 4;
         x1 = ((k % 4) + 1) * w // 4;
         y1 = ((k // 4) + 1) * h // 4;
         for y in range(y0, y1) {
             for x in range(x0, x1) {
-                source = painted.picture.colour(((y - y0) % tile_h) * tile_w + ((x - x0) % tile_w));
-                grey = (source.r + source.g + source.b) / 3.0;
-                shade = 0.45 + grey * 1.1;
-                colour = Rgb(r=min(1.0, tint.r * shade), g=min(1.0, tint.g * shade), b=min(1.0, tint.b * shade));
-                if material == "glow" or material == "glowblue" {
-                    colour = tint.mixed(Rgb(r=1.0, g=1.0, b=0.9), grey * 0.5);
-                }
-                made.put(y * w + x, colour);
+                made.put(y * w + x, tile.colour(((y - y0) % tile_h) * tile_w + ((x - x0) % tile_w)));
             }
+        }
+    }
+    return made;
+}
+
+"""A tile of a model's skin painted as its material is, not as a wall:
+plate metal brushed, seamed, riveted and worn at its edges (paint chipped
+to the metal beneath); flesh mottled and veined; leather grained and
+stitched; bone cracked; rubber matte; a glow bright at its heart."""
+def material_tile(material: str, w: int, h: int, seed: int, tint: Rgb) -> Picture {
+    made = Picture(w=w, h=h);
+    broad = fbm(w, h, 4, 4, 0.55, seed);
+    fine = fbm(w, h, 16, 3, 0.5, seed + 1);
+    lines = fbm(w, h, 6, 3, 0.5, seed + 2);
+    brushed = streaks(w, h, max(4, w // 2), 8, seed + 3);
+    plates = panels(w, h, 2, 2, 1.5, 2.5).height;
+    studs = rivets(w, h, 4, 4, max(1.0, float(w) / 40.0), 0.12);
+    metal = material in ["steel", "darksteel", "brass", "red", "blue", "green", "yellow", "white"];
+    painted = material in ["red", "blue", "green", "yellow", "white"];
+    bare = Rgb(r=0.62, g=0.62, b=0.6);
+    for y in range(h) {
+        for x in range(w) {
+            i = y * w + x;
+            colour = tint;
+            if metal {
+                k = 0.72 + 0.22 * brushed.v[i] + 0.16 * (broad.v[i] - 0.5);
+                # Seams between plates dark, their bevels catching light.
+                if plates.v[i] < 0.15 {
+                    k *= 0.45;
+                } elif plates.v[i] < 0.55 {
+                    k *= 1.18;
+                }
+                colour = tint.scaled(k);
+                if painted and (fine.v[i] > 0.74 or (plates.v[i] < 0.6 and fine.v[i] > 0.6)) {
+                    # Paint worn off where knocks and edges take it.
+                    colour = bare.scaled(0.7 + 0.3 * brushed.v[i]);
+                }
+                if studs.v[i] > 0.2 {
+                    colour = colour.scaled(0.9 + 0.5 * studs.v[i]);
+                }
+                if fine.v[i] < 0.22 {
+                    colour = colour.mixed(Rgb(r=0.32, g=0.18, b=0.08), 0.35);
+                }
+            } elif material == "flesh" {
+                colour = tint.scaled(0.68 + 0.5 * broad.v[i] + 0.1 * (fine.v[i] - 0.5));
+                if abs(lines.v[i] - 0.5) < 0.025 {
+                    colour = colour.mixed(Rgb(r=0.35, g=0.08, b=0.08), 0.45);
+                }
+            } elif material == "leather" {
+                colour = tint.scaled(0.72 + 0.35 * fine.v[i] + 0.12 * (broad.v[i] - 0.5));
+                if (y % (h // 2)) == h // 4 and (x // 3) % 2 == 0 {
+                    colour = colour.scaled(1.45);
+                }
+            } elif material == "bone" {
+                colour = tint.scaled(0.82 + 0.18 * broad.v[i]);
+                if abs(lines.v[i] - 0.5) < 0.015 {
+                    colour = colour.scaled(0.55);
+                }
+            } elif material == "glow" or material == "glowblue" {
+                u = (float(x) + 0.5) / float(w) * 2.0 - 1.0;
+                v = (float(y) + 0.5) / float(h) * 2.0 - 1.0;
+                heart = max(0.0, 1.0 - math.sqrt(u * u + v * v));
+                colour = tint.mixed(Rgb(r=1.0, g=1.0, b=0.92), heart * 0.7);
+            } elif material == "rubber" {
+                colour = tint.scaled(0.8 + 0.5 * fine.v[i]);
+            } else {
+                colour = tint.scaled(0.7 + 0.3 * broad.v[i] + 0.15 * (brushed.v[i] - 0.5));
+            }
+            made.put(i, Rgb(r=max(0.0, min(1.0, colour.r)), g=max(0.0, min(1.0, colour.g)), b=max(0.0, min(1.0, colour.b))));
         }
     }
     return made;
