@@ -11,7 +11,8 @@ the seed and the level's depth, and makes a new level of brushes for it:
    population cast afresh to its budget;
 3. the level is compiled, then its own level graph is read off it and
    proven: a level whose graph does not prove clean is never played. Up to
-   three candidates are made (transformed fully, turned only, as the
+   four candidates are made (laid out anew, re-embedded or with a piece of
+   another essence spliced in; transformed fully; turned only; as the
    essence lies); the first that proves is lit and played.
 
 Names: `v4-<seed>` is a run's first level and `v4-<seed>-<n>` its level n;
@@ -29,7 +30,8 @@ import from .brushwork { map_item_steps }
 import from .sculpt { Sculpting, sculpt_steps }
 import from .cast { Casting, cast_level }
 import from .transform { transform_essence }
-import from .essence { pick_essence, named_essence }
+import from .essence { pick_essence, named_essence, kept_essences }
+import from .embed { reembed, splice }
 import from .verify { lost_moves }
 import from .originals { all_originals }
 import from engine.level.graph { LevelGraph, Move, graph_places }
@@ -53,7 +55,7 @@ import from engine.physics.collision { CollisionMap }
 
 glob VERSION: str = "v4",
      TRACE_PREFIX: str = "trace-",
-     CANDIDATES: int = 3,
+     CANDIDATES: int = 4,
      LUXEL: float = 32.0,
      # Faces lit between a bake's pauses.
      BAKE_SLICE: int = 8,
@@ -263,7 +265,25 @@ def forge_steps(forge: Forge) -> Iterator[str] {
         record.candidates += 1;
         trial = dice.child("candidate", attempt);
         forge.stage = "sculpt";
-        essence = transform_essence(atlas, trial.derive("transform"), attempt < 2, attempt < 1);
+        # The first candidate is laid out anew (re-embedded, or with a piece
+        # of another essence spliced in); then the essence transformed in
+        # full, turned only, and as it lies.
+        essence = transform_essence(atlas, trial.derive("transform"), attempt < 3, attempt < 2);
+        if attempt == 0 {
+            donors = kept_essences(record.essence);
+            laid: LevelGraph | None = None;
+            if donors and trial.chance(0.5) {
+                laid = splice(essence, donors[trial.below(len(donors))], trial.derive("splice"), record.notes);
+            }
+            if laid is None {
+                laid = reembed(essence, trial.derive("embed"), record.notes);
+            }
+            if laid is None {
+                record.notes.append("candidate 0: could not be laid out anew");
+                continue;
+            }
+            essence = laid;
+        }
         made = Sculpting();
         forge.sculpting = made;
         yield from sculpt_steps(essence, trial.derive("sculpt"), made);

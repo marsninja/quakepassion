@@ -152,3 +152,19 @@ for playing one on purpose."""
 def named_essence(spec: str) -> LevelGraph | None {
     return load_essence(spec);
 }
+
+"""The clean essences already kept on disk, but for `besides` (`game:map`):
+what a splice may take a piece of without reading an original."""
+def kept_essences(besides: str) -> list[LevelGraph] {
+    found: list[LevelGraph] = [];
+    for spec in all_originals() {
+        if spec == besides {
+            continue;
+        }
+        kept = read_graph(essence_path(spec));
+        if kept is not None and essence_clean(kept) {
+            found.append(kept);
+        }
+    }
+    return found;
+}
