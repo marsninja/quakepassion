@@ -1,11 +1,10 @@
 # Passion runs
 
 Passion is the fourth game mode of the shared engine (`games/passion/`). A
-run is a seed: its levels, real levels of brushes in three dimensions, are
-generated one after another from the original Quake, Quake II and Quake III
-assets and measured against the original games' own levels. Each level's
-way out leads on to the next, made while the last is played; nothing is
-saved. The generator version is `v3` (`generate.jac` `VERSION`).
+run is a seed. Each of its levels takes an **essence** (the level graph of
+one of the original levels of Quake, Quake II and Quake III) and makes a new
+level of brushes for it, which is played only once its own level graph
+proves that it can be finished.
 
 ## Run
 
@@ -14,142 +13,113 @@ With the build in the README and all three games under one asset directory
 
 ```sh
 QP_GAME=passion QP_SEED=42 DYLD_LIBRARY_PATH=vendor ./qp
+QP_GAME=passion QP_MAP=trace-e1m1 DYLD_LIBRARY_PATH=vendor ./qp
 ```
 
-- `QP_SEED` is the run's seed (default 1), from 1 to 2147483646. The run's
-  first level is `v3-42`, its levels after that `v3-42-2`, `v3-42-3` and on
-  (`QP_MAP` names any of them). Each level is made from the run's seed and
-  its depth, so a seed always plays the same run, and a deeper level is
-  fought over more densely and has a room or two more. Names with another
-  version prefix are refused (`run_of`).
-- The Escape menu's Passion page takes a seed typed in, or rolls one, and
-  starts its run.
-- Reaching a level's way out shows its tally (kills, time) and Enter goes on
-  to the next level. That level has been made a few milliseconds a frame
-  while the last was played (`Forge`, `run.jac`), so it usually opens at
-  once; if it is not ready yet the tally shows how far it has got, and it
-  opens when it is.
-- Health, armour, weapons and ammunition carry on from level to level;
-  keys do not. A death begins the level again with what the player came in
-  with, from the level kept in memory.
-- The first level of a run is made when the run starts (2-7 s to lay out,
-  about a second to compile, 5-8 s to light), with its progress on the
-  loading screen.
+- `QP_SEED` is the run's seed (default 1). Its first level is `v4-42`, the
+  levels after it `v4-42-2`, `v4-42-3` and on; `QP_MAP` names any of them.
+- `trace-<map>` makes a level from one original's essence named outright
+  (`trace-e1m1`, `trace-base1`, `trace-q3dm6`), and leads on into a run of
+  its own seed.
+- Reaching a level's way out shows its tally; the next level is made then,
+  its progress on the tally, and Enter goes on to it. Health, armour,
+  weapons and ammunition carry on; keys do not. A death begins the level
+  again with what the player came in with.
+- Essences are read from the player's own game files the first time they
+  are wanted (5-80 seconds each) and kept under `QP_CONFIG_DIR` (else the
+  home folder) in `.quakepassion-essences/`; nothing of the games goes in
+  the repository. `scripts/level_proof.jac` with `QP_PROOF_CORPUS=1` reads
+  them all ahead of time.
 
-## The yardstick and the corpus
+## The level graph (`engine/level/`)
 
-`yardstick.jac` measures any level, an original or a generated one, the same
-way. Places a player can stand are sampled on a 32-unit grid over the
-world's walkable faces (nudged round crowded cells, lifted onto slopes) and
-joined by the moves the engine allows between neighbours: walking (the
-engine's own stepping slide), jumping up a ledge, dropping off one, and
-teleporters. Places gather into areas (the places of a 128-unit bin that walk
-to each other), nodes of a graph whose edges are the moves between areas;
-walkers flood it. Doors are measured open; platforms stay where they rest.
+One graph of what a level lets a player do, read off any level the engine
+loads: an original, a studio scene, a generated level. The bots route by it
+and Passion generates from it.
 
-Beside the traversal it measures the level's shape (extent, floor levels,
-floor over floor, height range, headroom, sightlines, distance to the
-nearest wall), detail (faces for the floor they serve, trim, textures),
-light (lamps for the floor, their spacing, the lightmaps' levels) and
-population (monsters and items for the floor), and how much of the level the
-start reaches and by what route to the exit.
+| Layer | What it holds | Read from |
+| --- | --- | --- |
+| Places | the navigation's areas, each with its floor, the air over it, sky, liquid | `engine/nav/compile.jac`, sounded against the level |
+| Moves | ways between places (walked, dropped, jumped, swum, lifted, teleported), each *must* or *may* | the compiled navigation; jumps run through the player's own movement; falls run off every ledge |
+| Gates | movers that bar places (and ways that pass through them) until their tokens are held | the level's doors, lifts and secret doors |
+| Openers | what gives a token: press, touch, shoot, pick up a key, kill | the level's activation graph, as the player bot plans from it (`engine/world/objectives.jac`) |
+| Things | monsters and supplies, each in its place | the level's entities |
+| Stages | the tokens each place takes to get to | the proof |
 
-`scripts/passion_corpus.jac` measured 115 original levels (38 Quake, 47 Quake
-II, 30 Quake III) and how each uses its textures. `corpus.jac` keeps only the
-measures' quartiles: over Quake and Quake II's single-player levels
-(`CORPUS_SP`) and per game. For example, id's single-player levels have a
-median of six floor levels, 40% of their floor over other floor, 240 units
-of headroom, 176-unit sightlines, a lamp per 110 units, and lightmaps whose
-quartiles are 1, 35 and 109.
+- **Proof** (`prove.jac`): a player's state is a place and the tokens held.
+  The search takes every state the *may* moves reach from the start and
+  asks of each whether the way out is reached from it over *must* moves,
+  tokens taken where their openers are done, gates passed only with what
+  they want. A level **finishes** when the start's state does; a
+  **softlock** is a state that does not, outside a death place. Each token
+  is left out in turn: those the level cannot be finished without are the
+  ones it **requires**. An arena (no way out of its own) proves when no
+  state strands a player from the start.
+- **Budget** (`budget.jac`): a ledger of health, armour and ammunition
+  walked along the proven route with each game's own weapons, monsters and
+  supplies: supplies on the way or a short detour in sight taken, each
+  monster fought when the route first comes where it stands or sees it, with
+  the best weapon that can kill it. It is an estimate of the fights, not a
+  simulation of them.
+- **Pruning**: an essence that finishes but strands a player in a pit or a
+  pocket has those places taken out (when no opener, start, way out or
+  death needs them), and is proven again.
+- **Routes** (`routes.jac`): the graph as the AAS arrays the router reads.
+  The player bot routes by it; Quake III's bots bring their map's shipped
+  AAS file in as a graph; the studio reads and proves its scenes' graphs.
 
-## Pipeline (`generate.jac`)
+`scripts/level_proof.jac` reads and proves original levels and says why one
+does not prove (where its traps are, how a player gets there, what bars the
+way out, which tokens are wanted and who gives them).
 
-A seed picks a niche (how much the expedition loops, how vertical it is, how
-densely it is fought over, how big it is) and an objective archetype (keys,
-relays, guardians or a mix). Up to four candidates are built in full; each is
-turned down if it cannot be laid out, needs too many teleporters, or if a
-room's stage cannot be walked to; the critic scores the rest and the best is
-kept.
+## Making a level (`generate.jac`)
 
-1. **Mission** (`mission.jac`, unchanged from v2): beats and links, a cyclic
-   grammar after Dormans whose links carry tokens; an exhaustive search over
-   (beat, tokens) proves the goal reachable and no state a softlock.
-2. **Spaces** (`spaces.jac`): each beat becomes a box in a voxel massing
-   (`massing.jac`, cells 32 units across and 16 up) and takes an archetype by
-   its role: a hall (dais, pillar rows), an atrium (a balcony round its walls
-   and stairs up to it), a shaft (stairs winding up its walls, open in the
-   middle), a chasm (a pit crossed by a bridge, stairs from the pit up to a
-   ledge), an open court (an arcade round it, sky over it), terraces, a stair
-   hall, a vault (a dais for its prize), an arena (a sunken pit and steps
-   down) or a crypt (a grid of squat pillars). Doorways (`Doorway`) are found
-   from the carved cells: two cells of floor deep, headroom for a doorway, at
-   each floor level the stage can be walked to; ledges high in the walls for
-   one-way drops.
-3. **Arrangement** (`arrange.jac`): spaces are placed in progression order
-   beside one they link to, higher or lower (the expedition drifts deeper or
-   higher as it goes), a corridor's width apart, or wall to wall with a
-   doorway straight through (steps in its thickness for up to two lifts).
-   Links are routed as corridors by A* over blocks two cells square and six
-   lifts high: they climb by stairs, turn on the flat, keep a wall's thickness
-   from everything else (free runs per column make each test four reads), and
-   pass over and under other spaces. Half are widened to three cells where
-   the rock allows. A one-way link ends at a ledge when one can be had. A link
-   no corridor can carry becomes a pair of teleporters (a candidate needing
-   more than two, or than a quarter of its links where that is more, is
-   turned down).
-   Rooms facing each other across a short gap get barred windows, the
-   mission's own window links first.
-4. **Pits**: a chasm's pit floods, deep with its district's lava or slime
-   where nothing needs the floor (no doorway opens there and the objective is
-   on the bridge), else a lift of water.
-5. **Dressing** (`dress.jac`): a lower band of the wall in the kit's second
-   material, baseboards on walls six lifts high or more, cornices in tall
-   rooms, pilasters on plinths every three cells where the wall stands whole,
-   railings on edges over a drop (never on or beside stairs, never where they
-   leave a walk under two cells), frames round doorways, bars across windows.
-   Lamps: on every other pilaster, under ceilings where no wall lamp went,
-   along corridors every third block, hung over big rooms' floors, over the
-   middle of courts (whose sky glows), over lava and slime, and over any room
-   still unlit.
-6. **Cast** (`cast.jac`): the start; each objective on its room's stage (a
-   key; a plate set in the floor with a trigger over it for a switch; a
-   guardian whose death fires its gate); doors for what each link needs (one
-   for all its keys, one per token something else opens, a shootable wall for
-   a secret, a trigger beyond a shortcut); teleporters; foes from a roster of
-   all three games weighted toward each district's game, by a threat budget
-   from tension, size and density; health, shells and armour by what the
-   fights cost.
-7. **Critic** (`critic.jac`): the yardstick's measures taken quickly from the
-   massing, lamps and cast, each scored by how many corpus spreads it lies
-   from the corpus median.
-8. **Brushwork** (`brushwork.jac`): the massing's shell (the solid touching
-   air, diagonals included, so the world is sealed) merged into boxes that
-   hold only cells of one space exposed alike on every side, so a side faces
-   air all over or is caulked; each dressed by the kit of the space it faces.
-   Dressing boxes, liquids (their contents said on every side), lamps and the
-   cast join them as map items.
-9. **Build**: the map items become a studio scene, compiled by
-   `editor/compile/live.jac` with buried faces cut away
-   (`editor/compile/cull.jac`) and lit by the studio's light bake at 32-unit
-   luxels (bounce, a light grid for models).
+1. **Essence** (`essence.jac`): the run's seed orders every original, and a
+   level takes the first in its order from its depth that proves clean;
+   from the third level on, the hardest (lowest health its budget leaves)
+   of the next three.
+2. **Candidates**, up to four, the first that proves clean kept:
+   - laid out anew (`embed.jac`): the essence split into pieces (its
+     progression's stages, or sections across it), each turned and set down
+     as close as it fits, joined by passages routed over and under what
+     stands between them; or one piece swapped for a piece of another
+     essence already read;
+   - transformed in full (`transform.jac`): mirrored and turned, its keys,
+     plates and switches moved to other places still reached before what
+     they open (each move kept only if the essence still proves);
+   - turned only;
+   - as the essence lies.
+3. **Sculpture** (`sculpt.jac`): the essence's places laid on Passion's
+   massing (cells 32 units across, 16 up), a ground for each floor of each
+   column a body covers, the essence's moves the ways between them; stairs
+   too steep for the grid eased; ledges kept open where the essence drops
+   off them; rooms and passages read off how far each ground lies from the
+   floor's edge; ceilings by each room's size, sky where the essence was
+   open to it; pits of liquid under gaps it jumps across; lift shafts and
+   floors that lower; then the massing carved and dressed (`dress.jac`:
+   trim, pilasters on any wall, lamps, railings) in two or three districts
+   (`kits.jac`) shared out along the progression.
+4. **Cast** (`cast.jac`): doors where the essence's barred a doorway (keyed
+   as they were, fired by their openers, secret ones opened by a shot), rock
+   over each so it opens into stone; lifts in their shafts; a key, a plate
+   or a shootable button where each opener was done from; teleporters where
+   the essence's carried a body; the way out (caged behind a door when the
+   essence fired its way out by a chain; an arena's on its highest ground,
+   opened by a counter of its foes' deaths); and the population cast afresh
+   stage by stage, foes from the roster of all three games as strong in all
+   as the essence's were there, and the health, armour, ammunition and
+   weapons it had there, each in its district's game's own kind.
+5. **Build and proof**: the map items compiled by the studio's compiler, the
+   made level opened in a world of its own with its things spawned, its own
+   graph read and proven. A candidate that does not prove is passed over
+   with a line on why (and how its graph differs from the essence's:
+   `verify.jac`). The kept level is lit by the studio's light bake.
 
-Every stage is made a step at a time: the generator's functions are Jac
-generators (`draft_steps`, `arrange_steps`, `route_steps`, `dress_steps`,
-`map_item_steps`, `compile_steps`, `light_job_steps`, the light job's
-`work_steps` and `finish_steps`) that pause every few milliseconds of
-work, and a `Forge` steps them for as long as it is given. The game gives
-it 4 ms a frame while a level is played (30 ms while a way out waits on
-it); the studio steps it a few steps a frame to show it. The longest
-single step is about 30 ms (a large face cut against many brushes), most
-are well under 8, and a level comes out the same however it was stepped.
+`scripts/passion_forge.jac` makes levels as the game makes them and says how
+each candidate went; `QP_PASSION_UNPROVEN=1` lets the game play the last
+candidate when none proves (to look at what the proof found).
 
 ## Districts (`kits.jac`)
-
-Each district is one original level's palette, read off how that level uses
-its textures (the corpus lists, for every texture of every level, the area it
-covers on floors, walls and ceilings and on narrow trim): its floor, wall,
-ceiling, trim, supports, lower band, panels, light, door, step, sky and
-liquid, and other walls, floors and ceilings rooms may take for a variant.
 
 | District | Read from |
 | --- | --- |
@@ -163,113 +133,24 @@ liquid, and other walls, floors and ceilings rooms may take for a variant.
 | Gothic Ruin | Quake III q3dm1 |
 | Arena Works | Quake III q3dm17 |
 
-Materials are named as the studio names them (`q1:e1m1/tech08_1`,
-`q2:e1u1/metal2_1`, `q3:textures/...`) and load from the player's own game
-files; nothing of the games is copied into the repository.
-
-## In the studio
-
-`ed_exp open <seed>` generates an expedition and opens it as a document of
-brushes, a group a room and a group a corridor, with the way out as a
-trigger; `ed_exp mission`, `rooms`, `ways` and `measures` say its beats and
-links, spaces, corridors and how it measures against the corpus, and
-`ed_exp show` draws the ways over the level.
-
-`ed_exp watch <seed> [level]` shows a level being made, in a new scene: each
-candidate's rooms appear as boxes as they are placed (the start green, the
-goal red, rooms with an objective amber), then shaped, with their floor
-levels and stages; each corridor's search is drawn as it goes (the blocks it
-goes between, and the block it has reached), and the corridors found in the
-colour of their link; then the lamps and the cast. A box beside it says the
-stage, the candidate and why earlier candidates were turned down, and holds
-it still, steps it, paces it (a bar, or Slower and Faster) or stops it. Once
-a candidate is chosen and its brushes written, the level opens as a
-document, as `ed_exp open` opens one, and is compiled and lit by the
-studio.
+A level never takes the district read from its own essence's level.
 
 ## The arsenal
 
-A Passion level, generated or a studio scene, holds every weapon of the
-three games (`passion_arsenal` in `games/weapons.jac`), each by its own
-game's rules: its shots, missiles, blasts and knockback, its muzzle flash,
-its sounds and its model in view come from its own game (`shot_game`,
-`Projectile.game`, the per-game archives of `AssetCatalog` in the view
-weapon, effects and audio).
-
-- **Held by name**: a weapon is owned as `weapon_<game>:<key>`, so Quake's
-  shotgun and Quake II's are two; a pickup in a Passion level is renamed so
-  (`passion_pickup` in `games/items.jac`), and its sounds come from its
-  game's archive.
-- **Number keys by role**, each pressed again stepping to the next held
-  weapon of the role (`change_role`): 1 the axe and the gauntlet, 2 the
-  blaster and the machine guns, 3 the shotguns, 4 the nailguns and the
-  chaingun, 5 the grenade launchers and the hand grenade, 6 the rocket
-  launchers, 7 the lightning guns, hyperblaster and plasma gun, 8 the
-  railguns, 9 the BFGs (`PASSION_ROLES`; the 9 key is bound to `weapon 9`).
-  Each weapon has a number of its own (`passion_slot`: its game's slot after
-  10, 20 or 40), which saves and the view use.
-- **Ammunition is shared by kind**: one pool of shells, nails, bullets,
-  grenades, rockets, cells, slugs, lightning and BFG charge, each gun
-  spending what its own game spends, up to `PASSION_AMMO_CAPS`.
-- **Armor** is the one value every game's pickups already share; each
-  pickup sets how much it absorbs by its own game's rule.
-- **The start**: the melee weapon and first gun of the game the level's
-  things come from most (`lead_game`): Quake's axe and shotgun with 25
-  shells, Quake II's blaster, or Quake III's gauntlet and machine gun with
-  100 bullets.
-- **Sounds** in a Passion level are read from the game a path names
-  (`q2:sound/...`), else Quake's archive, else the first game that has the
-  file; monsters are heard from their own game's archive.
-
-## Validation
-
-```sh
-jac test tests/passion_tests.jac
-jac build scripts/passion_map.jac --native -o .jac/qp-passion-map
-QP_SEEDS="1 2 3 4 5 6 7 8 9 10 11 12" .jac/qp-passion-map
-jac build scripts/passion_play.jac --native -o .jac/qp-play
-QP_GAME=passion QP_SEEDS="1 2 3" DYLD_LIBRARY_PATH=vendor .jac/qp-play
-jac build scripts/passion_look.jac --native -o .jac/qp-look
-QP_GAME=passion QP_LOOK_GAME=passion QP_LOOK_MAP=v3-5 QP_LOOK_ROUTE=1 DYLD_LIBRARY_PATH=vendor .jac/qp-look
-jac build scripts/passion_corpus.jac --native -o .jac/qp-corpus
-QP_CORPUS_GAMES=passion .jac/qp-corpus
-```
-
-- `tests/passion_tests.jac`: the massing's shell seals all air; every
-  archetype gives a stage and doorways and every floor level can be walked
-  to; arrangements are deterministic and corridors join their doorways;
-  names parse strictly and a run's levels follow one another; a survey
-  keeps its promises (start, exit, a door for each lock, a fair score), and
-  a forge stepped a step at a time makes the same expedition; a compiled
-  expedition is walked from its start to its exit by the yardstick over its
-  real collision.
-- `scripts/passion_map.jac`: how each seed's survey went, why candidates
-  were turned down, teleporters and windows (seeds 1-12: 0-2 teleporters,
-  2-7 s).
-- `scripts/passion_play.jac`: each seed's logic played in the game (keys,
-  switches, guardians, locked doors, the way out); with `QP_PLAY_RUN=1` the
-  way out must also lead on to the run's next level, carrying health and
-  leaving keys behind, and a death there must begin it again at once.
-- `scripts/passion_look.jac`: photographs from the widest views a player can
-  reach, along the route from start to exit, or from given places; the same
-  for the original levels, to compare by eye.
-- `scripts/passion_corpus.jac` with `QP_CORPUS_GAMES=passion`: generated
-  expeditions measured like the originals.
-
-Jac compiler defects found while building Passion are recorded in
-[jac native fixes](jac-native-fixes.md).
+A Passion level holds every weapon of the three games (`passion_arsenal`
+in `games/weapons.jac`), each by its own game's rules; number keys choose
+by role (`PASSION_ROLES`), ammunition is shared by kind, armour is the one
+value every game's pickups share, and the start kit is the melee weapon and
+first gun of the game the level's things come from most.
 
 ## Limitations
 
-- Rooms are boxes and their structure axis-aligned: no slopes, arches or
-  round rooms yet, and walls are a cell thick.
-- The yardstick does not swim or ride lifts, so a level's reach and routes
-  are measured as far as walking, jumping, dropping and teleporters go.
-- Generated levels are still more detailed in small faces and trim than the
-  originals (cut faces round pilasters, plinths and stair risers), and use
-  fewer textures.
-- The generator's supplies (health, shells, armor) still balance against
-  the shotguns alone: it places no weapons, and no ammunition but shells.
-- The director's damage model is a heuristic, not a combat simulation.
-- The level is one cluster (no visibility culling); generated expeditions
-  draw well within the frame budget, but a bake by planes could cut them.
+- Static guarantees cover moving through the level, gates and their
+  openers; they assume every foe can be killed (the budget estimates what
+  it costs), and model doors that start open as no gate.
+- Quake III's jump pads are not compiled into the navigation yet: an arena's
+  places reached only by a pad are left out of its essence.
+- Re-embedding and splicing join pieces by plain passages; the candidates
+  they make prove less often than the others.
+- The next level is made when the way out is reached (reading an essence or
+  proving a level are long steps), not while the last is played.

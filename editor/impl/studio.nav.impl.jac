@@ -58,6 +58,49 @@ impl Studio.draw_nav {
             drawn += 1;
         }
     }
+    # The graph's gates (amber when they want a key, orange when something
+    # else opens them, grey when they come by themselves), each opener a
+    # cross joined to the places it is done from.
+    for gate in graph_gates(atlas) {
+        tone = ink(0x8a8a8a, 160) if not gate.needs else (ink(0xffc94d, 230) if [need for need in gate.needs if need.startswith("key")] else ink(0xff8a3d, 230));
+        wire_box(gate.box.mins, gate.box.maxs, tone);
+    }
+    for opener in graph_openers(atlas) {
+        at = opener.point;
+        mark = ink(0xff5fd2, 230);
+        wire_line(at.add(Vec3(x=-12.0)), at.add(Vec3(x=12.0)), mark);
+        wire_line(at.add(Vec3(y=-12.0)), at.add(Vec3(y=12.0)), mark);
+        wire_line(at.add(Vec3(z=-12.0)), at.add(Vec3(z=12.0)), mark);
+        for place in opener_places(opener)[:3] {
+            wire_line(at, place.center, ink(0xff5fd2, 90));
+        }
+    }
+    # The proof's sure route, white and raised, and its traps in red.
+    proof = self.nav_proof;
+    if proof is not None {
+        by_area: dict[int, LevelPlace] = {};
+        for place in level_places(atlas) {
+            by_area[place.area] = place;
+        }
+        last: Vec3 | None = None;
+        for area in proof.route {
+            place = by_area.get(area, None);
+            if place is None {
+                continue;
+            }
+            here = place.center.add(Vec3(z=8.0));
+            if last is not None {
+                wire_line(last, here, ink(0xffffff, 255));
+            }
+            last = here;
+        }
+        for trap in proof.traps {
+            place = by_area.get(int(trap.split(" ")[0]), None);
+            if place is not None {
+                wire_box(place.box.mins, place.box.maxs.add(Vec3(z=56.0)), ink(0xe5484d, 255));
+            }
+        }
+    }
 }
 
 impl Studio.nav_findings(scene: Scene) -> list[Finding] {
@@ -89,6 +132,7 @@ impl Studio.nav_findings(scene: Scene) -> list[Finding] {
 """Read the level graph of what is built now (as the game plays it, every
 door posed open), give it to the router, and keep it."""
 impl Studio.nav_read(sims: bool) -> LevelGraph | None {
+    self.nav_proof = None;
     app = self.app;
     if app is None {
         return None;
@@ -121,6 +165,7 @@ impl Studio.nav_command(scene: Scene, args: list[str]) -> bool {
         verdict = "";
         if atlas is not None {
             proof = prove_level(atlas);
+            self.nav_proof = proof;
             if proof.finishes and proof.softlocks == 0 {
                 verdict = "It can be finished: the way out is reached for sure, nothing strands a player"
                     + (", and it requires " + ", ".join(proof.required) if proof.required else "");
@@ -205,13 +250,14 @@ impl Studio.nav_command(scene: Scene, args: list[str]) -> bool {
         self.nav_mesh = None;
         self.nav_aas = None;
         self.nav_atlas = None;
+        self.nav_proof = None;
         self.say("The level graph is forgotten");
         return True;
     }
     if how == "show" {
         word = args[2] if len(args) > 2 else "";
         self.nav_shown = (not self.nav_shown) if word not in ["on", "off"] else word == "on";
-        self.say("The level graph's ways are drawn: walked green, jumped yellow, dropped red, climbed white, swum blue, lifted cyan, teleported violet, thrown orange" if self.nav_shown else "The level graph's ways are not drawn");
+        self.say("The level graph is drawn: ways walked green, jumped yellow, dropped red, climbed white, swum blue, lifted cyan, teleported violet, thrown orange; gates boxed (amber a key, orange opened elsewhere), openers pink; after a playtest the proven route white and traps red" if self.nav_shown else "The level graph is not drawn");
         return True;
     }
     mesh = self.nav_mesh;

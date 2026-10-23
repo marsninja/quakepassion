@@ -195,9 +195,9 @@ import from .project {
 }
 import from .compile.kept { KeptBake, keep_bake, give_bake }
 import from .compile.steps { Place, recipe_steps, step_line, places_named, text_mark }
-import from engine.level.graph { LevelGraph, Place, Move, graph_places as level_places }
+import from engine.level.graph { LevelGraph, Place as LevelPlace, Move, Gate, Opener, graph_places as level_places, graph_gates, graph_openers, opener_places }
 import from engine.level.extract { ReadOptions, read_level_graph }
-import from engine.level.prove { prove_level, explain_proof }
+import from engine.level.prove { Proof, prove_level, explain_proof }
 import from engine.level.routes { graph_aas, route_time }
 import from engine.world.bot_routes { NavMesh, HasNavMesh, build_navmesh }
 import from engine.formats.aas {
@@ -1062,6 +1062,9 @@ obj Studio(Workbench) {
         # them, the grid they are on, the engine's mesh, and whether the
         # ways are drawn.
         nav_atlas: LevelGraph | None = None,
+        # The proof the last playtest made of the level graph (its route and
+        # traps are drawn with it).
+        nav_proof: Proof | None = None,
         nav_mesh: NavMesh | None = None,
         # The baked navigation's data, handed to the bots of a game played from the scene.
         nav_aas: Aas | None = None,
