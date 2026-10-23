@@ -133,6 +133,9 @@ glob CAST_AMMO: dict[str, dict[str, tuple[str, float]]] = {
 out's box, where the start is, and tallies."""
 obj Casting {
     has items: list[MapItem] = [],
+        # Solid the world keeps besides its shell: the rock a door opens
+        # into (the shell is a cell thick, and outside it is nothing).
+        solids: list[list[Side]] = [],
         exit_low: list[float] = [],
         exit_high: list[float] = [],
         start: list[float] = [],
@@ -214,10 +217,36 @@ def cast_start(atlas: LevelGraph, made: Sculpting, casting: Casting, taken: dict
     }
 }
 
+"""Rock over a door that rises (from `low` to `high`): solid the height it
+rises, over its box, so it opens into rock rather than out of the world."""
+def rock_over(casting: Casting, made: Sculpting, low: Vec3, high: Vec3) {
+    top = high.z + (high.z - low.z) + 16.0;
+    mass = made.mass;
+    if mass is not None {
+        # No higher than the air of a space over it: rock there would stand
+        # in that room.
+        start = int(math.ceil(high.z / LIFT));
+        for cx in range(int(math.floor(low.x / CELL)), int(math.ceil(high.x / CELL))) {
+            for cy in range(int(math.floor(low.y / CELL)), int(math.ceil(high.y / CELL))) {
+                cz = start;
+                while float(cz) * LIFT < top and not mass.air(cx, cy, cz) {
+                    cz += 1;
+                }
+                top = min(top, float(cz) * LIFT);
+            }
+        }
+    }
+    if top > high.z {
+        casting.solids.append(plain_box(Vec3(x=low.x, y=low.y, z=high.z), Vec3(x=high.x, y=high.y, z=top), "caulk", 1.0));
+    }
+}
+
 """Doors and lifts. Answers the cells (x, y) they stand in, kept clear of
 the population."""
 def cast_gates(atlas: LevelGraph, made: Sculpting, casting: Casting) -> dict[tuple[int, int], bool] {
     gated: dict[tuple[int, int], bool] = {};
+    # Doors of a double door fall on one box: one door each box.
+    placed: dict[str, bool] = {};
     for gate in graph_gates(atlas) {
         # A door stands in the doorway it bars; a mover the essence stood on
         # (a floor that lowered, a bridge) is floor here.
@@ -269,7 +298,13 @@ def cast_gates(atlas: LevelGraph, made: Sculpting, casting: Casting) -> dict[tup
             fields["health"] = "1";
             fields["_secret"] = "1";
         }
+        key = str(int(a[0])) + "," + str(int(a[1])) + "," + str(int(a[2])) + "," + str(int(b[0])) + "," + str(int(b[1])) + "," + str(int(b[2]));
+        if key in placed {
+            continue;
+        }
+        placed[key] = True;
         casting.put_brushed(fields, [plain_box(Vec3(x=a[0], y=a[1], z=a[2]), Vec3(x=b[0], y=b[1], z=b[2]), kit.wall if secret else kit.door, kit.scale)]);
+        rock_over(casting, made, Vec3(x=a[0], y=a[1], z=a[2]), Vec3(x=b[0], y=b[1], z=b[2]));
         casting.doors += 1;
     }
     for lift in made.lifts {
@@ -652,10 +687,13 @@ def cast_exit(atlas: LevelGraph, made: Sculpting, casting: Casting, foes: int) {
     casting.exit_low = [at[0] - 32.0, at[1] - 32.0, floor + 2.0];
     casting.exit_high = [at[0] + 32.0, at[1] + 32.0, floor + 96.0];
     if shut {
+        cage_low = Vec3(x=at[0] - 40.0, y=at[1] - 40.0, z=floor + 8.0);
+        cage_high = Vec3(x=at[0] + 40.0, y=at[1] + 40.0, z=floor + 104.0);
         casting.put_brushed(
             {"classname": "func_door", "angle": "-1", "speed": "120", "wait": "-1", "lip": "8", "targetname": "exit_gate"},
-            [plain_box(Vec3(x=at[0] - 40.0, y=at[1] - 40.0, z=floor + 8.0), Vec3(x=at[0] + 40.0, y=at[1] + 40.0, z=floor + 104.0), kit.door, kit.scale)]
+            [plain_box(cage_low, cage_high, kit.door, kit.scale)]
         );
+        rock_over(casting, made, cage_low, Vec3(x=cage_high.x, y=cage_high.y, z=max(cage_high.z, float(target.ceiling - made.offset[2]) * LIFT)));
         if atlas.arena and foes > 0 {
             casting.put({"classname": "trigger_counter", "targetname": "arena_clear", "count": str(foes), "target": "exit_gate", "message": "The way out is open"});
         }

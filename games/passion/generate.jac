@@ -283,7 +283,7 @@ def forge_steps(forge: Forge) -> Iterator[str] {
         items: list[MapItem] = [];
         yield from map_item_steps(mass, made.spaces, dressing, casting.items, briefing, items);
         if items {
-            for brush in made.liquids {
+            for brush in made.liquids + casting.solids {
                 items[0].brushes.append(brush);
             }
         }
@@ -374,6 +374,12 @@ def prove_made(forge: Forge, made: LiveLevel, casting: Casting, briefing: str, e
     line = ("proves clean" if clean else "does not prove (finishes " + str(proof.finishes) + ", " + str(proof.softlocks) + " softlocks)")
         + ": " + str(len(graph_places(atlas))) + " places, required " + str(proof.required) + ", budget lowest "
         + str(int(ledger.lowest)) + ", in " + str(round(time.time() - began, 1)) + " s";
+    if not clean {
+        outside = outside_places(atlas, sculpting);
+        if outside {
+            line += " | " + " | ".join(outside);
+        }
+    }
     destroy_graph(world, collision_roots(level.collision));
     if not clean {
         kinds: dict[int, int] = {};
@@ -385,6 +391,41 @@ def prove_made(forge: Forge, made: LiveLevel, casting: Casting, briefing: str, e
         line += " | moves " + " ".join([str(kind) + ":" + str(kinds[kind]) for kind in sorted(kinds.keys())]) + " | " + " | ".join(atlas.notes) + " | " + " | ".join(explain_proof(atlas, proof)) + " | " + " | ".join(lost_moves(essence, atlas, sculpting));
     }
     return (clean, line);
+}
+
+"""Places of a made level where the sculpture has no air (a body got
+outside the walls): how many, and a few of the moves that lead there from
+inside."""
+def outside_places(atlas: LevelGraph, sculpting: Sculpting) -> list[str] {
+    mass = sculpting.mass;
+    if mass is None {
+        return [];
+    }
+    out: dict[int, bool] = {};
+    for place in graph_places(atlas) {
+        cx = int(place.center.x // 32.0);
+        cy = int(place.center.y // 32.0);
+        cz = int((place.floor + 8.0) // 16.0);
+        if not mass.air(cx, cy, cz) {
+            out[place.area] = True;
+        }
+    }
+    lines: list[str] = ["outside the walls: " + str(len(out)) + " places"];
+    for place in graph_places(atlas) {
+        if place.area in out {
+            continue;
+        }
+        for move in [edge place->:Move:->] {
+            if move.to in out and len(lines) < 6 {
+                lines.append(
+                    "  out by " + str(place.area) + " -> " + str(move.to) + " kind " + str(move.kind) + (" sure" if move.must else " possible") + " at "
+                        + str(int(move.start.x)) + "," + str(int(move.start.y)) + "," + str(int(move.start.z)) + " to " + str(int(move.finish.x))
+                        + "," + str(int(move.finish.y)) + "," + str(int(move.finish.z))
+                );
+            }
+        }
+    }
+    return lines if out else [];
 }
 
 """A made level opened as a level of `world`: its compiled BSP, and the way

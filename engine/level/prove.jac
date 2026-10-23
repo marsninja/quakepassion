@@ -318,6 +318,22 @@ def explain_proof(atlas: LevelGraph, proof: Proof) -> list[str] {
         }
         inside = set([state // span for state in closure.keys()]);
         lines.append("first trap reaches " + str(len(inside)) + " places for sure");
+        entered = 0;
+        for place in graph_places(atlas) {
+            if place.area in inside {
+                continue;
+            }
+            for move in [edge place->:Move:->] {
+                if move.to in inside and entered < 4 {
+                    entered += 1;
+                    lines.append(
+                        "  entered by " + str(place.area) + " -> " + str(move.to) + " kind " + str(move.kind) + (" sure" if move.must else " possible")
+                            + " at " + str(int(move.start.x)) + "," + str(int(move.start.y)) + "," + str(int(move.start.z)) + " to "
+                            + str(int(move.finish.x)) + "," + str(int(move.finish.y)) + "," + str(int(move.finish.z))
+                    );
+                }
+            }
+        }
         shown = 0;
         for area in inside {
             place = by_area.get(area, None);
