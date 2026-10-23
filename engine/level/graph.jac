@@ -69,7 +69,11 @@ edge Move: Place --> Place {
         fall: bool = False,
         # A gate whose shut volume the way passes through (a hatch over the
         # water it drops into): it wants what opens that gate.
-        gate: int = 0;
+        gate: int = 0,
+        # What a shipped AAS file says of it beyond its kind (botlib's
+        # facenum and edgenum), kept for its router.
+        face_num: int = 0,
+        edge_num: int = 0;
 }
 
 """A mover that bars places (or a lift its ride) until its tokens are held:

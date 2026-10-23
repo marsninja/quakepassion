@@ -36,6 +36,7 @@ import from engine.assets.catalog { AssetCatalog }
 import from engine.assets.library { AssetLibrary }
 import from engine.formats.aas { parse_aas }
 import from engine.world.bot_routes { build_navmesh }
+import from engine.level.routes { graph_aas, graph_from_aas }
 import from engine.world.bot_goals { BotItems, HasBotItems, init_camp_spots }
 import from engine.math.vec3 { Vec3 }
 
@@ -189,7 +190,10 @@ def prepare_arena(
     # The bots' own navigation data (botlib AAS) drives map-wide routing.
     aas_path = "maps/" + level.name + ".aas";
     if library.exists(aas_path) {
-        mesh = build_navmesh(world, parse_aas(library.read(aas_path)), level.bsp);
+        # Brought in as a level graph; the router reads it as the graph's
+        # AAS view (the file's own locating tree kept).
+        shipped = parse_aas(library.read(aas_path));
+        mesh = build_navmesh(world, graph_aas(graph_from_aas(shipped, level), shipped), level.bsp);
         # The items bots know (botfiles/items.c) become their level items
         # once every item is on the map (prepare_arena_links); the map's
         # camp spots are theirs at once (BotInitInfoEntities).

@@ -33,7 +33,7 @@ import from ..world.world { World, Player }
 import from ..world.level { Level }
 import from ..world.exits { LevelExit, HasExit }
 import from ..world.objectives { Objective, mover_objectives, mover_blocked, exit_objectives }
-import from ..world.doors { Door, door_parts }
+import from ..world.doors { Door, door_parts, door_starts_open }
 import from ..world.trains { Train, HasTrain }
 import from ..world.bot_routes { NavMesh, build_navmesh }
 import from ..nav.compile { NavBuild, compile_navigation, nav_shut_shift }
@@ -446,7 +446,9 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
     travels: dict[int, float] = {};
     motions: dict[int, Vec3] = {};
     for door in door_parts(world) {
-        if door.kind == "button" or door.model <= 0 {
+        # A door that starts open (Quake's START_OPEN) bars nothing until
+        # something shuts it: no gate.
+        if door.kind == "button" or door.model <= 0 or door_starts_open(door) {
             continue;
         }
         if door.model not in models {

@@ -25,7 +25,8 @@ import from .doors { Door, HasDoor, door_starts_open }
 import from .trains { Train, HasTrain, TrackPoint, TrackNext }
 import from .signals { Signal, HasSignal, Targets }
 import from .objectives { Objective, mover_objectives, exit_objectives, objective_mover, mover_area_blocked, objective_item_box }
-import from ..nav.compile { compile_navigation }
+import from ..level.routes { level_routes }
+import from ..level.graph { LevelGraph, Place, graph_places }
 import from ..formats.aas { TFL_DEFAULT, TRAVEL_JUMP, TRAVEL_ELEVATOR, area_mover_model }
 import from ..input.input { Intent }
 import from ..math.vec3 { Vec3, forward_from, right_from }
@@ -769,19 +770,15 @@ node PlayerBot {
         self.leap = 0;
         self.stuck_count = 0;
         self.mind.current = "seek_exit";
-        self.rest_areas = set();
-        meshes = [world->:HasNavMesh:->][?:NavMesh];
-        if meshes {
-            self.mesh = meshes[0];
-            self.status = "navigation from the map's AAS";
-        } else {
-            started = time.time();
-            build = compile_navigation(world, level);
-            self.compile_seconds = time.time() - started;
-            self.mesh = build_navmesh(world, build.aas, level.bsp);
-            self.rest_areas = set(build.rest_areas);
-            self.status = "navigation compiled in " + str(round(self.compile_seconds, 1)) + " s: " + build.summary();
-        }
+        # The level graph routes the bot: the map's own AAS file brought in
+        # as one, else read off the level's compiled navigation.
+        started = time.time();
+        routed = level_routes(world, level);
+        atlas = routed[0];
+        self.mesh = routed[1];
+        self.compile_seconds = time.time() - started;
+        self.rest_areas = set([place.area for place in graph_places(atlas) if place.resting]);
+        self.status = "level graph in " + str(round(self.compile_seconds, 1)) + " s: " + " | ".join(atlas.notes);
         print("AUTOPLAY", level.bsp.game, level.name, self.status);
         mesh = self.mesh;
         self.trace.event("level", self.clock, {
