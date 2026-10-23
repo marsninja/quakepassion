@@ -13,6 +13,7 @@ import from engine.core.clock { Clock }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
 import from engine.math.vec3 { Vec3 }
+import from engine.nav.compile { compile_navigation, NavStep, NavSpot }
 import from engine.nav.levelgraph { LevelGraph, Place, Move, Opener, Gate, Holds, Guards, Offers, Bars, DoneFrom, read_level_graph, prove, budget, graph_places }
 
 with entry {
@@ -23,7 +24,17 @@ with entry {
         parts = spec.split(":");
         app.load_destination(parts[0], parts[1]);
         began = time.time();
-        atlas = read_level_graph(app.world, app.level, None, os.getenv("QP_PROOF_FALLS", "1") != "0");
+        build = compile_navigation(app.world, app.level);
+        look = [int(word) for word in (os.getenv("QP_PROOF_AREA") or "").split()];
+        grid = build.grid;
+        if look and grid is not None {
+            for spot in grid.spots {
+                if spot.area in look {
+                    print("PROOF spot", spot.index, "area", spot.area, "at", int(spot.origin.x), int(spot.origin.y), int(spot.origin.z), "grounded", spot.grounded, "liquid", spot.liquid, "pose", spot.pose, "expanded", spot.expanded, "ledge", spot.ledge, "walks", spot.walks, "steps", [str(step.kind) + ">" + str(grid.spots[step.target].area) for step in [edge spot->:NavStep:->]], "solid", grid.sweep(spot.origin, spot.origin).start_solid, "live solid", app.level.collision.trace(spot.origin, spot.origin).start_solid, "from", [str(other.index) + "@" + str(int(other.origin.x)) + "," + str(int(other.origin.y)) + "," + str(int(other.origin.z)) + "/" + str(other.liquid) for other in [spot<-:NavStep:<-][?:NavSpot]][:4]);
+                }
+            }
+        }
+        atlas = read_level_graph(app.world, app.level, build, os.getenv("QP_PROOF_FALLS", "1") != "0");
         print("PROOF", spec, "read in", round(time.time() - began, 1), "s");
         for note in atlas.notes {
             print("PROOF", spec, note);

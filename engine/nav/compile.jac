@@ -209,6 +209,11 @@ obj NavGrid {
         # In water a body swims on at its height while the water goes on.
         if spot.liquid == 1 and not flat.start_solid and flat.fraction >= 1.0
             and self.level.liquid_at(level.add(Vec3(z=4.0))) == 1 {
+            # A body put there must fit: a sweep that ends touching a wall
+            # reports no hit, but a body set down there is in it.
+            if self.sweep(level, level).start_solid {
+                return [];
+            }
             return [(a.z, TRAVEL_SWIM)];
         }
         if not flat.start_solid and flat.fraction >= 1.0 {
