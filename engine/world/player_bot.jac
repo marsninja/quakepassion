@@ -864,6 +864,9 @@ def autoplay_retreat(level: Level, origin: Vec3, ahead: Vec3) -> Vec3 | None {
         if drop > 0.0 and drop <= 64.0 {
             continue;
         }
+        if autoplay_scalds(level, origin, way) {
+            continue;
+        }
         room = level.collision.trace(origin, origin.add(way.scale(96.0))).fraction * 96.0;
         # Straight back is worth a little more than the same room aside, and
         # going past it a good deal less.
@@ -879,6 +882,25 @@ def autoplay_retreat(level: Level, origin: Vec3, ahead: Vec3) -> Vec3 | None {
         }
     }
     return best;
+}
+
+"""Whether a step `way` (flat unit) from `origin` puts the bot's feet in
+slime or lava: the ground under points a stride and two along it, and what
+lies just over that ground. A wall in the way is no scald (the step is
+stopped there)."""
+def autoplay_scalds(level: Level, origin: Vec3, way: Vec3) -> bool {
+    liquids = level.liquid_probe();
+    for dist in [32.0, 64.0] {
+        ahead = origin.add(way.scale(dist));
+        down = level.collision.trace(ahead, ahead.sub(Vec3(z=96.0)));
+        if down.start_solid {
+            return False;
+        }
+        if liquids.kind_at(Vec3(x=ahead.x, y=ahead.y, z=down.end.z - 18.0)) >= 2 {
+            return True;
+        }
+    }
+    return False;
 }
 
 """What one hit must do to knock `body` down for a while when only a blow
@@ -2286,7 +2308,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             self.strafe_wait -= dt;
             sweep = level.collision.trace(origin, origin.add(side.scale(40.0)));
             gap = gap_distance(level.collision, origin, side);
-            if self.strafe_wait <= 0.0 or sweep.fraction < 1.0 or (gap > 0.0 and gap < 64.0) {
+            if self.strafe_wait <= 0.0 or sweep.fraction < 1.0 or (gap > 0.0 and gap < 64.0) or autoplay_scalds(level, origin, side) {
                 self.strafe = -self.strafe;
                 self.strafe_wait = 0.8 + float(self.frames % 7) * 0.1;
                 side = side.scale(-1.0);
@@ -2322,6 +2344,12 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                 }
             }
             wish = Vec3(x=wish.x, y=wish.y).normalized();
+            # Never into slime or lava for a fight: the other ways round,
+            # else stand.
+            if autoplay_scalds(level, origin, wish) {
+                safe = [way for way in [side, side.scale(-1.0), ahead.scale(-1.0)] if not autoplay_scalds(level, origin, way)];
+                wish = safe[0] if safe else Vec3();
+            }
             intent.move = autoplay_move(player.yaw, wish);
             intent.jump = False;
         }
@@ -2441,6 +2469,11 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             self.dodge_way = dodge;
             self.dodge_until = self.clock + 0.5;
         }
+    }
+    # A dodge into slime or lava is worse than the hit.
+    if dodge is not None and autoplay_scalds(level, origin, Vec3(x=dodge.x, y=dodge.y).normalized()) {
+        dodge = None;
+        self.dodge_until = 0.0;
     }
     if dodge is not None {
         intent.move = autoplay_move(player.yaw, dodge, 1.0, intent.move.z);
