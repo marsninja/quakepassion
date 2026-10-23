@@ -1074,8 +1074,10 @@ def sculpt(made: Sculpting, dice: Stream) {
 
 """Liquid brushes for runs of cells ([x, y, low, high, liquid, space], in
 the massing's cells): runs along x of one liquid at one depth merged into
-one box each, in the material the space's district has for it; each side
-says its contents outright (lava 8, slime 16, water 32)."""
+one box each, of the liquid the essence had (water 1, slime 2, lava 3: a
+wade through slime is no swim through lava), in the material the space's
+district has for it, else Quake's own; each side says its contents
+outright (lava 8, slime 16, water 32)."""
 def liquid_brushes(runs: list[list[int]], spaces: list[Space]) -> list[list[Side]] {
     keyed: dict[tuple[int, int, int, int, int], list[int]] = {};
     for run in runs {
@@ -1083,13 +1085,17 @@ def liquid_brushes(runs: list[list[int]], spaces: list[Space]) -> list[list[Side
             continue;
         }
         kit = kit_of(spaces[run[5]].district);
-        material_index = 0 if run[4] == 1 else 1;
-        keyed.setdefault((run[1], run[2], run[3], material_index, kit_index(kit)), []).append(run[0]);
+        keyed.setdefault((run[1], run[2], run[3], min(max(run[4], 1), 3), kit_index(kit)), []).append(run[0]);
     }
     brushes: list[list[Side]] = [];
     for (key, xs) in keyed.items() {
         kit = KITS[key[4]];
-        material = kit_water(kit) if key[3] == 0 else (kit.liquid if ("lava" in kit.liquid.lower() or "slime" in kit.liquid.lower()) else "q1:e3m2/*lava1");
+        material = kit_water(kit);
+        if key[3] == 2 {
+            material = kit.liquid if "slime" in kit.liquid.lower() else "q1:e1m1/*slime0";
+        } elif key[3] == 3 {
+            material = kit.liquid if "lava" in kit.liquid.lower() else "q1:e3m2/*lava1";
+        }
         lowered = material.lower();
         contents = 8 if "lava" in lowered else (16 if "slime" in lowered else 32);
         ordered = sorted(xs);
