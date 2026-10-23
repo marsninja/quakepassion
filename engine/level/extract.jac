@@ -404,6 +404,19 @@ def opener_places_of(objective: Objective, collision: CollisionMap, mesh: NavMes
             }
         }
     }
+    # A trigger no area's box meets (hung over a floor, or across a doorway),
+    # or one known only by its point: the places a body standing in reaches
+    # it from, as a way out's volume is met.
+    if not found and objective.kind in ["touch", "press"] {
+        near = objective.box if objective.box is not None else AABB(mins=objective.point.sub(Vec3(x=16.0, y=16.0, z=16.0)), maxs=objective.point.add(Vec3(x=16.0, y=16.0, z=16.0)));
+        for place in places[1:] {
+            reaches = place.box.mins.x <= near.maxs.x + 16.0 and near.mins.x - 16.0 <= place.box.maxs.x and place.box.mins.y <= near.maxs.y + 16.0
+                and near.mins.y - 16.0 <= place.box.maxs.y and place.box.mins.z <= near.maxs.z + 24.0 and near.mins.z - 32.0 <= place.box.maxs.z;
+            if reaches {
+                found.append(place);
+            }
+        }
+    }
     if objective.kind in ["shoot", "kill"] {
         aim = objective.aim if objective.kind == "shoot" else objective.point;
         for place in places[1:] {
@@ -567,21 +580,16 @@ def read_exits(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
     found_any = False;
     for portal in portals {
         if not portal.volume.bounds {
-            # Fired, not touched (Quake II's target_changelevel): the way out
-            # is where what fires it is touched; one fired another way (a
-            # death, a shot) gives the token the way out wants.
-            for objective in exit_objectives(world, portal) {
-                if objective.kind in ["touch", "press"] {
-                    for place in opener_places_of(objective, level.collision, mesh, places) {
-                        place.way_out = True;
-                        found_any = True;
-                    }
-                } else {
-                    opener = Opener(kind=objective.kind, token="exit", point=objective.point, what=objective_what(objective));
-                    atlas +>:Offers:+> opener;
-                    for place in opener_places_of(objective, level.collision, mesh, places) {
-                        opener +>:DoneFrom:+> place;
-                    }
+            # Fired, not touched (Quake II's target_changelevel): the level
+            # is left from where what fires it is done (touched, pressed,
+            # shot, a foe killed in sight).
+            fired = exit_objectives(world, portal);
+            kinds = sorted(set([objective.kind for objective in fired]));
+            atlas.notes.append("exit to " + portal.destination + " fired by " + (" ".join(kinds) if kinds else "nothing found"));
+            for objective in fired {
+                for place in opener_places_of(objective, level.collision, mesh, places) {
+                    place.way_out = True;
+                    found_any = True;
                 }
             }
             continue;
