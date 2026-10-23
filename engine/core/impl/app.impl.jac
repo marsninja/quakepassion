@@ -1204,8 +1204,9 @@ impl App.step() -> bool {
                 return True;
             }
         }
-        asked = self.prompt_key(257);
+        # The player bot goes on from a Passion tally as a player would.
         leaving_run = self.passion_run;
+        asked = self.prompt_key(257) or (self.autoplay is not None and self.expedition_complete and leaving_run is not None);
         if self.expedition_complete and self.level.bsp.game == "passion" and leaving_run is not None
             and leaving_run.plays(self.level.name) {
             self.passion_onward(asked);
