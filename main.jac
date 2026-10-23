@@ -90,7 +90,7 @@ with entry {
             map_name = pack_start_map(pack_id);
         }
         if game == "passion" {
-            map_name = "v3-" + os.getenv("QP_SEED", "1");
+            map_name = "v4-" + os.getenv("QP_SEED", "1");
         }
         opened = os.getenv("QP_MAP", map_name);
         # The first level's generated assets, baked when missing or stale.

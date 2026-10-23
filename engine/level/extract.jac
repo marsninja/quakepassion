@@ -24,7 +24,8 @@ import from ..formats.aas {
     AREACONTENTS_SLIME,
     AREACONTENTS_DONOTENTER,
     AREACONTENTS_MOVER,
-    AREACONTENTS_MODELNUMSHIFT
+    AREACONTENTS_MODELNUMSHIFT,
+    AREA_GROUNDED
 }
 import from ..physics.collision { CollisionMap }
 import from ..physics.movement { MovePlayer, MovementProfile }
@@ -86,6 +87,44 @@ def run_body(
             return body.pos.sub(Vec3(z=collision.eye_height));
         }
         if here.z < origin.z - 1024.0 {
+            return None;
+        }
+    }
+    return None;
+}
+
+"""How fast a jump leaves the ground in a game's movement."""
+def profile_jump(profile: MovementProfile) -> float {
+    return profile.jump_speed if profile.jump_speed > 0.0 else 270.0;
+}
+
+"""Where a body thrown from `origin` at `velocity` comes down: swept along
+its arc a twentieth of a second at a time, sliding along walls it meets,
+until it lands on floor it can stand on (or has fallen 1024 units, or two
+seconds pass). What might happen off a ledge, not what surely does."""
+def arc_landing(collision: CollisionMap, origin: Vec3, velocity: Vec3, gravity: float) -> Vec3 | None {
+    at = origin;
+    moving = velocity;
+    step = 0.05;
+    for count in range(40) {
+        next_at = at.add(moving.scale(step)).add(Vec3(z=-0.5 * gravity * step * step));
+        moving = moving.add(Vec3(z=-gravity * step));
+        swept = collision.trace(at, next_at);
+        if swept.start_solid {
+            return None;
+        }
+        if swept.fraction < 1.0 {
+            if swept.normal.z >= 0.7 {
+                return swept.end;
+            }
+            # Off a wall: on along it.
+            into = moving.dot(swept.normal);
+            moving = moving.sub(swept.normal.scale(into));
+            at = swept.end;
+            continue;
+        }
+        at = next_at;
+        if at.z < origin.z - 1024.0 {
             return None;
         }
     }
@@ -182,8 +221,8 @@ def read_level_graph(world: World, level: Level, build: NavBuild | None = None, 
                 }
                 tried[(spot.area, bit)] = True;
                 way = Vec3(x=dx, y=dy);
-                for takeoff in [None, spot.origin] {
-                    landed = run_body(collision, profile, spot.origin, way, takeoff, 48.0, 1.0 / 40.0);
+                for leap in [0.0, profile_jump(profile)] {
+                    landed = arc_landing(collision, spot.origin, way.scale(320.0).add(Vec3(z=leap)), 800.0);
                     if landed is None {
                         continue;
                     }
@@ -238,6 +277,12 @@ def sound_places(level: Level, places: list[Place]) {
         top = up.end.z;
         place.roof = max(0.0, top - place.floor);
         place.sky = level_sky(level, Vec3(x=foot.x, y=foot.y, z=top - 4.0));
+        if place.flags & AREA_GROUNDED == 0 {
+            # A place to swim: its floor is the bottom under it.
+            down = collision.trace(place.center, place.center.add(Vec3(z=-1024.0)), [], -1.0, True);
+            place.floor = down.end.z;
+            foot = Vec3(x=place.center.x, y=place.center.y, z=place.floor + 8.0);
+        }
         kind = level.liquid_at(foot);
         if kind > 0 {
             place.liquid = kind;
@@ -333,7 +378,8 @@ def opener_places_of(objective: Objective, collision: CollisionMap, mesh: NavMes
             if place in found or eye.sub(aim).length() > 1024.0 {
                 continue;
             }
-            if collision.trace(eye, aim, [], -1.0, True).fraction >= 0.99 {
+            seen = collision.trace(eye, aim, [], -1.0, True);
+            if seen.fraction >= 0.99 or seen.end.sub(aim).length() < 24.0 {
                 found.append(place);
             }
         }
@@ -369,6 +415,7 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
     models: list[int] = [];
     kinds: dict[int, str] = {};
     travels: dict[int, float] = {};
+    motions: dict[int, Vec3] = {};
     for door in door_parts(world) {
         if door.kind == "button" or door.model <= 0 {
             continue;
@@ -377,6 +424,7 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
             models.append(door.model);
             kinds[door.model] = "lift" if door.kind == "platform" else "door";
             travels[door.model] = -door.rest.z if door.kind == "platform" else 0.0;
+            motions[door.model] = door.travel;
         }
     }
     for train in [world->:HasTrain:->][?:Train] {
@@ -390,13 +438,10 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
         if box is None {
             continue;
         }
-        gate = Gate(model=model, kind=kinds[model], box=box, travel=travels.get(model, 0.0));
+        gate = Gate(model=model, kind=kinds[model], box=box, travel=travels.get(model, 0.0), motion=motions.get(model, Vec3()));
         atlas +>:Guards:+> gate;
-        if not mover_blocked(world, model, nobody) {
-            continue;
-        }
-        token = "open:" + str(model);
-        gate.needs = [token];
+        # The places a body would be inside it shut: its doorway. (A mover
+        # stood on, a lift or a floor that lowers, bars nothing.)
         if gate.kind != "lift" {
             for place in places[1:] {
                 if place.mover == model and body_inside(place, box) {
@@ -404,6 +449,11 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
                 }
             }
         }
+        if not mover_blocked(world, model, nobody) {
+            continue;
+        }
+        token = "open:" + str(model);
+        gate.needs = [token];
         for objective in mover_objectives(world, model, nobody) {
             what = objective_what(objective);
             given = token;

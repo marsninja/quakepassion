@@ -18,10 +18,11 @@ import from engine.math.vec3 { Vec3 }
 import from editor.geometry.brush { Side, Plane3, classic_mapping }
 import from .random { Stream }
 import from .massing { Massing, CELL, LIFT }
-import from .spaces { Space, Doorway, OPEN_HIGH }
+import from .space { Space }
 import from .kits { Kit, kit_of }
 
-glob TRIM_DEPTH: float = 6.0,
+glob OPEN_HIGH: int = 6,
+     TRIM_DEPTH: float = 6.0,
      TRIM_HIGH: float = 16.0,
      RAIL_HIGH: float = 32.0,
      RAIL_DEPTH: float = 8.0,
@@ -468,23 +469,6 @@ def ceiling_lamps(mass: Massing, by_id: dict[int, Space], made: Dressing, dice: 
     }
 }
 
-"""Lamps along a corridor: under its ceiling every few blocks of its way."""
-def corridor_lamps(made: Dressing, space: Space, blocks: list[list[int]], high: int) {
-    kit = kit_of(space.district);
-    for (index, block) in enumerate(blocks) {
-        if index % 3 != 1 or index + 1 >= len(blocks) {
-            continue;
-        }
-        x = float(block[0] + 1) * CELL;
-        y = float(block[1] + 1) * CELL;
-        top = float(block[2] + high) * LIFT;
-        made.brushes.append(
-            box_brush(Vec3(x=x - 12.0, y=y - 12.0, z=top - 6.0), Vec3(x=x + 12.0, y=y + 12.0, z=top), [kit.trim, kit.trim, kit.trim, kit.trim, kit.trim, kit.light], kit.scale, [5])
-        );
-        made.add_lamp(space, Lamp3(x=x, y=y, z=top - 28.0, level=int(float(lamp_strength(kit, space)) * 0.85), color=kit.lamp_color));
-    }
-}
-
 """A lamp hung over each floor level of a room nothing else lit (a shaft,
 a vault): over its stage, and at the middle of each upper level."""
 def dark_rooms(mass: Massing, by_id: dict[int, Space], made: Dressing) {
@@ -694,32 +678,4 @@ def railing_steps(mass: Massing, by_id: dict[int, Space], made: Dressing) -> Ite
             }
         }
     }
-}
-
-"""Frames round a doorway in a space's wall: two jambs and a lintel standing
-out into the room."""
-def frame_doorway(made: Dressing, space: Space, door: Doorway, high: int) {
-    kit = kit_of(space.district);
-    if door.side == 0 {
-        line = space.x + space.w - 1;
-        start = float(space.y + door.along) * CELL;
-    } elif door.side == 1 {
-        line = space.x;
-        start = float(space.y + door.along) * CELL;
-    } elif door.side == 2 {
-        line = space.y + space.d - 1;
-        start = float(space.x + door.along) * CELL;
-    } else {
-        line = space.y;
-        start = float(space.x + door.along) * CELL;
-    }
-    finish = start + float(door.span) * CELL;
-    low = float(door.level) * LIFT;
-    top = low + float(high) * LIFT;
-    for (a, b) in [(start - 16.0, start), (finish, finish + 16.0)] {
-        jamb = pilaster_box(door.side, line, a, b, low, top + 16.0, 10.0);
-        made.brushes.append(plain_box(jamb[0], jamb[1], kit.support, kit.scale));
-    }
-    lintel = pilaster_box(door.side, line, start, finish, top, top + 16.0, 10.0);
-    made.brushes.append(plain_box(lintel[0], lintel[1], kit.trim, kit.scale));
 }

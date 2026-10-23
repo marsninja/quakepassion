@@ -1837,7 +1837,7 @@ obj Studio(Workbench) {
             return;
         }
         if scene.game == "passion" {
-            self.say("Generated expeditions cannot be saved yet");
+            self.say("Generated Passion levels cannot be saved yet");
             return;
         }
         path = override_path(scene.game, scene.name);

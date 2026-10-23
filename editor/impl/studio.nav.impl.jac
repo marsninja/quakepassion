@@ -189,7 +189,7 @@ impl Studio.nav_findings(scene: Scene) -> list[Finding] {
 impl Studio.nav_command(scene: Scene, args: list[str]) -> bool {
     if args[0] == "ed_playtest" {
         if not self.is_built_scene() {
-            self.say("A playtest is of a scene of brushes (ed_scene, ed_convert, ed_exp open)");
+            self.say("A playtest is of a scene of brushes (ed_scene, ed_convert)");
             return True;
         }
         if self.nav_mesh is None or (len(args) > 1 and args[1] == "bake") {

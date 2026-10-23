@@ -23,7 +23,7 @@ import os;
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 
-glob GRAPH_VERSION: int = 1;
+glob GRAPH_VERSION: int = 2;
 
 """Where a body stands: a navigation area. `floor` is the floor's height,
 `roof` how much air the level had over it, `surface` its liquid's top."""
@@ -76,8 +76,14 @@ node Gate {
         kind: str = "door",
         needs: list[str] = [],
         box: AABB = AABB(mins=Vec3(), maxs=Vec3()),
-        # How far a lift travels from its top.
-        travel: float = 0.0;
+        # How far a lift travels from its top, and how a door moves to open.
+        travel: float = 0.0,
+        motion: Vec3 = Vec3();
+
+    """Whether it is a floor that lowers to open (a body rides it down)."""
+    def lowers -> bool {
+        return self.kind == "door" and self.motion.z < -16.0 and -self.motion.z > abs(self.motion.x) + abs(self.motion.y);
+    }
 }
 
 edge Bars: Gate --> Place {}
@@ -223,7 +229,8 @@ def graph_text(atlas: LevelGraph) -> str {
     for gate in graph_gates(atlas) {
         lines.append(
             "G " + str(gate.model) + " " + gate.kind + " " + (",".join(gate.needs) if gate.needs else "-") + " " + graph_box(gate.box) + " "
-                + graph_number(gate.travel) + " " + (",".join([str(place.area) for place in barred_places(gate)]) or "-")
+                + graph_number(gate.travel) + " " + (",".join([str(place.area) for place in barred_places(gate)]) or "-") + " "
+                + graph_number(gate.motion.x) + " " + graph_number(gate.motion.y) + " " + graph_number(gate.motion.z)
         );
     }
     for opener in graph_openers(atlas) {
@@ -315,7 +322,14 @@ def graph_from_text(text: str) -> LevelGraph | None {
                 ):+> target;
             }
         } elif tag == "G" {
-            gate = Gate(model=int(words[1]), kind=words[2], needs=[] if words[3] == "-" else words[3].split(","), box=graph_read_box(words, 4), travel=float(words[10]));
+            gate = Gate(
+                model=int(words[1]),
+                kind=words[2],
+                needs=[] if words[3] == "-" else words[3].split(","),
+                box=graph_read_box(words, 4),
+                travel=float(words[10]),
+                motion=Vec3(x=float(words[12]), y=float(words[13]), z=float(words[14]))
+            );
             atlas +>:Guards:+> gate;
             for area in graph_areas(words[11]) {
                 if area in by_area {

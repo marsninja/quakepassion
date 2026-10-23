@@ -1,7 +1,7 @@
 """The budget: health, armour and ammunition along the route a proof found.
 
 A ledger is walked along the sure route. Supplies standing in the places it
-passes are taken; each monster is fought when the route first comes where
+passes, or in sight a short detour off it, are taken; each monster is fought when the route first comes where
 it stands or sees it within 640 units. A fight is won with the best weapon
 held that has the ammunition for it (the melee weapon at worst): it costs
 the monster's health in ammunition, and its damage a second for as long as
@@ -53,6 +53,12 @@ glob BUDGET_ARMS: dict[str, Arm] = {
          "q3:weapon_plasmagun": Arm(ammo="cells", per=20.0, rate=200.0),
          "q3:weapon_bfg": Arm(ammo="bfg", per=100.0, rate=100.0)
      };
+
+"""How far off the route a supply in sight is fetched, and the share of a
+fight a player stands exposed to a foe's fire (the rest is cover and
+dodging)."""
+glob BUDGET_DETOUR: float = 320.0,
+     BUDGET_EXPOSURE: float = 0.5;
 
 """Monsters: [health, damage a second to a player it fights]."""
 glob BUDGET_FOES: dict[str, list[float]] = {
@@ -278,7 +284,7 @@ obj Budget {
             }
         }
         seconds = health / best_arm.rate;
-        damage = stats[1] * seconds * (2.0 if not best_arm.ammo else 1.0);
+        damage = stats[1] * seconds * BUDGET_EXPOSURE * (2.0 if not best_arm.ammo else 1.0);
         if best_arm.ammo {
             self.ammo[best_arm.ammo] = self.ammo.get(best_arm.ammo, 0.0) - health / best_arm.per;
         } else {
@@ -330,9 +336,16 @@ def budget_route(atlas: LevelGraph, route: list[int], collision: CollisionMap, k
                     done[index] = True;
                     ledger.fight(thing.game, thing.classname);
                 }
-            } elif stands[index] == area {
-                done[index] = True;
-                ledger.take(thing.game, thing.classname, thing.spawnflags);
+            } else {
+                # A supply on the way, or a short detour off it in sight.
+                near = stands[index] == area;
+                if not near and eye.sub(thing.point).length() < BUDGET_DETOUR {
+                    near = collision.trace(eye, thing.point.add(Vec3(z=16.0)), [], -1.0, True).fraction >= 0.99;
+                }
+                if near {
+                    done[index] = True;
+                    ledger.take(thing.game, thing.classname, thing.spawnflags);
+                }
             }
         }
     }

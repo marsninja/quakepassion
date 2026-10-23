@@ -1405,7 +1405,7 @@ def connect_targets(world: World, bsp: Bsp) {
                 Signal(entities=[index], queued=[DelayedUse(remaining=startup)])
             );
         }
-        if kind in ["trigger_key", "trigger_counter"] and bsp.game in ["q1", "q2"] {
+        if kind in ["trigger_key", "trigger_counter"] and bsp.game in ["q1", "q2", "passion"] {
             key = fields.get("item", "") if kind == "trigger_key" else "";
             if kind == "trigger_counter"
                 or (bsp.game == "q2" and key.startswith("key_")) {

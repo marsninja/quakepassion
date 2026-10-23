@@ -277,6 +277,151 @@ def sure_route(view: Search, first: int, span: int, proof: Proof) {
     }
 }
 
+"""A few lines on why a proof failed: where the states that strand a
+player are (and what kind of place), and the ways the search found barred
+from what the start reaches."""
+def explain_proof(atlas: LevelGraph, proof: Proof) -> list[str] {
+    lines: list[str] = [];
+    by_area: dict[int, Place] = {};
+    for place in graph_places(atlas) {
+        by_area[place.area] = place;
+    }
+    # The first trap: what it reaches for sure, and the possible-only moves
+    # out of that (what the level would need to be sure of).
+    if proof.traps {
+        view = search_of(atlas);
+        span = 1 << len(view.tokens);
+        words = proof.traps[0].split(" ");
+        trap_area = int(words[0]);
+        held = 0;
+        inner = proof.traps[0][proof.traps[0].index("[") + 1:proof.traps[0].index("]")];
+        for name in inner.split(", ") {
+            if name in view.tokens {
+                held |= 1 << view.tokens.index(name);
+            }
+        }
+        closure: dict[int, bool] = {trap_area * span + held: True};
+        todo = [trap_area * span + held];
+        while todo {
+            state = todo.pop();
+            area = state // span;
+            have = state % span;
+            for step in view.sure[area] {
+                if step[1] & have == step[1] {
+                    after = step[0] * span + (have | view.gives[step[0]]);
+                    if after not in closure {
+                        closure[after] = True;
+                        todo.append(after);
+                    }
+                }
+            }
+        }
+        inside = set([state // span for state in closure.keys()]);
+        lines.append("first trap reaches " + str(len(inside)) + " places for sure");
+        shown = 0;
+        for area in inside {
+            place = by_area.get(area, None);
+            if place is None {
+                continue;
+            }
+            for move in [edge place->:Move:->] {
+                if move.to not in inside and shown < 5 {
+                    shown += 1;
+                    lines.append(
+                        "  left by " + str(area) + " -> " + str(move.to) + " kind " + str(move.kind) + (" sure (barred)" if move.must else " possible")
+                            + " at " + str(int(move.start.x)) + "," + str(int(move.start.y)) + "," + str(int(move.start.z)) + " to "
+                            + str(int(move.finish.x)) + "," + str(int(move.finish.y)) + "," + str(int(move.finish.z))
+                    );
+                }
+            }
+        }
+    }
+    for trap in proof.traps[:3] {
+        area = int(trap.split(" ")[0]);
+        place = by_area.get(area, None);
+        if place is None {
+            continue;
+        }
+        lines.append(
+            "trap at " + str(int(place.center.x)) + "," + str(int(place.center.y)) + "," + str(int(place.floor)) + " liquid "
+                + str(place.liquid) + " " + trap + " moves "
+                + " ".join([str(move.to) + ":" + str(move.kind) + ("" if move.must else "?") for move in [edge place->:Move:->]])
+        );
+    }
+    if not proof.finishes {
+        view = search_of(atlas);
+        if view.starts {
+            span = 1 << len(view.tokens);
+            start = view.starts[0];
+            seen = reach_states(view, start * span + view.gives[start], span);
+            areas = set([state // span for state in seen.keys()]);
+            lines.append("from the start " + str(len(areas)) + " of " + str(len(by_area)) + " places reached; ways out at " + str(view.exits[:4]));
+            # The edge of what the start reaches for sure (tokens taken on
+            # the way): the possible moves that leave it.
+            sure_seen: dict[int, bool] = {start * span + view.gives[start]: True};
+            todo = [start * span + view.gives[start]];
+            while todo {
+                state = todo.pop();
+                area = state // span;
+                held = state % span;
+                for step in view.sure[area] {
+                    if step[1] & held == step[1] {
+                        after = step[0] * span + (held | view.gives[step[0]]);
+                        if after not in sure_seen {
+                            sure_seen[after] = True;
+                            todo.append(after);
+                        }
+                    }
+                }
+            }
+            sure_areas = set([state // span for state in sure_seen.keys()]);
+            leaving = 0;
+            for area in sure_areas {
+                place = by_area.get(area, None);
+                if place is None {
+                    continue;
+                }
+                for move in [edge place->:Move:->] {
+                    if move.to not in sure_areas and leaving < 6 {
+                        leaving += 1;
+                        lines.append(
+                            "sure region (" + str(len(sure_areas)) + " places) left only by " + str(area) + " -> " + str(move.to) + " kind "
+                                + str(move.kind) + (" sure" if move.must else " possible") + " from " + str(int(move.start.x)) + ","
+                                + str(int(move.start.y)) + "," + str(int(move.start.z)) + " to " + str(int(move.finish.x)) + ","
+                                + str(int(move.finish.y)) + "," + str(int(move.finish.z))
+                        );
+                    }
+                }
+            }
+            wanted: list[str] = [];
+            for state in seen.keys() {
+                area = state // span;
+                held = state % span;
+                for step in view.maybe[area] {
+                    if step[1] & held != step[1] {
+                        for index in range(len(view.tokens)) {
+                            if step[1] & ~held & (1 << index) and view.tokens[index] not in wanted {
+                                wanted.append(view.tokens[index]);
+                            }
+                        }
+                    }
+                }
+            }
+            for token in wanted[:6] {
+                where: list[str] = [];
+                for opener in graph_openers(atlas) {
+                    if opener.token == token {
+                        done = [place.area for place in opener_places(opener)];
+                        where.append(opener.kind + " at " + str(int(opener.point.x)) + "," + str(int(opener.point.y)) + "," + str(int(opener.point.z)) + " from " + str(done[:4]) + " reached " + str(len([area for area in done if area in areas])));
+                    }
+                }
+                lines.append("wanted " + token + ": " + ("; ".join(where) if where else "nothing gives it"));
+            }
+        }
+    }
+    return lines;
+}
+
 """Prove a graph in full: the proof, the tokens it requires (each left out
 in turn), and each place's stage written onto it."""
 def prove_level(atlas: LevelGraph) -> Proof {
