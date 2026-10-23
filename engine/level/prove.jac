@@ -15,7 +15,7 @@ Each token is then left out in turn: the ones the level cannot be finished
 without are the ones it requires. Each place's stage is the smallest
 holding of tokens it is first reached with: the level's progression."""
 import from ..formats.aas { TRAVEL_ELEVATOR }
-import from .graph { LevelGraph, Place, Move, Gate, Opener, Bars, graph_places, graph_gates, graph_openers, graph_tokens, opener_places, barred_places }
+import from .graph { LevelGraph, Place, Move, Gate, Opener, Bars, Holds, graph_places, graph_gates, graph_openers, graph_tokens, opener_places, barred_places }
 
 """What a proof found."""
 obj Proof {
@@ -483,4 +483,62 @@ def mark_stages(atlas: LevelGraph) {
     for place in graph_places(atlas) {
         place.stage = best.get(place.area, -1);
     }
+}
+
+"""Prune a graph that finishes but strands a player somewhere: the places
+no reachable state can ever leave for the way out (pits, pockets, ledges
+fallen to), when nothing needs them (no opener is done there, it is not the
+start nor a way out, and no body dies there) are taken out, with the ways
+into them; again until the graph proves clean or nothing more goes.
+Answers how many places went. A level made from the graph has none of
+them: no pocket to fall into."""
+def prune_traps(atlas: LevelGraph, rounds: int = 4) -> int {
+    removed = 0;
+    for round_index in range(rounds) {
+        proof = prove(atlas);
+        if not proof.finishes or proof.softlocks == 0 {
+            break;
+        }
+        view = search_of(atlas);
+        span = 1 << len(view.tokens);
+        start = view.starts[0];
+        first = start * span + view.gives[start];
+        seen = reach_states(view, first, span);
+        good = good_states(view, seen, span);
+        alive: dict[int, bool] = {};
+        reached: dict[int, bool] = {};
+        for state in seen.keys() {
+            area = state // span;
+            reached[area] = True;
+            if state in good {
+                alive[area] = True;
+            }
+        }
+        dead: dict[int, bool] = {};
+        for area in reached.keys() {
+            if area in alive or view.deadly[area] or view.gives[area] != 0 or area in view.starts or area in view.exits {
+                continue;
+            }
+            dead[area] = True;
+        }
+        if not dead {
+            break;
+        }
+        for place in graph_places(atlas) {
+            if place.area in dead {
+                atlas del->:Holds:-> place;
+                continue;
+            }
+            for target in [place->:Move:->][?:Place] {
+                if target.area in dead {
+                    place del->:Move:-> target;
+                }
+            }
+        }
+        removed += len(dead);
+    }
+    if removed {
+        atlas.notes.append("pruned " + str(removed) + " places no one gets out of");
+    }
+    return removed;
 }

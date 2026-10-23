@@ -20,7 +20,7 @@ import from engine.world.teardown { destroy_graph, collision_roots }
 import from engine.assets.content { game_directory }
 import from engine.level.graph { LevelGraph, Place, graph_places, write_graph, read_graph }
 import from engine.level.extract { read_level_graph }
-import from engine.level.prove { prove_level }
+import from engine.level.prove { prove_level, prune_traps }
 import from engine.level.budget { budget_route, start_kit }
 import from games.items { populate_pickups }
 import from games.opponents { populate_opponents }
@@ -74,6 +74,9 @@ def read_essence(spec: str) -> LevelGraph {
     populate_opponents(world, level, directory);
     atlas = read_level_graph(world, level);
     proof = prove_level(atlas);
+    if proof.finishes and proof.softlocks > 0 and prune_traps(atlas) > 0 {
+        proof = prove_level(atlas);
+    }
     ledger = budget_route(atlas, proof.route, level.collision, start_kit(game));
     clean = proof.finishes and proof.softlocks == 0;
     atlas.notes.append("proof " + ("clean" if clean else "failed") + ": finishes " + str(proof.finishes) + ", " + str(proof.softlocks) + " softlocks");

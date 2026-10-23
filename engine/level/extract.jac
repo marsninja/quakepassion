@@ -10,6 +10,7 @@ A level read as it is played needs its monsters, items and triggers
 spawned, as the game spawns them: openers that are a monster's death or an
 item's pickup are found from those."""
 import math;
+import os;
 import time;
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
@@ -20,6 +21,8 @@ import from ..formats.aas {
     TRAVEL_WALKOFFLEDGE,
     TRAVEL_SWIM,
     TRAVEL_ELEVATOR,
+    TRAVEL_TELEPORT,
+    TRAVEL_JUMPPAD,
     AREACONTENTS_LAVA,
     AREACONTENTS_SLIME,
     AREACONTENTS_DONOTENTER,
@@ -490,6 +493,11 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
         swept = AABB(mins=box.mins.sub(Vec3(x=16.0, y=16.0, z=32.0)), maxs=box.maxs.add(Vec3(x=16.0, y=16.0, z=24.0)));
         for place in places[1:] {
             for move in [edge place->:Move:->] {
+                # A teleporter, a lift or a jump pad does not carry a body
+                # along the line between its ends.
+                if move.kind in [TRAVEL_TELEPORT, TRAVEL_ELEVATOR, TRAVEL_JUMPPAD] {
+                    continue;
+                }
                 if move.gate == 0 and segment_meets(move.start, move.finish, swept) {
                     move.gate = model;
                 }
