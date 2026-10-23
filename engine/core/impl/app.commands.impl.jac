@@ -21,6 +21,7 @@ impl App.configure() {
     host.skill = self.shell.register(host.skill);
     host.god = self.shell.register(host.god);
     host.generated = self.shell.register(host.generated);
+    host.breadcrumbs = self.shell.register(host.breadcrumbs);
     host.flyspeed = self.shell.register(host.flyspeed);
     host.overlay = self.shell.register(host.overlay);
     host.intro_played = self.shell.register(host.intro_played);

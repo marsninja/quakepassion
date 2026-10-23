@@ -41,6 +41,7 @@ import from ..world.arena_navigation {
     prepare_arena_links
 }
 import from ..world.exits { ExitTick, exit_map, exit_spawn, exit_cinematic }
+import from ..level.guide { FollowGuide }
 import from ..world.environment { EnvironmentTick }
 import from ..world.pickups { PickupTick }
 import from ..world.arena {
@@ -268,6 +269,13 @@ obj HostCvars {
             kind="bool",
             flags=CVAR_ARCHIVE,
             description="play generated textures, sounds, models and music instead of the games' own (from the next level)"
+        ),
+        breadcrumbs: Cvar = Cvar(
+            name="qp_breadcrumbs",
+            reset_text="1",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            description="a trail of motes to the next key, switch or way out (levels with a graph: Passion's, and the originals Passion has read)"
         ),
         overlay: Cvar = Cvar(
             name="qp_overlay",

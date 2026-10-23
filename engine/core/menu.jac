@@ -27,6 +27,9 @@ import from games.arenas { ArenaProgress, parse_arenas, ladder }
 import from games.passion.generate { level_name, run_of }
 import from ..world.arena { ordinal }
 
+# The settings rows' pitch: all of them above the buttons under the list.
+glob SETTING_PITCH: int = 24;
+
 """The search path of what a game is playing (engine/assets/content.jac)."""
 def game_directory(game: str) -> str {
     return content_directory(game);
@@ -389,10 +392,10 @@ obj LevelMenu {
                 self.setting_selected = max(0, self.setting_selected - 1);
             }
             for row in range(len(self.settings_labels)) {
-                if click and self.hit(310, 150 + row * 28, 650, 26) {
+                if click and self.hit(310, 150 + row * SETTING_PITCH, 650, SETTING_PITCH - 2) {
                     self.setting_selected = row;
                     return "setting_left"
-                        if self.hit(810, 150 + row * 28, 65, 26)
+                        if self.hit(810, 150 + row * SETTING_PITCH, 65, SETTING_PITCH - 2)
                         else "setting_right";
                 }
             }
@@ -571,9 +574,9 @@ obj LevelMenu {
                 color = brown
                     if row == self.setting_selected
                     else Color(r=48, g=45, b=41, a=255);
-                self.box(310, 150 + row * 28, 650, 26, color);
-                self.label(self.settings_labels[row], 322, 153 + row * 28, 20, white);
-                self.label("<     >", 830, 153 + row * 28, 20, amber);
+                self.box(310, 150 + row * SETTING_PITCH, 650, SETTING_PITCH - 2, color);
+                self.label(self.settings_labels[row], 322, 152 + row * SETTING_PITCH, 18, white);
+                self.label("<     >", 830, 152 + row * SETTING_PITCH, 18, amber);
             }
             self.label(
                 self.message[:75]
