@@ -1,97 +1,83 @@
-"""Read the level atlas off levels and prove them: the way out reached for
-sure, no softlock anywhere a player can get, and the budget of health and
-ammunition along the route; then the proof checked against itself, each
-token left out in turn (a level that needs it must then fail), and a
-softlock put in on purpose (it must be found).
+"""Read the level graph off original levels and prove each: the way out
+reached for sure, no softlock anywhere a player can get, the tokens the
+level requires, and the budget of health and ammunition along the route.
+A line a level; QP_PROOF_TRAPS=1 also lists the states that strand a
+player.
 
     jac build scripts/level_proof.jac --native -o .jac/level-proof
-    QP_MAPS="q1:e1m1 passion:trace-e1m1" DYLD_LIBRARY_PATH=vendor .jac/level-proof"""
+    QP_MAPS="q1:e1m1 q2:base1" DYLD_LIBRARY_PATH=vendor .jac/level-proof
+    QP_PROOF_GAMES="q1 q2 q3" DYLD_LIBRARY_PATH=vendor .jac/level-proof
+
+QP_PROOF_KEEP=<folder> keeps each graph read there (as Passion's essence
+corpus keeps them)."""
 import os;
 import time;
 import from engine.core.app { App }
 import from engine.core.clock { Clock }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
-import from engine.math.vec3 { Vec3 }
-import from engine.nav.compile { compile_navigation, NavStep, NavSpot }
-import from engine.nav.levelgraph { LevelGraph, Place, Move, Opener, Gate, Holds, Guards, Offers, Bars, DoneFrom, read_level_graph, prove, budget, graph_places }
+import from engine.level.graph { LevelGraph, Place, Move, graph_places, write_graph }
+import from engine.level.extract { read_level_graph }
+import from engine.level.prove { prove_level }
+import from engine.level.budget { budget_route, start_kit }
+import from games.passion.originals { originals_of }
 
 with entry {
     renderer = Renderer();
     renderer.open_window();
     app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True);
-    for spec in (os.getenv("QP_MAPS") or "q1:e1m1").split() {
-        parts = spec.split(":");
-        app.load_destination(parts[0], parts[1]);
-        began = time.time();
-        build = compile_navigation(app.world, app.level);
-        look = [int(word) for word in (os.getenv("QP_PROOF_AREA") or "").split()];
-        grid = build.grid;
-        if look and grid is not None {
-            for spot in grid.spots {
-                if spot.area in look {
-                    print("PROOF spot", spot.index, "area", spot.area, "at", int(spot.origin.x), int(spot.origin.y), int(spot.origin.z), "grounded", spot.grounded, "liquid", spot.liquid, "pose", spot.pose, "expanded", spot.expanded, "ledge", spot.ledge, "walks", spot.walks, "steps", [str(step.kind) + ">" + str(grid.spots[step.target].area) for step in [edge spot->:NavStep:->]], "solid", grid.sweep(spot.origin, spot.origin).start_solid, "live solid", app.level.collision.trace(spot.origin, spot.origin).start_solid, "from", [str(other.index) + "@" + str(int(other.origin.x)) + "," + str(int(other.origin.y)) + "," + str(int(other.origin.z)) + "/" + str(other.liquid) for other in [spot<-:NavStep:<-][?:NavSpot]][:4]);
-                }
-            }
-        }
-        atlas = read_level_graph(app.world, app.level, build, os.getenv("QP_PROOF_FALLS", "1") != "0");
-        print("PROOF", spec, "read in", round(time.time() - began, 1), "s");
-        for note in atlas.notes {
-            print("PROOF", spec, note);
-        }
-        for gate in [atlas->:Guards:->][?:Gate] {
-            print("PROOF", spec, "gate", gate.model, "needs", gate.needs, "bars", len([gate->:Bars:->]));
-        }
-        for opener in [atlas->:Offers:->][?:Opener] {
-            print("PROOF", spec, "opener", opener.kind, opener.token, "at", int(opener.point.x), int(opener.point.y), int(opener.point.z), "from", len([opener->:DoneFrom:->]), "places");
-        }
-        started = time.time();
-        proof = prove(atlas);
-        print("PROOF", spec, "finishes", proof.finishes, "states", proof.states, "softlocks", proof.softlocks, "route", len(proof.route), "areas, in", round(time.time() - started, 2), "s", " ".join(proof.notes));
-        for line in proof.barred {
-            print("PROOF", spec, "barred", line);
-        }
-        for gate in [atlas->:Guards:->][?:Gate] {
-            print("PROOF", spec, "gate", gate.model, "places", [place.area for place in [gate->:Bars:->][?:Place]]);
-        }
-        for opener in [atlas->:Offers:->][?:Opener] {
-            print("PROOF", spec, "opener", opener.kind, opener.token, "places", [place.area for place in [opener->:DoneFrom:->][?:Place]]);
-        }
-        for trap in proof.traps {
-            print("PROOF", spec, "softlock", trap);
-            area = int(trap.split(" ")[0]);
-            for place in graph_places(atlas) {
-                if place.area == area {
-                    print("PROOF", spec, "  moves", [str(move.to) + ":" + str(move.kind) + ("" if move.must else "?") for move in [edge place->:Move:->]], "deadly", place.deadly);
-                }
-            }
-        }
-        if proof.finishes {
-            ledger = budget(atlas, proof.route, app.level.collision);
-            print("PROOF", spec, "budget fights", ledger.fights, "lowest health", int(ledger.lowest), "after", ledger.worst, "end health", int(ledger.health), "armor", int(ledger.armor), "axed", ledger.axed, "ammo", ledger.ammo, "weapons", ledger.weapons);
-            if os.getenv("QP_PROOF_LEDGER", "") {
-                for line in ledger.lines {
-                    print("PROOF", spec, "ledger", line);
-                }
-            }
-        }
-        # The proof against itself: each token left out must fail a level
-        # that needs it.
-        for token in proof.tokens {
-            without = prove(atlas, [token]);
-            print("PROOF", spec, "without", token, "finishes", without.finishes);
-        }
-        # A softlock put in on purpose: a fall from the start into a closed
-        # room no sure way leaves.
-        places = graph_places(atlas);
-        pit = Place(area=max([place.area for place in places]) + 1, center=Vec3(x=0.0, y=0.0, z=-9999.0));
-        atlas +>:Holds:+> pit;
-        for place in places {
-            if place.start {
-                place +>:Move(kind=7, to=pit.area, must=False):+> pit;
-            }
-        }
-        trapped = prove(atlas);
-        print("PROOF", spec, "with a pit put in: finishes", trapped.finishes, "softlocks", trapped.softlocks);
+    specs = (os.getenv("QP_MAPS") or "").split();
+    if not specs {
+        specs = originals_of((os.getenv("QP_PROOF_GAMES") or "q1").split());
     }
+    keep = os.getenv("QP_PROOF_KEEP", "");
+    clean = 0;
+    for spec in specs {
+        parts = spec.split(":");
+        began = time.time();
+        try {
+            app.load_destination(parts[0], parts[1]);
+        } except Exception as failure {
+            print("PROOF", spec, "could not load:", str(failure));
+            continue;
+        }
+        if app.level.name != parts[1] {
+            print("PROOF", spec, "could not load");
+            continue;
+        }
+        atlas = read_level_graph(app.world, app.level);
+        read_seconds = time.time() - began;
+        proof = prove_level(atlas);
+        ledger = budget_route(atlas, proof.route, app.level.collision, start_kit(parts[0]));
+        ok = proof.finishes and proof.softlocks == 0;
+        if ok {
+            clean += 1;
+        }
+        print(
+            "PROOF", spec, "clean" if ok else "NOT", "finishes", proof.finishes, "softlocks", proof.softlocks, "states", proof.states,
+            "arena" if atlas.arena else "", "required", proof.required, "places", len(graph_places(atlas)), "route", len(proof.route),
+            "lowest", int(ledger.lowest), "end", int(ledger.health), "fights", ledger.fights, "melee", ledger.melee, "seconds",
+            round(read_seconds, 1), " | ".join(atlas.notes + proof.notes)
+        );
+        if os.getenv("QP_PROOF_TRAPS", "") {
+            by_area: dict[int, Place] = {};
+            for place in graph_places(atlas) {
+                by_area[place.area] = place;
+            }
+            for trap in proof.traps {
+                area = int(trap.split(" ")[0]);
+                place = by_area.get(area, None);
+                where = "";
+                if place is not None {
+                    where = " at " + str(int(place.center.x)) + "," + str(int(place.center.y)) + "," + str(int(place.center.z)) + " moves "
+                        + str([str(move.to) + ":" + str(move.kind) + ("" if move.must else "?") for move in [edge place->:Move:->]]);
+                }
+                print("PROOF", spec, "  trap", trap + where);
+            }
+        }
+        if keep {
+            write_graph(atlas, keep + "/" + parts[0] + "-" + parts[1] + ".graph");
+        }
+    }
+    print("PROOF clean", clean, "of", len(specs));
 }
