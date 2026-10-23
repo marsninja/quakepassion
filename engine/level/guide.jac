@@ -26,7 +26,11 @@ glob GUIDE_LOOK_EVERY: float = 0.25,
      GUIDE_SPACING: float = 40.0,
      GUIDE_REACH: float = 1600.0,
      GUIDE_CELL: float = 256.0,
-     GUIDE_SEARCH: int = 200000;
+     GUIDE_SEARCH: int = 200000,
+     # What taking a token costs the plan over the way's length: a token is
+     # taken only when no way round it is that much shorter, so a trail
+     # leads past a secret's button to what the level needs.
+     GUIDE_TOKEN_COST: float = 4000.0;
 
 # The goal's colours (0xRRGGBB): the way out, a foe to kill, a switch, plate
 # or other thing to do, and keys by the colour in their names.
@@ -116,18 +120,10 @@ node Guide {
         }
         span = self.span;
         self.trail = [];
-        self.goal = None;
-        # A token taken right here and not yet held: its opener is the goal.
-        here_gives = view.gives[area] & ~held;
-        if here_gives != 0 {
-            here = self.token_opener(here_gives, area, origin);
-            if here is not None {
-                self.aim(here.point, here.kind, guide_color(here.kind, here.what));
-                self.trail = [origin, here.point];
-            }
-            return;
-        }
-        first = area * span + held;
+        # The search begins holding what this place gives too; a token of
+        # those the way wants is done right here.
+        begun = held | view.gives[area];
+        first = area * span + begun;
         cost: dict[int, float] = {first: 0.0};
         came: dict[int, list[int]] = {};
         heap: list[list[float]] = [[0.0, float(first)]];
@@ -149,7 +145,7 @@ node Guide {
                 goal = state;
                 break;
             }
-            if mask != held and nearest_gain < 0 {
+            if mask != begun and nearest_gain < 0 {
                 nearest_gain = state;
             }
             from_place = self.by_area.get(at, None);
@@ -168,8 +164,9 @@ node Guide {
                 # Ways the level may not let every player take (a hard jump)
                 # cost more than sure ones.
                 length = length if move.must else length * 3.0;
-                after = step[0] * span + (mask | view.gives[step[0]]);
-                total = top[0] + length;
+                after_mask = mask | view.gives[step[0]];
+                after = step[0] * span + after_mask;
+                total = top[0] + length + (GUIDE_TOKEN_COST if after_mask != mask else 0.0);
                 if after not in done and total < cost.get(after, 1.0e18) {
                     cost[after] = total;
                     came[after] = [state, at, index];
@@ -183,15 +180,35 @@ node Guide {
         if goal < 0 {
             return;
         }
-        # The states back to the start, then forward to the first that takes
-        # a token (or all the way, to the way out).
+        # The states back to the start; the tokens the way's steps want (and
+        # the way out, when it wants one); then forward to the first state
+        # that takes one of those (or all the way, to the way out). A token
+        # taken on the way and wanted by nothing (a button seen in passing)
+        # is no goal.
         states = [goal];
         while states[0] in came {
             states.insert(0, came[states[0]][0]);
         }
+        wanted = view.exit_bit if goal // span in view.exits else 0;
+        for at in range(1, len(states)) {
+            link = came[states[at]];
+            wanted |= view.maybe[link[1]][link[2]][1];
+        }
+        if goal // span not in view.exits {
+            wanted |= (goal % span) & ~held;
+        }
+        here = view.gives[area] & ~held & wanted;
+        if here != 0 {
+            opener = self.token_opener(here, area, origin);
+            if opener is not None {
+                self.aim(opener.point, opener.kind, guide_color(opener.kind, opener.what));
+                self.trail = [origin, opener.point];
+            }
+            return;
+        }
         cut = len(states) - 1;
         for at in range(1, len(states)) {
-            if states[at] % span != states[at - 1] % span {
+            if (states[at] % span) & ~(states[at - 1] % span) & wanted != 0 {
                 cut = at;
                 break;
             }
@@ -204,7 +221,7 @@ node Guide {
             points.append(move.finish);
         }
         end = states[cut];
-        gained = (end % span) & ~(states[cut - 1] % span) if cut > 0 else 0;
+        gained = (end % span) & ~(states[cut - 1] % span) & wanted if cut > 0 else 0;
         if gained != 0 {
             opener = self.token_opener(gained, end // span, points[-1]);
             if opener is not None {
@@ -223,6 +240,9 @@ node Guide {
 
     """The goal from now on: a point, what is done there, its colour."""
     def aim(point: Vec3, kind: str, color: int) {
+        if kind != self.goal_kind or self.goal is None or point.sub(self.goal).length() > 1.0 {
+            print("GUIDE", self.atlas.name, "goal", kind, "at", int(point.x), int(point.y), int(point.z));
+        }
         self.goal = point;
         self.goal_kind = kind;
         self.color = color;
@@ -277,9 +297,11 @@ node Guide {
         self.wave_wait = GUIDE_WAVE_EVERY;
         field = particle_field(world);
         crumbs = guide_crumbs(self.trail, origin);
+        # Each mote shows at full strength for most of its life (its alpha
+        # starts over one and is held to one), then fades.
         for index in range(len(crumbs)) {
-            life = 0.8;
-            field.add(Particle(origin=crumbs[index], velocity=Vec3(z=10.0), born=field.clock + float(index) * 0.035, life=life, kind=PARTICLE_GLOW, color=self.color, alpha=0.95, fade=-0.95 / life));
+            life = 1.0;
+            field.add(Particle(origin=crumbs[index], velocity=Vec3(z=10.0), born=field.clock + float(index) * 0.035, life=life, kind=PARTICLE_GLOW, color=self.color, alpha=2.5, fade=-2.5 / life));
         }
         # A little fountain at the goal, over the wave's time.
         goal = self.goal;
@@ -287,7 +309,7 @@ node Guide {
             for index in range(8) {
                 life = 1.0;
                 spot = Vec3(x=goal.x + field.crand() * 12.0, y=goal.y + field.crand() * 12.0, z=goal.z - 8.0);
-                field.add(Particle(origin=spot, velocity=Vec3(x=field.crand() * 6.0, y=field.crand() * 6.0, z=40.0), born=field.clock + float(index) * GUIDE_WAVE_EVERY / 8.0, life=life, kind=PARTICLE_GLOW, color=self.color, alpha=1.0, fade=-1.0 / life));
+                field.add(Particle(origin=spot, velocity=Vec3(x=field.crand() * 6.0, y=field.crand() * 6.0, z=40.0), born=field.clock + float(index) * GUIDE_WAVE_EVERY / 8.0, life=life, kind=PARTICLE_GLOW, color=self.color, alpha=2.5, fade=-2.5 / life));
             }
         }
     }

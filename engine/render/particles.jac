@@ -119,7 +119,7 @@ void main() {
     float depth = (mvp * vec4(p, 1.0)).w;
     vec3 at;
     if (kind == 8 || kind == 10) {
-        float size = (kind == 10 ? 3.0 : 1.5) * (depth < 20.0 ? 1.0 : 1.0 + depth * 0.004);
+        float size = (kind == 10 ? 4.0 : 1.5) * (depth < 20.0 ? 1.0 : 1.0 + depth * 0.004);
         at = p + (side * corner.x + up * corner.y) * size;
         rounded = 1.0;
     } else {
