@@ -15,7 +15,7 @@ Each token is then left out in turn: the ones the level cannot be finished
 without are the ones it requires. Each place's stage is the smallest
 holding of tokens it is first reached with: the level's progression."""
 import from ..formats.aas { TRAVEL_ELEVATOR }
-import from .graph { LevelGraph, Place, Move, Gate, Opener, graph_places, graph_gates, graph_openers, graph_tokens, opener_places, barred_places }
+import from .graph { LevelGraph, Place, Move, Gate, Opener, Bars, graph_places, graph_gates, graph_openers, graph_tokens, opener_places, barred_places }
 
 """What a proof found."""
 obj Proof {
@@ -98,7 +98,7 @@ def search_of(atlas: LevelGraph, leave_out: list[str] = []) -> Search {
             if move.to <= 0 or move.to >= count {
                 continue;
             }
-            wanted = (lifts.get(move.model, 0) if move.kind == TRAVEL_ELEVATOR else 0) | needs[move.to];
+            wanted = (lifts.get(move.model, 0) if move.kind == TRAVEL_ELEVATOR else 0) | needs[move.to] | lifts.get(move.gate, 0);
             view.maybe[place.area].append([move.to, wanted]);
             if move.must {
                 view.sure[place.area].append([move.to, wanted]);
@@ -343,10 +343,19 @@ def explain_proof(atlas: LevelGraph, proof: Proof) -> list[str] {
             for move in [edge place->:Move:->] {
                 if move.to not in inside and shown < 5 {
                     shown += 1;
+                    barring = "";
+                    target = by_area.get(move.to, None);
+                    if target is not None {
+                        for gate in [target<-:Bars:<-][?:Gate] {
+                            barring += " barred by " + gate.kind + " " + str(gate.model) + " wanting " + ",".join(gate.needs) + " moving "
+                                + str(int(gate.motion.x)) + "," + str(int(gate.motion.y)) + "," + str(int(gate.motion.z)) + " box z "
+                                + str(int(gate.box.mins.z)) + ".." + str(int(gate.box.maxs.z));
+                        }
+                    }
                     lines.append(
-                        "  left by " + str(area) + " -> " + str(move.to) + " kind " + str(move.kind) + (" sure (barred)" if move.must else " possible")
+                        "  left by " + str(area) + " -> " + str(move.to) + " kind " + str(move.kind) + (" sure" if move.must else " possible")
                             + " at " + str(int(move.start.x)) + "," + str(int(move.start.y)) + "," + str(int(move.start.z)) + " to "
-                            + str(int(move.finish.x)) + "," + str(int(move.finish.y)) + "," + str(int(move.finish.z))
+                            + str(int(move.finish.x)) + "," + str(int(move.finish.y)) + "," + str(int(move.finish.z)) + barring
                     );
                 }
             }

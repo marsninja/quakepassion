@@ -41,7 +41,12 @@ def essence_path(spec: str) -> str {
 
 """Whether a kept essence was proven clean (its notes carry the verdict)."""
 def essence_clean(atlas: LevelGraph) -> bool {
-    return "proof clean" in atlas.notes;
+    for note in atlas.notes {
+        if note.startswith("proof clean") {
+            return True;
+        }
+    }
+    return False;
 }
 
 """A note of how hard an essence's fights are: the lowest health its

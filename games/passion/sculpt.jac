@@ -793,10 +793,9 @@ def find_spaces(made: Sculpting, dice: Stream) {
         ground.space = renumber[ground.space];
         by_space.setdefault(ground.space, []).append(ground);
     }
-    # Districts: a kit for each stage of the progression, in the order the
-    # stages are reached (kits cycle when stages outnumber them), none the
-    # essence's own level's; a level of one stage takes two or three kits,
-    # a section of the way through it each.
+    # Districts: two or three kits, none the essence's own level's, shared
+    # out along the progression (its stages in the order they are reached),
+    # or along the way through a level of one stage.
     essence_map = made.atlas.name if made.atlas is not None else "";
     kits = [index for index in dice.order(len(KITS)) if KITS[index].source != essence_map];
     stage_of: dict[int, int] = {};
@@ -834,7 +833,10 @@ def find_spaces(made: Sculpting, dice: Stream) {
     count = min(len(kits), 2 + dice.below(2));
     for space in spaces {
         if len(ordered_stages) > 1 {
-            section = ordered_stages.index(stage_of.get(space.id, ordered_stages[0])) % len(kits);
+            # The stages in order, shared out among the districts: early
+            # stages one district, middle ones the next, late ones the last.
+            at = ordered_stages.index(stage_of.get(space.id, ordered_stages[0]));
+            section = min(count - 1, at * count // len(ordered_stages));
         } else {
             section = min(count - 1, int(reach_of.get(space.id, 0.0) / furthest * float(count)));
         }

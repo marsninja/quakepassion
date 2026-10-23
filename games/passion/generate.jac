@@ -279,7 +279,7 @@ def forge_steps(forge: Forge) -> Iterator[str] {
             continue;
         }
         names = ", ".join(sorted(set([kit_of(space.district).name for space in made.spaces])));
-        briefing = "The essence of " + atlas.name + " | " + names + " | Reach the way out";
+        briefing = names + " | Reach the way out";
         items: list[MapItem] = [];
         yield from map_item_steps(mass, made.spaces, dressing, casting.items, briefing, items);
         if items {
@@ -411,6 +411,16 @@ def outside_places(atlas: LevelGraph, sculpting: Sculpting) -> list[str] {
         }
     }
     lines: list[str] = ["outside the walls: " + str(len(out)) + " places"];
+    shown = 0;
+    for place in graph_places(atlas) {
+        if place.area in out and shown < 3 {
+            shown += 1;
+            lines.append(
+                "  outside " + str(place.area) + " at " + str(int(place.center.x)) + "," + str(int(place.center.y)) + "," + str(int(place.floor))
+                    + (" start" if place.start else "") + (" way out" if place.way_out else "") + " moves " + str(len([edge place->:Move:->]))
+            );
+        }
+    }
     for place in graph_places(atlas) {
         if place.area in out {
             continue;

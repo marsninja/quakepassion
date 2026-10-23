@@ -23,7 +23,7 @@ import os;
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 
-glob GRAPH_VERSION: int = 2;
+glob GRAPH_VERSION: int = 3;
 
 """Where a body stands: a navigation area. `floor` is the floor's height,
 `roof` how much air the level had over it, `surface` its liquid's top."""
@@ -66,7 +66,10 @@ edge Move: Place --> Place {
         finish: Vec3 = Vec3(),
         time: int = 0,
         # Found by running a body off a ledge (no router follows those).
-        fall: bool = False;
+        fall: bool = False,
+        # A gate whose shut volume the way passes through (a hatch over the
+        # water it drops into): it wants what opens that gate.
+        gate: int = 0;
 }
 
 """A mover that bars places (or a lift its ride) until its tokens are held:
@@ -222,7 +225,7 @@ def graph_text(atlas: LevelGraph) -> str {
             lines.append(
                 "M " + str(place.area) + " " + str(move.to) + " " + str(move.kind) + " " + graph_flag(move.must) + " " + str(move.model) + " "
                     + " ".join([graph_number(value) for value in [move.start.x, move.start.y, move.start.z, move.finish.x, move.finish.y, move.finish.z]])
-                    + " " + str(move.time) + " " + graph_flag(move.fall)
+                    + " " + str(move.time) + " " + graph_flag(move.fall) + " " + str(move.gate)
             );
         }
     }
@@ -318,7 +321,8 @@ def graph_from_text(text: str) -> LevelGraph | None {
                     start=Vec3(x=float(words[6]), y=float(words[7]), z=float(words[8])),
                     finish=Vec3(x=float(words[9]), y=float(words[10]), z=float(words[11])),
                     time=int(words[12]),
-                    fall=words[13] == "1"
+                    fall=words[13] == "1",
+                    gate=int(words[14])
                 ):+> target;
             }
         } elif tag == "G" {

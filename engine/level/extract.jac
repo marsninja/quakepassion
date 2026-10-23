@@ -323,6 +323,35 @@ def level_sky(level: Level, point: Vec3) -> bool {
     return False;
 }
 
+"""Whether the segment from `a` to `b` passes through a box (its inside,
+not only its faces): slab by slab."""
+def segment_meets(a: Vec3, b: Vec3, box: AABB) -> bool {
+    near = 0.0;
+    far = 1.0;
+    for (start, finish, low, high) in [(a.x, b.x, box.mins.x, box.maxs.x), (a.y, b.y, box.mins.y, box.maxs.y), (a.z, b.z, box.mins.z, box.maxs.z)] {
+        span = finish - start;
+        if abs(span) < 0.0001 {
+            if start <= low or start >= high {
+                return False;
+            }
+            continue;
+        }
+        t0 = (low - start) / span;
+        t1 = (high - start) / span;
+        if t0 > t1 {
+            swap = t0;
+            t0 = t1;
+            t1 = swap;
+        }
+        near = max(near, t0);
+        far = min(far, t1);
+        if near >= far {
+            return False;
+        }
+    }
+    return True;
+}
+
 """Where a mover stands shut (a door), at its top (a lift) or at rest (a
 secret door), as the navigation compiler poses it; None when not known."""
 def shut_box(world: World, level: Level, model: int) -> AABB | None {
@@ -454,6 +483,16 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
         }
         token = "open:" + str(model);
         gate.needs = [token];
+        # A way that passes through it shut (into or out of a place it does
+        # not bar) wants it open too.
+        swept = AABB(mins=box.mins.sub(Vec3(x=16.0, y=16.0, z=32.0)), maxs=box.maxs.add(Vec3(x=16.0, y=16.0, z=24.0)));
+        for place in places[1:] {
+            for move in [edge place->:Move:->] {
+                if move.gate == 0 and segment_meets(move.start, move.finish, swept) {
+                    move.gate = model;
+                }
+            }
+        }
         for objective in mover_objectives(world, model, nobody) {
             what = objective_what(objective);
             given = token;
