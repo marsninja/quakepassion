@@ -20,7 +20,7 @@ architecture, read from the essence's graph.
 import math;
 import from engine.math.vec3 { Vec3 }
 import from engine.math.aabb { AABB }
-import from engine.formats.aas { TRAVEL_TELEPORT }
+import from engine.formats.aas { TRAVEL_TELEPORT, TRAVEL_JUMPPAD }
 import from engine.level.graph { LevelGraph, Place, Move, Gate, Opener, Thing, graph_places, graph_gates, graph_openers, graph_things, thing_place, opener_places, barred_places }
 import from engine.level.budget { stage_budget, foe_stats, ammo_damage }
 import from editor.formats.map { MapItem }
@@ -193,6 +193,7 @@ def cast_level(atlas: LevelGraph, made: Sculpting, dice: Stream) -> Casting {
     gated = cast_gates(atlas, made, casting);
     cast_openers(atlas, made, casting, taken, gated, dice.derive("openers"));
     cast_teleporters(atlas, made, casting, taken);
+    cast_jump_pads(atlas, made, casting, taken);
     foes = cast_population(atlas, made, casting, taken, gated, dice.derive("population"));
     cast_exit(atlas, made, casting, foes);
     return casting;
@@ -460,6 +461,43 @@ def cast_teleporters(atlas: LevelGraph, made: Sculpting, casting: Casting, taken
             arrive = made.ground_point(there);
             casting.put({"classname": "info_teleport_destination", "targetname": name, "origin": origin_text(arrive[0], arrive[1], arrive[2] + 8.0), "angle": "0"});
             casting.put({"classname": "light", "origin": origin_text(at[0], at[1], floor + 64.0), "light": "180", "_color": "180 200 255"});
+        }
+    }
+}
+
+"""Jump pads where the essence threw a body: a pad and a push where it was
+thrown from, aimed (as Quake III aims its pads) to top out over where it
+came down."""
+def cast_jump_pads(atlas: LevelGraph, made: Sculpting, casting: Casting, taken: dict[int, bool]) {
+    done: dict[int, bool] = {};
+    number = 0;
+    for place in graph_places(atlas) {
+        for move in [edge place->:Move:->] {
+            if move.kind != TRAVEL_JUMPPAD or place.area in done {
+                continue;
+            }
+            done[place.area] = True;
+            here = made.ground_at(move.start, place.area);
+            there = made.ground_at(move.finish, move.to);
+            if here is None or there is None {
+                continue;
+            }
+            taken[ground_id(here)] = True;
+            number += 1;
+            name = "pad" + str(number);
+            at = made.ground_point(here);
+            floor = at[2] - 24.0;
+            arrive = made.ground_point(there);
+            casting.put_brushed(
+                {"classname": "func_wall", "_passion": "jumppad"},
+                [plain_box(Vec3(x=at[0] - 24.0, y=at[1] - 24.0, z=floor), Vec3(x=at[0] + 24.0, y=at[1] + 24.0, z=floor + 4.0), BUTTON_MATERIAL, 1.0)]
+            );
+            casting.put_brushed(
+                {"classname": "trigger_push", "target": name},
+                [plain_box(Vec3(x=at[0] - 24.0, y=at[1] - 24.0, z=floor + 4.0), Vec3(x=at[0] + 24.0, y=at[1] + 24.0, z=floor + 40.0), "trigger", 1.0)]
+            );
+            top = max(at[2], arrive[2]) + 96.0;
+            casting.put({"classname": "info_notnull", "targetname": name, "origin": origin_text(arrive[0], arrive[1], top)});
         }
     }
 }

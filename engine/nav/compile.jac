@@ -36,6 +36,7 @@ import from ..formats.aas {
     TRAVEL_WALKOFFLEDGE,
     TRAVEL_TELEPORT,
     TRAVEL_ELEVATOR,
+    TRAVEL_JUMPPAD,
     TRAVEL_SWIM,
     AREA_GROUNDED,
     AREA_LIQUID,
@@ -711,6 +712,64 @@ def:priv nav_teleports(world: World, grid: NavGrid) -> int {
     return count;
 }
 
+"""Where each jump pad throws a body: from the middle of its trigger, at its
+floor, along the arc of its launch (swept a twentieth of a second at a
+time, sliding off walls) to the floor it comes down on. The pads that land
+somewhere, with their landing."""
+def:priv nav_push_landings(world: World, grid: NavGrid) -> list[tuple[Traversal, Vec3]] {
+    found: list[tuple[Traversal, Vec3]] = [];
+    for traversal in [world->:HasTraversal:->][?:Traversal] {
+        if traversal.kind != "push" or traversal.velocity.length() < 1.0 or not traversal.volume.bounds {
+            continue;
+        }
+        box = traversal.volume.bounds[0];
+        at = Vec3(x=(box.mins.x + box.maxs.x) * 0.5, y=(box.mins.y + box.maxs.y) * 0.5, z=box.mins.z + 24.0);
+        moving = traversal.velocity;
+        step = 0.05;
+        landed: Vec3 | None = None;
+        for count in range(80) {
+            nxt = at.add(moving.scale(step)).add(Vec3(z=-0.5 * grid.rules.gravity * step * step));
+            moving = moving.add(Vec3(z=-grid.rules.gravity * step));
+            swept = grid.sweep(at, nxt);
+            if swept.start_solid {
+                break;
+            }
+            if swept.fraction < 1.0 {
+                if swept.normal.z >= 0.7 and moving.z < 0.0 {
+                    landed = swept.end;
+                    break;
+                }
+                moving = moving.sub(swept.normal.scale(moving.dot(swept.normal)));
+                at = swept.end;
+                continue;
+            }
+            at = nxt;
+        }
+        if landed is not None {
+            found.append((traversal, landed));
+        }
+    }
+    return found;
+}
+
+"""Each spot in a jump pad's trigger is thrown to where the pad lands."""
+def:priv nav_pushes(grid: NavGrid, landings: list[tuple[Traversal, Vec3]]) -> int {
+    count = 0;
+    for (traversal, landing) in landings {
+        spot = nav_nearest_spot(grid, landing, 64.0);
+        if spot is None {
+            continue;
+        }
+        for other in grid.spots {
+            if other.index != spot.index and touches_volume(traversal.volume, other.origin) {
+                other +>:NavStep(kind=TRAVEL_JUMPPAD, target=spot.index):+> spot;
+                count += 1;
+            }
+        }
+    }
+    return count;
+}
+
 """Lifts: plats, and doors that move up or down (a floor lowered as a lift).
 Each is compiled at one end of its travel (a plat up, a door open): the spot
 on its top there is flooded from, and joined both ways to the nearest spot
@@ -1107,6 +1166,15 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
             seeds.append(spot);
         }
     }
+    # Jump pads throw a body to places perhaps reached no other way: where
+    # each lands is flooded from too.
+    landings = nav_push_landings(world, grid);
+    for landing in landings {
+        spot = nav_seed(grid, landing[1]);
+        if spot is not None {
+            seeds.append(spot);
+        }
+    }
     build.seeds = len(seeds);
     flood = FloodFloors(grid=grid);
     for seed in seeds {
@@ -1151,7 +1219,7 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
         }
     }
     build.notes.append("stitched " + str(stitch.joined) + " ways round movers");
-    build.teleports = nav_teleports(world, grid);
+    build.teleports = nav_teleports(world, grid) + nav_pushes(grid, landings);
     nav_mark_movers(world, grid, level);
     groups = nav_group(grid);
     # Secret doors are ways a player does not know of: a route takes one only
