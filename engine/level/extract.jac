@@ -385,6 +385,21 @@ def body_inside(place: Place, box: AABB) -> bool {
         and low_z < box.maxs.z - 1.0 and box.mins.z + 1.0 < high_z;
 }
 
+"""Whether a body standing in a place is in a mover's own brushes as the
+level starts it (`hulls`, its parts in the collision): in a doorway, not in
+a car's hollow (an elevator whose box takes in its walls and roof). With no
+parts known (a secret door), its box has already said so."""
+def body_in_mover(collision: CollisionMap, hulls: list[int], place: Place) -> bool {
+    if not hulls {
+        return True;
+    }
+    others = [index for index in range(len(collision.hulls)) if index not in hulls];
+    # A body standing on the place's floor (its middle 24 over it), just
+    # clear of it.
+    point = Vec3(x=place.center.x, y=place.center.y, z=place.floor + 25.0);
+    return collision.trace(point, point, others).start_solid;
+}
+
 """The places an opener is done from: the place its point is in, every
 place its volume meets (a trigger to stand in, a button to walk into), and
 for a shot or a kill every place that sees it within 1024 units."""
@@ -462,6 +477,7 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
     kinds: dict[int, str] = {};
     travels: dict[int, float] = {};
     motions: dict[int, Vec3] = {};
+    hulls: dict[int, list[int]] = {};
     for door in door_parts(world) {
         # A door that starts open (Quake's START_OPEN) bars nothing until
         # something shuts it: no gate.
@@ -474,6 +490,7 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
             travels[door.model] = -door.rest.z if door.kind == "platform" else 0.0;
             motions[door.model] = door.travel;
         }
+        hulls.setdefault(door.model, []).extend(door.hulls);
     }
     for train in [world->:HasTrain:->][?:Train] {
         if train.kind == "secret" and train.model not in models {
@@ -492,7 +509,7 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
         # stood on, a lift or a floor that lowers, bars nothing.)
         if gate.kind != "lift" {
             for place in places[1:] {
-                if place.mover == model and body_inside(place, box) {
+                if place.mover == model and body_inside(place, box) and body_in_mover(level.collision, hulls.get(model, []), place) {
                     gate +>:Bars:+> place;
                 }
             }
@@ -510,6 +527,11 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
                 # A teleporter, a lift or a jump pad does not carry a body
                 # along the line between its ends.
                 if move.kind in [TRAVEL_TELEPORT, TRAVEL_ELEVATOR, TRAVEL_JUMPPAD] {
+                    continue;
+                }
+                # Boarding the mover or stepping off it (an elevator car
+                # whose box takes in its walls) is no way through it shut.
+                if place.mover == model or (0 < move.to < len(places) and places[move.to].mover == model) {
                     continue;
                 }
                 if move.gate == 0 and segment_meets(move.start, move.finish, swept) {
@@ -587,7 +609,16 @@ def read_exits(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
             kinds = sorted(set([objective.kind for objective in fired]));
             atlas.notes.append("exit to " + portal.destination + " fired by " + (" ".join(kinds) if kinds else "nothing found"));
             for objective in fired {
-                for place in opener_places_of(objective, level.collision, mesh, places) {
+                reached = opener_places_of(objective, level.collision, mesh, places);
+                # A trigger no floor reaches, where a mover carries a body to
+                # it (Quake II base1's lift down into the way out): the
+                # mover's places. (The proof does not then also want what
+                # sets the mover going.)
+                box = objective.box;
+                if not reached and box is not None {
+                    reached = ridden_places(atlas, box, places);
+                }
+                for place in reached {
                     place.way_out = True;
                     found_any = True;
                 }
@@ -614,6 +645,31 @@ def read_exits(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
         }
     }
     atlas.arena = not found_any;
+}
+
+"""The places on a gate's mover from which its motion carries a standing
+body into `box` (each place's box is where a body's middle can be: the body
+reaches 16 across, 24 under and 32 over it)."""
+def ridden_places(atlas: LevelGraph, box: AABB, places: list[Place]) -> list[Place] {
+    found: list[Place] = [];
+    for gate in [atlas->:Guards:->][?:Gate] {
+        if gate.motion.length() < 1.0 {
+            continue;
+        }
+        for place in places[1:] {
+            if place.mover != gate.model {
+                continue;
+            }
+            low = place.box.mins.add(gate.motion);
+            high = place.box.maxs.add(gate.motion);
+            meets = low.x - 16.0 <= box.maxs.x and box.mins.x <= high.x + 16.0 and low.y - 16.0 <= box.maxs.y and box.mins.y <= high.y + 16.0
+                and low.z - 24.0 <= box.maxs.z and box.mins.z <= high.z + 32.0;
+            if meets {
+                found.append(place);
+            }
+        }
+    }
+    return found;
 }
 
 """The start, and the monsters and supplies, each in the place it stands
