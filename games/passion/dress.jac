@@ -285,57 +285,65 @@ def pilasters(mass: Massing, by_id: dict[int, Space], made: Dressing, dice: Stre
             }
             first = space.y if direction < 2 else space.x;
             last = (space.y + space.d if direction < 2 else space.x + space.w) - 1;
-            for z in range(space.z, space.z + space.h) {
-                count = 0;
-                placed = 0;
-                for along in range(first + 1, last) {
-                    cell = run_cell(direction, line, along);
-                    cx = cell[0];
-                    cy = cell[1];
-                    if mass.at(cx, cy, z) != owner or mass.air(cx, cy, z - 1) {
-                        count = 0;
-                        continue;
-                    }
-                    rise = mass.headroom(cx, cy, z);
-                    if rise < OPEN_HIGH + 1 {
-                        count = 0;
-                        continue;
-                    }
-                    # The wall must stand whole beside the cell, and the
-                    # cells either side be floor at this height too.
-                    whole = True;
-                    for up in range(rise) {
-                        if mass.air(cx + step[0], cy + step[1], z + up) {
-                            whole = False;
+            # A traced room's walls stand anywhere in its box, not only on
+            # its sides: every line across it is looked along.
+            lines = [line];
+            if space.kind == "traced" {
+                lines = list(range(space.x, space.x + space.w)) if direction < 2 else list(range(space.y, space.y + space.d));
+            }
+            for line in lines {
+                for z in range(space.z, space.z + space.h) {
+                    count = 0;
+                    placed = 0;
+                    for along in range(first + 1, last) {
+                        cell = run_cell(direction, line, along);
+                        cx = cell[0];
+                        cy = cell[1];
+                        if mass.at(cx, cy, z) != owner or mass.air(cx, cy, z - 1) {
+                            count = 0;
+                            continue;
                         }
-                    }
-                    for side in [-1, 1] {
-                        near = run_cell(direction, line, along + side);
-                        if not mass.standing(near[0], near[1], z) or mass.at(near[0], near[1], z) != owner {
-                            whole = False;
+                        rise = mass.headroom(cx, cy, z);
+                        if rise < OPEN_HIGH + 1 {
+                            count = 0;
+                            continue;
                         }
-                    }
-                    if not whole {
-                        count = 0;
-                        continue;
-                    }
-                    count += 1;
-                    if count % gap != 2 {
-                        continue;
-                    }
-                    low = float(z) * LIFT;
-                    high = float(z + rise) * LIFT;
-                    middle = (float(along) + 0.5) * CELL;
-                    half = PILASTER_WIDE * 0.5;
-                    shaft = pilaster_box(direction, line, middle - half, middle + half, low, high, PILASTER_DEEP);
-                    made.brushes.append(plain_box(shaft[0], shaft[1], kit.support, kit.scale));
-                    plinth = pilaster_box(direction, line, middle - half - 4.0, middle + half + 4.0, low, low + 24.0, PILASTER_DEEP + 4.0);
-                    made.brushes.append(plain_box(plinth[0], plinth[1], kit.trim, kit.scale));
+                        # The wall must stand whole beside the cell, and the
+                        # cells either side be floor at this height too.
+                        whole = True;
+                        for up in range(rise) {
+                            if mass.air(cx + step[0], cy + step[1], z + up) {
+                                whole = False;
+                            }
+                        }
+                        for side in [-1, 1] {
+                            near = run_cell(direction, line, along + side);
+                            if not mass.standing(near[0], near[1], z) or mass.at(near[0], near[1], z) != owner {
+                                whole = False;
+                            }
+                        }
+                        if not whole {
+                            count = 0;
+                            continue;
+                        }
+                        count += 1;
+                        if count % gap != 2 {
+                            continue;
+                        }
+                        low = float(z) * LIFT;
+                        high = float(z + rise) * LIFT;
+                        middle = (float(along) + 0.5) * CELL;
+                        half = PILASTER_WIDE * 0.5;
+                        shaft = pilaster_box(direction, line, middle - half, middle + half, low, high, PILASTER_DEEP);
+                        made.brushes.append(plain_box(shaft[0], shaft[1], kit.support, kit.scale));
+                        plinth = pilaster_box(direction, line, middle - half - 4.0, middle + half + 4.0, low, low + 24.0, PILASTER_DEEP + 4.0);
+                        made.brushes.append(plain_box(plinth[0], plinth[1], kit.trim, kit.scale));
 
-                    placed += 1;
-                    if (placed - 1) % lamp_every == 0 {
-                        height = low + min(112.0, max(80.0, (high - low) * 0.45));
-                        add_wall_lamp(made, kit, direction, line, middle, height, PILASTER_DEEP, space);
+                        placed += 1;
+                        if (placed - 1) % lamp_every == 0 {
+                            height = low + min(112.0, max(80.0, (high - low) * 0.45));
+                            add_wall_lamp(made, kit, direction, line, middle, height, PILASTER_DEEP, space);
+                        }
                     }
                 }
             }

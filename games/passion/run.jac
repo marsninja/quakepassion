@@ -13,6 +13,7 @@ import from engine.world.world { Player }
 import from editor.compile.live { Materials }
 import from editor.assets.materials { ArchiveMaterials }
 import from .generate { Forge, run_of, next_level }
+import from .trace { trace_source }
 
 # Seconds a frame given to making the next level while one is played, and
 # while its way out waits on it.
@@ -185,6 +186,10 @@ def run_of_level(run: Run | None, name: str, directory: str) -> Run {
 """How a level's name reads on the HUD: the run and the level."""
 def run_title(name: str) -> str {
     try {
+        traced = trace_source(name);
+        if traced is not None {
+            return "Traced from " + traced.map;
+        }
         found = run_of(name);
         return "Run " + str(found[0]) + ", level " + str(found[1]);
     } except ValueError {

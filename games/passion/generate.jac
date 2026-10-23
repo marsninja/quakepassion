@@ -37,6 +37,7 @@ import from .cast { Casting, cast }
 import from .critic { critic_measures, critic_score }
 import from .brushwork { map_item_steps }
 import from .kits { KITS, kit_of }
+import from .trace { TraceSource, Tracing, trace_source, trace_seed, trace_steps }
 import from editor.formats.map { MapItem, MapFile }
 import from editor.document.scene { Scene, scene_from_map }
 import from editor.compile.live { Compiling, compile_steps, LiveLevel, Materials, SwatchMaterials }
@@ -92,6 +93,11 @@ edge Surveys: World --> Survey {}
 first level of the run seeded `run` (1 to 2147483646, without leading
 zeros), `v3-<run>-<depth>` its level `depth` (2 to 9999)."""
 def run_of(name: str) -> list[int] {
+    # A level traced from an original begins a run of its own seed.
+    traced = trace_source(name);
+    if traced is not None {
+        return [trace_seed(traced), 1];
+    }
     if not name.startswith(VERSION + "-") {
         raise ValueError("Expected expedition " + VERSION + "-SEED");
     }
@@ -422,6 +428,28 @@ def survey_steps(seed: int, wanted: list[int], depth: int, forge: Forge) -> Iter
     yield "brushwork";
 }
 
+"""A traced level's survey (`trace.jac`): the original read and sculpted,
+its cast and map items kept as a survey's are."""
+def traced_survey_steps(source: TraceSource, forge: Forge) -> Iterator[str] {
+    if not forge.directory {
+        raise ValueError("A traced level needs the original games' files");
+    }
+    record = Survey(seed=trace_seed(source), archetype="traced");
+    forge.survey = record;
+    made = Tracing();
+    yield from trace_steps(source, forge.directory, made);
+    casting = made.casting;
+    record.mass = made.mass;
+    record.dressing = made.dressing;
+    record.casting = casting;
+    record.items = made.items;
+    record.briefing = made.briefing;
+    record.notes = made.notes;
+    if casting is not None {
+        record.start = casting.start;
+    }
+}
+
 """A level being made a step at a time, so that one is made while another
 is played, or watched as it is made: what it has made so far (the survey
 and the candidate being built, then the scene, its compile and its light),
@@ -531,7 +559,12 @@ obj Forge {
 def forge_steps(forge: Forge) -> Iterator[str] {
     found = run_of(forge.name);
     forge.stage = "survey";
-    yield from survey_steps(level_seed(found[0], found[1]), [], found[1], forge);
+    traced = trace_source(forge.name);
+    if traced is not None {
+        yield from traced_survey_steps(traced, forge);
+    } else {
+        yield from survey_steps(level_seed(found[0], found[1]), [], found[1], forge);
+    }
     record = forge.survey;
     if record is None or not record.items or record.casting is None {
         raise ValueError("Expedition survey is incomplete");
