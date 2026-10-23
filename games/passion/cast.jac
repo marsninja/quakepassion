@@ -269,8 +269,11 @@ def cast_gates(atlas: LevelGraph, made: Sculpting, casting: Casting) -> dict[tup
         if not hits {
             continue;
         }
+        # As tall as the doorway's lowest ceiling (six to nine lifts): above
+        # that a body cannot reach, and a taller door would rise past the
+        # rock over it.
         floor = min([ground.z for ground in hits]);
-        roof = max([ground.ceiling for ground in hits]);
+        roof = floor + max(6, min(9, min([ground.ceiling for ground in hits]) - floor));
         size = box.maxs.sub(box.mins);
         if size.x <= size.y {
             middle = (box.mins.x + box.maxs.x) * 0.5;

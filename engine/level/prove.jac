@@ -448,10 +448,11 @@ def explain_proof(atlas: LevelGraph, proof: Proof) -> list[str] {
 }
 
 """Prove a graph in full: the proof, the tokens it requires (each left out
-in turn), and each place's stage written onto it."""
-def prove_level(atlas: LevelGraph) -> Proof {
+in turn; a proof a token, so only when `required`), and each place's stage
+written onto it."""
+def prove_level(atlas: LevelGraph, required: bool = True) -> Proof {
     proof = prove(atlas);
-    if proof.finishes {
+    if proof.finishes and required {
         for token in proof.tokens {
             if not prove(atlas, [token]).finishes {
                 proof.required.append(token);

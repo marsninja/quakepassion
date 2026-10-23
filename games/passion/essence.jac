@@ -99,8 +99,50 @@ def load_essence(spec: str) -> LevelGraph | None {
     } except Exception as failure {
         return None;
     }
-    write_graph(atlas, essence_path(spec));
+    save_essence(atlas, spec);
     return atlas;
+}
+
+"""Keep an essence on disk: its graph, and beside it its notes alone (its
+verdict, required tokens, budget), which picking from the pool reads
+without reading the graph."""
+def save_essence(atlas: LevelGraph, spec: str) {
+    write_graph(atlas, essence_path(spec));
+    with open(essence_path(spec) + ".verdict", "w") as handle {
+        handle.write("\n".join(atlas.notes) + "\n");
+    }
+}
+
+"""What a kept essence's notes say (its verdict file; a graph kept without
+one is read once and given one), or None when none is kept."""
+def kept_notes(spec: str) -> list[str] | None {
+    path = essence_path(spec);
+    if not os.path.exists(path) {
+        return None;
+    }
+    if not os.path.exists(path + ".verdict") {
+        kept = read_graph(path);
+        if kept is None {
+            return None;
+        }
+        save_essence(kept, spec);
+        return kept.notes;
+    }
+    text = "";
+    with open(path + ".verdict") as handle {
+        text = handle.read();
+    }
+    return [line for line in text.split("\n") if line];
+}
+
+"""Whether notes carry a clean verdict."""
+def notes_clean(notes: list[str]) -> bool {
+    for note in notes {
+        if note.startswith("proof clean") {
+            return True;
+        }
+    }
+    return False;
 }
 
 """The essences a run may be made of, in the order its seed picks them:
@@ -110,8 +152,8 @@ their proof left out. Deeper levels lean toward hard ones by the order
 def essence_order(seed: int) -> list[str] {
     pool: list[str] = [];
     for spec in all_originals() {
-        kept = read_graph(essence_path(spec));
-        if kept is not None and not essence_clean(kept) {
+        notes = kept_notes(spec);
+        if notes is not None and not notes_clean(notes) {
             continue;
         }
         pool.append(spec);
@@ -156,18 +198,22 @@ def named_essence(spec: str) -> LevelGraph | None {
     return load_essence(spec);
 }
 
-"""The clean essences already kept on disk, but for `besides` (`game:map`):
-what a splice may take a piece of without reading an original."""
-def kept_essences(besides: str) -> list[LevelGraph] {
-    found: list[LevelGraph] = [];
+"""A clean essence already kept on disk, but for `besides` (`game:map`),
+picked by the dice: what a splice may take a piece of without reading an
+original. None when there is none."""
+def kept_donor(besides: str, dice: Stream) -> LevelGraph | None {
+    clean: list[str] = [];
     for spec in all_originals() {
         if spec == besides {
             continue;
         }
-        kept = read_graph(essence_path(spec));
-        if kept is not None and essence_clean(kept) {
-            found.append(kept);
+        notes = kept_notes(spec);
+        if notes is not None and notes_clean(notes) {
+            clean.append(spec);
         }
     }
-    return found;
+    if not clean {
+        return None;
+    }
+    return read_graph(essence_path(clean[dice.below(len(clean))]));
 }

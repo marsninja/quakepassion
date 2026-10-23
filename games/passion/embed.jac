@@ -505,7 +505,7 @@ def reembed(atlas: LevelGraph, dice: Stream, why: list[str]) -> LevelGraph | Non
         laid += lay_passage(copied, path, tail, head, max(0, min(tail.stage, head.stage) if tail.stage >= 0 and head.stage >= 0 else 0));
     }
     copied.notes.append("re-embedded: " + str(len(pieces)) + " pieces, " + str(len(joints)) + " passages of " + str(laid) + " blocks");
-    prove_level(copied);
+    prove_level(copied, False);
     return copied;
 }
 
@@ -659,6 +659,6 @@ def splice(atlas: LevelGraph, donor: LevelGraph, dice: Stream, why: list[str]) -
         laid += lay_passage(copied, path, outside, inside, max(0, outside.stage));
     }
     copied.notes.append("spliced: a piece of " + donor.name + " (" + str(len(fresh)) + " places) for one of " + str(len(out.areas)) + ", " + str(laid) + " passage blocks");
-    prove_level(copied);
+    prove_level(copied, False);
     return copied;
 }

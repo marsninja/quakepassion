@@ -15,7 +15,7 @@ import os;
 import time;
 import from engine.level.graph { LevelGraph, write_graph }
 import from engine.level.prove { prove_level, explain_proof }
-import from games.passion.essence { read_essence, essence_path, essence_clean }
+import from games.passion.essence { read_essence, save_essence, essence_clean }
 import from games.passion.originals { originals_of }
 
 with entry {
@@ -44,7 +44,7 @@ with entry {
             }
         }
         if keep {
-            write_graph(atlas, essence_path(spec));
+            save_essence(atlas, spec);
         }
     }
     print("PROOF clean", clean, "of", len(specs));

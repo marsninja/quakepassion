@@ -77,13 +77,19 @@ def turn_graph(atlas: LevelGraph, mirror: bool, turns: int) {
 opener done where it stands, not one shot from afar) to another place of
 the same stage or an earlier one (reached with no more than the place it
 stood in), on firm dry floor. A move that breaks the proof is undone."""
-def move_tokens(atlas: LevelGraph, dice: Stream) -> int {
+def move_tokens(atlas: LevelGraph, dice: Stream, most: int = 3) -> int {
     moved = 0;
+    tried = 0;
     places = graph_places(atlas);
-    for opener in graph_openers(atlas) {
-        if opener.kind not in ["pickup", "press", "touch"] or opener.token == "exit" {
-            continue;
+    # Keys first, then plates and switches; a few at most (each move is
+    # proven).
+    movable = [opener for opener in graph_openers(atlas) if opener.kind == "pickup" and opener.token.startswith("key")]
+        + [opener for opener in graph_openers(atlas) if opener.kind in ["press", "touch"] and opener.token != "exit"];
+    for opener in movable {
+        if tried >= most {
+            break;
         }
+        tried += 1;
         now = opener_places(opener);
         if not now {
             continue;
@@ -134,6 +140,6 @@ def transform_essence(atlas: LevelGraph, dice: Stream, turn: bool = True, move: 
     if move {
         move_tokens(copied, dice.derive("tokens"));
     }
-    prove_level(copied);
+    prove_level(copied, False);
     return copied;
 }

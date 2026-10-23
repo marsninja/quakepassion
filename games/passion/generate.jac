@@ -30,7 +30,7 @@ import from .brushwork { map_item_steps }
 import from .sculpt { Sculpting, sculpt_steps }
 import from .cast { Casting, cast_level }
 import from .transform { transform_essence }
-import from .essence { pick_essence, named_essence, kept_essences }
+import from .essence { pick_essence, named_essence, kept_donor }
 import from .embed { reembed, splice }
 import from .verify { lost_moves }
 import from .originals { all_originals }
@@ -238,6 +238,18 @@ obj Forge {
     }
 }
 
+"""A line on how a level is being made, appended to the file QP_FORGE_LOG
+names (when it names one) and closed at once."""
+def forge_note(line: str) {
+    path = os.getenv("QP_FORGE_LOG", "");
+    if not path {
+        return;
+    }
+    with open(path, "a") as handle {
+        handle.write(str(round(time.time(), 1)) + " " + line + "\n");
+    }
+}
+
 """The steps of a forge: the essence, then candidates (sculpted, cast,
 compiled, proven) until one proves clean, then its light."""
 def forge_steps(forge: Forge) -> Iterator[str] {
@@ -248,11 +260,48 @@ def forge_steps(forge: Forge) -> Iterator[str] {
     forge.stage = "essence";
     yield "essence";
     traced = traced_essence(forge.name);
-    atlas = named_essence(traced) if traced else pick_essence(seed, found[1]);
-    if atlas is None {
-        raise ValueError("No essence could be read: are the original games' files where Passion looks for them?");
+    # A run's level that no candidate of its essence proves for goes on to
+    # the next essence in its seed's order (a named one has only itself).
+    for essence_try in range(1 if traced else 3) {
+        atlas = named_essence(traced) if traced else pick_essence(seed, found[1] + essence_try);
+        if atlas is None {
+            raise ValueError("No essence could be read: are the original games' files where Passion looks for them?");
+        }
+        made_one = False;
+        yield from essence_steps(forge, record, atlas, seed);
+        if record.proven or (record.casting is not None and os.getenv("QP_PASSION_UNPROVEN", "")) {
+            made_one = True;
+        }
+        if made_one {
+            break;
+        }
     }
+    if not record.proven and not (record.casting is not None and os.getenv("QP_PASSION_UNPROVEN", "")) {
+        raise ValueError("No level made for " + record.essence + " proved: " + " | ".join(record.notes[-6:]));
+    }
+    made_level = forge.made;
+    lit_scene = forge.scene;
+    if forge.directory and made_level is not None and lit_scene is not None {
+        forge.stage = "bake";
+        held = Lighting();
+        yield from light_job_steps(lit_scene, made_level, LUXEL, 4000000, held);
+        job = held.job;
+        if job is not None {
+            forge.job = job;
+            yield from job.work_steps(BAKE_SLICE);
+            yield from job.finish_steps();
+            yield "lit";
+        }
+    }
+    forge.stage = "ready";
+    yield "ready";
+}
+
+"""The candidates for one essence, into the forge's survey: transformed,
+sculpted, cast, compiled and proven, the first that proves kept."""
+def essence_steps(forge: Forge, record: Survey, atlas: LevelGraph, seed: int) -> Iterator[str] {
     record.essence = atlas.game + ":" + atlas.name;
+    forge_note(forge.name + " takes the essence of " + record.essence + " (" + str(len(graph_places(atlas))) + " places)");
     yield "picked";
     materials = forge.materials;
     if materials is None {
@@ -265,15 +314,18 @@ def forge_steps(forge: Forge) -> Iterator[str] {
         record.candidates += 1;
         trial = dice.child("candidate", attempt);
         forge.stage = "sculpt";
+        forge_note(forge.name + " candidate " + str(attempt) + " begins");
         # The first candidate is laid out anew (re-embedded, or with a piece
         # of another essence spliced in); then the essence transformed in
         # full, turned only, and as it lies.
         essence = transform_essence(atlas, trial.derive("transform"), attempt < 3, attempt < 2);
         if attempt == 0 {
-            donors = kept_essences(record.essence);
             laid: LevelGraph | None = None;
-            if donors and trial.chance(0.5) {
-                laid = splice(essence, donors[trial.below(len(donors))], trial.derive("splice"), record.notes);
+            if trial.chance(0.5) {
+                donor = kept_donor(record.essence, trial.derive("donor"));
+                if donor is not None {
+                    laid = splice(essence, donor, trial.derive("splice"), record.notes);
+                }
             }
             if laid is None {
                 laid = reembed(essence, trial.derive("embed"), record.notes);
@@ -286,7 +338,9 @@ def forge_steps(forge: Forge) -> Iterator[str] {
         }
         made = Sculpting();
         forge.sculpting = made;
+        forge_note(forge.name + " candidate " + str(attempt) + " sculpts " + str(len(graph_places(essence))) + " places");
         yield from sculpt_steps(essence, trial.derive("sculpt"), made);
+        forge_note(forge.name + " candidate " + str(attempt) + " sculpted");
         mass = made.mass;
         dressing = made.dressing;
         if mass is None or dressing is None {
@@ -319,9 +373,11 @@ def forge_steps(forge: Forge) -> Iterator[str] {
             continue;
         }
         forge.stage = "prove";
+        forge_note(forge.name + " candidate " + str(attempt) + " compiled, proving");
         verdict = prove_made(forge, compiler.result, casting, briefing, essence, made);
         yield "proven";
         record.notes.append("candidate " + str(attempt) + ": " + verdict[1]);
+        forge_note(forge.name + " candidate " + str(attempt) + ": " + verdict[1][:160]);
         # QP_PASSION_UNPROVEN=1 plays the last candidate when none proves
         # (to look at what the proof found).
         last = attempt == CANDIDATES - 1 and os.getenv("QP_PASSION_UNPROVEN", "") != "";
@@ -338,25 +394,9 @@ def forge_steps(forge: Forge) -> Iterator[str] {
         chosen = True;
         break;
     }
-    if not chosen {
-        raise ValueError("No level made for " + record.essence + " proved: " + " | ".join(record.notes));
+    if chosen {
+        yield "chosen";
     }
-    made_level = forge.made;
-    lit_scene = forge.scene;
-    if forge.directory and made_level is not None and lit_scene is not None {
-        forge.stage = "bake";
-        held = Lighting();
-        yield from light_job_steps(lit_scene, made_level, LUXEL, 4000000, held);
-        job = held.job;
-        if job is not None {
-            forge.job = job;
-            yield from job.work_steps(BAKE_SLICE);
-            yield from job.finish_steps();
-            yield "lit";
-        }
-    }
-    forge.stage = "ready";
-    yield "ready";
 }
 
 """Prove a level as made: opened in a world of its own as the game opens
@@ -371,7 +411,7 @@ def prove_made(forge: Forge, made: LiveLevel, casting: Casting, briefing: str, e
         populate_opponents(world, level, forge.directory);
     }
     atlas = read_level_graph(world, level);
-    proof = prove_level(atlas);
+    proof = prove_level(atlas, False);
     games: dict[str, int] = {};
     for item in casting.items {
         source = item.fields.get("asset_game", "");
@@ -392,7 +432,7 @@ def prove_made(forge: Forge, made: LiveLevel, casting: Casting, briefing: str, e
         survey.lowest = ledger.lowest;
     }
     line = ("proves clean" if clean else "does not prove (finishes " + str(proof.finishes) + ", " + str(proof.softlocks) + " softlocks)")
-        + ": " + str(len(graph_places(atlas))) + " places, required " + str(proof.required) + ", budget lowest "
+        + ": " + str(len(graph_places(atlas))) + " places, budget lowest "
         + str(int(ledger.lowest)) + ", in " + str(round(time.time() - began, 1)) + " s";
     if not clean {
         outside = outside_places(atlas, sculpting);
