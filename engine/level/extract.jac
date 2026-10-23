@@ -241,6 +241,7 @@ def read_level_graph(world: World, level: Level, build: NavBuild | None = None, 
     }
     atlas.notes.append("jumps sure " + str(sure_jumps) + "/" + str(jumps) + ", falls " + str(falls) + " in " + str(round(time.time() - began, 1)) + " s");
     read_gates(atlas, world, level, mesh, places);
+    share_openers(atlas, level);
     read_exits(atlas, world, level, mesh, places);
     read_things(atlas, world, level, mesh, places);
     hand_missing_keys(atlas, places);
@@ -517,6 +518,43 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
             atlas +>:Offers:+> opener;
             for place in opener_places_of(objective, level.collision, mesh, places) {
                 opener +>:DoneFrom:+> place;
+            }
+        }
+    }
+}
+
+"""Gates fired by one name open together (Quake's secret doors and doors
+sharing a targetname): a gate whose own search found nothing to open it
+takes the openers of another fired by the same name."""
+def share_openers(atlas: LevelGraph, level: Level) {
+    names: dict[int, str] = {};
+    for entity in level.bsp.entities {
+        model = entity.fields.get("model", "");
+        name = entity.fields.get("targetname", "");
+        if model.startswith("*") and name {
+            names[int(model[1:])] = name;
+        }
+    }
+    openers = [atlas->:Offers:->][?:Opener];
+    given = set([opener.token for opener in openers]);
+    for gate in [atlas->:Guards:->][?:Gate] {
+        token = "open:" + str(gate.model);
+        if token not in gate.needs or token in given or gate.model not in names {
+            continue;
+        }
+        for other in [atlas->:Guards:->][?:Gate] {
+            if other is gate or names.get(other.model, "") != names[gate.model] {
+                continue;
+            }
+            for opener in openers {
+                if opener.token != "open:" + str(other.model) {
+                    continue;
+                }
+                shared = Opener(kind=opener.kind, token=token, point=opener.point, what=opener.what);
+                atlas +>:Offers:+> shared;
+                for place in [opener->:DoneFrom:->][?:Place] {
+                    shared +>:DoneFrom:+> place;
+                }
             }
         }
     }
