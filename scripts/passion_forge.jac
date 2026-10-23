@@ -71,6 +71,14 @@ with entry {
                     }
                 }
             }
+            if casting is not None and os.getenv("QP_FORGE_MOVERS", "") {
+                for item in casting.items {
+                    kind = item.fields.get("classname", "");
+                    if kind in ["func_door", "func_plat", "func_button", "trigger_once", "trigger_counter"] {
+                        print("FORGE", name, "mover", item.fields);
+                    }
+                }
+            }
             if casting is not None {
                 print("FORGE", name, "cast", len(casting.items), "items,", casting.monsters, "monsters,", casting.doors, "doors", " ".join(casting.notes));
             }

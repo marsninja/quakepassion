@@ -328,15 +328,13 @@ def cast_gates(atlas: LevelGraph, made: Sculpting, casting: Casting) -> dict[tup
         }
         kit = kit_of(owner.district);
         if lift.lowering {
-            # The floor stands at the top, filling the shaft, and lowers
-            # (all but its lip) when fired.
+            # The floor stands at the top, filling the shaft, lowers (all but
+            # its lip) when it is touched, and rises again a few seconds
+            # later: a lift both ways. Fired once and left down, it would
+            # take away the ways over it, which the proof (tokens only
+            # open) cannot see.
             foot = made.moved(0.0, 0.0, float(levels[0]) * LIFT - 8.0);
-            fields = {"classname": "func_door", "angle": "-2", "speed": "100", "wait": "-1", "lip": "8"};
-            for gate in graph_gates(atlas) {
-                if gate.model == lift.model and ("open:" + str(gate.model)) in gate.needs {
-                    fields["targetname"] = gate_name(gate.model);
-                }
-            }
+            fields = {"classname": "func_door", "angle": "-2", "speed": "100", "wait": "3", "lip": "8"};
             casting.put_brushed(fields, [plain_box(Vec3(x=a[0], y=a[1], z=foot[2]), Vec3(x=b[0], y=b[1], z=b[2]), kit.step, kit.scale)]);
             continue;
         }
@@ -381,6 +379,7 @@ def opener_ground(made: Sculpting, opener: Opener, gated: dict[tuple[int, int], 
 """Openers: each where the essence's was done from, firing its gate (a key
 gives its key; the way out's openers lift the cage over the way out)."""
 def cast_openers(atlas: LevelGraph, made: Sculpting, casting: Casting, taken: dict[int, bool], gated: dict[tuple[int, int], bool], dice: Stream) {
+    lowering = set([lift.model for lift in made.lifts if lift.lowering]);
     for opener in graph_openers(atlas) {
         ground = opener_ground(made, opener, gated);
         if ground is None {
@@ -391,6 +390,10 @@ def cast_openers(atlas: LevelGraph, made: Sculpting, casting: Casting, taken: di
         at = made.ground_point(ground);
         floor = at[2] - 24.0;
         target = "exit_gate" if opener.token == "exit" else (gate_name(int(opener.token[5:])) if opener.token.startswith("open:") else "");
+        # A floor that lowers works by itself (it is touched); nothing fires it.
+        if opener.token.startswith("open:") and int(opener.token[5:]) in lowering {
+            continue;
+        }
         kit = kit_of(made.spaces[ground.space].district);
         if opener.token.startswith("key") {
             found = key_item(opener.token);

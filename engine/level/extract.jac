@@ -567,6 +567,23 @@ def read_exits(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
     found_any = False;
     for portal in portals {
         if not portal.volume.bounds {
+            # Fired, not touched (Quake II's target_changelevel): the way out
+            # is where what fires it is touched; one fired another way (a
+            # death, a shot) gives the token the way out wants.
+            for objective in exit_objectives(world, portal) {
+                if objective.kind in ["touch", "press"] {
+                    for place in opener_places_of(objective, level.collision, mesh, places) {
+                        place.way_out = True;
+                        found_any = True;
+                    }
+                } else {
+                    opener = Opener(kind=objective.kind, token="exit", point=objective.point, what=objective_what(objective));
+                    atlas +>:Offers:+> opener;
+                    for place in opener_places_of(objective, level.collision, mesh, places) {
+                        opener +>:DoneFrom:+> place;
+                    }
+                }
+            }
             continue;
         }
         box = portal.volume.bounds[0];
