@@ -6,10 +6,10 @@ gates open), the cheapest way over the graph's moves to the way out, tokens
 taken where their openers are done: the proof's own search, begun where the
 player is. Its first leg, up to the first token it takes (a key, a switch, a
 plate, a foe whose death opens something) or else to the way out, is laid
-as a trail along the moves' ends, and every little while a wave of motes
-runs along it toward that goal, in the goal's colour. The plan is made
-again whenever the player comes into another place or what is held
-changes."""
+as a trail along the moves' ends, and a wave of motes runs along it
+toward that goal, in the goal's colour, each time the player asks (the
+`guide` command, bound to G): the plan is made afresh then, from where the
+player stands with what is held."""
 import from ..math.vec3 { Vec3 }
 import from ..world.world { World, Player }
 import from ..world.objectives { mover_blocked }
@@ -18,11 +18,9 @@ import from ..world.particle_field { Particle, particle_field, PARTICLE_GLOW }
 import from .graph { LevelGraph, Place, Move, Opener, graph_places, graph_openers, opener_places }
 import from .prove { Search, search_of }
 
-# Seconds between looks at where the player is, and between waves; the
-# spacing of the motes and how far along the trail they are laid; the grid
-# places are found by.
-glob GUIDE_LOOK_EVERY: float = 0.25,
-     GUIDE_WAVE_EVERY: float = 1.2,
+# How long a wave's fountain at the goal lasts; the spacing of the motes
+# and how far along the trail they are laid; the grid places are found by.
+glob GUIDE_WAVE_TIME: float = 1.2,
      GUIDE_SPACING: float = 40.0,
      GUIDE_REACH: float = 1600.0,
      GUIDE_CELL: float = 256.0,
@@ -53,8 +51,8 @@ node Guide {
         color: int = GUIDE_EXIT_COLOR,
         area: int = -1,
         held: int = -1,
-        look_wait: float = 0.0,
-        wave_wait: float = 0.0;
+        # Asked for (the `guide` command): one wave at the next step.
+        asked: bool = False;
 
     """The search's view and the grid of places, made on first use."""
     def prepare {
@@ -273,28 +271,28 @@ node Guide {
         return best;
     }
 
-    """One step of the guide: where the player is looked at every little
-    while (a new plan when the place or what is held has changed), and a
-    wave of motes laid along the trail every so often."""
+    """One step of the guide: when asked, a plan from where the player
+    stands (or last stood on a floor, when in the air) with what is held,
+    and one wave of motes along it."""
     def follow(world: World, player: Player, origin: Vec3, dt: float) {
-        self.prepare();
-        self.look_wait -= dt;
-        if self.look_wait <= 0.0 {
-            self.look_wait = GUIDE_LOOK_EVERY;
-            area = self.place_at(origin);
-            held = self.held_now(world, player);
-            if area > 0 and (area != self.area or held != self.held) {
-                self.area = area;
-                self.held = held;
-                self.plan(origin, area, held);
-                self.wave_wait = 0.0;
-            }
-        }
-        self.wave_wait -= dt;
-        if self.wave_wait > 0.0 or not self.trail {
+        if not self.asked {
             return;
         }
-        self.wave_wait = GUIDE_WAVE_EVERY;
+        self.asked = False;
+        self.prepare();
+        area = self.place_at(origin);
+        if area <= 0 {
+            area = self.area;
+        }
+        if area <= 0 {
+            return;
+        }
+        self.area = area;
+        self.held = self.held_now(world, player);
+        self.plan(origin, area, self.held);
+        if not self.trail {
+            return;
+        }
         field = particle_field(world);
         crumbs = guide_crumbs(self.trail, origin);
         # Each mote shows at full strength for most of its life (its alpha
@@ -309,7 +307,7 @@ node Guide {
             for index in range(8) {
                 life = 1.0;
                 spot = Vec3(x=goal.x + field.crand() * 12.0, y=goal.y + field.crand() * 12.0, z=goal.z - 8.0);
-                field.add(Particle(origin=spot, velocity=Vec3(x=field.crand() * 6.0, y=field.crand() * 6.0, z=40.0), born=field.clock + float(index) * GUIDE_WAVE_EVERY / 8.0, life=life, kind=PARTICLE_GLOW, color=self.color, alpha=2.5, fade=-2.5 / life));
+                field.add(Particle(origin=spot, velocity=Vec3(x=field.crand() * 6.0, y=field.crand() * 6.0, z=40.0), born=field.clock + float(index) * GUIDE_WAVE_TIME / 8.0, life=life, kind=PARTICLE_GLOW, color=self.color, alpha=2.5, fade=-2.5 / life));
             }
         }
     }
@@ -317,18 +315,17 @@ node Guide {
 
 edge HasGuide: World --> Guide {}
 
-"""Each step of the world, the guide (when there is one and it is on)
-looks where the player is and lays its trail."""
+"""Each step of the world, the guide (when there is one) lays its trail
+if the player has asked for it."""
 walker FollowGuide {
     has player: Player,
         origin: Vec3,
         dt: float,
-        on: bool = True,
         world: World | None = None;
 
     can begin with World entry {
         self.world = here;
-        if self.on and self.dt > 0.0 {
+        if self.dt > 0.0 {
             visit [here->:HasGuide:->];
         }
     }

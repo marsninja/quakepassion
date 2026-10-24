@@ -1910,8 +1910,7 @@ impl App.step() -> bool {
             self.world spawn FollowGuide(
                 player=self.player,
                 origin=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
-                dt=self.physics_clock.tick_rate,
-                on=self.host.breadcrumbs.on()
+                dt=self.physics_clock.tick_rate
             );
             self.show_notice(exit_request.message);
             for cue in exit_request.cues {
@@ -2156,8 +2155,7 @@ impl App.refresh_settings() {
         "God mode: " + ("On" if self.host.god.on() else "Off"),
         "Skill (next level): " + ["Easy", "Normal", "Hard", "Nightmare", "Nightmare"][skill]
             + " (Q3: " + Q3_SKILL_NAMES[skill] + ")",
-        "Generated assets (next level): " + ("On" if self.host.generated.on() else "Off"),
-        "Breadcrumb trail: " + ("On" if self.host.breadcrumbs.on() else "Off")
+        "Generated assets (next level): " + ("On" if self.host.generated.on() else "Off")
     ];
 }
 
@@ -2233,8 +2231,6 @@ impl App.adjust_setting(direction: int) {
     } elif row == 16 {
         self.host.generated.assign("0" if self.host.generated.on() else "1");
         self.menu.message = "Generated assets " + ("on" if self.host.generated.on() else "off") + " from the next level";
-    } elif row == 17 {
-        self.host.breadcrumbs.assign("0" if self.host.breadcrumbs.on() else "1");
     }
     self.save_preferences();
 }
