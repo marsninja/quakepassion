@@ -324,10 +324,13 @@ node PlayerBot {
         return [a for a in range(1, len(mesh.aas.areas)) if area_mover_model(mesh.aas.areas[a].contents) == model];
     }
 
-    """Close every area of the mover `model` for a while."""
-    def close_mover(model: int) {
+    """Close every area of the mover `model` for a while, but the one it
+    stands in (`keep`): closed, there would be no way from there at all."""
+    def close_mover(model: int, keep: int = 0) {
         for area in self.mover_areas(model) {
-            self.close_area(area, model);
+            if area != keep {
+                self.close_area(area, model);
+            }
         }
     }
 
@@ -1328,7 +1331,7 @@ walker AutoThink {
             # A player goes round a door that opens elsewhere when the way
             # round is there, rather than hunting for what opens it.
             if choices and area > 0 and area not in mesh.disabled and self.way_round_mover(model) {
-                bot.close_mover(model);
+                bot.close_mover(model, here_now);
                 bot.route.abandon();
                 print("AUTOPLAY mover", model, "needs work; going round it");
                 bot.trace.event("go_round", bot.clock, {"mover": str(model), "area": str(area)});
