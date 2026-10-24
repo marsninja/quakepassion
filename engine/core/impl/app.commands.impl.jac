@@ -307,6 +307,15 @@ impl App.host_command(args: list[str]) {
         line = str(int(round(feet.x))) + " " + str(int(round(feet.y))) + " " + str(int(round(feet.z))) + " " + str(int(round(math.degrees(self.player.yaw))));
         self.shell.print("viewpos " + self.level.name + " " + line);
         print("viewpos " + self.level.name + " " + line);
+    } elif name == "guide" {
+        # The breadcrumb trail, once: levels with a graph (Passion's, and the
+        # originals Passion has read) have a guide.
+        guides = [self.world->:HasGuide:->][?:Guide];
+        if guides {
+            guides[0].asked = True;
+        } else {
+            self.show_notice("No trail for this level");
+        }
     } elif name == "say" {
         # g_cmds.c Cmd_Say_f: the line goes to everyone, the bots included
         # (they may answer it).

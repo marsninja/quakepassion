@@ -440,8 +440,12 @@ impl App.render_frame() {
             );
             if self.level.bsp.game == "passion" {
                 if self.notice_wait <= 0.0 {
+                    # What to do next, as the breadcrumb trail plans it.
+                    guides = [self.world->:HasGuide:->][?:Guide];
+                    next = guides[0].next_text() if guides else "";
                     self.renderer.draw_message(
-                        "PASSION " + run_title(self.level.name) + " | " + self.level.briefing
+                        "PASSION " + run_title(self.level.name) + " | " + self.level.briefing + " | "
+                            + ("Next: " + next + " | G: trail" if next else "Reach the way out")
                     );
                 }
                 shown_run = self.passion_run;
@@ -1906,6 +1910,11 @@ impl App.step() -> bool {
                 dt=self.physics_clock.tick_rate,
                 touching=self.in_touch(),
                 inventory=self.player.inventory
+            );
+            self.world spawn FollowGuide(
+                player=self.player,
+                origin=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
+                dt=self.physics_clock.tick_rate
             );
             self.show_notice(exit_request.message);
             for cue in exit_request.cues {

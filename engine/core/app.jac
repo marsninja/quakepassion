@@ -41,6 +41,7 @@ import from ..world.arena_navigation {
     prepare_arena_links
 }
 import from ..world.exits { ExitTick, exit_map, exit_spawn, exit_cinematic }
+import from ..level.guide { FollowGuide, Guide, HasGuide }
 import from ..world.environment { EnvironmentTick }
 import from ..world.pickups { PickupTick }
 import from ..world.arena {
@@ -215,6 +216,7 @@ glob HOST_COMMANDS: list[tuple[str, str, str]] = [
     ("noclip", "noclip", "toggle flying through walls"),
     ("setviewpos", "setviewpos <x> <y> <z> [yaw] [pitch]", "move the player there, looking that way (degrees)"),
     ("viewpos", "viewpos", "say where the player stands and faces, as setviewpos takes it"),
+    ("guide", "guide", "lay the breadcrumb trail once: motes to the next key, switch or way out (G)"),
     ("give", "give <item> [count]", "give all, health, weapons, ammo, armor or an item"),
     ("say", "say <text>", "say something to everyone in the match"),
     ("kill", "kill", "suicide"),

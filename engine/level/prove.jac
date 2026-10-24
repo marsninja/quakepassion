@@ -34,13 +34,14 @@ obj Proof {
 }
 
 """The search's view of a graph: per area, the sure and possible steps
-([to, tokens wanted]), what being there gives, the death places, the
-starts and the ways out."""
+([to, tokens wanted]) and the moves they are (`ways`, beside `maybe`), what
+being there gives, the death places, the starts and the ways out."""
 obj Search {
     has count: int = 0,
         tokens: list[str] = [],
         sure: list[list[list[int]]] = [],
         maybe: list[list[list[int]]] = [],
+        ways: list[list[Move]] = [],
         gives: list[int] = [],
         deadly: list[bool] = [],
         live: list[bool] = [],
@@ -85,6 +86,7 @@ def search_of(atlas: LevelGraph, leave_out: list[str] = []) -> Search {
     view.exit_bit = (1 << tokens.index("exit")) if "exit" in tokens else 0;
     view.sure = [[] for _ in range(count)];
     view.maybe = [[] for _ in range(count)];
+    view.ways = [[] for _ in range(count)];
     for place in places {
         view.live[place.area] = True;
         view.deadly[place.area] = place.deadly;
@@ -100,6 +102,7 @@ def search_of(atlas: LevelGraph, leave_out: list[str] = []) -> Search {
             }
             wanted = (lifts.get(move.model, 0) if move.kind == TRAVEL_ELEVATOR else 0) | needs[move.to] | lifts.get(move.gate, 0);
             view.maybe[place.area].append([move.to, wanted]);
+            view.ways[place.area].append(move);
             if move.must {
                 view.sure[place.area].append([move.to, wanted]);
             }

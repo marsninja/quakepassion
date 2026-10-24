@@ -27,6 +27,8 @@ test "a level made from e1m1's essence proves, its floors rise again and its sli
     # Its own graph, read off the made level, proves: the way out is
     # reached from the start whatever is done on the way.
     assert record.proven;
+    # The graph it was proven by is kept, for its breadcrumb trail.
+    assert record.atlas is not None;
     casting = record.casting;
     assert casting is not None and casting.exit_low;
     # A floor that lowers comes back up a few seconds later, touched rather

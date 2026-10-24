@@ -38,6 +38,7 @@ import from engine.level.graph { LevelGraph, Move, graph_places }
 import from engine.level.extract { read_level_graph }
 import from engine.level.prove { prove_level, explain_proof }
 import from engine.level.budget { budget_route, start_kit }
+import from engine.level.guide { guide_level }
 import from engine.world.teardown { destroy_graph, collision_roots }
 import from games.items { populate_pickups }
 import from games.opponents { populate_opponents }
@@ -76,6 +77,7 @@ node Survey {
         casting: Casting | None = None,
         items: list[MapItem] = [],
         # The level's own graph as read off it, and its proof's verdict.
+        atlas: LevelGraph | None = None,
         proven: bool = False,
         lowest: float = 0.0;
 }
@@ -353,7 +355,7 @@ def essence_steps(forge: Forge, record: Survey, atlas: LevelGraph, seed: int) ->
             continue;
         }
         names = ", ".join(sorted(set([kit_of(space.district).name for space in made.spaces])));
-        briefing = names + " | Reach the way out";
+        briefing = names;
         items: list[MapItem] = [];
         yield from map_item_steps(mass, made.spaces, dressing, casting.items, briefing, items);
         if items {
@@ -430,6 +432,7 @@ def prove_made(forge: Forge, made: LiveLevel, casting: Casting, briefing: str, e
     survey = forge.survey;
     if survey is not None {
         survey.lowest = ledger.lowest;
+        survey.atlas = atlas;
     }
     line = ("proves clean" if clean else "does not prove (finishes " + str(proof.finishes) + ", " + str(proof.softlocks) + " softlocks)")
         + ": " + str(len(graph_places(atlas))) + " places, budget lowest "
@@ -550,6 +553,7 @@ def open_forged(world: World, forge: Forge) -> Level {
         raise ValueError("Level " + forge.name + " has no way out");
     }
     level = open_made(world, forge.name, made, casting, record.briefing);
+    guide_level(world, record.atlas);
     # A level begun again after a death reopens its forge: its survey leaves
     # the world it was in (torn down when the new one opens) first.
     for held in [record<-:Surveys:<-][?:World] {
