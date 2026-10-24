@@ -608,7 +608,20 @@ there only once it has shut: they want what shuts it, the objectives the
 bot plans by for a bridge."""
 def read_bridges(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, places: list[Place], models: list[int]) {
     nobody = Player();
+    # One the navigation already rides as a lift (Quake II's doors that
+    # start open and carry a body up a shaft) is a lift, not a bridge.
+    ridden: set[int] = set();
+    for place in places[1:] {
+        for move in [edge place->:Move:->] {
+            if move.kind == TRAVEL_ELEVATOR {
+                ridden.add(move.model);
+            }
+        }
+    }
     for model in models {
+        if model in ridden {
+            continue;
+        }
         box = shut_box(world, level, model);
         if box is None {
             continue;
