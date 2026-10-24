@@ -513,10 +513,18 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
     travels: dict[int, float] = {};
     motions: dict[int, Vec3] = {};
     hulls: dict[int, list[int]] = {};
+    bridges: list[int] = [];
     for door in door_parts(world) {
+        if door.kind == "button" or door.model <= 0 {
+            continue;
+        }
         # A door that starts open (Quake's START_OPEN) bars nothing until
-        # something shuts it: no gate.
-        if door.kind == "button" or door.model <= 0 or door_starts_open(door) {
+        # something shuts it, unless it is a bridge drawn out when it shuts
+        # (e1m2's to the silver key): read below.
+        if door_starts_open(door) {
+            if door.model not in bridges {
+                bridges.append(door.model);
+            }
             continue;
         }
         if door.model not in models {
@@ -591,6 +599,51 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
             }
         }
     }
+    read_bridges(atlas, world, level, mesh, places, bridges);
+}
+
+"""Bridges: doors that start open and shut into a floor (Quake's START_OPEN
+func_door drawn out across a gap). The places standing on one shut are
+there only once it has shut: they want what shuts it, the objectives the
+bot plans by for a bridge."""
+def read_bridges(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, places: list[Place], models: list[int]) {
+    nobody = Player();
+    for model in models {
+        box = shut_box(world, level, model);
+        if box is None {
+            continue;
+        }
+        on = [place for place in places[1:] if place.mover == model and standing_on(place, box)];
+        if not on {
+            continue;
+        }
+        token = "open:" + str(model);
+        gate = Gate(model=model, kind="bridge", needs=[token], box=box);
+        atlas +>:Guards:+> gate;
+        for place in on {
+            gate +>:Bars:+> place;
+        }
+        for objective in mover_objectives(world, model, nobody, True) {
+            what = objective_what(objective);
+            given = token;
+            if objective.kind == "pickup" and what.startswith("key") {
+                given = what;
+                gate.needs = [what];
+            }
+            opener = Opener(kind=objective.kind, token=given, point=objective.point, what=what);
+            atlas +>:Offers:+> opener;
+            for place in opener_places_of(objective, level.collision, mesh, places) {
+                opener +>:DoneFrom:+> place;
+            }
+        }
+    }
+}
+
+"""Whether a place is on top of a box: a body standing there has its feet
+on the box's top (within a step), over it."""
+def standing_on(place: Place, box: AABB) -> bool {
+    over = box.mins.x - 16.0 <= place.center.x <= box.maxs.x + 16.0 and box.mins.y - 16.0 <= place.center.y <= box.maxs.y + 16.0;
+    return over and abs(place.floor - box.maxs.z) <= 18.0;
 }
 
 """Gates fired by one name open together (Quake's secret doors and doors
