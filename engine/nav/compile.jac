@@ -1153,7 +1153,14 @@ def:priv nav_rest_flood(world: World, grid: NavGrid, level: Level, flood: FloodF
 """Compile the navigation of the level loaded in `world`."""
 def compile_navigation(world: World, level: Level, rules: NavRules | None = None) -> NavBuild {
     if rules is None {
-        rules = NavRules(speed=300.0 if level.bsp.game == "q2" else 320.0);
+        # The level's own gravity (e1m8's is an eighth of the others'): a
+        # jump clears barriers higher by as much.
+        gravity = level.movement.gravity if level.movement.gravity > 0.0 else 800.0;
+        # Quake's falls hurt five points at most (a long drop into e4m1's
+        # sewer is the way on from its start): a drop taken from as far up as
+        # a thousand units; Quake II's and III's, whose falls hurt more, from
+        # 320.
+        rules = NavRules(speed=300.0 if level.bsp.game == "q2" else 320.0, gravity=gravity, barrier=40.0 * 800.0 / gravity, drop=1024.0 if level.bsp.game == "q1" else 320.0);
     }
     collision = nav_posed_collision(world, level.collision);
     grid = NavGrid(rules=rules, collision=collision, level=level);

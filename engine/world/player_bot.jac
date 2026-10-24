@@ -15,7 +15,7 @@ import time;
 import from .world { World, Player }
 import from .level { Level }
 import from .bot_routes { NavMesh, HasNavMesh, BotRoute, AvoidReach, plan_route, build_navmesh, predict_mover, UNREACHED }
-import from .bot_travel { FollowRoute, TravelResult, gap_distance, soonest_out, compass, BODY_REACH_BELOW, BODY_REACH_ABOVE }
+import from .bot_travel { FollowRoute, TravelResult, gap_distance, soonest_out, compass, BODY_REACH_BELOW, BODY_REACH_ABOVE, set_travel_gravity }
 import from .pickups { Pickup, HasPickup }
 import from .inventory { quantity }
 import from .bot_trace { BotTrace, trace_text, trace_number, trace_point }
@@ -24,10 +24,11 @@ import from .exits { LevelExit, HasExit }
 import from .doors { Door, HasDoor, door_starts_open }
 import from .trains { Train, HasTrain, TrackPoint, TrackNext }
 import from .signals { Signal, HasSignal, Targets }
-import from .objectives { Objective, mover_objectives, exit_objectives, objective_mover, mover_area_blocked, objective_item_box }
+import from .objectives { Objective, mover_objectives, exit_objectives, objective_mover, mover_area_blocked, objective_item_box, objective_key_items }
 import from ..level.routes { level_routes }
-import from ..level.graph { LevelGraph, Place, graph_places }
-import from ..formats.aas { TFL_DEFAULT, TRAVEL_JUMP, TRAVEL_ELEVATOR, area_mover_model }
+import from ..level.graph { LevelGraph, Place, graph_places, graph_gates, barred_places }
+import from ..level.guide { Guide, guide_next_token }
+import from ..formats.aas { TFL_DEFAULT, TRAVEL_JUMP, TRAVEL_ELEVATOR, TRAVEL_WALKOFFLEDGE, area_mover_model }
 import from ..input.input { Intent }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..math.aabb { AABB }
@@ -138,6 +139,16 @@ node PlayerBot {
         dodge_until: float = 0.0,
         # How long it has held still on a moving lift.
         ride_held: float = 0.0,
+        # The lift whose ride is the next leg, and since when.
+        ride_waiting: int = 0,
+        ride_waiting_since: float = 0.0,
+        # The area a drop off a ledge is the next leg into, and since when it
+        # has stood at its start without dropping.
+        ledge_into: int = 0,
+        ledge_since: float = 0.0,
+        # When it last went round each mover (by BSP model): not again for a
+        # minute (the way round can turn out to be none).
+        went_round: dict[int, float] = {},
         # Its health last think, and when it last took a hit.
         last_health: int = 0,
         hurt_at: float = -100.0,
@@ -158,6 +169,12 @@ node PlayerBot {
         # Areas compiled with their mover where the level starts it (a floor
         # that drops): usable only while it is still there.
         rest_areas: set[int] = set(),
+        # The level graph's planner (the breadcrumb trail's): what the way
+        # out needs next, from where the bot stands with what it holds.
+        planner: Guide | None = None,
+        bridges: set[int] = set(),
+        # The graph's ways out (places a body there leaves the level from).
+        way_out_areas: list[int] = [],
         exit_area: int = 0,
         exit_name: str = "",
         clock: float = 0.0,
@@ -619,6 +636,28 @@ node PlayerBot {
         flat = Vec3(x=ahead.x, y=ahead.y);
         if flat.length() > 0.001 {
             flat = flat.normalized();
+            # Up against a mover (bars "opened elsewhere", a door shut): its
+            # areas are no way until it opens (opened again then, as any
+            # closed for a mover are), rather than stepping aside into it
+            # again and again (e3m6).
+            facing = level.collision.trace(origin, origin.add(flat.scale(32.0)));
+            here_area = self.area_near(origin)[0];
+            if facing.fraction < 1.0 and facing.model > 0 {
+                if self.mover_areas(facing.model) {
+                    self.close_mover(facing.model, here_area);
+                    print("AUTOPLAY blocked by mover", facing.model, ": its areas closed");
+                } else {
+                    # One no area of the navigation is of (thin bars): the
+                    # area the way goes into past it, a while.
+                    beyond = self.route.areas[0] if self.route.areas else 0;
+                    if beyond > 0 and beyond != here_area {
+                        self.close_area(beyond, 0, 30.0);
+                    }
+                    print("AUTOPLAY blocked by mover", facing.model, ": area", beyond, "closed");
+                }
+                self.route.abandon();
+                return;
+            }
             left = Vec3(x=-flat.y, y=flat.x);
             to_left = level.collision.trace(origin, origin.add(left.scale(48.0))).fraction;
             to_right = level.collision.trace(origin, origin.sub(left.scale(48.0))).fraction;
@@ -633,6 +672,14 @@ node PlayerBot {
                 for k in range(6) {
                     self.avoid.add(passage, self.clock);
                 }
+            }
+            # And the area the way went into, a while: another passage into
+            # it is the same wall (e4m3's lip under a ledge the route took
+            # it to be on).
+            beyond = self.route.areas[0] if self.route.areas else 0;
+            stood = self.area_near(origin)[0] if self.mesh is not None else 0;
+            if beyond > 0 and beyond != stood {
+                self.close_area(beyond, 0, 20.0);
             }
             self.route.abandon();
             self.detours = 0;
@@ -782,11 +829,25 @@ node PlayerBot {
         # The level graph routes the bot: the map's own AAS file brought in
         # as one, else read off the level's compiled navigation.
         started = time.time();
+        set_travel_gravity(level.movement.gravity);
         routed = level_routes(world, level);
         atlas = routed[0];
         self.mesh = routed[1];
         self.compile_seconds = time.time() - started;
         self.rest_areas = set([place.area for place in graph_places(atlas) if place.resting]);
+        self.planner = None if atlas.arena else Guide(atlas=atlas);
+        self.way_out_areas = [place.area for place in graph_places(atlas) if place.way_out];
+        self.bridges = set([gate.model for gate in graph_gates(atlas) if gate.kind == "bridge"]);
+        # A bridge's places are walked on where it shuts to: they are its
+        # resting ones (no way until it has shut, then a way), whatever
+        # pass of the navigation found them.
+        for gate in graph_gates(atlas) {
+            if gate.kind == "bridge" {
+                for place in barred_places(gate) {
+                    self.rest_areas.add(place.area);
+                }
+            }
+        }
         self.status = "level graph in " + str(round(self.compile_seconds, 1)) + " s: " + " | ".join(atlas.notes);
         print("AUTOPLAY", level.bsp.game, level.name, self.status);
         mesh = self.mesh;
@@ -1159,6 +1220,25 @@ walker AutoThink {
                 bot.exit_name = "exit to " + portal.destination;
             }
         }
+        if bot.exit_goal is not None or here_area == 0 {
+            return;
+        }
+        # No area meets an exit's volume (one hung over the floor, or met only
+        # by a body's reach): the places the level graph leaves the level
+        # from, as the proof found them.
+        for area in bot.way_out_areas {
+            if area <= 0 or area >= len(mesh.aas.areas) or area in mesh.disabled {
+                continue;
+            }
+            times = mesh.times_to(area, TFL_DEFAULT);
+            took = times[here_area] if here_area < len(times) else UNREACHED;
+            if took < best_time {
+                best_time = took;
+                bot.exit_goal = mesh.aas.areas[area].center;
+                bot.exit_area = area;
+                bot.exit_name = "way out";
+            }
+        }
     }
 
     """Where an objective is done from: an area at its point, or beside it
@@ -1253,6 +1333,45 @@ walker AutoThink {
         # going (e1m3's rising block): what sets it going comes first.
         if bot.route.passages {
             first = bot.route.passages[0];
+            # A lift waited on twelve seconds that has not come (a plat under
+            # a slab still to slide aside, e3m1's): no ride there for a
+            # while; another way, or something else to do first.
+            if first is not None and first.kind == TRAVEL_ELEVATOR {
+                if bot.ride_waiting != first.model {
+                    bot.ride_waiting = first.model;
+                    bot.ride_waiting_since = bot.clock;
+                } elif bot.clock - bot.ride_waiting_since > 12.0 {
+                    ride_to = bot.route.areas[0] if bot.route.areas else 0;
+                    bot.ride_waiting = 0;
+                    if ride_to > 0 and ride_to != here_now {
+                        bot.close_area(ride_to, 0, 120.0);
+                        bot.route.abandon();
+                        print("AUTOPLAY lift", first.model, "has not come: area", ride_to, "closed");
+                        return False;
+                    }
+                }
+            } else {
+                bot.ride_waiting = 0;
+            }
+            # A drop it stands at the edge of three seconds without falling
+            # (something solid where the navigation saw a hole: e2m7, e3m2):
+            # no way down there for a while.
+            drop_to = bot.route.areas[0] if bot.route.areas else 0;
+            if first is not None and first.kind == TRAVEL_WALKOFFLEDGE and self.player.grounded
+                and Vec3(x=first.start.x - self.origin.x, y=first.start.y - self.origin.y).length() < 48.0 {
+                if bot.ledge_into != drop_to {
+                    bot.ledge_into = drop_to;
+                    bot.ledge_since = bot.clock;
+                } elif bot.clock - bot.ledge_since > 3.0 and drop_to > 0 and drop_to != here_now {
+                    bot.ledge_into = 0;
+                    bot.close_area(drop_to, 0, 60.0);
+                    bot.route.abandon();
+                    print("AUTOPLAY drop into area", drop_to, "not taken: closed");
+                    return False;
+                }
+            } else {
+                bot.ledge_into = 0;
+            }
             if first is not None and first.kind == TRAVEL_ELEVATOR and first.model not in busy {
                 lift = objective_mover(self.world, first.model);
                 if lift is not None and lift.kind == "door" and not lift.automatic and lift.state not in ["opening", "closing"] {
@@ -1330,7 +1449,9 @@ walker AutoThink {
             # Before working to open it: is there another way on without it?
             # A player goes round a door that opens elsewhere when the way
             # round is there, rather than hunting for what opens it.
-            if choices and area > 0 and area not in mesh.disabled and self.way_round_mover(model) {
+            recently_round = bot.clock - bot.went_round.get(model, -1000.0) < 60.0;
+            if choices and area > 0 and area not in mesh.disabled and not recently_round and self.way_round_mover(model) {
+                bot.went_round[model] = bot.clock;
                 bot.close_mover(model, here_now);
                 bot.route.abandon();
                 print("AUTOPLAY mover", model, "needs work; going round it");
@@ -1453,6 +1574,31 @@ walker AutoThink {
             }
         }
         return found;
+    }
+
+    """The objectives for the token the level graph's plan wants next: the
+    key's items, or what opens the mover (a bridge's, what shuts it);
+    none for the way out itself or no plan."""
+    def planned_objectives() -> list[Objective] {
+        bot = self.bot;
+        planner = bot.planner;
+        if planner is None {
+            return [];
+        }
+        token = guide_next_token(planner, self.world, self.player, self.origin);
+        why = "plan: " + token;
+        if token.startswith("key") {
+            return objective_key_items(self.world, token, why);
+        }
+        if token.startswith("open:") {
+            model = int(token[5:]);
+            found = mover_objectives(self.world, model, self.player, model in bot.bridges);
+            for objective in found {
+                objective.why = why;
+            }
+            return found;
+        }
+        return [];
     }
 
     """take_objective's choosing, with the routing as it stands."""
@@ -1603,6 +1749,9 @@ walker AutoThink {
             mesh.enable_area(a, True);
         }
         if best is None {
+            # Why none was taken, each choice's reason (passed over, no area
+            # reaches it, no route, over the limit): for reading a run back.
+            bot.trace.event("no_choice", bot.clock, {"from_area": str(here_area), "choices": "[" + ", ".join(notes[0:8]) + "]"});
             return False;
         }
         # Chosen: what was closed for its mover (and those it opens with)
@@ -1740,6 +1889,18 @@ walker AutoThink {
         bot = self.bot;
         enemy = self.spot_enemy();
         bot.enemy = enemy;
+        # What the level's graph says the way out needs next (a key, a
+        # switch, a door's trigger), from where it stands with what it
+        # holds: taken first, before it finds out by walking into the doors
+        # (e1m6's silver key, which opens the way to the button for the
+        # door before the gold key).
+        if bot.objective is None {
+            planned = self.planned_objectives();
+            if planned and self.take_objective(planned) {
+                visit self.shift(here, "activate");
+                return;
+            }
+        }
         if bot.exit_goal is None {
             self.choose_exit();
         }
@@ -1863,6 +2024,13 @@ walker AutoThink {
                 if not finished {
                     bot.trace.dump("gave up " + objective.kind + " for " + objective.why, bot.clock);
                 }
+            }
+            # Done the moment it was taken (its signal had fired already,
+            # by another trigger on it): it did nothing, and taken again it
+            # would do nothing again (e2m1, two hundred times over). Passed
+            # over a while, as one given up is.
+            if objective is not None and finished and objective.kind in ["touch", "press", "shoot"] and bot.clock - objective.started < 0.5 {
+                bot.given_up.append((objective.point, bot.clock + AUTO_PASS_OTHER));
             }
             if objective is not None and finished {
                 print("AUTOPLAY objective done:", objective.kind, "for", objective.why);
@@ -2004,7 +2172,7 @@ walker AutoThink {
             # Explore: the nearest unvisited area among a few close ones.
             nearest: list[tuple[float, int]] = [];
             for area in range(1, len(mesh.aas.areas)) {
-                if area in bot.visited or mesh.aas.areas[area].reach_count == 0 {
+                if area in bot.visited or mesh.aas.areas[area].reach_count == 0 or bot.passed_over(mesh.aas.areas[area].center) {
                     continue;
                 }
                 nearest.append((mesh.aas.areas[area].center.sub(self.origin).length(), area));
@@ -2077,6 +2245,11 @@ walker AutoThink {
                 bot.roam_nearer_at = bot.clock;
             } elif bot.clock - bot.roam_nearer_at > 15.0 {
                 bot.given_up.append((goal, bot.clock + AUTO_PASS_SUPPLY));
+                # A place to explore it cannot get to is as good as seen (else
+                # it is chosen again at once, given up again, every frame).
+                if bot.goal_name == "explore" {
+                    bot.visited.add(bot.goal_area);
+                }
                 bot.trace.event("roam_given_up", bot.clock, {"goal": trace_text(bot.goal_name), "nearest": str(int(bot.roam_nearest))});
                 print("AUTOPLAY roam given up:", bot.goal_name);
                 self.roam_goal();

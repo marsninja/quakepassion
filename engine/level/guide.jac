@@ -52,6 +52,9 @@ node Guide {
         goal: Vec3 | None = None,
         goal_kind: str = "",
         goal_what: str = "",
+        # The token the goal gives ("exit" for the way out): what a bot
+        # planning by the guide sets out to get.
+        goal_token: str = "",
         color: int = GUIDE_EXIT_COLOR,
         area: int = -1,
         held: int = -1,
@@ -204,7 +207,7 @@ node Guide {
         if here != 0 {
             opener = self.token_opener(here, area, origin);
             if opener is not None {
-                self.aim(opener.point, opener.kind, opener.what, guide_color(opener.kind, opener.what));
+                self.aim(opener.point, opener.kind, opener.what, guide_color(opener.kind, opener.what), opener.token);
                 self.trail = [origin, opener.point];
             }
             return;
@@ -228,13 +231,13 @@ node Guide {
         if gained != 0 {
             opener = self.token_opener(gained, end // span, points[-1]);
             if opener is not None {
-                self.aim(opener.point, opener.kind, opener.what, guide_color(opener.kind, opener.what));
+                self.aim(opener.point, opener.kind, opener.what, guide_color(opener.kind, opener.what), opener.token);
                 points.append(opener.point);
             }
         } else {
             place = self.by_area.get(end // span, None);
             if place is not None {
-                self.aim(place.center, "exit", "", GUIDE_EXIT_COLOR);
+                self.aim(place.center, "exit", "", GUIDE_EXIT_COLOR, "exit");
                 points.append(place.center);
             }
         }
@@ -242,13 +245,14 @@ node Guide {
     }
 
     """The goal from now on: a point, what is done there, its colour."""
-    def aim(point: Vec3, kind: str, what: str, color: int) {
+    def aim(point: Vec3, kind: str, what: str, color: int, token: str) {
         if kind != self.goal_kind or self.goal is None or point.sub(self.goal).length() > 1.0 {
             print("GUIDE", self.atlas.name, "goal", kind, "at", int(point.x), int(point.y), int(point.z));
         }
         self.goal = point;
         self.goal_kind = kind;
         self.goal_what = what;
+        self.goal_token = token;
         self.color = color;
     }
 
@@ -351,6 +355,25 @@ node Guide {
 }
 
 edge HasGuide: World --> Guide {}
+
+"""The token the way out needs next from `origin` (a body's middle) with
+what `player` holds, as `guide` plans it: "" when it plans none (no place
+there, no way), "exit" when the way out itself is next. Planned again only
+when the place or what is held has changed."""
+def guide_next_token(guide: Guide, world: World, player: Player, origin: Vec3) -> str {
+    guide.prepare();
+    area = guide.place_at(origin);
+    held = guide.held_now(world, player);
+    if area > 0 and (area != guide.area or held != guide.held) {
+        guide.area = area;
+        guide.held = held;
+        guide.plan(origin, area, held);
+    }
+    if guide.goal is None or not guide.trail {
+        return "";
+    }
+    return guide.goal_token;
+}
 
 """Each step of the world, the guide (when there is one) lays its trail
 if the player has asked for it."""

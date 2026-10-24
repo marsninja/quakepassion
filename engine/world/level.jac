@@ -916,6 +916,11 @@ def load_level(
 def prepare_level(world: World, level: Level) {
     game = level.bsp.game;
     level.movement = movement_profile(game);
+    # QuakeC world.qc worldspawn: Ziggurat Vertigo is played at sv_gravity
+    # 100, every other map at 800.
+    if game == "q1" and level.name == "e1m8" {
+        level.movement.gravity = 100.0;
+    }
     level.source_entities = level.bsp.entities;
     level.bsp.entities = active_entities(game, level.bsp.entities, level.skill);
     for i in range(len(level.bsp.leaves)) {

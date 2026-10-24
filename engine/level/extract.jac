@@ -189,11 +189,20 @@ def read_level_graph(world: World, level: Level, build: NavBuild | None = None, 
             sure = True;
             if reach.kind == TRAVEL_JUMP and options.sims {
                 jumps += 1;
-                landed = run_body(collision, profile, reach.start, reach.finish.sub(reach.start), reach.start, 96.0);
+                # A long run-up first, then shorter ones (slower at the
+                # takeoff): a full-speed jump carries a body some 200 units
+                # and overshoots a shorter gap a player clears by running
+                # less.
                 sure = False;
-                if landed is not None {
-                    into = mesh.locate(landed);
-                    sure = into == reach.area or landed.sub(reach.finish).length() < 48.0 or (0 < into < len(aas.areas) and walks_into(aas, into, reach.area));
+                for run_up in [96.0, 40.0, 16.0, 0.0] {
+                    landed = run_body(collision, profile, reach.start, reach.finish.sub(reach.start), reach.start, run_up);
+                    if landed is not None {
+                        into = mesh.locate(landed);
+                        sure = into == reach.area or landed.sub(reach.finish).length() < 48.0 or (0 < into < len(aas.areas) and walks_into(aas, into, reach.area));
+                    }
+                    if sure {
+                        break;
+                    }
                 }
                 if sure {
                     sure_jumps += 1;
@@ -225,7 +234,7 @@ def read_level_graph(world: World, level: Level, build: NavBuild | None = None, 
                 tried[(spot.area, bit)] = True;
                 way = Vec3(x=dx, y=dy);
                 for leap in [0.0, profile_jump(profile)] {
-                    landed = arc_landing(collision, spot.origin, way.scale(320.0).add(Vec3(z=leap)), 800.0);
+                    landed = arc_landing(collision, spot.origin, way.scale(320.0).add(Vec3(z=leap)), level.movement.gravity if level.movement.gravity > 0.0 else 800.0);
                     if landed is None {
                         continue;
                     }
@@ -569,7 +578,10 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
             for move in [edge place->:Move:->] {
                 # A teleporter, a lift or a jump pad does not carry a body
                 # along the line between its ends.
-                if move.kind in [TRAVEL_TELEPORT, TRAVEL_ELEVATOR, TRAVEL_JUMPPAD] {
+                # A lift is no way through a secret door shut over its shaft
+                # (e3m1's plat under a slab that slides aside), though it
+                # carries a body past any other gate's box.
+                if move.kind in [TRAVEL_TELEPORT, TRAVEL_JUMPPAD] or (move.kind == TRAVEL_ELEVATOR and gate.kind != "secret") {
                     continue;
                 }
                 # Boarding the mover or stepping off it (an elevator car
