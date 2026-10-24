@@ -1307,7 +1307,7 @@ walker AutoThink {
             # out), which is work to do while it rests.
             leader = objective_mover(self.world, model) if resting else None;
             if resting and not (leader is not None and door_starts_open(leader)) {
-                if leader is not None and leader.position > 0.01 and area not in mesh.disabled {
+                if leader is not None and leader.position > 0.01 and area != here_now and area not in mesh.disabled {
                     bot.close_area(area, model);
                     bot.route.abandon();
                     print("AUTOPLAY mover", model, "has moved: area", area, "closed");
@@ -1337,8 +1337,10 @@ walker AutoThink {
             if choices and self.take_objective(choices) {
                 return True;
             }
-            # In the way with nothing to be done about it now: route round it.
-            if area > 0 and area not in mesh.disabled and mover_area_blocked(self.world, model, self.player, resting) {
+            # In the way with nothing to be done about it now: route round it
+            # (never the area it stands in: closed, there is no way from
+            # anywhere, as under e1m3's bridge, in the water it shuts over).
+            if area > 0 and area != here_now and area not in mesh.disabled and mover_area_blocked(self.world, model, self.player, resting) {
                 bot.close_area(area, model);
                 bot.route.abandon();
                 print("AUTOPLAY mover", model, "is shut: area", area, "closed");
@@ -1509,7 +1511,8 @@ walker AutoThink {
             # Areas closed earlier for the mover it opens (a doorway met shut
             # on the way to the exit) are where it is done from (the trigger
             # in that doorway): open to it while it is weighed.
-            own_closed = [a for (a, held) in bot.closed.items() if choice.mover > 0 and held[0] == choice.mover and a not in held_shut];
+            opens = self.opened_with(choice.mover) if choice.mover > 0 else [];
+            own_closed = [a for (a, held) in bot.closed.items() if held[0] in opens and a not in held_shut];
             for a in own_closed {
                 mesh.enable_area(a, True);
             }
@@ -1599,9 +1602,11 @@ walker AutoThink {
         if best is None {
             return False;
         }
-        # Chosen: what was closed for its mover is open to it now.
+        # Chosen: what was closed for its mover (and those it opens with)
+        # is open to it now.
+        chosen_opens = self.opened_with(best.mover) if best.mover > 0 else [];
         for (a, held) in list(bot.closed.items()) {
-            if best.mover > 0 and held[0] == best.mover {
+            if held[0] in chosen_opens {
                 mesh.enable_area(a, True);
                 bot.closed.pop(a);
             }
