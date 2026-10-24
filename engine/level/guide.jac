@@ -18,9 +18,12 @@ import from ..world.particle_field { Particle, particle_field, PARTICLE_GLOW }
 import from .graph { LevelGraph, Place, Move, Opener, graph_places, graph_openers, opener_places }
 import from .prove { Search, search_of }
 
-# How long a wave's fountain at the goal lasts; the spacing of the motes
-# and how far along the trail they are laid; the grid places are found by.
-glob GUIDE_WAVE_TIME: float = 1.2,
+# How often where the player is, and what is held, is looked at (the plan
+# is made again when either has changed); how long a wave's fountain at the
+# goal lasts; the spacing of the motes and how far along the trail they are
+# laid; the grid places are found by.
+glob GUIDE_LOOK_EVERY: float = 0.25,
+     GUIDE_WAVE_TIME: float = 1.2,
      GUIDE_SPACING: float = 40.0,
      GUIDE_REACH: float = 1600.0,
      GUIDE_CELL: float = 256.0,
@@ -48,9 +51,11 @@ node Guide {
         trail: list[Vec3] = [],
         goal: Vec3 | None = None,
         goal_kind: str = "",
+        goal_what: str = "",
         color: int = GUIDE_EXIT_COLOR,
         area: int = -1,
         held: int = -1,
+        look_wait: float = 0.0,
         # Asked for (the `guide` command): one wave at the next step.
         asked: bool = False;
 
@@ -199,7 +204,7 @@ node Guide {
         if here != 0 {
             opener = self.token_opener(here, area, origin);
             if opener is not None {
-                self.aim(opener.point, opener.kind, guide_color(opener.kind, opener.what));
+                self.aim(opener.point, opener.kind, opener.what, guide_color(opener.kind, opener.what));
                 self.trail = [origin, opener.point];
             }
             return;
@@ -223,13 +228,13 @@ node Guide {
         if gained != 0 {
             opener = self.token_opener(gained, end // span, points[-1]);
             if opener is not None {
-                self.aim(opener.point, opener.kind, guide_color(opener.kind, opener.what));
+                self.aim(opener.point, opener.kind, opener.what, guide_color(opener.kind, opener.what));
                 points.append(opener.point);
             }
         } else {
             place = self.by_area.get(end // span, None);
             if place is not None {
-                self.aim(place.center, "exit", GUIDE_EXIT_COLOR);
+                self.aim(place.center, "exit", "", GUIDE_EXIT_COLOR);
                 points.append(place.center);
             }
         }
@@ -237,13 +242,43 @@ node Guide {
     }
 
     """The goal from now on: a point, what is done there, its colour."""
-    def aim(point: Vec3, kind: str, color: int) {
+    def aim(point: Vec3, kind: str, what: str, color: int) {
         if kind != self.goal_kind or self.goal is None or point.sub(self.goal).length() > 1.0 {
             print("GUIDE", self.atlas.name, "goal", kind, "at", int(point.x), int(point.y), int(point.z));
         }
         self.goal = point;
         self.goal_kind = kind;
+        self.goal_what = what;
         self.color = color;
+    }
+
+    """What to do next, for the HUD: the goal in words and how far along
+    the trail it is (32 units a metre), or "" with no plan."""
+    def next_text -> str {
+        if self.goal is None or not self.trail {
+            return "";
+        }
+        kind = self.goal_kind;
+        what = self.goal_what;
+        doing = "Reach the way out";
+        if what.startswith("key") {
+            doing = "Find the " + guide_key_words(what);
+        } elif kind == "press" {
+            doing = "Press the button";
+        } elif kind == "shoot" {
+            doing = "Shoot the button";
+        } elif kind == "touch" {
+            doing = "Step on the plate" if self.atlas.game == "passion" else "Walk into the trigger";
+        } elif kind == "kill" {
+            doing = "Kill the foe that opens the way";
+        } elif kind == "pickup" {
+            doing = "Pick up the item";
+        }
+        length = 0.0;
+        for index in range(1, len(self.trail)) {
+            length += self.trail[index].sub(self.trail[index - 1]).length();
+        }
+        return doing + " (" + str(max(1, int(length / 32.0))) + " m)";
     }
 
     """The opener of a token in `gained` done from `area` (the nearest to
@@ -271,25 +306,27 @@ node Guide {
         return best;
     }
 
-    """One step of the guide: when asked, a plan from where the player
-    stands (or last stood on a floor, when in the air) with what is held,
-    and one wave of motes along it."""
+    """One step of the guide: the plan made again when the player has come
+    into another place or what is held has changed (for the HUD's line on
+    what to do next), and when asked, one wave of motes along it."""
     def follow(world: World, player: Player, origin: Vec3, dt: float) {
+        self.prepare();
+        self.look_wait -= dt;
+        if self.look_wait <= 0.0 or self.asked {
+            self.look_wait = GUIDE_LOOK_EVERY;
+            area = self.place_at(origin);
+            held = self.held_now(world, player);
+            # In the air, the plan stands from the last floor.
+            if area > 0 and (area != self.area or held != self.held or self.asked) {
+                self.area = area;
+                self.held = held;
+                self.plan(origin, area, held);
+            }
+        }
         if not self.asked {
             return;
         }
         self.asked = False;
-        self.prepare();
-        area = self.place_at(origin);
-        if area <= 0 {
-            area = self.area;
-        }
-        if area <= 0 {
-            return;
-        }
-        self.area = area;
-        self.held = self.held_now(world, player);
-        self.plan(origin, area, self.held);
         if not self.trail {
             return;
         }
@@ -373,6 +410,17 @@ def guide_crumbs(trail: list[Vec3], origin: Vec3) -> list[Vec3] {
         }
     }
     return crumbs;
+}
+
+"""A key's name in words: "gold key" for key_gold, "blue key" for Quake
+II's key_blue_key, "data cd" for key_data_cd."""
+def guide_key_words(what: str) -> str {
+    words = what[4:] if what.startswith("key_") else what;
+    if words.endswith("_key") {
+        words = words[:-4];
+    }
+    words = words.replace("_", " ");
+    return words + " key" if words in GUIDE_KEY_COLORS else words;
 }
 
 """The colour of a goal by what is done there."""

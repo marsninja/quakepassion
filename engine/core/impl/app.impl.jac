@@ -440,8 +440,12 @@ impl App.render_frame() {
             );
             if self.level.bsp.game == "passion" {
                 if self.notice_wait <= 0.0 {
+                    # What to do next, as the breadcrumb trail plans it.
+                    guides = [self.world->:HasGuide:->][?:Guide];
+                    next = guides[0].next_text() if guides else "";
                     self.renderer.draw_message(
-                        "PASSION " + run_title(self.level.name) + " | " + self.level.briefing
+                        "PASSION " + run_title(self.level.name) + " | " + self.level.briefing + " | "
+                            + ("Next: " + next + " | G: trail" if next else "Reach the way out")
                     );
                 }
                 shown_run = self.passion_run;

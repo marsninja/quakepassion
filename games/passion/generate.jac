@@ -355,7 +355,7 @@ def essence_steps(forge: Forge, record: Survey, atlas: LevelGraph, seed: int) ->
             continue;
         }
         names = ", ".join(sorted(set([kit_of(space.district).name for space in made.spaces])));
-        briefing = names + " | Reach the way out";
+        briefing = names;
         items: list[MapItem] = [];
         yield from map_item_steps(mass, made.spaces, dressing, casting.items, briefing, items);
         if items {
