@@ -179,6 +179,12 @@ node PlayerBot {
         moving_time: float = 0.0,
         # Since when no route to the goal has been found from here.
         lost_since: float = -1.0,
+        # Times no route was found to the goal it has (`routeless_goal`),
+        # found ones between them notwithstanding (a way found, walked into
+        # a shut door, closed, found again): three, and the objective is
+        # given up.
+        routeless: int = 0,
+        routeless_goal: str = "",
         travel: TravelResult = TravelResult(),
         # A gap jump under way: 1 backing up to the run-up, 2 running at the
         # edge, 3 in the air; when it began.
@@ -1456,6 +1462,28 @@ walker AutoThink {
         best: Objective | None = None;
         best_time = UNREACHED;
         notes: list[str] = [];
+        # The movers worked on further down (and the one the objective under
+        # way is for) are no way through until they open: the route check
+        # closes them when it meets them, so a choice reached only through
+        # them (a button past the doors the silver key opens, while the key
+        # is still to get) is no choice now.
+        held_movers: list[int] = [held.mover for held in bot.waiting if held.mover > 0];
+        under_way = bot.objective;
+        if under_way is not None and under_way.mover > 0 {
+            held_movers.extend(self.opened_with(under_way.mover));
+        }
+        held_shut: list[int] = [];
+        for model in set(held_movers) {
+            for a in bot.mover_areas(model) {
+                if a != here_area and a not in mesh.disabled and a not in held_shut
+                    and mover_area_blocked(self.world, model, self.player, a in bot.rest_areas) {
+                    held_shut.append(a);
+                }
+            }
+        }
+        for a in held_shut {
+            mesh.enable_area(a, False);
+        }
         for choice in choices {
             passed_over = bot.passed_over(choice.point);
             for (quarry, until) in bot.given_up_bodies {
@@ -1554,6 +1582,9 @@ walker AutoThink {
                 over = " (over the " + str(within) + " limit)" if cheapest > within else "";
                 notes.append(label + ", \"result\": " + trace_text("route " + str(cheapest) + over) + "}");
             }
+        }
+        for a in held_shut {
+            mesh.enable_area(a, True);
         }
         if best is None {
             return False;
@@ -1784,14 +1815,21 @@ walker AutoThink {
         }
         finished = objective is not None and objective.done(self.player);
         stalled = objective is not None and bot.clock - objective.nearer_at > max(25.0, objective.allowed * 0.5);
+        # No way to it, tried three times with what was closed opened again
+        # between: a way it was chosen by is gone (a detour on the way took
+        # it somewhere else). Choose again rather than wander.
+        routeless = objective is not None and bot.routeless >= 3 and bot.routeless_goal == bot.goal_name;
         overdue = objective is not None and bot.clock - objective.started > max(180.0, objective.allowed * 3.0);
-        if objective is None or finished or stalled or overdue {
+        if objective is None or finished or stalled or overdue or routeless {
             if objective is not None {
                 why_end = "done" if finished else (
-                    "no nearer for " + str(int(bot.clock - objective.nearer_at)) + " s (nearest " + str(int(objective.nearest)) + ")"
-                    if stalled
-                    else "over its time (" + str(int(bot.clock - objective.started)) + " s)"
+                    "no way to it (" + str(bot.routeless) + " routes not found)" if routeless else (
+                        "no nearer for " + str(int(bot.clock - objective.nearer_at)) + " s (nearest " + str(int(objective.nearest)) + ")"
+                        if stalled
+                        else "over its time (" + str(int(bot.clock - objective.started)) + " s)"
+                    )
                 );
+                bot.routeless = 0;
                 bot.trace.event("objective_end", bot.clock, {
                     "objective": trace_text(objective.kind + " for " + objective.why),
                     "result": trace_text(why_end),
@@ -2136,6 +2174,11 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                 });
             } elif not planned.pending and self.lost_since < 0.0 {
                 self.lost_since = self.clock;
+                if self.routeless_goal != self.goal_name {
+                    self.routeless_goal = self.goal_name;
+                    self.routeless = 0;
+                }
+                self.routeless += 1;
                 here = self.area_near(origin)[0];
                 reason = "standing in no area" if here == 0 else (
                     "goal in no area" if self.goal_area == 0 else (

@@ -608,7 +608,20 @@ there only once it has shut: they want what shuts it, the objectives the
 bot plans by for a bridge."""
 def read_bridges(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, places: list[Place], models: list[int]) {
     nobody = Player();
+    # One the navigation already rides as a lift (Quake II's doors that
+    # start open and carry a body up a shaft) is a lift, not a bridge.
+    ridden: set[int] = set();
+    for place in places[1:] {
+        for move in [edge place->:Move:->] {
+            if move.kind == TRAVEL_ELEVATOR {
+                ridden.add(move.model);
+            }
+        }
+    }
     for model in models {
+        if model in ridden {
+            continue;
+        }
         box = shut_box(world, level, model);
         if box is None {
             continue;
@@ -622,6 +635,21 @@ def read_bridges(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, p
         atlas +>:Guards:+> gate;
         for place in on {
             gate +>:Bars:+> place;
+        }
+        # A body where it shuts to is carried up on it to its top (e3m7's
+        # pit floor that rises when its trigger is touched): a ride, as a
+        # lift's, wanting what shuts it.
+        for inside in places[1:] {
+            if inside.mover != model or inside in on {
+                continue;
+            }
+            for top in on {
+                over = inside.box.mins.x - 16.0 <= top.box.maxs.x and top.box.mins.x <= inside.box.maxs.x + 16.0
+                    and inside.box.mins.y - 16.0 <= top.box.maxs.y and top.box.mins.y <= inside.box.maxs.y + 16.0;
+                if over and top.floor > inside.floor {
+                    inside +>:Move(kind=TRAVEL_ELEVATOR, to=top.area, must=True, model=model, start=inside.center, finish=top.center):+> top;
+                }
+            }
         }
         for objective in mover_objectives(world, model, nobody, True) {
             what = objective_what(objective);
