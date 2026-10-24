@@ -25,7 +25,8 @@ import from .doors { Door, HasDoor, door_starts_open }
 import from .trains { Train, HasTrain, TrackPoint, TrackNext }
 import from .signals { Signal, HasSignal, Targets }
 import from .objectives { Objective, mover_objectives, exit_objectives, objective_mover, mover_area_blocked, objective_item_box }
-import from ..nav.compile { compile_navigation }
+import from ..level.routes { level_routes }
+import from ..level.graph { LevelGraph, Place, graph_places }
 import from ..formats.aas { TFL_DEFAULT, TRAVEL_JUMP, TRAVEL_ELEVATOR, area_mover_model }
 import from ..input.input { Intent }
 import from ..math.vec3 { Vec3, forward_from, right_from }
@@ -178,6 +179,12 @@ node PlayerBot {
         moving_time: float = 0.0,
         # Since when no route to the goal has been found from here.
         lost_since: float = -1.0,
+        # Times no route was found to the goal it has (`routeless_goal`),
+        # found ones between them notwithstanding (a way found, walked into
+        # a shut door, closed, found again): three, and the objective is
+        # given up.
+        routeless: int = 0,
+        routeless_goal: str = "",
         travel: TravelResult = TravelResult(),
         # A gap jump under way: 1 backing up to the run-up, 2 running at the
         # edge, 3 in the air; when it began.
@@ -769,19 +776,15 @@ node PlayerBot {
         self.leap = 0;
         self.stuck_count = 0;
         self.mind.current = "seek_exit";
-        self.rest_areas = set();
-        meshes = [world->:HasNavMesh:->][?:NavMesh];
-        if meshes {
-            self.mesh = meshes[0];
-            self.status = "navigation from the map's AAS";
-        } else {
-            started = time.time();
-            build = compile_navigation(world, level);
-            self.compile_seconds = time.time() - started;
-            self.mesh = build_navmesh(world, build.aas, level.bsp);
-            self.rest_areas = set(build.rest_areas);
-            self.status = "navigation compiled in " + str(round(self.compile_seconds, 1)) + " s: " + build.summary();
-        }
+        # The level graph routes the bot: the map's own AAS file brought in
+        # as one, else read off the level's compiled navigation.
+        started = time.time();
+        routed = level_routes(world, level);
+        atlas = routed[0];
+        self.mesh = routed[1];
+        self.compile_seconds = time.time() - started;
+        self.rest_areas = set([place.area for place in graph_places(atlas) if place.resting]);
+        self.status = "level graph in " + str(round(self.compile_seconds, 1)) + " s: " + " | ".join(atlas.notes);
         print("AUTOPLAY", level.bsp.game, level.name, self.status);
         mesh = self.mesh;
         self.trace.event("level", self.clock, {
@@ -867,6 +870,9 @@ def autoplay_retreat(level: Level, origin: Vec3, ahead: Vec3) -> Vec3 | None {
         if drop > 0.0 and drop <= 64.0 {
             continue;
         }
+        if autoplay_scalds(level, origin, way) {
+            continue;
+        }
         room = level.collision.trace(origin, origin.add(way.scale(96.0))).fraction * 96.0;
         # Straight back is worth a little more than the same room aside, and
         # going past it a good deal less.
@@ -882,6 +888,25 @@ def autoplay_retreat(level: Level, origin: Vec3, ahead: Vec3) -> Vec3 | None {
         }
     }
     return best;
+}
+
+"""Whether a step `way` (flat unit) from `origin` puts the bot's feet in
+slime or lava: the ground under points a stride and two along it, and what
+lies just over that ground. A wall in the way is no scald (the step is
+stopped there)."""
+def autoplay_scalds(level: Level, origin: Vec3, way: Vec3) -> bool {
+    liquids = level.liquid_probe();
+    for dist in [32.0, 64.0] {
+        ahead = origin.add(way.scale(dist));
+        down = level.collision.trace(ahead, ahead.sub(Vec3(z=96.0)));
+        if down.start_solid {
+            return False;
+        }
+        if liquids.kind_at(Vec3(x=ahead.x, y=ahead.y, z=down.end.z - 18.0)) >= 2 {
+            return True;
+        }
+    }
+    return False;
 }
 
 """What one hit must do to knock `body` down for a while when only a blow
@@ -1437,6 +1462,28 @@ walker AutoThink {
         best: Objective | None = None;
         best_time = UNREACHED;
         notes: list[str] = [];
+        # The movers worked on further down (and the one the objective under
+        # way is for) are no way through until they open: the route check
+        # closes them when it meets them, so a choice reached only through
+        # them (a button past the doors the silver key opens, while the key
+        # is still to get) is no choice now.
+        held_movers: list[int] = [held.mover for held in bot.waiting if held.mover > 0];
+        under_way = bot.objective;
+        if under_way is not None and under_way.mover > 0 {
+            held_movers.extend(self.opened_with(under_way.mover));
+        }
+        held_shut: list[int] = [];
+        for model in set(held_movers) {
+            for a in bot.mover_areas(model) {
+                if a != here_area and a not in mesh.disabled and a not in held_shut
+                    and mover_area_blocked(self.world, model, self.player, a in bot.rest_areas) {
+                    held_shut.append(a);
+                }
+            }
+        }
+        for a in held_shut {
+            mesh.enable_area(a, False);
+        }
         for choice in choices {
             passed_over = bot.passed_over(choice.point);
             for (quarry, until) in bot.given_up_bodies {
@@ -1535,6 +1582,9 @@ walker AutoThink {
                 over = " (over the " + str(within) + " limit)" if cheapest > within else "";
                 notes.append(label + ", \"result\": " + trace_text("route " + str(cheapest) + over) + "}");
             }
+        }
+        for a in held_shut {
+            mesh.enable_area(a, True);
         }
         if best is None {
             return False;
@@ -1765,14 +1815,21 @@ walker AutoThink {
         }
         finished = objective is not None and objective.done(self.player);
         stalled = objective is not None and bot.clock - objective.nearer_at > max(25.0, objective.allowed * 0.5);
+        # No way to it, tried three times with what was closed opened again
+        # between: a way it was chosen by is gone (a detour on the way took
+        # it somewhere else). Choose again rather than wander.
+        routeless = objective is not None and bot.routeless >= 3 and bot.routeless_goal == bot.goal_name;
         overdue = objective is not None and bot.clock - objective.started > max(180.0, objective.allowed * 3.0);
-        if objective is None or finished or stalled or overdue {
+        if objective is None or finished or stalled or overdue or routeless {
             if objective is not None {
                 why_end = "done" if finished else (
-                    "no nearer for " + str(int(bot.clock - objective.nearer_at)) + " s (nearest " + str(int(objective.nearest)) + ")"
-                    if stalled
-                    else "over its time (" + str(int(bot.clock - objective.started)) + " s)"
+                    "no way to it (" + str(bot.routeless) + " routes not found)" if routeless else (
+                        "no nearer for " + str(int(bot.clock - objective.nearer_at)) + " s (nearest " + str(int(objective.nearest)) + ")"
+                        if stalled
+                        else "over its time (" + str(int(bot.clock - objective.started)) + " s)"
+                    )
                 );
+                bot.routeless = 0;
                 bot.trace.event("objective_end", bot.clock, {
                     "objective": trace_text(objective.kind + " for " + objective.why),
                     "result": trace_text(why_end),
@@ -2117,6 +2174,11 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                 });
             } elif not planned.pending and self.lost_since < 0.0 {
                 self.lost_since = self.clock;
+                if self.routeless_goal != self.goal_name {
+                    self.routeless_goal = self.goal_name;
+                    self.routeless = 0;
+                }
+                self.routeless += 1;
                 here = self.area_near(origin)[0];
                 reason = "standing in no area" if here == 0 else (
                     "goal in no area" if self.goal_area == 0 else (
@@ -2289,7 +2351,7 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             self.strafe_wait -= dt;
             sweep = level.collision.trace(origin, origin.add(side.scale(40.0)));
             gap = gap_distance(level.collision, origin, side);
-            if self.strafe_wait <= 0.0 or sweep.fraction < 1.0 or (gap > 0.0 and gap < 64.0) {
+            if self.strafe_wait <= 0.0 or sweep.fraction < 1.0 or (gap > 0.0 and gap < 64.0) or autoplay_scalds(level, origin, side) {
                 self.strafe = -self.strafe;
                 self.strafe_wait = 0.8 + float(self.frames % 7) * 0.1;
                 side = side.scale(-1.0);
@@ -2325,6 +2387,12 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
                 }
             }
             wish = Vec3(x=wish.x, y=wish.y).normalized();
+            # Never into slime or lava for a fight: the other ways round,
+            # else stand.
+            if autoplay_scalds(level, origin, wish) {
+                safe = [way for way in [side, side.scale(-1.0), ahead.scale(-1.0)] if not autoplay_scalds(level, origin, way)];
+                wish = safe[0] if safe else Vec3();
+            }
             intent.move = autoplay_move(player.yaw, wish);
             intent.jump = False;
         }
@@ -2444,6 +2512,11 @@ impl PlayerBot.drive(world: World, level: Level, player: Player, state: CombatSt
             self.dodge_way = dodge;
             self.dodge_until = self.clock + 0.5;
         }
+    }
+    # A dodge into slime or lava is worse than the hit.
+    if dodge is not None and autoplay_scalds(level, origin, Vec3(x=dodge.x, y=dodge.y).normalized()) {
+        dodge = None;
+        self.dodge_until = 0.0;
     }
     if dodge is not None {
         intent.move = autoplay_move(player.yaw, dodge, 1.0, intent.move.z);

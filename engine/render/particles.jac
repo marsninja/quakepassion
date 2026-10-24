@@ -14,7 +14,8 @@ nor over four at 320 pixels wide, writing depth. Q2 particles are ref_gl's
 triangle 1.5 units a side from the particle, growing with distance (1 +
 0.004 a unit past 20), blended by alpha without writing depth. Colours are
 palette entries; Q1 fire and explosions run through r_part.c's ramps.
-Sparks (Q3 and Passion impacts) are plain coloured squares."""
+Sparks (Q3 and Passion impacts) are plain coloured squares; glows (the
+breadcrumb trail) plain coloured dots that grow with distance as Q2's do."""
 import struct;
 import from .gpu {
     GpuMesh,
@@ -110,15 +111,15 @@ void main() {
         alpha = min(alpha, 1.0);
     }
     vec3 color;
-    if (kind == 9) {
+    if (kind == 9 || kind == 10) {
         color = vec3(floor(index / 65536.0), mod(floor(index / 256.0), 256.0), mod(index, 256.0)) / 255.0;
     } else {
         color = texelFetch(palette, ivec2(int(index + 0.5), 0), 0).rgb;
     }
     float depth = (mvp * vec4(p, 1.0)).w;
     vec3 at;
-    if (kind == 8) {
-        float size = 1.5 * (depth < 20.0 ? 1.0 : 1.0 + depth * 0.004);
+    if (kind == 8 || kind == 10) {
+        float size = (kind == 10 ? 4.0 : 1.5) * (depth < 20.0 ? 1.0 : 1.0 + depth * 0.004);
         at = p + (side * corner.x + up * corner.y) * size;
         rounded = 1.0;
     } else {

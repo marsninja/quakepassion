@@ -6,7 +6,7 @@ import from engine.math.vec3 { Vec3 }
 import from engine.formats.aas { TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE }
 import from editor.tools.host { ToolHost, StudioTool }
 import from editor.document.scene { Scene, Item }
-import from editor.compile.navigation { Leg, route_legs, legs_count }
+import from engine.level.routes { Leg, route_legs, legs_count }
 import from editor.ui.canvas { ink }
 
 def:priv is_camp_spot(item: Item) -> bool {

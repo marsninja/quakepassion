@@ -21,8 +21,9 @@ import from .world { World }
 import from ..math.vec3 { Vec3 }
 import from ..formats.anorms { quake_vertex_normal }
 
-# Q1 ptype_t, then Q2's single particle model and a plain coloured spark
-# (Q3 and Passion impacts, which have no palette).
+# Q1 ptype_t, then Q2's single particle model, a plain coloured spark (Q3
+# and Passion impacts, which have no palette) and a glow (a round mote of a
+# plain colour that keeps its size far off: the breadcrumb trail).
 glob PARTICLE_STATIC: int = 0,
      PARTICLE_GRAV: int = 1,
      PARTICLE_SLOWGRAV: int = 2,
@@ -32,7 +33,8 @@ glob PARTICLE_STATIC: int = 0,
      PARTICLE_BLOB: int = 6,
      PARTICLE_BLOB2: int = 7,
      PARTICLE_QUAKE2: int = 8,
-     PARTICLE_SPARK: int = 9;
+     PARTICLE_SPARK: int = 9,
+     PARTICLE_GLOW: int = 10;
 
 # r_part.c ramp1-ramp3: the fire and explosion colour ramps.
 glob QUAKE_RAMP1: list[int] = [111, 109, 107, 105, 103, 101, 99, 97],
@@ -213,7 +215,7 @@ def particle_state(particle: Particle, now: float) -> ParticleState {
         # Across: v' = -4v; up: gravity only.
         slow = (1.0 - math.exp(-4.0 * t)) / 4.0;
         position = Vec3(x=o.x + v.x * slow, y=o.y + v.y * slow, z=o.z + v.z * t - 0.5 * g * t * t);
-    } elif kind in [PARTICLE_QUAKE2, PARTICLE_SPARK] {
+    } elif kind in [PARTICLE_QUAKE2, PARTICLE_SPARK, PARTICLE_GLOW] {
         position = position.add(particle.accel.scale(t * t));
         alpha = particle.alpha + particle.fade * t;
         if alpha <= 0.0 {

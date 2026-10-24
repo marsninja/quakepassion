@@ -199,38 +199,22 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   bake runs a slice a frame with `ed_build background on`, and is kept
   with the build like a grid's. The project (`bake planes`) and each game
   (`ed_game <game> bake planes`) can ask for it.
-- **Navigation for bots, baked** (`ed_nav bake [cell]`, Play menu): the
-  games' bots route over areas and the ways between them, read from an
-  arena's own file; a scene made here has none, so its floors are
-  sampled on a grid (cells of 32 units unless told otherwise): a place
-  to stand wherever there is floor under the whole of a cell and room
-  for a head over it, on up to four storeys. Neighbouring places are
-  joined by a way that is walked (a step of 18 or less), jumped up (a
-  ledge of 44 or less) or dropped down (a fall of 256 or less), where
-  nothing stands between them. The result is the engine's own
-  navigation data and mesh, so its own router answers: `ed_nav route
-  <from> <to>` says how long the way is, or that there is none, and
-  `ed_nav check` names what cannot be reached from the first player
-  start (they join the Checks tab's findings). `ed_nav show` draws the
-  ways: walked green, jumped yellow, dropped red, climbed white, swum
-  blue, lifted cyan, teleported violet, thrown orange. `ed_nav clear`
-  forgets it. A teleporter (`trigger_teleport`) and a jump pad
-  (`trigger_push`) whose target is somewhere make a way of their own,
-  from the floor under the trigger to the floor under where it sends or
-  throws (`teleport=` and `jumppad=` on the dump's line), so a place
-  reached only through one is reached. A ladder (a brush of a material
-  named for one) is climbed between the floors at its foot and its top,
-  both ways; a liquid (Quake's `*` materials, and those named for water,
-  slime or lava) is swum between a floor on or under it and the floors
-  beside it no higher than a player climbs out of it (the studio builds
-  liquids solid, so its top is a floor too); a `func_plat` carries what
-  stands on it at its lowest up to the floor beside its top, as the
-  games' elevator travel, with its model in the built level. A game
-  played from the scene hands the baked mesh to its bots, who route over
-  it, and `ed_nav write [file.aas]` writes it as an arena's file (Quake
-  III's AAS, version 5, with the lumps a router reads: the tree, the
-  areas and their settings, and the ways; beside the scene's map unless
-  told where), which the engine's AAS reader reads back as it was.
+- **The level graph** (`ed_nav bake`, Play menu): what is built now is
+  read as the engine reads any level (`engine/level/`): the navigation
+  compiled from the level's own collision, every door posed open, its
+  areas the graph's places and the ways between them its moves (walked,
+  jumped, dropped, swum, lifted, teleported), its movers as gates and what
+  opens each. The router routes over it: `ed_nav route <from> <to>` says how
+  long the way is, `ed_nav check` names what cannot be reached from the
+  first player start (they join the Checks tab's findings). `ed_nav show`
+  draws the ways (walked green, jumped yellow, dropped red, climbed white,
+  swum blue, lifted cyan, teleported violet, thrown orange), the gates
+  boxed (amber when they want a key, orange when something else opens
+  them), the openers as pink crosses joined to where they are done from,
+  and after a playtest the proven route in white and any traps in red.
+  `ed_nav clear` forgets it. A game played from the scene hands the graph
+  to its bots, and `ed_nav write [file.aas]` writes it as an arena's file
+  (Quake III's AAS, version 5, with the lumps a router reads).
 - **A bake is worked out once**: a level is compiled afresh every time it
   is loaded, since a game played in it writes on it, but its light and its
   cells are kept apart under a mark of what it was built of (the scene's
@@ -1063,40 +1047,13 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
     string before it is its help. They are gathered on every save into
     an add-on the studio loads, so they are in the Classes tab and the
     inspector at once.
-- **A playtest of an authored scene**: `ed_playtest` (the Window menu's
-  last entry) says whether a scene of brushes can be finished. It asks
-  the scene's logic first (what can never be set off, a lock with no
-  key), then goes down the level's objectives in the order a player
-  comes to them (the keys, then the buttons and the triggers that fire
-  something, then the way out) and says the first that cannot be reached
-  from the player's start over the baked floors; a thing on a wall is
-  come to from beside it. The floors are walked with what moves (doors,
-  platforms, buttons) left out, as if every door stood open (`ed_nav
-  bake [cell] open`): whether a door can be opened is the logic's to
-  say, and whether what is behind it can be walked to is the floors'. What stops the level is listed in the Checks
-  tab, a click from being looked at. `ed_playtest bake` walks the floors
-  again as they are built now. An opened expedition has its way out as
-  an entity (`trigger_changelevel`, where the generator's own exit
-  volume is), so it is seen, kept in the map, and played to.
-- **Passion expeditions**: `ed_exp open <seed>` runs the generator on a
-  seed and opens what it made as a document of brushes, saved among the
-  scenes as `expedition_<seed>.map`: its entities as they are, and the
-  world's brushes handed to a group for every room (`room 7 arena`, named
-  for its beat and its archetype) and one for every corridor, so a room is
-  picked, hidden, locked or copied into another scene as one thing. The
-  expedition's own account of itself is kept beside the document:
-  `ed_exp` says its seed, archetype, sizes and score, `ed_exp mission` its
-  beats and the links between them with what each needs, `ed_exp rooms`
-  its rooms and `ed_exp ways` the corridors, windows and teleporters
-  between them, `ed_exp measures`
-  how it measures against the original levels' quartiles, and `ed_exp
-  show` draws the ways over the level, each in the colour of its kind
-  (open, locked, one-way, shortcut, secret). It is a tool in a module of
-  its own (`editor/tools/expedition.jac`); it reads the generator's graph
-  (beats and links, spaces and corridors) as the generator left it. The
-  v2 tools that remade parts of an expedition (`again`, `fill`, `link`,
-  `move`, `graphs` and the rest) went with the v2 generator; a room is a
-  group of plain brushes, edited by hand.
+- **Playtest** (`ed_playtest`, Play menu): what can never be set off (a
+  lock with no key) first; then the scene's level graph is read with its
+  jumps run through the player's own movement and its falls run off every
+  ledge, and proven: the way out reached for sure from the start, no state
+  that strands a player, and the tokens the scene requires. What stops it
+  (where its traps are, what bars the way, which tokens are wanted and who
+  gives them) is listed in the Checks tab.
 - **Groups in groups**: `ed_nest <group's name|#number>` puts the selected
   groups in another group, and a group's row dragged onto another group's
   row in the scene list does the same; `ed_nest out`, or its row dragged
@@ -2332,5 +2289,4 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
 - Not built: windows on other monitors (#95: raylib gives the studio one
   window, so windows float inside it).
 - Within the shell: generated (Passion) levels can be edited but not saved as
-  they are; `ed_convert` turns one into a scene of brushes, and `ed_exp open
-  <seed>` generates one and opens it so.
+  they are; `ed_convert` turns one into a scene of brushes.

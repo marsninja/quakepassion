@@ -68,17 +68,13 @@ game with `QP_GAME` and a directory with `QP_ASSETS`.
 | `validate_collision_index.jac` | Indexed collision queries against exhaustive ones |
 | `validate_models.jac`, `validate_alias_models.jac` | Every Q2 MD2 and skin; Q1 MDL and Q3 MD3 archives, and how each Q3 model shader script is drawn (stages, hidden, or plain skin with the reason) |
 | `validate_patches.jac` (`QP_SUBDIVISIONS`) | Every Q3 map's patches subdivided and stitched: valid grids, normals and LOD errors, and triangle counts beside the former fixed tessellation and the coarsest level of detail |
-| `passion_map.jac` (`QP_SEEDS`) | Passion's generator (no assets): how each seed's survey went (candidates, rejections and why, teleporters, windows, the critic's score), or one seed's map file |
-| `passion_corpus.jac` (`QP_CORPUS_GAMES`, `QP_CORPUS_MAPS`) | The yardstick's measures and texture use of every original level, or of generated expeditions (`passion`) lit with real materials |
+| `level_proof.jac` (`QP_MAPS`, `QP_PROOF_GAMES`, `QP_PROOF_CORPUS`) | The level graph of original levels read and proven (finishes, softlocks, required tokens, budget) and why one does not prove; with `QP_PROOF_CORPUS=1` kept as Passion's essences |
+| `passion_forge.jac` (`QP_LEVELS`, `QP_FORGE_AT`) | Passion levels made as the game makes them: the essence, each candidate's proof and why one was passed over |
 | `audit_campaigns.jac`, `chain_audit.jac` (Q1/Q2; `QP_AUDIT_GAMES`, `QP_AUDIT_MAPS`) | Entity inventory of the installed maps; per-map exits, disabled movers and triggers, unactivated targets |
 
 ## Looking at levels
 
-`scripts/passion_look.jac` loads a level through the `App` (any game, or a
-Passion seed) and photographs it: from the standing places with the widest
-views a player can reach, along the shortest route from start to exit
-(`QP_LOOK_ROUTE=1`), or from given places (`QP_LOOK_AT`). It is how generated
-expeditions are compared with the original levels by eye.
+Passion levels are looked at in the game itself: `QP_CAPTURE=<frame>:<file>` takes one screenshot, and the console's `setviewpos x y z [yaw] [pitch]` (in one `+` argument, `wait` between commands) stands the camera where it is wanted. `QP_PASSION_UNPROVEN=1` plays a level whose candidates all failed their proof, to look at what the proof found.
 
 ## Whole-game sweeps and walkthroughs
 

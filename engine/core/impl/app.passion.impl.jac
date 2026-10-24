@@ -56,6 +56,7 @@ impl App.passion_cleared() {
     run = self.passion_run;
     if run is not None and run.plays(self.level.name) {
         run.cleared(self.combat.kills, self.total_monsters, time.time());
+        print("PASSION cleared", self.level.name, "kills", self.combat.kills, "of", self.total_monsters);
     }
 }
 

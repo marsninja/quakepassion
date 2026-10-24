@@ -9,7 +9,7 @@ import from engine.math.vec3 { Vec3 }
 import from editor.formats.map { MapItem }
 import from editor.geometry.brush { Side }
 import from .massing { Massing, CellBox, CELL, LIFT, shell_steps }
-import from .spaces { Space }
+import from .space { Space }
 import from .kits { Kit, kit_of, kit_surfaces, kit_water }
 import from .dress { Dressing, Lamp3, box_brush }
 
@@ -127,7 +127,7 @@ def map_item_steps(mass: Massing, spaces: list[Space], dressing: Dressing, extra
         by_id[space.id] = space;
     }
     world = MapItem(
-        fields={"classname": "worldspawn", "message": message, "_minlight": "8", "_bounce": "1", "generator": "passion-v3"}
+        fields={"classname": "worldspawn", "message": message, "_minlight": "8", "_bounce": "1", "generator": "passion"}
     );
     shell: list[list[Side]] = [];
     yield from shell_brush_steps(mass, by_id, shell);

@@ -1,6 +1,7 @@
 """Quake 3 Area Awareness System files (maps/*.aas): the areas, reachabilities
 and point-location tree the original bots navigate with (botlib be_aas_file.c,
 version 5 with its XOR-scrambled header)."""
+import struct;
 import from .bsp { i32_at, u16_at, f32_at, vec_at, require_range }
 import from ..math.vec3 { Vec3 }
 
@@ -375,4 +376,60 @@ def parse_aas(data: bytes) -> Aas {
         }
     }
     return result;
+}
+
+"""A navigation's data as an arena's file: Quake III's AAS (version 5, its
+header hidden as be_aas_file.c hides it), with the lumps a router reads:
+the tree's planes and nodes, the areas with their settings, and the ways
+between them. The others (faces, edges, portals, clusters) are empty."""
+def aas_bytes(aas: Aas) -> bytes {
+    planes = bytearray();
+    for (index, normal) in enumerate(aas.normals) {
+        planes.extend(struct.pack("<ffffi", normal.x, normal.y, normal.z, aas.dists[index] if index < len(aas.dists) else 0.0, 0));
+    }
+    nodes = bytearray();
+    for index in range(len(aas.node_planes)) {
+        nodes.extend(struct.pack("<iii", aas.node_planes[index], aas.front[index], aas.back[index]));
+    }
+    areas = bytearray();
+    settings = bytearray();
+    for (index, area) in enumerate(aas.areas) {
+        areas.extend(
+            struct.pack(
+                "<iiifffffffff", index, 0, 0, area.mins.x, area.mins.y, area.mins.z, area.maxs.x, area.maxs.y, area.maxs.z,
+                area.center.x, area.center.y, area.center.z
+            )
+        );
+        settings.extend(struct.pack("<iiiiiii", area.contents, area.flags, area.presence, 0, 0, area.reach_count, area.first_reach));
+    }
+    reaches = bytearray();
+    for reach in aas.reaches {
+        reaches.extend(
+            struct.pack(
+                "<iiiffffffiHH", reach.area, reach.face_num, reach.edge_num, reach.start.x, reach.start.y, reach.start.z,
+                reach.finish.x, reach.finish.y, reach.finish.z, reach.kind, reach.time & 65535, 0
+            )
+        );
+    }
+    lumps: list[bytes] = [b"" for index in range(14)];
+    lumps[2] = bytes(planes);
+    lumps[7] = bytes(areas);
+    lumps[8] = bytes(settings);
+    lumps[9] = bytes(reaches);
+    lumps[10] = bytes(nodes);
+    header = bytearray(struct.pack("<ii", aas.checksum, 0)[:4]);
+    at = 8 + 4 + 14 * 8;
+    for piece in lumps {
+        header.extend(struct.pack("<ii", at, len(piece)));
+        at += len(piece);
+    }
+    # be_aas_file.c AAS_DData: each header byte after the version XORed with its offset times 119.
+    for k in range(len(header)) {
+        header[k] = header[k] ^ ((k * 119) & 255);
+    }
+    made = bytearray(b"EAAS") + bytearray(struct.pack("<i", 5)) + header;
+    for piece in lumps {
+        made.extend(piece);
+    }
+    return bytes(made);
 }

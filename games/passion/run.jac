@@ -1,22 +1,22 @@
 """A Passion run: one seed, its levels played one after another.
 
-The run's first level is `v3-<seed>`; reaching a level's way out goes on to
-the next (`v3-<seed>-2`, `-3`, ...), each made from the run's seed and its
-depth, so a seed always plays the same run. While a level is played the
-next is made a few milliseconds a frame (`Forge`), so the way out leads on
-at once. Nothing is kept on disk: the level being played is kept in memory
-to begin again from after a death, the next until it is reached.
+The run's first level is `v4-<seed>`; reaching a level's way out goes on to
+the next (`v4-<seed>-2`, `-3`, ...), each made from the run's seed and its
+depth, so a seed always plays the same run. The next level is made when
+the way out is reached (`Forge`), its progress on the tally. Only the
+essences are kept on disk: the level being played is kept in memory to
+begin again from after a death.
 
 The run is a node, and each level cleared hangs off it in order: what the
 end of a level tallies is read off those."""
 import from engine.world.world { Player }
 import from editor.compile.live { Materials }
 import from editor.assets.materials { ArchiveMaterials }
-import from .generate { Forge, run_of, next_level }
+import from .generate { Forge, run_of, next_level, traced_essence }
 
 # Seconds a frame given to making the next level while one is played, and
 # while its way out waits on it.
-glob PLAY_BUDGET: float = 0.004,
+glob PLAY_BUDGET: float = 0.0,
      WAIT_BUDGET: float = 0.03;
 
 """A run: its seed, how deep it has gone, the forge of the level being
@@ -104,6 +104,12 @@ node Run {
         if ahead is None {
             return True;
         }
+        # Nothing while a level is played: a level is made in a few long
+        # steps (reading an essence, proving a level), made when its way out
+        # is reached.
+        if budget <= 0.0 {
+            return ahead.finished;
+        }
         return ahead.advance(budget);
     }
 
@@ -185,6 +191,10 @@ def run_of_level(run: Run | None, name: str, directory: str) -> Run {
 """How a level's name reads on the HUD: the run and the level."""
 def run_title(name: str) -> str {
     try {
+        traced = traced_essence(name);
+        if traced {
+            return "The essence of " + traced.split(":")[1];
+        }
         found = run_of(name);
         return "Run " + str(found[0]) + ", level " + str(found[1]);
     } except ValueError {

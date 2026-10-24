@@ -5,6 +5,9 @@ import from engine.world.world { World }
 import from engine.world.signals { HasSignal }
 import from engine.formats.bsp { Bsp }
 import from .passion.generate { generate, Forge }
+import from .passion.essence { essence_path, essence_clean }
+import from engine.level.graph { read_graph }
+import from engine.level.guide { guide_level }
 
 """Where edited entity lumps are kept: QP_OVERRIDES, else a folder beside the
 settings (QP_CONFIG_DIR, else HOME)."""
@@ -57,11 +60,17 @@ def open_level(
     forged: Forge | None = None
 ) -> Level {
     if built is not None {
+        guide_level(world, None);
         return open_built(world, name, built, skill);
     }
     if game == "passion" {
         return generate(world, name, directory, forged);
     }
     lump = saved_entities(game, name) if entities is None else entities;
-    return load_level(world, directory, name, game, skill, subdivisions, lump);
+    level = load_level(world, directory, name, game, skill, subdivisions, lump);
+    # The breadcrumb trail of an original: its essence, when Passion's corpus
+    # keeps it proven clean (reading one here would take seconds).
+    kept = read_graph(essence_path(game + ":" + name));
+    guide_level(world, kept if kept is not None and essence_clean(kept) else None);
+    return level;
 }

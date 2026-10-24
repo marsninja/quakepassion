@@ -566,7 +566,9 @@ def load_traversal(world: World, bsp: Bsp) {
                 world +>:HasSpeaker:+> point.speaker;
             }
             traversal +>:ArrivesAt:+> point;
-        } elif bsp.game == "q3" {
+        } elif bsp.game == "q3" or (bsp.game == "passion" and target) {
+            # A jump pad (Quake III's, and Passion's that are cast as one):
+            # aimed so the body's arc tops out at its target.
             if len(targets) != 1 {
                 continue;
             }

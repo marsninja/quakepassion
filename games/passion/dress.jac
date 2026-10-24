@@ -18,10 +18,11 @@ import from engine.math.vec3 { Vec3 }
 import from editor.geometry.brush { Side, Plane3, classic_mapping }
 import from .random { Stream }
 import from .massing { Massing, CELL, LIFT }
-import from .spaces { Space, Doorway, OPEN_HIGH }
+import from .space { Space }
 import from .kits { Kit, kit_of }
 
-glob TRIM_DEPTH: float = 6.0,
+glob OPEN_HIGH: int = 6,
+     TRIM_DEPTH: float = 6.0,
      TRIM_HIGH: float = 16.0,
      RAIL_HIGH: float = 32.0,
      RAIL_DEPTH: float = 8.0,
@@ -285,57 +286,65 @@ def pilasters(mass: Massing, by_id: dict[int, Space], made: Dressing, dice: Stre
             }
             first = space.y if direction < 2 else space.x;
             last = (space.y + space.d if direction < 2 else space.x + space.w) - 1;
-            for z in range(space.z, space.z + space.h) {
-                count = 0;
-                placed = 0;
-                for along in range(first + 1, last) {
-                    cell = run_cell(direction, line, along);
-                    cx = cell[0];
-                    cy = cell[1];
-                    if mass.at(cx, cy, z) != owner or mass.air(cx, cy, z - 1) {
-                        count = 0;
-                        continue;
-                    }
-                    rise = mass.headroom(cx, cy, z);
-                    if rise < OPEN_HIGH + 1 {
-                        count = 0;
-                        continue;
-                    }
-                    # The wall must stand whole beside the cell, and the
-                    # cells either side be floor at this height too.
-                    whole = True;
-                    for up in range(rise) {
-                        if mass.air(cx + step[0], cy + step[1], z + up) {
-                            whole = False;
+            # A traced room's walls stand anywhere in its box, not only on
+            # its sides: every line across it is looked along.
+            lines = [line];
+            if space.kind == "traced" {
+                lines = list(range(space.x, space.x + space.w)) if direction < 2 else list(range(space.y, space.y + space.d));
+            }
+            for line in lines {
+                for z in range(space.z, space.z + space.h) {
+                    count = 0;
+                    placed = 0;
+                    for along in range(first + 1, last) {
+                        cell = run_cell(direction, line, along);
+                        cx = cell[0];
+                        cy = cell[1];
+                        if mass.at(cx, cy, z) != owner or mass.air(cx, cy, z - 1) {
+                            count = 0;
+                            continue;
                         }
-                    }
-                    for side in [-1, 1] {
-                        near = run_cell(direction, line, along + side);
-                        if not mass.standing(near[0], near[1], z) or mass.at(near[0], near[1], z) != owner {
-                            whole = False;
+                        rise = mass.headroom(cx, cy, z);
+                        if rise < OPEN_HIGH + 1 {
+                            count = 0;
+                            continue;
                         }
-                    }
-                    if not whole {
-                        count = 0;
-                        continue;
-                    }
-                    count += 1;
-                    if count % gap != 2 {
-                        continue;
-                    }
-                    low = float(z) * LIFT;
-                    high = float(z + rise) * LIFT;
-                    middle = (float(along) + 0.5) * CELL;
-                    half = PILASTER_WIDE * 0.5;
-                    shaft = pilaster_box(direction, line, middle - half, middle + half, low, high, PILASTER_DEEP);
-                    made.brushes.append(plain_box(shaft[0], shaft[1], kit.support, kit.scale));
-                    plinth = pilaster_box(direction, line, middle - half - 4.0, middle + half + 4.0, low, low + 24.0, PILASTER_DEEP + 4.0);
-                    made.brushes.append(plain_box(plinth[0], plinth[1], kit.trim, kit.scale));
+                        # The wall must stand whole beside the cell, and the
+                        # cells either side be floor at this height too.
+                        whole = True;
+                        for up in range(rise) {
+                            if mass.air(cx + step[0], cy + step[1], z + up) {
+                                whole = False;
+                            }
+                        }
+                        for side in [-1, 1] {
+                            near = run_cell(direction, line, along + side);
+                            if not mass.standing(near[0], near[1], z) or mass.at(near[0], near[1], z) != owner {
+                                whole = False;
+                            }
+                        }
+                        if not whole {
+                            count = 0;
+                            continue;
+                        }
+                        count += 1;
+                        if count % gap != 2 {
+                            continue;
+                        }
+                        low = float(z) * LIFT;
+                        high = float(z + rise) * LIFT;
+                        middle = (float(along) + 0.5) * CELL;
+                        half = PILASTER_WIDE * 0.5;
+                        shaft = pilaster_box(direction, line, middle - half, middle + half, low, high, PILASTER_DEEP);
+                        made.brushes.append(plain_box(shaft[0], shaft[1], kit.support, kit.scale));
+                        plinth = pilaster_box(direction, line, middle - half - 4.0, middle + half + 4.0, low, low + 24.0, PILASTER_DEEP + 4.0);
+                        made.brushes.append(plain_box(plinth[0], plinth[1], kit.trim, kit.scale));
 
-                    placed += 1;
-                    if (placed - 1) % lamp_every == 0 {
-                        height = low + min(112.0, max(80.0, (high - low) * 0.45));
-                        add_wall_lamp(made, kit, direction, line, middle, height, PILASTER_DEEP, space);
+                        placed += 1;
+                        if (placed - 1) % lamp_every == 0 {
+                            height = low + min(112.0, max(80.0, (high - low) * 0.45));
+                            add_wall_lamp(made, kit, direction, line, middle, height, PILASTER_DEEP, space);
+                        }
                     }
                 }
             }
@@ -457,23 +466,6 @@ def ceiling_lamps(mass: Massing, by_id: dict[int, Space], made: Dressing, dice: 
                 }
             }
         }
-    }
-}
-
-"""Lamps along a corridor: under its ceiling every few blocks of its way."""
-def corridor_lamps(made: Dressing, space: Space, blocks: list[list[int]], high: int) {
-    kit = kit_of(space.district);
-    for (index, block) in enumerate(blocks) {
-        if index % 3 != 1 or index + 1 >= len(blocks) {
-            continue;
-        }
-        x = float(block[0] + 1) * CELL;
-        y = float(block[1] + 1) * CELL;
-        top = float(block[2] + high) * LIFT;
-        made.brushes.append(
-            box_brush(Vec3(x=x - 12.0, y=y - 12.0, z=top - 6.0), Vec3(x=x + 12.0, y=y + 12.0, z=top), [kit.trim, kit.trim, kit.trim, kit.trim, kit.trim, kit.light], kit.scale, [5])
-        );
-        made.add_lamp(space, Lamp3(x=x, y=y, z=top - 28.0, level=int(float(lamp_strength(kit, space)) * 0.85), color=kit.lamp_color));
     }
 }
 
@@ -686,32 +678,4 @@ def railing_steps(mass: Massing, by_id: dict[int, Space], made: Dressing) -> Ite
             }
         }
     }
-}
-
-"""Frames round a doorway in a space's wall: two jambs and a lintel standing
-out into the room."""
-def frame_doorway(made: Dressing, space: Space, door: Doorway, high: int) {
-    kit = kit_of(space.district);
-    if door.side == 0 {
-        line = space.x + space.w - 1;
-        start = float(space.y + door.along) * CELL;
-    } elif door.side == 1 {
-        line = space.x;
-        start = float(space.y + door.along) * CELL;
-    } elif door.side == 2 {
-        line = space.y + space.d - 1;
-        start = float(space.x + door.along) * CELL;
-    } else {
-        line = space.y;
-        start = float(space.x + door.along) * CELL;
-    }
-    finish = start + float(door.span) * CELL;
-    low = float(door.level) * LIFT;
-    top = low + float(high) * LIFT;
-    for (a, b) in [(start - 16.0, start), (finish, finish + 16.0)] {
-        jamb = pilaster_box(door.side, line, a, b, low, top + 16.0, 10.0);
-        made.brushes.append(plain_box(jamb[0], jamb[1], kit.support, kit.scale));
-    }
-    lintel = pilaster_box(door.side, line, start, finish, top, top + 16.0, 10.0);
-    made.brushes.append(plain_box(lintel[0], lintel[1], kit.trim, kit.scale));
 }

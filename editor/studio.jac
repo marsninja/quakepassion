@@ -195,14 +195,14 @@ import from .project {
 }
 import from .compile.kept { KeptBake, keep_bake, give_bake }
 import from .compile.steps { Place, recipe_steps, step_line, places_named, text_mark }
-import from .compile.navigation {
-    Floor, Way, Leg, Link, floor_ways, floor_middle, nav_data, ways_count, route_time, route_legs, legs_count, NAV_STEP,
-    linked_ways, swim_ways, aas_bytes
-}
+import from engine.level.graph { LevelGraph, Place as LevelPlace, Move, Gate, Opener, graph_places as level_places, graph_gates, graph_openers, opener_places }
+import from engine.level.extract { ReadOptions, read_level_graph }
+import from engine.level.prove { Proof, prove_level, explain_proof }
+import from engine.level.routes { graph_aas, route_time }
 import from engine.world.bot_routes { NavMesh, HasNavMesh, build_navmesh }
 import from engine.formats.aas {
-    Aas, TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE, TRAVEL_TELEPORT, TRAVEL_JUMPPAD, TRAVEL_LADDER, TRAVEL_SWIM,
-    TRAVEL_ELEVATOR
+    Aas, TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_JUMP, TRAVEL_WALKOFFLEDGE, TRAVEL_TELEPORT, TRAVEL_JUMPPAD, TRAVEL_LADDER, TRAVEL_SWIM,
+    TRAVEL_ELEVATOR, aas_bytes
 }
 import from .compile.leak { find_leak, LeakReport }
 import from .formats.bspmap { bsp_items, level_material }
@@ -889,7 +889,8 @@ obj StudioHost(ToolHost) {
     }
 
     def navigation_mark -> int {
-        return len(self.studio.nav_floors);
+        atlas = self.studio.nav_atlas;
+        return len(level_places(atlas)) if atlas is not None else 0;
     }
 
     def line(start: Vec3, finish: Vec3, color: Ink) {
@@ -1060,10 +1061,10 @@ obj Studio(Workbench) {
         # Navigation baked for the scene: its floors, the ways between
         # them, the grid they are on, the engine's mesh, and whether the
         # ways are drawn.
-        nav_floors: list[Floor] = [],
-        nav_ways: list[Way] = [],
-        nav_origin: Vec3 = Vec3(),
-        nav_cell: float = 32.0,
+        nav_atlas: LevelGraph | None = None,
+        # The proof the last playtest made of the level graph (its route and
+        # traps are drawn with it).
+        nav_proof: Proof | None = None,
         nav_mesh: NavMesh | None = None,
         # The baked navigation's data, handed to the bots of a game played from the scene.
         nav_aas: Aas | None = None,
@@ -1523,7 +1524,6 @@ obj Studio(Workbench) {
         tool_specs: dict[str, PanelSpec] = {},
         tool_stale: list[str] = [],
         # The collision hulls a navigation bake leaves out (what moves, when doors are taken as open).
-        nav_exclude: list[int] = [],
         # The scene's count of picks when its groups' groups were last picked with them.
         nest_picks: int = -1,
         library_filter: str = "",
@@ -1743,8 +1743,7 @@ obj Studio(Workbench) {
             # Navigation baked for the level that was is of a world that is
             # gone: its areas went with it, and are not to be asked the way.
             self.nav_mesh = None;
-            self.nav_floors = [];
-            self.nav_ways = [];
+            self.nav_atlas = None;
         }
         return True;
     }
@@ -1837,7 +1836,7 @@ obj Studio(Workbench) {
             return;
         }
         if scene.game == "passion" {
-            self.say("Generated expeditions cannot be saved yet");
+            self.say("Generated Passion levels cannot be saved yet");
             return;
         }
         path = override_path(scene.game, scene.name);
@@ -4631,25 +4630,12 @@ obj Studio(Workbench) {
     """Mark an entity, and later hand the selected brushes to it, pick it,
     or change its place with the selection's."""
     def marked_command(scene: Scene, args: list[str]) -> bool;
-    """The places to stand in the built scene, sampled on a grid: floor
-    under the whole of a cell and room for a head over it."""
-    def nav_floors_of(scene: Scene, cell: float) -> list[Floor];
-    """Of the ways the floors' heights allow, those nothing stands in."""
-    def nav_clear_ways(floors: list[Floor], ways: list[Way], cell: float) -> list[Way];
-    """What is baked, as a line of the dump; the ways drawn in a view; and
-    what cannot be reached from the first player start."""
+    """What is read, as a line of the dump."""
     def nav_words -> str;
-    """The ways the scene's teleporters and jump pads make: from where each
-    trigger is to where it sends or throws."""
-    def nav_links(scene: Scene) -> list[Link];
-    """The boxes of the scene's liquids: where bots swim."""
-    def nav_waters(scene: Scene) -> list[list[Vec3]];
+    """Read the level graph of what is built now and give it to the router."""
+    def nav_read(sims: bool) -> LevelGraph | None;
     def draw_nav;
     def nav_findings(scene: Scene) -> list[Finding];
-    """What stops a scene being finished: what its logic can never set
-    off, then the first objective (a key, what opens the way, the way
-    out) that cannot be reached from the start over the baked floors."""
-    def playtest(scene: Scene) -> list[Finding];
 
     # ------------------------------------------------------------------
     # Floating 3D windows (impl/studio.windows.impl.jac)

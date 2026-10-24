@@ -1,91 +1,158 @@
-"""The cast: everything an expedition puts in its spaces besides their
-architecture. The player's start, what each objective is (a key on a stage,
-a switch, a guardian whose death opens a way), the doors the mission's locks
-become and what opens them, teleporters where a corridor could not be
-routed, the exit, and the population: foes by each room's threat budget,
-health, armour and shells by what the way there costs.
+"""The cast: everything a level made from an essence holds besides its
+architecture, read from the essence's graph.
 
-Foes come from a roster of all three games, weighted toward the game of
-each district's kit; places to stand them on come from the massing (floor
-with headroom, away from doorways and stairs), perches from floors high in
-their room."""
+- **Gates**: each of the essence's doors stands where it stood, across the
+  whole width of the new doorway, opening upward; one that wanted keys wants
+  them still, one that something else opened is opened by it (its
+  targetname), a secret one opens to a shot. Lifts stand in their shafts.
+- **Openers**: a key lies where the essence's lay (or where a move put it);
+  a plate to step on, a button to shoot or a monster to kill stands where
+  the essence's opener was done from, and fires its gate.
+- **The way out**: a gate of light where the essence's was; one fired by a
+  chain is shut in a cage its openers lift. An arena has none of its own:
+  it is cleared, and a counter of its foes' deaths opens a gate on its
+  highest ground.
+- **The population**, cast afresh: each stage of the essence's progression
+  gets foes from the roster of all three games (weighted to its district's
+  game) as strong in all as the essence's were there, and the health,
+  armour, ammunition and weapons the essence had there, each in its
+  district's game's own kind (`stage_budget`)."""
 import math;
 import from engine.math.vec3 { Vec3 }
+import from engine.math.aabb { AABB }
+import from engine.formats.aas { TRAVEL_TELEPORT, TRAVEL_JUMPPAD }
+import from engine.level.prove { search_of, reach_states }
+import from engine.level.graph { LevelGraph, Place, Move, Gate, Opener, Thing, graph_places, graph_gates, graph_openers, graph_things, thing_place, opener_places, barred_places }
+import from engine.level.budget { stage_budget, foe_stats, ammo_damage }
 import from editor.formats.map { MapItem }
 import from editor.geometry.brush { Side }
 import from .random { Stream }
-import from .massing { Massing, CELL, LIFT }
-import from .spaces { Space, Doorway, OPEN_HIGH }
-import from .arrange { Estate, Corridor, estate_spaces, estate_corridors, CORRIDOR_HIGH }
-import from .mission { Expedition, Beat, beats_of }
-import from .kits { Kit, kit_of }
-import from .dress { box_brush, plain_box }
-
-obj Foe {
-    has kind: str,
-        source: str,
-        health: int,
-        cost: float,
-        role: str = "melee",
-        rank: int = 1;
-}
-
-glob CAST_ROSTER: list[Foe] = [
-         Foe(kind="monster_army", source="q1", health=30, cost=1.0, role="ranged"),
-         Foe(kind="monster_dog", source="q1", health=25, cost=0.8, role="melee"),
-         Foe(kind="monster_knight", source="q1", health=75, cost=1.8, role="melee"),
-         Foe(kind="monster_enforcer", source="q1", health=80, cost=2.6, role="ranged", rank=2),
-         Foe(kind="monster_wizard", source="q1", health=80, cost=2.6, role="fly", rank=2),
-         Foe(kind="monster_ogre", source="q1", health=200, cost=5.0, role="ranged", rank=3),
-         Foe(kind="monster_demon1", source="q1", health=300, cost=6.0, role="melee", rank=3),
-         Foe(kind="monster_hell_knight", source="q1", health=250, cost=6.0, role="ranged", rank=3),
-         Foe(kind="monster_shalrath", source="q1", health=400, cost=8.0, role="ranged", rank=4),
-         Foe(kind="monster_shambler", source="q1", health=600, cost=12.0, role="ranged", rank=5),
-         Foe(kind="monster_soldier_light", source="q2", health=20, cost=0.8, role="ranged"),
-         Foe(kind="monster_soldier", source="q2", health=30, cost=1.0, role="ranged"),
-         Foe(kind="monster_soldier_ss", source="q2", health=40, cost=1.4, role="ranged"),
-         Foe(kind="monster_infantry", source="q2", health=100, cost=2.8, role="ranged", rank=2),
-         Foe(kind="monster_flyer", source="q2", health=50, cost=1.6, role="fly", rank=2),
-         Foe(kind="monster_parasite", source="q2", health=175, cost=4.0, role="melee", rank=3),
-         Foe(kind="monster_gunner", source="q2", health=175, cost=4.5, role="ranged", rank=3),
-         Foe(kind="monster_chick", source="q2", health=175, cost=4.5, role="ranged", rank=3),
-         Foe(kind="monster_berserk", source="q2", health=240, cost=4.8, role="melee", rank=3),
-         Foe(kind="monster_floater", source="q2", health=200, cost=5.0, role="fly", rank=3),
-         Foe(kind="monster_mutant", source="q2", health=300, cost=6.0, role="melee", rank=4),
-         Foe(kind="monster_brain", source="q2", health=300, cost=6.0, role="melee", rank=4),
-         Foe(kind="monster_hover", source="q2", health=240, cost=6.0, role="fly", rank=4),
-         Foe(kind="monster_gladiator", source="q2", health=400, cost=8.0, role="ranged", rank=4),
-         Foe(kind="monster_tank", source="q2", health=750, cost=14.0, role="ranged", rank=5),
-         Foe(kind="monster_tank_commander", source="q2", health=1000, cost=18.0, role="ranged", rank=6),
-         Foe(kind="info_player_deathmatch", source="q3", health=60, cost=2.2, role="ranged", rank=2)
-     ];
-
-glob CAST_GUARDIANS: list[str] = [
-         "monster_shambler",
-         "monster_shalrath",
-         "monster_tank",
-         "monster_tank_commander",
-         "monster_gladiator"
-     ];
+import from .massing { CELL, LIFT }
+import from .kits { kit_of }
+import from .dress { plain_box }
+import from .sculpt { Sculpting, Ground, box_cells, lift_levels, LiftShaft, sculpture_grounds }
 
 glob TELEPORT_MATERIAL: str = "q1:e1m1/*teleport",
      BUTTON_MATERIAL: str = "q1:e1m1/+0basebtn";
 
-"""What was cast: the entities (brush entities with their brushes), the
-exit's box, where the start is, and the tallies the director kept."""
+"""A foe of the roster: its class, the game it is from, its role."""
+obj Foe {
+    has kind: str,
+        source: str,
+        role: str = "melee";
+}
+
+glob CAST_ROSTER: list[Foe] = [
+         Foe(kind="monster_army", source="q1", role="ranged"),
+         Foe(kind="monster_dog", source="q1"),
+         Foe(kind="monster_knight", source="q1"),
+         Foe(kind="monster_enforcer", source="q1", role="ranged"),
+         Foe(kind="monster_wizard", source="q1", role="fly"),
+         Foe(kind="monster_ogre", source="q1", role="ranged"),
+         Foe(kind="monster_demon1", source="q1"),
+         Foe(kind="monster_hell_knight", source="q1", role="ranged"),
+         Foe(kind="monster_shalrath", source="q1", role="ranged"),
+         Foe(kind="monster_shambler", source="q1", role="ranged"),
+         Foe(kind="monster_soldier_light", source="q2", role="ranged"),
+         Foe(kind="monster_soldier", source="q2", role="ranged"),
+         Foe(kind="monster_soldier_ss", source="q2", role="ranged"),
+         Foe(kind="monster_infantry", source="q2", role="ranged"),
+         Foe(kind="monster_flyer", source="q2", role="fly"),
+         Foe(kind="monster_parasite", source="q2"),
+         Foe(kind="monster_gunner", source="q2", role="ranged"),
+         Foe(kind="monster_chick", source="q2", role="ranged"),
+         Foe(kind="monster_berserk", source="q2"),
+         Foe(kind="monster_floater", source="q2", role="fly"),
+         Foe(kind="monster_mutant", source="q2"),
+         Foe(kind="monster_brain", source="q2"),
+         Foe(kind="monster_gladiator", source="q2", role="ranged"),
+         Foe(kind="monster_tank", source="q2", role="ranged"),
+         Foe(kind="monster_tank_commander", source="q2", role="ranged")
+     ];
+
+"""Weapons by game, each with how strong a pick-up it is (1 to 6)."""
+glob CAST_ARMS: dict[str, dict[str, int]] = {
+         "q1": {"weapon_supershotgun": 2, "weapon_nailgun": 2, "weapon_supernailgun": 3, "weapon_grenadelauncher": 3, "weapon_rocketlauncher": 4, "weapon_lightning": 5},
+         "q2": {
+             "weapon_shotgun": 1,
+             "weapon_supershotgun": 2,
+             "weapon_machinegun": 2,
+             "weapon_chaingun": 3,
+             "weapon_grenadelauncher": 3,
+             "weapon_rocketlauncher": 4,
+             "weapon_hyperblaster": 4,
+             "weapon_railgun": 5,
+             "weapon_bfg": 6
+         },
+         "q3": {
+             "weapon_shotgun": 2,
+             "weapon_grenadelauncher": 3,
+             "weapon_rocketlauncher": 4,
+             "weapon_plasmagun": 4,
+             "weapon_lightning": 4,
+             "weapon_railgun": 5,
+             "weapon_bfg": 6
+         }
+     };
+
+"""Supplies by game: health (classname, how much), armour (classname, how
+much it absorbs), and each ammunition (classname, how much)."""
+glob CAST_HEALTH: dict[str, tuple[str, float]] = {
+         "q1": ("item_health", 25.0),
+         "q2": ("item_health_large", 25.0),
+         "q3": ("item_health", 25.0)
+     };
+
+glob CAST_ARMOR: dict[str, tuple[str, float]] = {
+         "q1": ("item_armor1", 30.0),
+         "q2": ("item_armor_combat", 30.0),
+         "q3": ("item_armor_combat", 33.0)
+     };
+
+glob CAST_AMMO: dict[str, dict[str, tuple[str, float]]] = {
+         "q1": {"shells": ("item_shells", 20.0), "nails": ("item_spikes", 25.0), "rockets": ("item_rockets", 5.0), "cells": ("item_cells", 6.0)},
+         "q2": {
+             "shells": ("ammo_shells", 10.0),
+             "bullets": ("ammo_bullets", 50.0),
+             "grenades": ("ammo_grenades", 5.0),
+             "rockets": ("ammo_rockets", 5.0),
+             "cells": ("ammo_cells", 50.0),
+             "slugs": ("ammo_slugs", 10.0)
+         },
+         "q3": {
+             "shells": ("ammo_shells", 10.0),
+             "bullets": ("ammo_bullets", 50.0),
+             "grenades": ("ammo_grenades", 5.0),
+             "rockets": ("ammo_rockets", 5.0),
+             "cells": ("ammo_cells", 30.0),
+             "slugs": ("ammo_slugs", 10.0),
+             "lightning": ("ammo_lightning", 60.0)
+         }
+     };
+
+"""What was cast: the entities (brush entities with their brushes), the way
+out's box, where the start is, and tallies."""
 obj Casting {
     has items: list[MapItem] = [],
+        # Solid the world keeps besides its shell: the rock a door opens
+        # into (the shell is a cell thick, and outside it is nothing).
+        solids: list[list[Side]] = [],
         exit_low: list[float] = [],
         exit_high: list[float] = [],
         start: list[float] = [],
         monsters: int = 0,
-        threat: float = 0.0,
-        health: float = 100.0,
-        low: float = 100.0,
-        placed_health: int = 0,
-        placed_armor: int = 0,
-        placed_shells: int = 0,
-        doors: int = 0;
+        doors: int = 0,
+        notes: list[str] = [];
+
+    def put(fields: dict[str, str]) {
+        self.items.append(MapItem(fields=fields));
+    }
+
+    def put_brushed(fields: dict[str, str], brushes: list[list[Side]]) {
+        item = MapItem(fields=fields);
+        item.brushes = brushes;
+        self.items.append(item);
+    }
 }
 
 """A point as a map's origin field."""
@@ -93,13 +160,13 @@ def origin_text(x: float, y: float, z: float) -> str {
     return str(int(round(x))) + " " + str(int(round(y))) + " " + str(int(round(z)));
 }
 
-"""A name from a token, fit for a targetname."""
-def token_name(token: str) -> str {
-    return "t_" + token.replace(":", "_");
+"""The targetname a gate is fired by."""
+def gate_name(model: int) -> str {
+    return "gate" + str(model);
 }
 
-"""The entity class (and the game it is from) of a key token."""
-def key_entity(token: str) -> list[str] {
+"""The key item for a key token, and the game it is from."""
+def key_item(token: str) -> list[str] {
     if token == "key_silver" {
         return ["item_key1", "q1"];
     }
@@ -109,589 +176,595 @@ def key_entity(token: str) -> list[str] {
     return [token, "q2"];
 }
 
-"""Health, armour and shells by game: classname and spawnflags."""
-def supply_names(source: str) -> dict[str, list[str]] {
-    if source == "q2" {
-        return {
-            "health": ["item_health_large", "0"],
-            "small": ["item_health", "0"],
-            "mega": ["item_health_mega", "0"],
-            "shells": ["ammo_shells", "0"],
-            "armor": ["item_armor_jacket", "0"]
-        };
-    }
-    if source == "q3" {
-        return {
-            "health": ["item_health", "0"],
-            "small": ["item_health_small", "0"],
-            "mega": ["item_health_mega", "0"],
-            "shells": ["ammo_shells", "0"],
-            "armor": ["item_armor_combat", "0"]
-        };
-    }
-    return {
-        "health": ["item_health", "0"],
-        "small": ["item_health", "1"],
-        "mega": ["item_health", "2"],
-        "shells": ["item_shells", "0"],
-        "armor": ["item_armor1", "0"]
-    };
+"""The district game of the space a ground is in."""
+def ground_game(made: Sculpting, ground: Ground) -> str {
+    return kit_of(made.spaces[ground.space].district).game;
 }
 
-"""Where things may stand in a space: its floor cells with headroom for a
-body, off stairs and the stage, and not in a doorway's mouth."""
-obj Ground3 {
-    has spots: list[list[int]] = [],
-        perches: list[list[int]] = [],
-        taken: list[list[int]] = [];
+"""A key for a ground in a set of grounds taken."""
+def ground_id(ground: Ground) -> int {
+    return ((ground.z + 4096) * 8192 + (ground.y + 4096)) * 8192 + (ground.x + 4096);
 }
 
-"""The yaw (degrees) from one point toward another."""
-def yaw_toward(x: float, y: float, to_x: float, to_y: float) -> int {
-    if abs(to_x - x) < 0.01 and abs(to_y - y) < 0.01 {
-        return 90;
-    }
-    return int(round(math.degrees(math.atan2(to_y - y, to_x - x)))) % 360;
+"""Cast a level made from an essence."""
+def cast_level(atlas: LevelGraph, made: Sculpting, dice: Stream) -> Casting {
+    casting = Casting();
+    taken: dict[int, bool] = {};
+    cast_start(atlas, made, casting, taken);
+    gated = cast_gates(atlas, made, casting);
+    cast_openers(atlas, made, casting, taken, gated, dice.derive("openers"));
+    cast_teleporters(atlas, made, casting, taken);
+    cast_jump_pads(atlas, made, casting, taken);
+    foes = cast_population(atlas, made, casting, taken, gated, dice.derive("population"));
+    cast_exit(atlas, made, casting, foes);
+    return casting;
 }
 
-"""Casts an expedition."""
-obj Director3 {
-    has estate: Estate,
-        mass: Massing,
-        plan: Expedition,
-        dice: Stream,
-        density: float = 0.5,
-        spaces: dict[int, Space] = {},
-        by_beat: dict[int, Space] = {},
-        grounds: dict[int, Ground3] = {},
-        mouths: dict[int, bool] = {},
-        made: Casting = Casting(),
-        # Token to the name its trigger fires.
-        fires: dict[str, str] = {},
-        only: list[str] = [];
-
-    def cell_key(x: int, y: int, z: int) -> int {
-        return (z * self.mass.ny + y) * self.mass.nx + x;
-    }
-
-    """The mission's beat by its id."""
-    def plan_beat(beat_id: int) -> Beat | None {
-        for beat in beats_of(self.plan) {
-            if beat.id == beat_id {
-                return beat;
-            }
+"""The start, where the essence's was, facing as it faced."""
+def cast_start(atlas: LevelGraph, made: Sculpting, casting: Casting, taken: dict[int, bool]) {
+    for place in graph_places(atlas) {
+        if not place.start {
+            continue;
         }
-        return None;
+        point = Vec3(x=place.center.x, y=place.center.y, z=place.floor + 24.0);
+        ground = made.ground_at(point, place.area);
+        if ground is None {
+            continue;
+        }
+        at = made.ground_point(ground);
+        casting.start = at;
+        casting.put({"classname": "info_player_start", "origin": origin_text(at[0], at[1], at[2]), "angle": str(int(atlas.start_yaw))});
+        taken[ground_id(ground)] = True;
+        return;
     }
+}
 
-    """Note every corridor's doorways, so nothing stands in a doorway's mouth."""
-    def note_mouths {
-        for corridor in estate_corridors(self.estate) {
-            for (door, owner) in [(corridor.out_door, corridor.tail), (corridor.in_door, corridor.head)] {
-                if door is None or owner not in self.spaces {
-                    continue;
+"""Rock over a door that rises (from `low` to `high`): solid the height it
+rises, over its box, so it opens into rock rather than out of the world."""
+def rock_over(casting: Casting, made: Sculpting, low: Vec3, high: Vec3) {
+    top = high.z + (high.z - low.z) + 16.0;
+    mass = made.mass;
+    if mass is not None {
+        # No higher than the air of a space over it: rock there would stand
+        # in that room.
+        start = int(math.ceil(high.z / LIFT));
+        for cx in range(int(math.floor(low.x / CELL)), int(math.ceil(high.x / CELL))) {
+            for cy in range(int(math.floor(low.y / CELL)), int(math.ceil(high.y / CELL))) {
+                cz = start;
+                while float(cz) * LIFT < top and not mass.air(cx, cy, cz) {
+                    cz += 1;
                 }
-                space = self.spaces[owner];
-                inward = [0, 0];
-                if door.side == 0 {
-                    inward = [-1, 0];
-                } elif door.side == 1 {
-                    inward = [1, 0];
-                } elif door.side == 2 {
-                    inward = [0, -1];
-                } else {
-                    inward = [0, 1];
-                }
-                for offset in range(-1, door.span + 1) {
-                    for deep in range(0, 3) {
-                        if door.side < 2 {
-                            cx = (space.x + space.w - 1 if door.side == 0 else space.x) + inward[0] * deep;
-                            cy = space.y + door.along + offset;
-                        } else {
-                            cx = space.x + door.along + offset;
-                            cy = (space.y + space.d - 1 if door.side == 2 else space.y) + inward[1] * deep;
-                        }
-                        for up in range(-1, 2) {
-                            self.mouths[self.cell_key(cx, cy, door.level + up)] = True;
-                        }
-                    }
-                }
+                top = min(top, float(cz) * LIFT);
             }
         }
     }
+    if top > high.z {
+        casting.solids.append(plain_box(Vec3(x=low.x, y=low.y, z=high.z), Vec3(x=high.x, y=high.y, z=top), "caulk", 1.0));
+    }
+}
 
-    """The ground of a space, found once."""
-    def ground(space: Space) -> Ground3 {
-        if space.id in self.grounds {
-            return self.grounds[space.id];
+"""Doors and lifts. Answers the cells (x, y) they stand in, kept clear of
+the population."""
+def cast_gates(atlas: LevelGraph, made: Sculpting, casting: Casting) -> dict[tuple[int, int], bool] {
+    gated: dict[tuple[int, int], bool] = {};
+    # Doors of a double door fall on one box: one door each box.
+    placed: dict[str, bool] = {};
+    for gate in graph_gates(atlas) {
+        # A door stands in the doorway it bars; a mover the essence stood on
+        # (a floor that lowered, a bridge) is floor here.
+        if gate.kind == "lift" or gate.lowers() or not barred_places(gate) {
+            continue;
         }
-        found = Ground3();
-        kept: dict[int, bool] = {};
-        for cell in space.kept {
-            kept[self.cell_key(cell[0], cell[1], cell[2])] = True;
-        }
-        if space.stage {
-            kept[self.cell_key(space.stage[0], space.stage[1], space.stage[2])] = True;
-        }
-        owner = space.id + 1;
-        for cz in range(space.z, space.z + space.h) {
-            for cy in range(space.y, space.y + space.d) {
-                for cx in range(space.x, space.x + space.w) {
-                    if self.mass.at(cx, cy, cz) != owner or self.mass.air(cx, cy, cz - 1) {
-                        continue;
-                    }
-                    key = self.cell_key(cx, cy, cz);
-                    if key in kept or key in self.mouths or self.mass.headroom(cx, cy, cz) < 5 {
-                        continue;
-                    }
-                    if space.flood > 0 and cz < space.z + space.flood {
-                        # Nothing is left standing in a pit's liquid.
-                        continue;
-                    }
-                    # Room for a body: floor beside it on at least three sides.
-                    near = 0;
-                    for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                        if self.mass.standing(cx + dx, cy + dy, cz) {
-                            near += 1;
-                        }
-                    }
-                    if near < 3 {
-                        continue;
-                    }
-                    found.spots.append([cx, cy, cz]);
-                    if cz >= space.z + 5 {
-                        found.perches.append([cx, cy, cz]);
-                    }
+        box = gate.box;
+        low_lift = int(math.floor(box.mins.z / LIFT)) - 2;
+        high_lift = int(math.ceil(box.maxs.z / LIFT));
+        hits: list[Ground] = [];
+        for cell in box_cells(box, 4.0) {
+            for ground in made.columns.get(cell, []) {
+                if low_lift <= ground.z <= high_lift and not ground.top {
+                    hits.append(ground);
+                    gated[cell] = True;
                 }
             }
         }
-        self.grounds[space.id] = found;
+        if not hits {
+            continue;
+        }
+        # As tall as the doorway's lowest ceiling (six to nine lifts): above
+        # that a body cannot reach, and a taller door would rise past the
+        # rock over it.
+        floor = min([ground.z for ground in hits]);
+        roof = floor + max(6, min(9, min([ground.ceiling for ground in hits]) - floor));
+        size = box.maxs.sub(box.mins);
+        if size.x <= size.y {
+            middle = (box.mins.x + box.maxs.x) * 0.5;
+            half = max(4.0, size.x * 0.5);
+            low = Vec3(x=middle - half, y=float(min([ground.y for ground in hits])) * CELL, z=float(floor) * LIFT);
+            high = Vec3(x=middle + half, y=float(max([ground.y for ground in hits]) + 1) * CELL, z=float(roof) * LIFT);
+        } else {
+            middle = (box.mins.y + box.maxs.y) * 0.5;
+            half = max(4.0, size.y * 0.5);
+            low = Vec3(x=float(min([ground.x for ground in hits])) * CELL, y=middle - half, z=float(floor) * LIFT);
+            high = Vec3(x=float(max([ground.x for ground in hits]) + 1) * CELL, y=middle + half, z=float(roof) * LIFT);
+        }
+        a = made.moved(low.x, low.y, low.z);
+        b = made.moved(high.x, high.y, high.z);
+        kit = kit_of(made.spaces[hits[0].space].district);
+        secret = gate.kind == "secret";
+        fields = {"classname": "func_door", "angle": "-1", "speed": "60" if secret else "160", "wait": "-1", "lip": "8"};
+        keys = [need for need in gate.needs if need.startswith("key")];
+        if keys {
+            fields["key"] = " ".join(keys);
+        }
+        if ("open:" + str(gate.model)) in gate.needs {
+            fields["targetname"] = gate_name(gate.model);
+        }
+        if secret and "targetname" not in fields {
+            fields["health"] = "1";
+            fields["_secret"] = "1";
+        }
+        key = str(int(a[0])) + "," + str(int(a[1])) + "," + str(int(a[2])) + "," + str(int(b[0])) + "," + str(int(b[1])) + "," + str(int(b[2]));
+        if key in placed {
+            continue;
+        }
+        placed[key] = True;
+        casting.put_brushed(fields, [plain_box(Vec3(x=a[0], y=a[1], z=a[2]), Vec3(x=b[0], y=b[1], z=b[2]), kit.wall if secret else kit.door, kit.scale)]);
+        rock_over(casting, made, Vec3(x=a[0], y=a[1], z=a[2]), Vec3(x=b[0], y=b[1], z=b[2]));
+        casting.doors += 1;
+    }
+    for lift in made.lifts {
+        cells = box_cells(lift.box, 8.0);
+        if not cells {
+            continue;
+        }
+        levels = lift_levels(lift);
+        a = made.moved(float(min([cell[0] for cell in cells])) * CELL, float(min([cell[1] for cell in cells])) * CELL, float(levels[1]) * LIFT - 8.0);
+        b = made.moved(float(max([cell[0] for cell in cells]) + 1) * CELL, float(max([cell[1] for cell in cells]) + 1) * CELL, float(levels[1]) * LIFT);
+        owner = made.spaces[0];
+        for cell in cells {
+            for ground in made.columns.get(cell, []) {
+                owner = made.spaces[ground.space];
+            }
+            gated[cell] = True;
+        }
+        kit = kit_of(owner.district);
+        if lift.lowering {
+            # The floor stands at the top, filling the shaft, lowers (all but
+            # its lip) when it is touched, and rises again a few seconds
+            # later: a lift both ways. Fired once and left down, it would
+            # take away the ways over it, which the proof (tokens only
+            # open) cannot see.
+            foot = made.moved(0.0, 0.0, float(levels[0]) * LIFT - 8.0);
+            fields = {"classname": "func_door", "angle": "-2", "speed": "100", "wait": "3", "lip": "8"};
+            casting.put_brushed(fields, [plain_box(Vec3(x=a[0], y=a[1], z=foot[2]), Vec3(x=b[0], y=b[1], z=b[2]), kit.step, kit.scale)]);
+            continue;
+        }
+        fields = {"classname": "func_plat", "height": str((levels[1] - levels[0]) * int(LIFT)), "speed": "150"};
+        for gate in graph_gates(atlas) {
+            if gate.model == lift.model and ("open:" + str(gate.model)) in gate.needs {
+                fields["targetname"] = gate_name(gate.model);
+            }
+        }
+        casting.put_brushed(fields, [plain_box(Vec3(x=a[0], y=a[1], z=a[2]), Vec3(x=b[0], y=b[1], z=b[2]), kit.step, kit.scale)]);
+    }
+    return gated;
+}
+
+"""The areas of an essence a player reaches without `token` (nothing gives
+it): where what gives it can be done before it is held."""
+def areas_without(atlas: LevelGraph, token: str) -> dict[int, bool] {
+    view = search_of(atlas, [token]);
+    found: dict[int, bool] = {};
+    if not view.starts {
         return found;
     }
-
-    """A free place in a space, spread from what stands there already and
-    far from `away` when given; on a perch when asked and one is free."""
-    def take(space: Space, perch: bool = False, away: list[float] = [], roomy: bool = False) -> list[float] {
-        land = self.ground(space);
-        pool = land.perches if perch and land.perches else land.spots;
-        best: list[int] = [];
-        best_score = -1.0;
-        for cell in pool {
-            if cell in land.taken {
-                continue;
-            }
-            spread = 512.0;
-            for other in land.taken {
-                gap = float(abs(other[0] - cell[0]) + abs(other[1] - cell[1])) * CELL + float(abs(other[2] - cell[2])) * LIFT;
-                spread = min(spread, gap);
-            }
-            score = spread + self.dice.unit() * 48.0;
-            if away {
-                score += 0.3 * (abs((float(cell[0]) + 0.5) * CELL - away[0]) + abs((float(cell[1]) + 0.5) * CELL - away[1]));
-            }
-            # Roomy: floor all round, so a body (or a pad a cell either side)
-            # set down there touches no wall nor what dresses one. Asked after
-            # the dice, so the dice fall the same whatever is asked.
-            if roomy and not self.open_round(cell) {
-                continue;
-            }
-            if score > best_score {
-                best_score = score;
-                best = cell;
-            }
-        }
-        if not best {
-            return [];
-        }
-        land.taken.append(best);
-        return [(float(best[0]) + 0.5) * CELL, (float(best[1]) + 0.5) * CELL, float(best[2]) * LIFT + 24.0];
+    span = 1 << len(view.tokens);
+    start = view.starts[0];
+    for state in reach_states(view, start * span + view.gives[start], span).keys() {
+        found[state // span] = True;
     }
+    return found;
+}
 
-    """Whether the eight cells round `cell` are floor with air above, as
-    `cell` is."""
-    def open_round(cell: list[int]) -> bool {
-        for dy in [-1, 0, 1] {
-            for dx in [-1, 0, 1] {
-                x = cell[0] + dx;
-                y = cell[1] + dy;
-                if not self.mass.air(x, y, cell[2]) or not self.mass.air(x, y, cell[2] + 3) or self.mass.air(x, y, cell[2] - 1) {
-                    return False;
+"""The ground an opener is done from in the level: of the grounds of the
+places the essence's was done from (those a player reaches before its
+token is held), the nearest its point that is firm floor (off any lift or
+lowering floor, out of any doorway); else the nearest ground to its
+point."""
+def opener_ground(made: Sculpting, opener: Opener, gated: dict[tuple[int, int], bool], before_areas: dict[int, bool]) -> Ground | None {
+    best: Ground | None = None;
+    nearest = 1.0e9;
+    # Only where it can be done before its own token is held: a button shot
+    # from either side of the door it opens goes on the near side.
+    before = [place for place in opener_places(opener) if place.area in before_areas];
+    for place in (before if before else opener_places(opener)) {
+        for ground in made.by_area.get(place.area, []) {
+            if ground.top or (ground.x, ground.y) in gated {
+                continue;
+            }
+            middle = Vec3(x=(float(ground.x) + 0.5) * CELL, y=(float(ground.y) + 0.5) * CELL, z=ground.base + 24.0);
+            gap = middle.sub(opener.point).length();
+            if gap < nearest {
+                nearest = gap;
+                best = ground;
+            }
+        }
+    }
+    if best is not None {
+        return best;
+    }
+    places = opener_places(opener);
+    return made.ground_at(opener.point, places[0].area if places else 0);
+}
+
+"""Openers: each where the essence's was done from, firing its gate (a key
+gives its key; the way out's openers lift the cage over the way out)."""
+def cast_openers(atlas: LevelGraph, made: Sculpting, casting: Casting, taken: dict[int, bool], gated: dict[tuple[int, int], bool], dice: Stream) {
+    lowering = set([lift.model for lift in made.lifts if lift.lowering]);
+    reached: dict[str, dict[int, bool]] = {};
+    for opener in graph_openers(atlas) {
+        if opener.token not in reached {
+            reached[opener.token] = areas_without(atlas, opener.token);
+        }
+        ground = opener_ground(made, opener, gated, reached[opener.token]);
+        if ground is None {
+            casting.notes.append("opener " + opener.kind + " " + opener.token + " has no ground");
+            continue;
+        }
+        taken[ground_id(ground)] = True;
+        at = made.ground_point(ground);
+        floor = at[2] - 24.0;
+        target = "exit_gate" if opener.token == "exit" else (gate_name(int(opener.token[5:])) if opener.token.startswith("open:") else "");
+        # A floor that lowers works by itself (it is touched); nothing fires it.
+        if opener.token.startswith("open:") and int(opener.token[5:]) in lowering {
+            continue;
+        }
+        kit = kit_of(made.spaces[ground.space].district);
+        if opener.token.startswith("key") {
+            found = key_item(opener.token);
+            casting.put({"classname": found[0], "origin": origin_text(at[0], at[1], at[2]), "asset_game": found[1]});
+        } elif opener.kind in ["press", "touch"] {
+            # A plate set in the floor, thrown by stepping onto it.
+            casting.put_brushed(
+                {"classname": "func_wall", "_passion": "plate"},
+                [plain_box(Vec3(x=at[0] - 24.0, y=at[1] - 24.0, z=floor), Vec3(x=at[0] + 24.0, y=at[1] + 24.0, z=floor + 4.0), BUTTON_MATERIAL, 1.0)]
+            );
+            casting.put_brushed(
+                {"classname": "trigger_once", "target": target},
+                [plain_box(Vec3(x=at[0] - 24.0, y=at[1] - 24.0, z=floor + 4.0), Vec3(x=at[0] + 24.0, y=at[1] + 24.0, z=floor + 64.0), "trigger", 1.0)]
+            );
+        } elif opener.kind == "shoot" {
+            # A button on a short column, fired by a shot.
+            casting.put_brushed(
+                {"classname": "func_wall", "_passion": "column"},
+                [plain_box(Vec3(x=at[0] - 12.0, y=at[1] - 12.0, z=floor), Vec3(x=at[0] + 12.0, y=at[1] + 12.0, z=floor + 40.0), kit.support, kit.scale)]
+            );
+            casting.put_brushed(
+                {"classname": "func_button", "angle": "-2", "health": "1", "wait": "-1", "target": target},
+                [plain_box(Vec3(x=at[0] - 10.0, y=at[1] - 10.0, z=floor + 40.0), Vec3(x=at[0] + 10.0, y=at[1] + 10.0, z=floor + 48.0), BUTTON_MATERIAL, 1.0)]
+            );
+        } elif opener.kind == "kill" {
+            foe = CAST_ROSTER[dice.below(len(CAST_ROSTER))];
+            casting.put({"classname": foe.kind, "origin": origin_text(at[0], at[1], at[2]), "target": target, "asset_game": foe.source});
+            casting.monsters += 1;
+        } else {
+            # An item whose pickup fires the gate.
+            pick = CAST_HEALTH[kit.game];
+            casting.put({"classname": pick[0], "origin": origin_text(at[0], at[1], at[2]), "target": target, "asset_game": kit.game});
+        }
+    }
+}
+
+"""Teleporters where the essence's took a body: a trigger and a pad where
+it stepped in, a destination where it came out."""
+def cast_teleporters(atlas: LevelGraph, made: Sculpting, casting: Casting, taken: dict[int, bool]) {
+    done: dict[str, bool] = {};
+    number = 0;
+    for place in graph_places(atlas) {
+        for move in [edge place->:Move:->] {
+            if move.kind != TRAVEL_TELEPORT {
+                continue;
+            }
+            key = str(place.area) + ">" + str(int(move.finish.x // 64.0)) + "," + str(int(move.finish.y // 64.0));
+            if key in done {
+                continue;
+            }
+            done[key] = True;
+            here = made.ground_at(move.start, place.area);
+            there = made.ground_at(move.finish, move.to);
+            if here is None or there is None {
+                continue;
+            }
+            taken[ground_id(here)] = True;
+            taken[ground_id(there)] = True;
+            number += 1;
+            name = "tele" + str(number);
+            at = made.ground_point(here);
+            floor = at[2] - 24.0;
+            casting.put_brushed(
+                {"classname": "func_wall", "_passion": "teleporter"},
+                [plain_box(Vec3(x=at[0] - 24.0, y=at[1] - 24.0, z=floor), Vec3(x=at[0] + 24.0, y=at[1] + 24.0, z=floor + 4.0), TELEPORT_MATERIAL, 1.0)]
+            );
+            casting.put_brushed(
+                {"classname": "trigger_teleport", "target": name},
+                [plain_box(Vec3(x=at[0] - 20.0, y=at[1] - 20.0, z=floor + 4.0), Vec3(x=at[0] + 20.0, y=at[1] + 20.0, z=floor + 68.0), "trigger", 1.0)]
+            );
+            arrive = made.ground_point(there);
+            casting.put({"classname": "info_teleport_destination", "targetname": name, "origin": origin_text(arrive[0], arrive[1], arrive[2] + 8.0), "angle": "0"});
+            casting.put({"classname": "light", "origin": origin_text(at[0], at[1], floor + 64.0), "light": "180", "_color": "180 200 255"});
+        }
+    }
+}
+
+"""Jump pads where the essence threw a body: a pad and a push where it was
+thrown from, aimed (as Quake III aims its pads) to top out over where it
+came down."""
+def cast_jump_pads(atlas: LevelGraph, made: Sculpting, casting: Casting, taken: dict[int, bool]) {
+    done: dict[int, bool] = {};
+    number = 0;
+    for place in graph_places(atlas) {
+        for move in [edge place->:Move:->] {
+            if move.kind != TRAVEL_JUMPPAD or place.area in done {
+                continue;
+            }
+            done[place.area] = True;
+            here = made.ground_at(move.start, place.area);
+            there = made.ground_at(move.finish, move.to);
+            if here is None or there is None {
+                continue;
+            }
+            taken[ground_id(here)] = True;
+            number += 1;
+            name = "pad" + str(number);
+            at = made.ground_point(here);
+            floor = at[2] - 24.0;
+            arrive = made.ground_point(there);
+            casting.put_brushed(
+                {"classname": "func_wall", "_passion": "jumppad"},
+                [plain_box(Vec3(x=at[0] - 24.0, y=at[1] - 24.0, z=floor), Vec3(x=at[0] + 24.0, y=at[1] + 24.0, z=floor + 4.0), BUTTON_MATERIAL, 1.0)]
+            );
+            casting.put_brushed(
+                {"classname": "trigger_push", "target": name},
+                [plain_box(Vec3(x=at[0] - 24.0, y=at[1] - 24.0, z=floor + 4.0), Vec3(x=at[0] + 24.0, y=at[1] + 24.0, z=floor + 40.0), "trigger", 1.0)]
+            );
+            top = max(at[2], arrive[2]) + 96.0;
+            casting.put({"classname": "info_notnull", "targetname": name, "origin": origin_text(arrive[0], arrive[1], top)});
+        }
+    }
+}
+
+"""Grounds a thing may stand on: floor with a body's room over it, out of
+liquid, off lifts, reached, away from doors and what is cast already."""
+def standing_grounds(made: Sculpting, gated: dict[tuple[int, int], bool], taken: dict[int, bool]) -> list[Ground] {
+    found: list[Ground] = [];
+    for ground in sculpture_grounds(made.sculpture) {
+        if ground.liquid > 0 or ground.top or ground.reach < 0 or ground.ceiling - ground.z < 5 or ground_id(ground) in taken {
+            continue;
+        }
+        near_gate = False;
+        for dx in [-1, 0, 1] {
+            for dy in [-1, 0, 1] {
+                if (ground.x + dx, ground.y + dy) in gated {
+                    near_gate = True;
                 }
             }
         }
-        return True;
+        if not near_gate {
+            found.append(ground);
+        }
     }
-
-    """A space's stage as a point to stand on."""
-    def stage_point(space: Space) -> list[float] {
-        return [(float(space.stage[0]) + 0.5) * CELL, (float(space.stage[1]) + 0.5) * CELL, float(space.stage[2]) * LIFT + 24.0];
-    }
-
-    def middle(space: Space) -> list[float] {
-        return [space.middle_x() * CELL, space.middle_y() * CELL];
-    }
-
-    def put(fields: dict[str, str]) {
-        self.made.items.append(MapItem(fields=fields));
-    }
-
-    def put_brushed(fields: dict[str, str], brushes: list[list[Side]]) {
-        item = MapItem(fields=fields);
-        item.brushes = brushes;
-        self.made.items.append(item);
-    }
+    return found;
 }
 
-"""The start, the objectives' stages, and the exit."""
-def cast_objectives(director: Director3) {
-    for space in director.spaces.values() {
-        if space.role in ["corridor", "window"] or not space.stage {
+"""Of `pool`, the ground furthest from everything chosen so far (with a
+little chance in it), taken."""
+def spread_pick(pool: list[Ground], chosen: list[Ground], taken: dict[int, bool], dice: Stream) -> Ground | None {
+    best: Ground | None = None;
+    best_score = -1.0;
+    for ground in pool {
+        if ground_id(ground) in taken {
             continue;
         }
-        point = director.stage_point(space);
-        middle = director.middle(space);
-        if space.role == "start" {
-            director.made.start = point;
-            director.put({
-                "classname": "info_player_start",
-                "origin": origin_text(point[0], point[1], point[2]),
-                "angle": str(yaw_toward(point[0], point[1], middle[0], middle[1]))
-            });
+        gap = 24.0;
+        for other in chosen {
+            gap = min(gap, float(abs(other.x - ground.x) + abs(other.y - ground.y)) + 0.25 * float(abs(other.z - ground.z)));
         }
-        if space.role == "goal" {
-            # The way out: a gate of light on the stage.
-            kit = kit_of(space.district);
-            floor = float(space.stage[2]) * LIFT;
-            low = Vec3(x=point[0] - 32.0, y=point[1] - 32.0, z=floor);
-            high = Vec3(x=point[0] + 32.0, y=point[1] + 32.0, z=floor + 8.0);
-            director.put_brushed({"classname": "func_wall", "_passion": "exit"}, [plain_box(low, high, TELEPORT_MATERIAL, 1.0)]);
-            director.put({"classname": "light", "origin": origin_text(point[0], point[1], floor + 56.0), "light": "300", "_color": "200 220 255"});
-            # The way out is touched by a body's feet: from just over the
-            # floor, so feet on the gate (its top at floor + 8) are inside it.
-            director.made.exit_low = [point[0] - 32.0, point[1] - 32.0, floor + 2.0];
-            director.made.exit_high = [point[0] + 32.0, point[1] + 32.0, floor + 96.0];
+        score = gap + dice.unit() * 2.0 + 0.1 * float(min(ground.open, 6));
+        if score > best_score {
+            best_score = score;
+            best = ground;
         }
-        beat = director.plan_beat(space.beat);
-        if beat is None {
+    }
+    if best is not None {
+        taken[ground_id(best)] = True;
+        chosen.append(best);
+    }
+    return best;
+}
+
+"""The population, stage by stage to the essence's budget: foes as strong
+in all as the essence's were in the stage (none much stronger than its
+strongest), its health, armour and ammunition (as the damage it does) in
+the district's game's own kinds, and a weapon for each it had, as strong a
+pick-up in the district's game. Answers how many foes were cast (an
+arena's gate counts them)."""
+def cast_population(atlas: LevelGraph, made: Sculpting, casting: Casting, taken: dict[int, bool], gated: dict[tuple[int, int], bool], dice: Stream) -> int {
+    budget = stage_budget(atlas);
+    strongest: dict[int, float] = {};
+    arms: dict[int, list[int]] = {};
+    for thing in graph_things(atlas) {
+        standing = thing_place(thing);
+        if standing is None or standing.stage < 0 {
             continue;
         }
-        for token in beat.grants {
-            if token.startswith("key_") {
-                found = key_entity(token);
-                director.put({"classname": found[0], "origin": origin_text(point[0], point[1], point[2]), "asset_game": found[1]});
-            } elif token.startswith("relay:") or token.startswith("switch:") {
-                # A plate on the stage, thrown by stepping onto it: the plate
-                # itself is set in the floor, the stepping is a trigger over it.
-                name = token_name(token);
-                director.fires[token] = name;
-                floor = float(space.stage[2]) * LIFT;
-                low = Vec3(x=point[0] - 24.0, y=point[1] - 24.0, z=floor);
-                high = Vec3(x=point[0] + 24.0, y=point[1] + 24.0, z=floor + 4.0);
-                director.put_brushed({"classname": "func_wall", "_passion": "plate"}, [plain_box(low, high, BUTTON_MATERIAL, 1.0)]);
-                director.put_brushed(
-                    {"classname": "trigger_once", "target": name, "message": "A relay is thrown"},
-                    [plain_box(Vec3(x=low.x, y=low.y, z=floor + 4.0), Vec3(x=high.x, y=high.y, z=floor + 64.0), "trigger", 1.0)]
-                );
-            } elif token.startswith("guardian:") {
-                name = token_name(token);
-                director.fires[token] = name;
-                pick = CAST_GUARDIANS[director.dice.below(len(CAST_GUARDIANS))];
-                director.put({
-                    "classname": pick,
-                    "origin": origin_text(point[0], point[1], point[2]),
-                    "angle": str(yaw_toward(point[0], point[1], middle[0], middle[1])),
-                    "target": name,
-                    "asset_game": "q2" if pick.startswith("monster_tank") or pick == "monster_gladiator" else "q1"
-                });
-                director.made.monsters += 1;
-            } elif token.startswith("open:") {
-                director.fires[token] = token_name(token);
-            }
+        if thing.classname.startswith("monster_") {
+            strongest[standing.stage] = max(strongest.get(standing.stage, 0.0), foe_stats(thing.game, thing.classname)[0]);
+        } elif thing.classname.startswith("weapon_") {
+            arms.setdefault(standing.stage, []).append(CAST_ARMS.get(thing.game, {}).get(thing.classname, 2));
         }
     }
-}
-
-"""The point in the middle of a corridor block, at its floor."""
-def block_middle(block: list[int]) -> list[float] {
-    return [float(block[0] + 1) * CELL, float(block[1] + 1) * CELL, float(block[2]) * LIFT];
-}
-
-"""Doors on a corridor for what its link needs: one door for all its keys
-(a `key` field), and one more for each token something else opens (a
-switch, a guardian, a trigger beyond a shortcut). Doors stand on flat blocks
-counted back from the head; a secret link's door is the wall itself, opened
-by a shot."""
-def cast_doors(director: Director3, corridor: Corridor) {
-    if corridor.teleport or corridor.window or not corridor.blocks {
-        return;
+    pool = standing_grounds(made, gated, taken);
+    by_stage: dict[int, list[Ground]] = {};
+    for ground in pool {
+        by_stage.setdefault(ground.stage, []).append(ground);
     }
-    head = director.spaces.get(corridor.head, None);
-    if head is None {
-        return;
-    }
-    kit = kit_of(head.district);
-    keys = [token for token in corridor.needs if token.startswith("key_")];
-    others = [token for token in corridor.needs if not token.startswith("key_")];
-    plans: list[dict[str, str]] = [];
-    if keys {
-        plans.append({"key": " ".join(keys)});
-    }
-    for token in others {
-        plans.append({"targetname": director.fires.get(token, token_name(token))});
-    }
-    if corridor.mode == "secret" {
-        plans.append({"health": "1", "_secret": "1"});
-    }
-    if len(corridor.blocks) == 1 and corridor.in_door is not None and corridor.out_door is not None and plans {
-        # A doorway through two walls: one door in the plane between them,
-        # from the lower floor to above the higher (only one fits).
-        block = corridor.blocks[0];
-        door_plan = plans[0];
-        low_level = min(corridor.in_door.level, corridor.out_door.level);
-        high_level = max(corridor.in_door.level, corridor.out_door.level);
-        floor = float(low_level) * LIFT;
-        roof = float(high_level + CORRIDOR_HIGH) * LIFT;
-        middle = block_middle(block);
-        if corridor.in_door.side < 2 {
-            low = Vec3(x=middle[0] - 8.0, y=float(block[1]) * CELL, z=floor);
-            high = Vec3(x=middle[0] + 8.0, y=float(block[1] + 2) * CELL, z=roof);
-        } else {
-            low = Vec3(x=float(block[0]) * CELL, y=middle[1] - 8.0, z=floor);
-            high = Vec3(x=float(block[0] + 2) * CELL, y=middle[1] + 8.0, z=roof);
+    foes = 0;
+    for stage in sorted(budget.keys()) {
+        row = budget[stage];
+        grounds = by_stage.get(stage, []);
+        if not grounds {
+            grounds = pool;
         }
-        secret = "_secret" in door_plan;
-        door = {"classname": "func_door", "angle": "-1", "speed": "60" if secret else "160", "wait": "-1", "lip": "8"};
-        for (key, value) in door_plan.items() {
-            door[key] = value;
-        }
-        director.put_brushed(door, [plain_box(low, high, kit.wall if secret else kit.door, kit.scale)]);
-        director.made.doors += 1;
-        if "targetname" in door_plan and corridor.mode == "shortcut" {
-            spot = director.stage_point(head);
-            director.put_brushed(
-                {"classname": "trigger_once", "target": door_plan["targetname"]},
-                [plain_box(Vec3(x=spot[0] - 48.0, y=spot[1] - 48.0, z=spot[2] - 24.0), Vec3(x=spot[0] + 48.0, y=spot[1] + 48.0, z=spot[2] + 40.0), "trigger", 1.0)]
-            );
-        }
-        return;
-    }
-    # Flat blocks, from the head back, two apart.
-    count = len(corridor.blocks);
-    at = count - 1;
-    for fields in plans {
-        while at > 0 and corridor.blocks[at][2] != corridor.blocks[at - 1][2] {
-            at -= 1;
-        }
-        if at <= 0 {
-            break;
-        }
-        block = corridor.blocks[at];
-        before = corridor.blocks[at - 1];
-        along_x = block[0] != before[0];
-        middle = block_middle(block);
-        floor = middle[2];
-        if along_x {
-            low = Vec3(x=middle[0] - 8.0, y=float(block[1]) * CELL, z=floor);
-            high = Vec3(x=middle[0] + 8.0, y=float(block[1] + 2) * CELL, z=floor + float(CORRIDOR_HIGH) * LIFT);
-        } else {
-            low = Vec3(x=float(block[0]) * CELL, y=middle[1] - 8.0, z=floor);
-            high = Vec3(x=float(block[0] + 2) * CELL, y=middle[1] + 8.0, z=floor + float(CORRIDOR_HIGH) * LIFT);
-        }
-        secret = "_secret" in fields;
-        material = kit.wall if secret else kit.door;
-        door = {"classname": "func_door", "angle": "-1", "speed": "60" if secret else "160", "wait": "-1", "lip": "8"};
-        for (key, value) in fields.items() {
-            door[key] = value;
-        }
-        director.put_brushed(door, [plain_box(low, high, material, kit.scale)]);
-        director.made.doors += 1;
-        if "targetname" in fields and corridor.mode == "shortcut" {
-            # Opened by walking up to it from the far side.
-            inside = corridor.blocks[min(count - 1, at + 1)];
-            spot = block_middle(inside);
-            director.put_brushed(
-                {"classname": "trigger_once", "target": fields["targetname"]},
-                [plain_box(Vec3(x=spot[0] - 32.0, y=spot[1] - 32.0, z=spot[2]), Vec3(x=spot[0] + 32.0, y=spot[1] + 32.0, z=spot[2] + 64.0), "trigger", 1.0)]
-            );
-        }
-        at -= 2;
-    }
-}
-
-"""A teleporter pair for a link no corridor could carry: a pad and its
-trigger in each space it leads from, a destination in each it leads to
-(only the one way for a one-way link)."""
-def cast_teleporter(director: Director3, corridor: Corridor) {
-    tail = director.spaces.get(corridor.tail, None);
-    head = director.spaces.get(corridor.head, None);
-    if tail is None or head is None {
-        return;
-    }
-    ways = [(tail, head)] if corridor.mode == "valve" else [(tail, head), (head, tail)];
-    for (source, target) in ways {
-        here = director.take(source, roomy=True);
-        there = director.take(target, roomy=True);
-        if not here or not there {
+        if not grounds {
             continue;
         }
-        name = "tele_" + str(corridor.link) + "_" + str(target.id);
-        floor = here[2] - 24.0;
-        director.put_brushed(
-            {"classname": "func_wall", "_passion": "teleporter"},
-            [plain_box(Vec3(x=here[0] - 32.0, y=here[1] - 32.0, z=floor), Vec3(x=here[0] + 32.0, y=here[1] + 32.0, z=floor + 4.0), TELEPORT_MATERIAL, 1.0)]
-        );
-        director.put_brushed(
-            {"classname": "trigger_teleport", "target": name},
-            [plain_box(Vec3(x=here[0] - 24.0, y=here[1] - 24.0, z=floor + 4.0), Vec3(x=here[0] + 24.0, y=here[1] + 24.0, z=floor + 68.0), "trigger", 1.0)]
-        );
-        middle = director.middle(target);
-        # A little over the floor: the arrival is clear of a pad beside it,
-        # and the body drops the last few units.
-        director.put({
-            "classname": "info_teleport_destination",
-            "targetname": name,
-            "origin": origin_text(there[0], there[1], there[2] + 8.0),
-            "angle": str(yaw_toward(there[0], there[1], middle[0], middle[1]))
-        });
-        director.put({"classname": "light", "origin": origin_text(here[0], here[1], floor + 64.0), "light": "180", "_color": "180 200 255"});
-    }
-}
-
-"""The game a district's foes are mostly drawn from."""
-def district_source(space: Space) -> str {
-    return kit_of(space.district).game;
-}
-
-"""A foe for a space: from its district's game mostly, others now and then,
-no costlier than what is left of its budget, of a role its room suits."""
-def pick_foe(director: Director3, space: Space, budget: float, rank_cap: int) -> Foe | None {
-    home = district_source(space);
-    weights: list[float] = [];
-    for foe in CAST_ROSTER {
-        weight = 0.0;
-        if foe.cost <= budget and foe.rank <= rank_cap and (not director.only or foe.kind in director.only) {
-            weight = 3.0 if foe.source == home else 0.6;
-            if foe.role == "fly" and space.h < 14 {
-                weight = 0.0;
-            }
-            if foe.kind in CAST_GUARDIANS {
-                weight *= 0.3;
-            }
-        }
-        weights.append(weight);
-    }
-    if max(weights) <= 0.0 {
-        return None;
-    }
-    return CAST_ROSTER[director.dice.weighted(weights)];
-}
-
-"""Foes in every room by its threat budget (tension, size, the
-expedition's density), on perches when they fight from afar; and supplies
-by what the fights cost, walking the rooms in the order they are reached."""
-def cast_population(director: Director3) {
-    rooms = [space for space in director.spaces.values() if space.role not in ["corridor", "window", "start"]];
-    order: list[float] = [float(space.order if space.order >= 0 else 999) for space in rooms];
-    ranked: list[int] = [];
-    for index in range(len(rooms)) {
-        at = len(ranked);
-        while at > 0 and order[ranked[at - 1]] > order[index] {
-            at -= 1;
-        }
-        ranked.insert(at, index);
-    }
-    health = 100.0;
-    total = max(1, len(rooms));
-    for (step, index) in enumerate(ranked) {
-        space = rooms[index];
-        area = float(len(director.ground(space).spots));
-        progress = float(step) / float(total);
-        budget = 0.5 * director.density * (0.6 + space.tension) * (2.0 + area / 22.0) * (0.7 + 0.8 * progress);
-        if space.role in ["cache"] {
-            budget *= 0.3;
-        }
-        rank_cap = 2 + int(progress * 4.0);
+        chosen: list[Ground] = [];
         spent = 0.0;
-        focus = director.middle(space);
+        cap = max(60.0, strongest.get(stage, 100.0) * 1.3);
         guard = 0;
-        while spent < budget and guard < 24 {
+        while spent < row[0] * 0.95 and guard < 64 {
             guard += 1;
-            foe = pick_foe(director, space, budget - spent + 0.6, rank_cap);
-            if foe is None {
+            ground = spread_pick(grounds, chosen, taken, dice);
+            if ground is None {
                 break;
             }
-            point = director.take(space, foe.role == "ranged" and director.dice.chance(0.6));
-            if not point {
+            game = ground_game(made, ground);
+            weights: list[float] = [];
+            for foe in CAST_ROSTER {
+                health = foe_stats(foe.source, foe.kind)[0];
+                weight = 0.0;
+                if health <= cap and health <= row[0] - spent + 40.0 {
+                    weight = 3.0 if foe.source == game else 0.7;
+                    if foe.role == "fly" and ground.ceiling - ground.z < 12 {
+                        weight = 0.0;
+                    }
+                }
+                weights.append(weight);
+            }
+            if max(weights) <= 0.0 {
                 break;
             }
-            director.put({
-                "classname": foe.kind,
-                "origin": origin_text(point[0], point[1], point[2]),
-                "angle": str(yaw_toward(point[0], point[1], focus[0], focus[1])),
-                "asset_game": foe.source
-            });
-            spent += foe.cost;
-            director.made.monsters += 1;
-            director.made.threat += foe.cost;
-            health -= foe.cost * 4.5;
+            foe = CAST_ROSTER[dice.weighted(weights)];
+            at = made.ground_point(ground);
+            fields = {"classname": foe.kind, "origin": origin_text(at[0], at[1], at[2]), "angle": str(dice.below(8) * 45), "asset_game": foe.source};
+            if atlas.arena {
+                fields["target"] = "arena_clear";
+            }
+            casting.put(fields);
+            spent += foe_stats(foe.source, foe.kind)[0];
+            casting.monsters += 1;
+            foes += 1;
         }
-        # Supplies: keep the expected health above a floor, shells for the
-        # fights, armour now and then.
-        names = supply_names(district_source(space));
-        while health < 90.0 {
-            point = director.take(space);
-            if not point {
+        health = row[1];
+        while health > 10.0 {
+            ground = spread_pick(grounds, chosen, taken, dice);
+            if ground is None {
                 break;
             }
-            big = health < 40.0;
-            pick = names["health"] if big else names["small"];
-            fields = {"classname": pick[0], "origin": origin_text(point[0], point[1], point[2]), "asset_game": district_source(space)};
-            if pick[1] != "0" {
-                fields["spawnflags"] = pick[1];
-            }
-            director.put(fields);
-            health += 25.0 if big else 15.0;
-            director.made.placed_health += 1;
+            game = ground_game(made, ground);
+            pick = CAST_HEALTH[game];
+            at = made.ground_point(ground);
+            casting.put({"classname": pick[0], "origin": origin_text(at[0], at[1], at[2]), "asset_game": game});
+            health -= pick[1];
         }
-        director.made.low = min(director.made.low, health);
-        for box_index in range(1 + int(spent / 6.0) if spent > 0.0 else 0) {
-            point = director.take(space);
-            if point {
-                pick = names["shells"];
-                director.put({"classname": pick[0], "origin": origin_text(point[0], point[1], point[2]), "asset_game": district_source(space)});
-                director.made.placed_shells += 1;
+        armor = row[2];
+        while armor > 15.0 {
+            ground = spread_pick(grounds, chosen, taken, dice);
+            if ground is None {
+                break;
             }
+            game = ground_game(made, ground);
+            plate = CAST_ARMOR[game];
+            at = made.ground_point(ground);
+            casting.put({"classname": plate[0], "origin": origin_text(at[0], at[1], at[2]), "asset_game": game});
+            armor -= plate[1];
         }
-        if director.dice.chance(0.3) {
-            point = director.take(space, True);
-            if point {
-                pick = names["armor"];
-                director.put({"classname": pick[0], "origin": origin_text(point[0], point[1], point[2]), "asset_game": district_source(space)});
-                director.made.placed_armor += 1;
+        damage = row[3];
+        while damage > 40.0 {
+            ground = spread_pick(grounds, chosen, taken, dice);
+            if ground is None {
+                break;
             }
+            game = ground_game(made, ground);
+            kinds = CAST_AMMO[game];
+            names = sorted(kinds.keys());
+            kind = names[dice.below(len(names))];
+            ammo = kinds[kind];
+            at = made.ground_point(ground);
+            casting.put({"classname": ammo[0], "origin": origin_text(at[0], at[1], at[2]), "asset_game": game});
+            damage -= ammo[1] * ammo_damage(kind);
+        }
+        for strength in arms.get(stage, []) {
+            ground = spread_pick(grounds, chosen, taken, dice);
+            if ground is None {
+                break;
+            }
+            game = ground_game(made, ground);
+            best = "";
+            for (name, value) in CAST_ARMS[game].items() {
+                if not best or abs(value - strength) < abs(CAST_ARMS[game][best] - strength) {
+                    best = name;
+                }
+            }
+            at = made.ground_point(ground);
+            casting.put({"classname": best, "origin": origin_text(at[0], at[1], at[2]), "asset_game": game});
         }
     }
-    director.made.health = health;
+    return foes;
 }
 
-"""Cast an expedition."""
-def cast(estate: Estate, mass: Massing, plan: Expedition, dice: Stream, density: float, only: list[str] = []) -> Casting {
-    director = Director3(estate=estate, mass=mass, plan=plan, dice=dice, density=density, only=only);
-    for space in estate_spaces(estate) {
-        director.spaces[space.id] = space;
-        if space.role not in ["corridor", "window"] {
-            director.by_beat[space.beat] = space;
+"""The way out: a gate of light where the essence's was (the ground of its
+way-out places furthest along the way), caged when the essence fired its
+way out by a chain. An arena's stands on its highest ground, caged until
+every foe is dead."""
+def cast_exit(atlas: LevelGraph, made: Sculpting, casting: Casting, foes: int) {
+    target: Ground | None = None;
+    if not atlas.arena {
+        for place in graph_places(atlas) {
+            if not place.way_out {
+                continue;
+            }
+            for ground in made.by_area.get(place.area, []) {
+                if target is None or ground.reach > target.reach {
+                    target = ground;
+                }
+            }
         }
     }
-    director.note_mouths();
-    cast_objectives(director);
-    for corridor in estate_corridors(estate) {
-        if corridor.teleport {
-            cast_teleporter(director, corridor);
-        } else {
-            cast_doors(director, corridor);
+    shut = atlas.arena or "exit" in [opener.token for opener in graph_openers(atlas)];
+    if target is None {
+        for ground in sculpture_grounds(made.sculpture) {
+            if ground.reach < 0 or ground.liquid > 0 or ground.top {
+                continue;
+            }
+            if target is None or ground.z > target.z or (ground.z == target.z and ground.reach > target.reach) {
+                target = ground;
+            }
         }
     }
-    cast_population(director);
-    return director.made;
+    if target is None {
+        return;
+    }
+    at = made.ground_point(target);
+    floor = at[2] - 24.0;
+    kit = kit_of(made.spaces[target.space].district);
+    casting.put_brushed(
+        {"classname": "func_wall", "_passion": "exit"},
+        [plain_box(Vec3(x=at[0] - 32.0, y=at[1] - 32.0, z=floor), Vec3(x=at[0] + 32.0, y=at[1] + 32.0, z=floor + 8.0), TELEPORT_MATERIAL, 1.0)]
+    );
+    casting.put({"classname": "light", "origin": origin_text(at[0], at[1], floor + 56.0), "light": "300", "_color": "200 220 255"});
+    casting.exit_low = [at[0] - 32.0, at[1] - 32.0, floor + 2.0];
+    casting.exit_high = [at[0] + 32.0, at[1] + 32.0, floor + 96.0];
+    if shut {
+        cage_low = Vec3(x=at[0] - 40.0, y=at[1] - 40.0, z=floor + 8.0);
+        cage_high = Vec3(x=at[0] + 40.0, y=at[1] + 40.0, z=floor + 104.0);
+        casting.put_brushed(
+            {"classname": "func_door", "angle": "-1", "speed": "120", "wait": "-1", "lip": "8", "targetname": "exit_gate"},
+            [plain_box(cage_low, cage_high, kit.door, kit.scale)]
+        );
+        rock_over(casting, made, cage_low, Vec3(x=cage_high.x, y=cage_high.y, z=max(cage_high.z, float(target.ceiling - made.offset[2]) * LIFT)));
+        if atlas.arena and foes > 0 {
+            casting.put({"classname": "trigger_counter", "targetname": "arena_clear", "count": str(foes), "target": "exit_gate", "message": "The way out is open"});
+        }
+    }
 }
