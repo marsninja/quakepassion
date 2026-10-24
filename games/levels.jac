@@ -5,7 +5,7 @@ import from engine.world.world { World }
 import from engine.world.signals { HasSignal }
 import from engine.formats.bsp { Bsp }
 import from .passion.generate { generate, Forge }
-import from .passion.essence { essence_path, essence_clean }
+import from .passion.essence { essence_path }
 import from engine.level.graph { read_graph }
 import from engine.level.guide { guide_level }
 
@@ -68,9 +68,9 @@ def open_level(
     }
     lump = saved_entities(game, name) if entities is None else entities;
     level = load_level(world, directory, name, game, skill, subdivisions, lump);
-    # The breadcrumb trail of an original: its essence, when Passion's corpus
-    # keeps it proven clean (reading one here would take seconds).
-    kept = read_graph(essence_path(game + ":" + name));
-    guide_level(world, kept if kept is not None and essence_clean(kept) else None);
+    # The level's graph, which the breadcrumb trail and the player bot plan
+    # by: its essence, as Passion's corpus keeps it (reading one here would
+    # take seconds).
+    guide_level(world, read_graph(essence_path(game + ":" + name)));
     return level;
 }

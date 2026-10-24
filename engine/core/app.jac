@@ -135,7 +135,7 @@ import from ..world.fixtures { FixtureTick }
 import from ..world.gibs { GibTick }
 import from ..world.patrols { PatrolTick }
 import from ..world.bot_ai { BotTactics }
-import from ..world.player_bot { PlayerBot }
+import from ..world.plan_player { PlanPlayer }
 import from ..world.wading { ImmerseBots }
 import from ..world.bot_character { Q3_SKILL_NAMES }
 import from ..world.lightstyles { LightStyles, HasLightStyles, LightStyleTick }
@@ -342,7 +342,7 @@ obj App {
         capture_path: str = "",
         scripted: Intent | None = None,
         # The player bot playing the player's body (`autoplay`), if on.
-        autoplay: PlayerBot | None = None,
+        autoplay: PlanPlayer | None = None,
         last_think: int = 0,
         last_drawn: int = 0,
         level: Level = Level(),
@@ -372,6 +372,9 @@ obj App {
         # A fixed frame time in seconds (0: the real one), so benchmark runs
         # at different frame rates reach the same moment in the same frame.
         fixed_dt: float = 0.0,
+        # Nothing drawn and no sound (QP_FAST): the game runs as fast as it
+        # steps, for checking levels with the player bot.
+        drawless: bool = False,
         walking: bool = False,
         jump_pending: bool = False,
         arena_contacts: ArenaContactIndex = ArenaContactIndex(),

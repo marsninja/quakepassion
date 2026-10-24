@@ -28,7 +28,7 @@ When a reasonable Jac idiom — especially Object-Spatial Programming (OSP) cons
 
 1. First verify it's actually a jac/jaseci defect, not a misuse (check docs/examples/tests in the submodule).
 2. If it is the language/runtime, **pause the affected work and create a proper upstream fix**: isolate a minimal repro, fix the root cause on a feature branch based on upstream `jac` main, add regression coverage, and run the relevant checks.
-3. Push the fix and open a PR against `jaseci-labs/jac` main. This workflow is authorized without asking for separate permission for each defect. Report the issue, validation results, and PR link.
+3. Push the fix and open a PR against `jaseci-labs/jac` main, labelled `realdeal` (`gh pr create --label realdeal`; add it with `gh pr edit <n> --add-label realdeal` if it was left off). This workflow is authorized without asking for separate permission for each defect. Report the issue, validation results, and PR link.
 4. **Resume the original QuakePassion work using the locally fixed compiler/runtime** while the PR awaits review. Do not wait for the upstream merge unless it is technically necessary. Keep track of the local compiler patches required for validation.
 5. Do **not** rewrite engine code to avoid the construct. If an upstream fix or PR cannot be completed, explain the concrete blocker and continue any independent work that remains possible.
 

@@ -159,6 +159,13 @@ with entry {
     if os.getenv("QP_EDIT", "") != "" {
         app.stuffed = "edit\n" + app.stuffed;
     }
+    # QP_FAST=1: nothing drawn, no sound, a sixtieth of a second a frame as
+    # fast as the machine goes (with QP_HEADLESS=1 and QP_AUTOPLAY=1, a check
+    # of the level by the player bot).
+    if os.getenv("QP_FAST", "") not in ["", "0"] {
+        app.drawless = True;
+        app.fixed_dt = 1.0 / 60.0;
+    }
     # QP_AUTOPLAY=1 hands the player's body to the player bot from the start.
     if os.getenv("QP_AUTOPLAY", "") != "" {
         app.stuffed = app.stuffed + "\nautoplay";

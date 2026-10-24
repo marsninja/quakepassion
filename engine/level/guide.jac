@@ -2,9 +2,7 @@
 graph.
 
 From the place the player stands in and the tokens held now (keys carried,
-gates open), the cheapest way over the graph's moves to the way out, tokens
-taken where their openers are done: the proof's own search, begun where the
-player is. Its first leg, up to the first token it takes (a key, a switch, a
+gates open), the solver's plan (`solve.jac`) to the way out. Its first leg, up to the first token it takes (a key, a switch, a
 plate, a foe whose death opens something) or else to the way out, is laid
 as a trail along the moves' ends, and a wave of motes runs along it
 toward that goal, in the goal's colour, each time the player asks (the
@@ -12,11 +10,11 @@ toward that goal, in the goal's colour, each time the player asks (the
 player stands with what is held."""
 import from ..math.vec3 { Vec3 }
 import from ..world.world { World, Player }
-import from ..world.objectives { mover_blocked }
+import from ..world.objectives { mover_blocked, objective_mover }
 import from ..world.inventory { quantity }
 import from ..world.particle_field { Particle, particle_field, PARTICLE_GLOW }
-import from .graph { LevelGraph, Place, Move, Opener, graph_places, graph_openers, opener_places }
-import from .prove { Search, search_of }
+import from .graph { LevelGraph, Place, graph_places, graph_gates }
+import from .solve { Solver, MoveStep, DoStep }
 
 # How often where the player is, and what is held, is looked at (the plan
 # is made again when either has changed); how long a wave's fountain at the
@@ -26,12 +24,7 @@ glob GUIDE_LOOK_EVERY: float = 0.25,
      GUIDE_WAVE_TIME: float = 1.2,
      GUIDE_SPACING: float = 40.0,
      GUIDE_REACH: float = 1600.0,
-     GUIDE_CELL: float = 256.0,
-     GUIDE_SEARCH: int = 200000,
-     # What taking a token costs the plan over the way's length: a token is
-     # taken only when no way round it is that much shorter, so a trail
-     # leads past a secret's button to what the level needs.
-     GUIDE_TOKEN_COST: float = 4000.0;
+     GUIDE_CELL: float = 256.0;
 
 # The goal's colours (0xRRGGBB): the way out, a foe to kill, a switch, plate
 # or other thing to do, and keys by the colour in their names.
@@ -40,21 +33,22 @@ glob GUIDE_EXIT_COLOR: int = 0x50FF80,
      GUIDE_DO_COLOR: int = 0xFFA040,
      GUIDE_KEY_COLORS: dict[str, int] = {"gold": 0xFFD040, "silver": 0xD8E4FF, "blue": 0x4A8CFF, "red": 0xFF4A4A, "green": 0x50E050};
 
-"""A level's breadcrumb trail: its graph and the search's view of it, the
-places by grid cell, and the trail as last planned."""
+"""A level's breadcrumb trail: its graph's solver, the places by grid
+cell, and the trail as last planned."""
 node Guide {
     has atlas: LevelGraph,
-        view: Search | None = None,
-        span: int = 1,
+        solver: Solver | None = None,
         cells: dict[tuple[int, int], list[Place]] = {},
-        by_area: dict[int, Place] = {},
+        # The gates that are bridges (doors that start open and shut to make
+        # a floor), by model.
+        bridges: set[int] = set(),
+        # The keys carried at some time this level: a key the door it opened
+        # used up (Quake's) is still had, as the graph counts it.
+        carried: int = 0,
         trail: list[Vec3] = [],
         goal: Vec3 | None = None,
         goal_kind: str = "",
         goal_what: str = "",
-        # The token the goal gives ("exit" for the way out): what a bot
-        # planning by the guide sets out to get.
-        goal_token: str = "",
         color: int = GUIDE_EXIT_COLOR,
         area: int = -1,
         held: int = -1,
@@ -62,22 +56,24 @@ node Guide {
         # Asked for (the `guide` command): one wave at the next step.
         asked: bool = False;
 
-    """The search's view and the grid of places, made on first use."""
-    def prepare {
-        if self.view is not None {
-            return;
+    """The graph's solver and the grid of places, made on first use."""
+    def prepare -> Solver {
+        solver = self.solver;
+        if solver is not None {
+            return solver;
         }
-        view = search_of(self.atlas);
-        self.view = view;
-        self.span = 1 << len(view.tokens);
+        made = Solver(atlas=self.atlas);
+        made.prepare();
+        self.solver = made;
+        self.bridges = set([gate.model for gate in graph_gates(self.atlas) if gate.kind == "bridge"]);
         for place in graph_places(self.atlas) {
-            self.by_area[place.area] = place;
             for cx in range(int(place.box.mins.x // GUIDE_CELL), int(place.box.maxs.x // GUIDE_CELL) + 1) {
                 for cy in range(int(place.box.mins.y // GUIDE_CELL), int(place.box.maxs.y // GUIDE_CELL) + 1) {
                     self.cells.setdefault((cx, cy), []).append(place);
                 }
             }
         }
+        return made;
     }
 
     """The place a body at `origin` stands in: the one whose box holds the
@@ -95,10 +91,12 @@ node Guide {
         return 0;
     }
 
-    """The tokens held now, as the search's mask: keys carried, gates the
-    player would pass (open, or opening for what is carried)."""
+    """The tokens held now, as the search's mask: keys carried (or carried
+    before and used up on their door), gates the player would pass (open, or
+    opening for what is carried), bridges drawn out (shut all the way, where
+    a body walks on them)."""
     def held_now(world: World, player: Player) -> int {
-        view = self.view;
+        view = self.prepare().view;
         if view is None {
             return 0;
         }
@@ -107,7 +105,13 @@ node Guide {
             token = view.tokens[index];
             held = False;
             if token.startswith("key") {
-                held = quantity(player.inventory, token) > 0;
+                held = quantity(player.inventory, token) > 0 or self.carried & (1 << index) != 0;
+                if held {
+                    self.carried |= 1 << index;
+                }
+            } elif token.startswith("open:") and int(token[5:]) in self.bridges {
+                leader = objective_mover(world, int(token[5:]));
+                held = leader is not None and leader.position >= 0.99;
             } elif token.startswith("open:") {
                 held = not mover_blocked(world, int(token[5:]), player);
             }
@@ -118,126 +122,35 @@ node Guide {
         return mask;
     }
 
-    """Plan the trail from `origin` in `area` holding `held`."""
+    """Plan the trail from `origin` in `area` holding `held`: the solver's
+    plan, up to its first token taken (or all the way to the way out)."""
     def plan(origin: Vec3, area: int, held: int) {
-        view = self.view;
-        if view is None {
-            return;
-        }
-        span = self.span;
+        solver = self.prepare();
         self.trail = [];
-        # The search begins holding what this place gives too; a token of
-        # those the way wants is done right here.
-        begun = held | view.gives[area];
-        first = area * span + begun;
-        cost: dict[int, float] = {first: 0.0};
-        came: dict[int, list[int]] = {};
-        heap: list[list[float]] = [[0.0, float(first)]];
-        done: dict[int, bool] = {};
-        goal = -1;
-        nearest_gain = -1;
-        popped = 0;
-        while heap and popped < GUIDE_SEARCH {
-            top = guide_heap_pop(heap);
-            state = int(top[1]);
-            if state in done {
-                continue;
-            }
-            done[state] = True;
-            popped += 1;
-            at = state // span;
-            mask = state % span;
-            if at in view.exits and (view.exit_bit == 0 or mask & view.exit_bit != 0) {
-                goal = state;
-                break;
-            }
-            if mask != begun and nearest_gain < 0 {
-                nearest_gain = state;
-            }
-            from_place = self.by_area.get(at, None);
-            steps = view.maybe[at];
-            for index in range(len(steps)) {
-                step = steps[index];
-                if step[1] & mask != step[1] or view.deadly[step[0]] {
-                    continue;
-                }
-                move = view.ways[at][index];
-                to_place = self.by_area.get(step[0], None);
-                length = 16.0;
-                if from_place is not None and to_place is not None {
-                    length = max(16.0, to_place.center.sub(from_place.center).length());
-                }
-                # Ways the level may not let every player take (a hard jump)
-                # cost more than sure ones.
-                length = length if move.must else length * 3.0;
-                after_mask = mask | view.gives[step[0]];
-                after = step[0] * span + after_mask;
-                total = top[0] + length + (GUIDE_TOKEN_COST if after_mask != mask else 0.0);
-                if after not in done and total < cost.get(after, 1.0e18) {
-                    cost[after] = total;
-                    came[after] = [state, at, index];
-                    guide_heap_push(heap, [total, float(after)]);
-                }
-            }
-        }
-        if goal < 0 {
-            goal = nearest_gain;
-        }
-        if goal < 0 {
+        made = solver.solve(area, held, origin);
+        if not made.found {
             return;
-        }
-        # The states back to the start; the tokens the way's steps want (and
-        # the way out, when it wants one); then forward to the first state
-        # that takes one of those (or all the way, to the way out). A token
-        # taken on the way and wanted by nothing (a button seen in passing)
-        # is no goal.
-        states = [goal];
-        while states[0] in came {
-            states.insert(0, came[states[0]][0]);
-        }
-        wanted = view.exit_bit if goal // span in view.exits else 0;
-        for at in range(1, len(states)) {
-            link = came[states[at]];
-            wanted |= view.maybe[link[1]][link[2]][1];
-        }
-        if goal // span not in view.exits {
-            wanted |= (goal % span) & ~held;
-        }
-        here = view.gives[area] & ~held & wanted;
-        if here != 0 {
-            opener = self.token_opener(here, area, origin);
-            if opener is not None {
-                self.aim(opener.point, opener.kind, opener.what, guide_color(opener.kind, opener.what), opener.token);
-                self.trail = [origin, opener.point];
-            }
-            return;
-        }
-        cut = len(states) - 1;
-        for at in range(1, len(states)) {
-            if (states[at] % span) & ~(states[at - 1] % span) & wanted != 0 {
-                cut = at;
-                break;
-            }
         }
         points = [origin];
-        for at in range(1, cut + 1) {
-            link = came[states[at]];
-            move = view.ways[link[1]][link[2]];
-            points.append(move.start);
-            points.append(move.finish);
-        }
-        end = states[cut];
-        gained = (end % span) & ~(states[cut - 1] % span) & wanted if cut > 0 else 0;
-        if gained != 0 {
-            opener = self.token_opener(gained, end // span, points[-1]);
-            if opener is not None {
-                self.aim(opener.point, opener.kind, opener.what, guide_color(opener.kind, opener.what), opener.token);
-                points.append(opener.point);
+        aimed = False;
+        last_to = area;
+        for step in made.steps() {
+            if isinstance(step, DoStep) {
+                self.aim(step.point, step.kind, step.what, guide_color(step.kind, step.what));
+                points.append(step.point);
+                aimed = True;
+                break;
             }
-        } else {
-            place = self.by_area.get(end // span, None);
+            if isinstance(step, MoveStep) {
+                points.append(step.start);
+                points.append(step.finish);
+                last_to = step.to;
+            }
+        }
+        if not aimed {
+            place = solver.by_area.get(last_to, None);
             if place is not None {
-                self.aim(place.center, "exit", "", GUIDE_EXIT_COLOR, "exit");
+                self.aim(place.center, "exit", "", GUIDE_EXIT_COLOR);
                 points.append(place.center);
             }
         }
@@ -245,14 +158,13 @@ node Guide {
     }
 
     """The goal from now on: a point, what is done there, its colour."""
-    def aim(point: Vec3, kind: str, what: str, color: int, token: str) {
+    def aim(point: Vec3, kind: str, what: str, color: int) {
         if kind != self.goal_kind or self.goal is None or point.sub(self.goal).length() > 1.0 {
             print("GUIDE", self.atlas.name, "goal", kind, "at", int(point.x), int(point.y), int(point.z));
         }
         self.goal = point;
         self.goal_kind = kind;
         self.goal_what = what;
-        self.goal_token = token;
         self.color = color;
     }
 
@@ -283,31 +195,6 @@ node Guide {
             length += self.trail[index].sub(self.trail[index - 1]).length();
         }
         return doing + " (" + str(max(1, int(length / 32.0))) + " m)";
-    }
-
-    """The opener of a token in `gained` done from `area` (the nearest to
-    `near` when several are), or None."""
-    def token_opener(gained: int, area: int, near: Vec3) -> Opener | None {
-        view = self.view;
-        if view is None {
-            return None;
-        }
-        best: Opener | None = None;
-        nearest = 1.0e18;
-        for opener in graph_openers(self.atlas) {
-            if opener.token not in view.tokens or gained & (1 << view.tokens.index(opener.token)) == 0 {
-                continue;
-            }
-            if area not in [place.area for place in opener_places(opener)] {
-                continue;
-            }
-            distance = opener.point.sub(near).length();
-            if distance < nearest {
-                nearest = distance;
-                best = opener;
-            }
-        }
-        return best;
     }
 
     """One step of the guide: the plan made again when the player has come
@@ -355,25 +242,6 @@ node Guide {
 }
 
 edge HasGuide: World --> Guide {}
-
-"""The token the way out needs next from `origin` (a body's middle) with
-what `player` holds, as `guide` plans it: "" when it plans none (no place
-there, no way), "exit" when the way out itself is next. Planned again only
-when the place or what is held has changed."""
-def guide_next_token(guide: Guide, world: World, player: Player, origin: Vec3) -> str {
-    guide.prepare();
-    area = guide.place_at(origin);
-    held = guide.held_now(world, player);
-    if area > 0 and (area != guide.area or held != guide.held) {
-        guide.area = area;
-        guide.held = held;
-        guide.plan(origin, area, held);
-    }
-    if guide.goal is None or not guide.trail {
-        return "";
-    }
-    return guide.goal_token;
-}
 
 """Each step of the world, the guide (when there is one) lays its trail
 if the player has asked for it."""
@@ -460,49 +328,4 @@ def guide_color(kind: str, what: str) -> int {
         return GUIDE_KILL_COLOR;
     }
     return GUIDE_DO_COLOR;
-}
-
-"""Push onto a binary heap of [cost, state] (cheapest first)."""
-def guide_heap_push(heap: list[list[float]], item: list[float]) {
-    heap.append(item);
-    at = len(heap) - 1;
-    while at > 0 {
-        parent = (at - 1) // 2;
-        if heap[parent][0] <= heap[at][0] {
-            break;
-        }
-        swap = heap[parent];
-        heap[parent] = heap[at];
-        heap[at] = swap;
-        at = parent;
-    }
-}
-
-"""Pop the cheapest of a binary heap of [cost, state]."""
-def guide_heap_pop(heap: list[list[float]]) -> list[float] {
-    top = heap[0];
-    last = heap.pop();
-    if heap {
-        heap[0] = last;
-        at = 0;
-        while True {
-            left = at * 2 + 1;
-            right = left + 1;
-            least = at;
-            if left < len(heap) and heap[left][0] < heap[least][0] {
-                least = left;
-            }
-            if right < len(heap) and heap[right][0] < heap[least][0] {
-                least = right;
-            }
-            if least == at {
-                break;
-            }
-            swap = heap[least];
-            heap[least] = heap[at];
-            heap[at] = swap;
-            at = least;
-        }
-    }
-    return top;
 }

@@ -4,7 +4,7 @@ steps. Declarations live in app.jac."""
 impl App.run() {
     self.configure();
     self.player.god_mode = self.host.god.on();
-    if not self.smoke {
+    if not self.smoke and not self.drawless {
         if self.level.active {
             self.audio.open(
                 self.level.bsp.game,
@@ -197,6 +197,9 @@ impl App.render_bench() {
 }
 
 impl App.render_frame() {
+    if self.drawless {
+        return;
+    }
     if self.workbench.active and self.level.active and not self.cinematic.active {
         self.render_bench();
         return;
@@ -1033,6 +1036,10 @@ impl App.step() -> bool {
             self.scripted = Intent(fire=bot.frames % 20 == 0);
         } else {
             self.scripted = bot.drive(self.world, self.level, self.player, self.combat, dt);
+            if bot.wants_death {
+                bot.wants_death = False;
+                self.host_command(["kill"]);
+            }
         }
         snapshot = bot.shot_name(dt);
         if snapshot {
