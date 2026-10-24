@@ -50,6 +50,9 @@ node Objective {
         # stand in, a button to walk into); and the area and point the bot
         # chose to do it from.
         box: AABB | None = None,
+        # What is shot at, when it is a solid (a door, a secret door, a
+        # button): a shot that ends on it hits it, however thick it is.
+        aim_box: AABB | None = None,
         stand: int = 0,
         stand_point: Vec3 = Vec3(),
         # How many times its signal had fired, when it was taken up, and how
@@ -153,7 +156,7 @@ def objective_owner_actions(world: World, source: Signal, why: str) -> list[Obje
             continue;
         }
         if trigger.health > 0 {
-            found.append(Objective(kind="shoot", point=middle, aim=middle, why=why, signal=source));
+            found.append(Objective(kind="shoot", point=middle, aim=middle, why=why, signal=source, aim_box=trigger.volume.bounds[0] if trigger.volume.bounds else None));
         } elif trigger.players and trigger.touchable {
             box = trigger.volume.bounds[0];
             found.append(Objective(kind="touch", point=middle, why=why, signal=source, box=box));
@@ -262,7 +265,7 @@ def secret_objectives(world: World, train: Train, model: int) -> list[Objective]
     middle = train.bounds.mins.add(train.bounds.maxs).scale(0.5);
     found: list[Objective] = [];
     if train.shootable {
-        found.append(Objective(kind="shoot", point=middle, aim=middle, why=why, train=train));
+        found.append(Objective(kind="shoot", point=middle, aim=middle, why=why, train=train, aim_box=train.bounds));
     }
     search = train.activation spawn FindActions(world=world, why=why);
     for action in search.found {
@@ -320,7 +323,7 @@ def:priv mover_objectives_of(world: World, leader: Door, model: int, player: Pla
     if leader.health > 0 {
         box = leader.bounds;
         middle = box.mins.add(box.maxs).scale(0.5).add(leader.rest);
-        return [Objective(kind="shoot", point=middle, aim=middle, why=why, door=leader)];
+        return [Objective(kind="shoot", point=middle, aim=middle, why=why, door=leader, aim_box=AABB(mins=box.mins.add(leader.rest), maxs=box.maxs.add(leader.rest)))];
     }
     if leader.automatic and leader.kind != "platform" {
         return [];
