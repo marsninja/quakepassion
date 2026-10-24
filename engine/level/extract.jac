@@ -230,6 +230,13 @@ def read_level_graph(world: World, level: Level, build: NavBuild | None = None, 
                         continue;
                     }
                     into = mesh.locate(landed);
+                    # Landed well over the place found under it: on what the
+                    # navigation, compiled with the movers open, does not
+                    # have (a hatch shut over a pool). The fall goes to a
+                    # place at that height beside it, else is no way.
+                    if 0 < into < len(places) and landed.z > places[into].box.maxs.z + 16.0 {
+                        into = place_at_height(places, landed);
+                    }
                     if 0 < into < len(places) and into != spot.area {
                         places[spot.area] +>:Move(kind=TRAVEL_WALKOFFLEDGE, to=into, must=False, start=spot.origin, finish=landed, fall=True):+> places[into];
                         falls += 1;
@@ -246,6 +253,29 @@ def read_level_graph(world: World, level: Level, build: NavBuild | None = None, 
     read_things(atlas, world, level, mesh, places);
     hand_missing_keys(atlas, places);
     return atlas;
+}
+
+"""The place a body standing at `point` (its middle) is in or beside: one
+whose box reaches it within 32 units across and 4 up or down, the nearest,
+of the places that are there with the movers shut (not a mover's own);
+0 for none."""
+def place_at_height(places: list[Place], point: Vec3) -> int {
+    best = 0;
+    nearest = 1.0e9;
+    for place in places[1:] {
+        if place.mover != 0 {
+            continue;
+        }
+        box = place.box;
+        if box.mins.z - 4.0 <= point.z <= box.maxs.z + 4.0 and box.mins.x - 32.0 <= point.x <= box.maxs.x + 32.0 and box.mins.y - 32.0 <= point.y <= box.maxs.y + 32.0 {
+            distance = Vec3(x=place.center.x - point.x, y=place.center.y - point.y).length();
+            if distance < nearest {
+                nearest = distance;
+                best = place.area;
+            }
+        }
+    }
+    return best;
 }
 
 """A key a gate wants that nothing in the level gives (Quake II's units
