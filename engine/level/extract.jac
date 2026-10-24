@@ -470,7 +470,12 @@ def opener_places_of(objective: Objective, collision: CollisionMap, mesh: NavMes
                 continue;
             }
             seen = collision.trace(eye, aim, [], -1.0, True);
-            if seen.fraction >= 0.99 or seen.end.sub(aim).length() < 24.0 {
+            # Seen when the line ends at it, or on the solid shot at (a
+            # door thicker than the line's last stretch).
+            target = objective.aim_box;
+            on_target = target is not None and target.mins.x - 2.0 <= seen.end.x <= target.maxs.x + 2.0 and target.mins.y - 2.0 <= seen.end.y <= target.maxs.y + 2.0
+                and target.mins.z - 2.0 <= seen.end.z <= target.maxs.z + 2.0;
+            if seen.fraction >= 0.99 or seen.end.sub(aim).length() < 24.0 or on_target {
                 found.append(place);
             }
         }

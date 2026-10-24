@@ -21,7 +21,7 @@ import math;
 import from engine.math.vec3 { Vec3 }
 import from engine.math.aabb { AABB }
 import from engine.formats.aas { TRAVEL_TELEPORT, TRAVEL_JUMPPAD }
-import from engine.level.graph { LevelGraph, Place, Move, Gate, Opener, Thing, graph_places, graph_gates, graph_openers, graph_things, thing_place, opener_places, barred_places }
+import from engine.level.graph { LevelGraph, Place, Move, Gate, Opener, Thing, graph_places, graph_gates, graph_openers, graph_things, graph_tokens, thing_place, opener_places, barred_places }
 import from engine.level.budget { stage_budget, foe_stats, ammo_damage }
 import from editor.formats.map { MapItem }
 import from editor.geometry.brush { Side }
@@ -350,13 +350,18 @@ def cast_gates(atlas: LevelGraph, made: Sculpting, casting: Casting) -> dict[tup
 }
 
 """The ground an opener is done from in the level: of the grounds of the
-places the essence's was done from, the nearest its point that is firm
+places the essence's was done from (those reached before its token is
+held, when the essence's stages say), the nearest its point that is firm
 floor (off any lift or lowering floor, out of any doorway); else the
 nearest ground to its point."""
-def opener_ground(made: Sculpting, opener: Opener, gated: dict[tuple[int, int], bool]) -> Ground | None {
+def opener_ground(made: Sculpting, opener: Opener, gated: dict[tuple[int, int], bool], tokens: list[str]) -> Ground | None {
     best: Ground | None = None;
     nearest = 1.0e9;
-    for place in opener_places(opener) {
+    # Only where it can be done before its own token is held: a button shot
+    # from either side of the door it opens goes on the near side.
+    bit = 1 << tokens.index(opener.token) if opener.token in tokens else 0;
+    before = [place for place in opener_places(opener) if place.stage >= 0 and place.stage & bit == 0];
+    for place in (before if before else opener_places(opener)) {
         for ground in made.by_area.get(place.area, []) {
             if ground.top or (ground.x, ground.y) in gated {
                 continue;
@@ -380,8 +385,9 @@ def opener_ground(made: Sculpting, opener: Opener, gated: dict[tuple[int, int], 
 gives its key; the way out's openers lift the cage over the way out)."""
 def cast_openers(atlas: LevelGraph, made: Sculpting, casting: Casting, taken: dict[int, bool], gated: dict[tuple[int, int], bool], dice: Stream) {
     lowering = set([lift.model for lift in made.lifts if lift.lowering]);
+    tokens = graph_tokens(atlas);
     for opener in graph_openers(atlas) {
-        ground = opener_ground(made, opener, gated);
+        ground = opener_ground(made, opener, gated, tokens);
         if ground is None {
             casting.notes.append("opener " + opener.kind + " " + opener.token + " has no ground");
             continue;
