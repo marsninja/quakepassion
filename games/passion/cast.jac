@@ -21,7 +21,8 @@ import math;
 import from engine.math.vec3 { Vec3 }
 import from engine.math.aabb { AABB }
 import from engine.formats.aas { TRAVEL_TELEPORT, TRAVEL_JUMPPAD }
-import from engine.level.graph { LevelGraph, Place, Move, Gate, Opener, Thing, graph_places, graph_gates, graph_openers, graph_things, graph_tokens, thing_place, opener_places, barred_places }
+import from engine.level.prove { search_of, reach_states }
+import from engine.level.graph { LevelGraph, Place, Move, Gate, Opener, Thing, graph_places, graph_gates, graph_openers, graph_things, thing_place, opener_places, barred_places }
 import from engine.level.budget { stage_budget, foe_stats, ammo_damage }
 import from editor.formats.map { MapItem }
 import from editor.geometry.brush { Side }
@@ -349,18 +350,33 @@ def cast_gates(atlas: LevelGraph, made: Sculpting, casting: Casting) -> dict[tup
     return gated;
 }
 
+"""The areas of an essence a player reaches without `token` (nothing gives
+it): where what gives it can be done before it is held."""
+def areas_without(atlas: LevelGraph, token: str) -> dict[int, bool] {
+    view = search_of(atlas, [token]);
+    found: dict[int, bool] = {};
+    if not view.starts {
+        return found;
+    }
+    span = 1 << len(view.tokens);
+    start = view.starts[0];
+    for state in reach_states(view, start * span + view.gives[start], span).keys() {
+        found[state // span] = True;
+    }
+    return found;
+}
+
 """The ground an opener is done from in the level: of the grounds of the
-places the essence's was done from (those reached before its token is
-held, when the essence's stages say), the nearest its point that is firm
-floor (off any lift or lowering floor, out of any doorway); else the
-nearest ground to its point."""
-def opener_ground(made: Sculpting, opener: Opener, gated: dict[tuple[int, int], bool], tokens: list[str]) -> Ground | None {
+places the essence's was done from (those a player reaches before its
+token is held), the nearest its point that is firm floor (off any lift or
+lowering floor, out of any doorway); else the nearest ground to its
+point."""
+def opener_ground(made: Sculpting, opener: Opener, gated: dict[tuple[int, int], bool], before_areas: dict[int, bool]) -> Ground | None {
     best: Ground | None = None;
     nearest = 1.0e9;
     # Only where it can be done before its own token is held: a button shot
     # from either side of the door it opens goes on the near side.
-    bit = 1 << tokens.index(opener.token) if opener.token in tokens else 0;
-    before = [place for place in opener_places(opener) if place.stage >= 0 and place.stage & bit == 0];
+    before = [place for place in opener_places(opener) if place.area in before_areas];
     for place in (before if before else opener_places(opener)) {
         for ground in made.by_area.get(place.area, []) {
             if ground.top or (ground.x, ground.y) in gated {
@@ -385,9 +401,12 @@ def opener_ground(made: Sculpting, opener: Opener, gated: dict[tuple[int, int], 
 gives its key; the way out's openers lift the cage over the way out)."""
 def cast_openers(atlas: LevelGraph, made: Sculpting, casting: Casting, taken: dict[int, bool], gated: dict[tuple[int, int], bool], dice: Stream) {
     lowering = set([lift.model for lift in made.lifts if lift.lowering]);
-    tokens = graph_tokens(atlas);
+    reached: dict[str, dict[int, bool]] = {};
     for opener in graph_openers(atlas) {
-        ground = opener_ground(made, opener, gated, tokens);
+        if opener.token not in reached {
+            reached[opener.token] = areas_without(atlas, opener.token);
+        }
+        ground = opener_ground(made, opener, gated, reached[opener.token]);
         if ground is None {
             casting.notes.append("opener " + opener.kind + " " + opener.token + " has no ground");
             continue;
