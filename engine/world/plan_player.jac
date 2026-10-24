@@ -202,6 +202,18 @@ node PlanPlayer {
     def ways_back(world: World, guide: Guide) -> set[int] {
         back: set[int] = set();
         onward = 0;
+        # The graph says where each way out leads: a place whose every way
+        # out leads back.
+        places = list(guide.prepare().by_area.values());
+        if any([place.exits for place in places]) {
+            leads = set([name for place in places for name in place.exits]);
+            if not [name for name in leads if name not in self.been] {
+                return set();
+            }
+            back = set([place.area for place in places if place.way_out and place.exits and not [name for name in place.exits if name not in self.been]]);
+            print("PLAY ways back", len(back), "places; ways out lead to", " ".join(sorted(leads)));
+            return back;
+        }
         for portal in [world->:HasExit:->][?:LevelExit] {
             going_back = False;
             try {
@@ -209,11 +221,13 @@ node PlanPlayer {
             } except ValueError {
                 going_back = False;
             }
+            boxes = exit_boxes(world, portal);
+            print("PLAY exit to", portal.destination, "back" if going_back else "onward", len(boxes), "trigger boxes");
             if not going_back {
                 onward += 1;
                 continue;
             }
-            for box in exit_boxes(world, portal) {
+            for box in boxes {
                 for area in guide.prepare().by_area.keys() {
                     place = guide.prepare().by_area[area];
                     if place.box.mins.x <= box.maxs.x + 16.0 and box.mins.x - 16.0 <= place.box.maxs.x and place.box.mins.y <= box.maxs.y + 16.0
@@ -670,11 +684,11 @@ def exit_boxes(world: World, portal: LevelExit) -> list[AABB] {
     return [objective.box for objective in exit_objectives(world, portal) if objective.box is not None];
 }
 
-"""The box a shoot step shoots: of the objectives that open its mover (or
-take the player out), the shot one nearest the step's point; None when
-there is none."""
-def shot_box(world: World, player: Player, step: DoStep) -> AABB | None {
-    found: AABB | None = None;
+"""What a shoot step shoots: of the objectives that open its mover, the
+shot one nearest the step's point, as its box and its brush model (-1 when
+it has none of its own, a trigger with health); None when there is none."""
+def shot_target(world: World, player: Player, step: DoStep) -> tuple[AABB, int] | None {
+    found: tuple[AABB, int] | None = None;
     nearest = 1.0e18;
     if not step.token.startswith("open:") {
         return None;
@@ -684,10 +698,18 @@ def shot_box(world: World, player: Player, step: DoStep) -> AABB | None {
         if objective.kind != "shoot" or solid is None {
             continue;
         }
+        model = -1;
+        door = objective.door;
+        train = objective.train;
+        if door is not None {
+            model = door.model;
+        } elif train is not None {
+            model = train.model;
+        }
         gap = objective.point.sub(step.point).length();
         if gap < nearest {
             nearest = gap;
-            found = solid;
+            found = (solid, model);
         }
     }
     return found;
@@ -833,8 +855,11 @@ walker Act {
             # At the near side of what is shot (a button, a door, a secret
             # door: the objective's box), and only along a line that ends on
             # it.
-            solid = shot_box(self.world, player, here);
-            if solid is not None {
+            aimed = shot_target(self.world, player, here);
+            model = -1;
+            if aimed is not None {
+                solid = aimed[0];
+                model = aimed[1];
                 target = Vec3(
                     x=max(solid.mins.x + 2.0, min(solid.maxs.x - 2.0, player.pos.x)),
                     y=max(solid.mins.y + 2.0, min(solid.maxs.y - 2.0, player.pos.y)),
@@ -842,9 +867,10 @@ walker Act {
                 );
             }
             line = self.level.collision.trace_point(player.pos, target);
-            ends_on = solid is not None and solid.mins.x - 4.0 <= line.end.x <= solid.maxs.x + 4.0 and solid.mins.y - 4.0 <= line.end.y <= solid.maxs.y + 4.0
-                and solid.mins.z - 4.0 <= line.end.z <= solid.maxs.z + 4.0;
-            if line.fraction > 0.97 or ends_on or (solid is None and line.end.sub(target).length() < 24.0) {
+            # A line that ends on the thing itself (its own brush model); one
+            # with no model of its own (a trigger with health), a clear line.
+            ends_on = model > 0 and line.model == model;
+            if ends_on or (model <= 0 and (line.fraction > 0.97 or line.end.sub(target).length() < 24.0)) {
                 self.aim = target;
                 return;
             }
@@ -1106,18 +1132,26 @@ impl PlanPlayer.drive(world: World, level: Level, player: Player, state: CombatS
             intent.weapon = slot;
         }
         held_rule = weapon_rule(state, state.weapon);
-        in_hand = held_rule is not None and held_rule.reach >= distance;
-        intent.fire = slot > 0 and in_hand and abs(play_turn(player.yaw, want_yaw)) < 0.12 and abs(want_pitch - player.pitch) < 0.15;
+        in_hand = held_rule is not None and held_rule.reach >= distance and has_ammo_for(player, held_rule);
+        # Near enough on it: a body's half width at its distance.
+        close = max(0.02, min(0.12, math.atan2(16.0, max(1.0, distance))));
+        intent.fire = slot > 0 and in_hand and abs(play_turn(player.yaw, want_yaw)) < close and abs(want_pitch - player.pitch) < close * 1.25;
     } elif aim is not None {
         calm = False;
         line = aim.sub(player.pos);
         want_yaw = math.atan2(line.y, line.x);
         want_pitch = math.atan2(line.z, math.sqrt(line.x * line.x + line.y * line.y));
-        slot = play_weapon(player, state, line.length(), player.water_depth >= 2);
+        distance = line.length();
+        slot = play_weapon(player, state, distance, player.water_depth >= 2);
         if slot > 0 and slot != state.weapon {
             intent.weapon = slot;
         }
-        intent.fire = abs(play_turn(player.yaw, want_yaw)) < 0.06 and abs(want_pitch - player.pitch) < 0.08;
+        held_rule = weapon_rule(state, state.weapon);
+        in_hand = held_rule is not None and held_rule.reach >= distance and has_ammo_for(player, held_rule);
+        # What is shot is small (a button): within ten units of the aim at
+        # its distance, and only with a weapon that reaches it.
+        close = max(0.006, min(0.06, math.atan2(10.0, max(1.0, distance))));
+        intent.fire = slot > 0 and in_hand and abs(play_turn(player.yaw, want_yaw)) < close and abs(want_pitch - player.pitch) < close;
     } elif self.travel.view_set {
         want_yaw = math.radians(self.travel.yaw);
         want_pitch = -math.radians(self.travel.pitch);
@@ -1148,7 +1182,7 @@ impl PlanPlayer.drive(world: World, level: Level, player: Player, state: CombatS
             + trace_text(step_words(step) if step is not None else "-") + ", \"move\": " + trace_text(str(round(intent.move.x, 2)) + "," + str(round(intent.move.y, 2)) + "," + str(round(intent.move.z, 2)))
             + ", \"jump\": " + ("true" if intent.jump else "false") + ", \"fire\": " + ("true" if intent.fire else "false") + ", \"legs\": " + str(len(self.route.points)) + ", \"travel\": "
             + trace_text(("blocked " if self.travel.blocked else "") + ("waiting " if self.travel.waiting else "") + ("failure " if self.travel.failure else "") + ("on-top " if self.travel.on_top else "") + "speed " + str(int(self.travel.speed)))
-            + ", \"standing\": " + str(mesh.locate(origin) if mesh is not None else 0) + ", \"water\": " + str(player.water_depth) + "}");
+            + ", \"weapon\": " + str(state.weapon) + ", \"standing\": " + str(mesh.locate(origin) if mesh is not None else 0) + ", \"water\": " + str(player.water_depth) + "}");
     }
     self.log_wait -= dt;
     if self.log_wait <= 0.0 {

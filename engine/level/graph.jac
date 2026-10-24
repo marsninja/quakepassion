@@ -47,6 +47,8 @@ node Place {
         flags: int = 0,
         contents: int = 0,
         way_out: bool = False,
+        # The levels its ways out lead to (an exit's map), when it is one.
+        exits: list[str] = [],
         start: bool = False,
         # Its progression stage: the tokens it takes to get there (a mask
         # over the graph's tokens), -1 unreached.
@@ -221,7 +223,7 @@ def graph_text(atlas: LevelGraph) -> str {
                 + graph_number(place.surface) + " " + graph_number(place.roof) + " " + graph_flag(place.sky) + " "
                 + graph_flag(place.deadly) + " " + str(place.mover) + " " + graph_flag(place.resting) + " "
                 + graph_flag(place.way_out) + " " + graph_flag(place.start) + " " + str(place.stage) + " " + str(place.flags) + " "
-                + str(place.contents)
+                + str(place.contents) + " " + (",".join(place.exits) if place.exits else "-")
         );
     }
     for place in places {
@@ -308,7 +310,8 @@ def graph_from_text(text: str) -> LevelGraph | None {
                 start=words[17] == "1",
                 stage=int(words[18]),
                 flags=int(words[19]),
-                contents=int(words[20])
+                contents=int(words[20]),
+                exits=[] if len(words) < 22 or words[21] == "-" else words[21].split(",")
             );
             place.center = place.box.mins.add(place.box.maxs).scale(0.5);
             by_area[place.area] = place;

@@ -34,13 +34,17 @@ import from ..physics.collision { CollisionMap }
 import from ..physics.movement { MovePlayer, MovementProfile }
 import from ..world.world { World, Player }
 import from ..world.level { Level }
-import from ..world.exits { LevelExit, HasExit }
+import from ..world.exits { LevelExit, HasExit, exit_map }
 import from ..world.objectives { Objective, mover_objectives, mover_blocked, exit_objectives }
 import from ..world.doors { Door, door_parts, door_starts_open }
 import from ..world.trains { Train, HasTrain }
 import from ..world.bot_routes { NavMesh, build_navmesh }
 import from ..nav.compile { NavBuild, compile_navigation, nav_shut_shift }
 import from .graph { LevelGraph, Place, Move, Gate, Opener, Thing, Holds, Guards, Bars, Offers, DoneFrom, Contains, StandsIn }
+
+# How far over a standing body's top a jump takes it (Quake's 270 units a
+# second up against 800 of gravity lifts it about 45).
+glob EXTRACT_JUMP_REACH: float = 48.0;
 
 """How a level is read: `sims` runs jumps and falls through the player's
 movement (what a proof needs; a bot routing a level does not)."""
@@ -444,8 +448,11 @@ place its volume meets (a trigger to stand in, a button to walk into), and
 for a shot or a kill every place that sees it within 1024 units."""
 def opener_places_of(objective: Objective, collision: CollisionMap, mesh: NavMesh, places: list[Place]) -> list[Place] {
     found: list[Place] = [];
+    # The area under its point, when a body there reaches the point: a
+    # trigger hung higher over a floor than a jump takes the body is not
+    # touched from that floor.
     stand = mesh.locate(objective.point);
-    if 0 < stand < len(places) {
+    if 0 < stand < len(places) and (objective.kind in ["shoot", "kill"] or within_reach(places[stand], objective)) {
         found.append(places[stand]);
     }
     box = objective.box;
@@ -723,6 +730,32 @@ def share_openers(atlas: LevelGraph, level: Level) {
     }
 }
 
+"""Note on `place` that it is a way out to the level `portal` leads to."""
+def exit_place_to(place: Place, portal: LevelExit) {
+    try {
+        destination = exit_map(portal.destination);
+    } except ValueError {
+        return;
+    }
+    if destination not in place.exits {
+        place.exits.append(destination);
+    }
+}
+
+"""Whether a body standing in `place` reaches what `objective` is done at:
+its box (or its point), against the body's (24 under and 32 over its
+middle) and a jump's height over that."""
+def within_reach(place: Place, objective: Objective) -> bool {
+    low = objective.point.z;
+    high = objective.point.z;
+    box = objective.box;
+    if box is not None {
+        low = box.mins.z;
+        high = box.maxs.z;
+    }
+    return place.box.mins.z - 32.0 <= high and low <= place.box.maxs.z + 32.0 + EXTRACT_JUMP_REACH;
+}
+
 """The ways out: the places their volumes meet, and what fires one that is
 fired rather than touched. A level with none is an arena."""
 def read_exits(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, places: list[Place]) {
@@ -748,6 +781,7 @@ def read_exits(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
                 }
                 for place in reached {
                     place.way_out = True;
+                    exit_place_to(place, portal);
                     found_any = True;
                 }
             }
@@ -759,6 +793,7 @@ def read_exits(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
                 and box.mins.y - 16.0 <= place.box.maxs.y and place.box.mins.z <= box.maxs.z + 24.0 and box.mins.z - 32.0 <= place.box.maxs.z;
             if meets {
                 place.way_out = True;
+                exit_place_to(place, portal);
                 found_any = True;
             }
         }
