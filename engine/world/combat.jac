@@ -1340,6 +1340,22 @@ def drop_due(enemy: Opponent) -> bool {
     return sequence is not None and enemy.animation_time >= float(sequence.drop_frame);
 }
 
+"""Instagib: any damage to a monster bursts it into gibs (`qp_instagib`,
+set by the host each step)."""
+obj InstagibState {
+    has on: bool = False;
+}
+
+glob _instagib: InstagibState = InstagibState();
+
+def instagib_on -> bool {
+    return _instagib.on;
+}
+
+def set_instagib(on: bool) {
+    _instagib.on = on;
+}
+
 def damage_opponent(
     victim: Opponent,
     amount: int,
@@ -1364,6 +1380,13 @@ def damage_opponent(
             }
         }
         return 0;
+    }
+    # Instagib: whatever hurts it at all is its health and then some, past
+    # any armour or screen, so it bursts (an arena's bots excepted).
+    if _instagib.on and amount > 0 and not victim.arena {
+        amount = victim.health + 1000;
+        bypass_armor = True;
+        bypass_protection = True;
     }
     # g_combat.c CheckPowerArmor: a monster's power screen takes a third of
     # the damage from in front of it, one cell per point, until its cells run

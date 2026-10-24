@@ -104,6 +104,7 @@ import from ..world.inventory {
 import from ..assets.library { AssetLibrary }
 import from ..world.weapons { owned_kind }
 import from ..world.combat {
+    set_instagib,
     CombatState,
     CombatTick,
     Opponent,
@@ -270,6 +271,13 @@ obj HostCvars {
             kind="bool",
             flags=CVAR_ARCHIVE,
             description="play generated textures, sounds, models and music instead of the games' own (from the next level)"
+        ),
+        instagib: Cvar = Cvar(
+            name="qp_instagib",
+            reset_text="0",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            description="any damage bursts a monster into gibs"
         ),
         overlay: Cvar = Cvar(
             name="qp_overlay",
