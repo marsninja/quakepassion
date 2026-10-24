@@ -1506,6 +1506,13 @@ walker AutoThink {
                 continue;
             }
             cheapest = UNREACHED;
+            # Areas closed earlier for the mover it opens (a doorway met shut
+            # on the way to the exit) are where it is done from (the trigger
+            # in that doorway): open to it while it is weighed.
+            own_closed = [a for (a, held) in bot.closed.items() if choice.mover > 0 and held[0] == choice.mover and a not in held_shut];
+            for a in own_closed {
+                mesh.enable_area(a, True);
+            }
             # Where it is done from: an area within its volume, the soonest
             # reached; else the area at (or by) its point.
             spots: list[tuple[int, Vec3]] = [];
@@ -1574,6 +1581,9 @@ walker AutoThink {
             for a in through {
                 mesh.enable_area(a, True);
             }
+            for a in own_closed {
+                mesh.enable_area(a, False);
+            }
             if not spots {
                 notes.append(label + ", \"result\": \"no area reaches it\"}");
             } elif cheapest >= UNREACHED {
@@ -1588,6 +1598,13 @@ walker AutoThink {
         }
         if best is None {
             return False;
+        }
+        # Chosen: what was closed for its mover is open to it now.
+        for (a, held) in list(bot.closed.items()) {
+            if best.mover > 0 and held[0] == best.mover {
+                mesh.enable_area(a, True);
+                bot.closed.pop(a);
+            }
         }
         bot.trace.event("choose", bot.clock, {
             "chose": trace_text(best.kind + " for " + best.why),
