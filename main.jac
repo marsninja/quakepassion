@@ -5,7 +5,7 @@ game's content packs instead (hipnotic, rogue, q1r, dopa, mg1, mg3, q1ctf,
 xatrix, groundzero, q2ctf, teamarena; see engine/assets/content.jac) and
 starts on its `start` map when it has one. QP_ASSETS overrides the game's
 asset directory (the common parent for Passion). QP_MAP overrides the default
-map basename; QP_SEED selects Passion's expedition seed.
+map basename (QP_MAP=mine2$mine1 begins at that spawn point); QP_SEED selects Passion's expedition seed.
 QP_GRAYBOX=1 selects the development arena. QP_SMOKE=1 captures deterministic
 views and exits. QP_CAPTURE=<frame>:<file.png> plays normally and saves one
 full screenshot (HUD and weapon included) at that frame, then exits. All modes
@@ -93,6 +93,13 @@ with entry {
             map_name = "v4-" + os.getenv("QP_SEED", "1");
         }
         opened = os.getenv("QP_MAP", map_name);
+        # QP_MAP=mine2$mine1: begun at that spawn point, as a player coming
+        # in by that way would be (Quake II's named starts).
+        arrival = "";
+        if "$" in opened {
+            arrival = opened.split("$", 1)[1];
+            opened = opened.split("$", 1)[0];
+        }
         # The first level's generated assets, baked when missing or stale.
         set_generated(host.generated.on());
         if host.generated.on() {
@@ -115,7 +122,7 @@ with entry {
             } else {
                 level = open_level(world, game_directory(game), opened, game, played);
             }
-            player = spawn_player(level);
+            player = spawn_player(level, arrival);
         } except Exception as error {
             if not saved_entities(game, opened) {
                 raise error;
@@ -158,6 +165,13 @@ with entry {
     app.stuffed = command_line_text(sys.argv[1:]);
     if os.getenv("QP_EDIT", "") != "" {
         app.stuffed = "edit\n" + app.stuffed;
+    }
+    # QP_FAST=1: nothing drawn, no sound, a sixtieth of a second a frame as
+    # fast as the machine goes (with QP_HEADLESS=1 and QP_AUTOPLAY=1, a check
+    # of the level by the player bot).
+    if os.getenv("QP_FAST", "") not in ["", "0"] {
+        app.drawless = True;
+        app.fixed_dt = 1.0 / 60.0;
     }
     # QP_AUTOPLAY=1 hands the player's body to the player bot from the start.
     if os.getenv("QP_AUTOPLAY", "") != "" {

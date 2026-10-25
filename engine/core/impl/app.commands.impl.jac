@@ -21,6 +21,7 @@ impl App.configure() {
     host.skill = self.shell.register(host.skill);
     host.god = self.shell.register(host.god);
     host.generated = self.shell.register(host.generated);
+    host.instagib = self.shell.register(host.instagib);
     host.flyspeed = self.shell.register(host.flyspeed);
     host.overlay = self.shell.register(host.overlay);
     host.intro_played = self.shell.register(host.intro_played);
@@ -259,10 +260,13 @@ impl App.host_command(args: list[str]) {
         # The player bot (issue #88): it plays through the same commands a
         # keyboard and mouse give, until asked again.
         if self.autoplay is None {
-            bot = PlayerBot();
+            bot = PlanPlayer();
             bot.shot_every = float(os.getenv("QP_AUTOPLAY_SHOTS", "0") or "0");
             bot.shot_dir = os.getenv("QP_AUTOPLAY_SHOT_DIR", bot.shot_dir);
             bot.trace.path = os.getenv("QP_AUTOPLAY_TRACE", "");
+            # QP_AUTOPLAY_BEEN="base1 base2": levels counted as played already
+            # (their ways back are no way out).
+            bot.been = set(os.getenv("QP_AUTOPLAY_BEEN", "").split());
             self.autoplay = bot;
             self.shell.print("autoplay ON");
         } else {

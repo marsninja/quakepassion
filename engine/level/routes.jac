@@ -9,12 +9,10 @@ areas are its places."""
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from ..formats.aas { Aas, AasArea, AasReach, PRESENCE_NORMAL, AREACONTENTS_MOVER, AREACONTENTS_MODELNUMSHIFT, TRAVEL_ELEVATOR, TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE, TFL_DEFAULT }
-import from ..world.world { World }
 import from ..world.level { Level }
-import from ..world.bot_routes { NavMesh, NavArea, Passage, Exits, Enters, HasNavMesh, build_navmesh, UNREACHED }
+import from ..world.bot_routes { NavMesh, NavArea, Passage, Exits, Enters, UNREACHED }
 import from ..nav.compile { NavTree }
 import from .graph { LevelGraph, Place, Move, Holds, graph_places }
-import from .extract { ReadOptions, read_level_graph }
 
 """The AAS arrays of a graph: an area for each place (by its number), the
 moves a router follows (all but the falls run to find traps) as
@@ -117,20 +115,6 @@ def graph_from_aas(aas: Aas, level: Level) -> LevelGraph {
         }
     }
     return atlas;
-}
-
-"""What a bot routes a level by: the map's own AAS file brought in as a
-graph when it shipped one, else the level's graph read from its compiled
-navigation. Answers the graph and the router's mesh over it."""
-def level_routes(world: World, level: Level) -> tuple[LevelGraph, NavMesh] {
-    meshes = [world->:HasNavMesh:->][?:NavMesh];
-    if meshes {
-        shipped = meshes[0].aas;
-        atlas = graph_from_aas(shipped, level);
-        return (atlas, build_navmesh(world, graph_aas(atlas, shipped), level.bsp));
-    }
-    atlas = read_level_graph(world, level, None, ReadOptions(sims=False));
-    return (atlas, build_navmesh(world, graph_aas(atlas), level.bsp));
 }
 
 """How long the way from one place to another is over a baked mesh, in

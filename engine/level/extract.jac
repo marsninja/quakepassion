@@ -34,13 +34,22 @@ import from ..physics.collision { CollisionMap }
 import from ..physics.movement { MovePlayer, MovementProfile }
 import from ..world.world { World, Player }
 import from ..world.level { Level }
-import from ..world.exits { LevelExit, HasExit }
-import from ..world.objectives { Objective, mover_objectives, mover_blocked, exit_objectives }
+import from ..world.exits { LevelExit, HasExit, exit_map }
+import from ..world.signals { Signal }
+import from ..world.objectives { Objective, mover_objectives, mover_blocked, exit_objectives, train_objectives }
 import from ..world.doors { Door, door_parts, door_starts_open }
-import from ..world.trains { Train, HasTrain }
+import from ..world.trains { Train, HasTrain, TrackPoint, TrackNext, TrainRoute }
 import from ..world.bot_routes { NavMesh, build_navmesh }
 import from ..nav.compile { NavBuild, compile_navigation, nav_shut_shift }
 import from .graph { LevelGraph, Place, Move, Gate, Opener, Thing, Holds, Guards, Bars, Offers, DoneFrom, Contains, StandsIn }
+
+# How far over a standing body's top a jump takes it (Quake's 270 units a
+# second up against 800 of gravity lifts it about 45).
+glob EXTRACT_JUMP_REACH: float = 48.0;
+
+# How far beside a train a body gets on or off it: the body's half width
+# and a short jump.
+glob EXTRACT_TRAIN_REACH: float = 64.0;
 
 """How a level is read: `sims` runs jumps and falls through the player's
 movement (what a proof needs; a bot routing a level does not)."""
@@ -189,11 +198,20 @@ def read_level_graph(world: World, level: Level, build: NavBuild | None = None, 
             sure = True;
             if reach.kind == TRAVEL_JUMP and options.sims {
                 jumps += 1;
-                landed = run_body(collision, profile, reach.start, reach.finish.sub(reach.start), reach.start, 96.0);
+                # A long run-up first, then shorter ones (slower at the
+                # takeoff): a full-speed jump carries a body some 200 units
+                # and overshoots a shorter gap a player clears by running
+                # less.
                 sure = False;
-                if landed is not None {
-                    into = mesh.locate(landed);
-                    sure = into == reach.area or landed.sub(reach.finish).length() < 48.0 or (0 < into < len(aas.areas) and walks_into(aas, into, reach.area));
+                for run_up in [96.0, 40.0, 16.0, 0.0] {
+                    landed = run_body(collision, profile, reach.start, reach.finish.sub(reach.start), reach.start, run_up);
+                    if landed is not None {
+                        into = mesh.locate(landed);
+                        sure = into == reach.area or landed.sub(reach.finish).length() < 48.0 or (0 < into < len(aas.areas) and walks_into(aas, into, reach.area));
+                    }
+                    if sure {
+                        break;
+                    }
                 }
                 if sure {
                     sure_jumps += 1;
@@ -225,7 +243,7 @@ def read_level_graph(world: World, level: Level, build: NavBuild | None = None, 
                 tried[(spot.area, bit)] = True;
                 way = Vec3(x=dx, y=dy);
                 for leap in [0.0, profile_jump(profile)] {
-                    landed = arc_landing(collision, spot.origin, way.scale(320.0).add(Vec3(z=leap)), 800.0);
+                    landed = arc_landing(collision, spot.origin, way.scale(320.0).add(Vec3(z=leap)), level.movement.gravity if level.movement.gravity > 0.0 else 800.0);
                     if landed is None {
                         continue;
                     }
@@ -248,7 +266,9 @@ def read_level_graph(world: World, level: Level, build: NavBuild | None = None, 
     }
     atlas.notes.append("jumps sure " + str(sure_jumps) + "/" + str(jumps) + ", falls " + str(falls) + " in " + str(round(time.time() - began, 1)) + " s");
     read_gates(atlas, world, level, mesh, places);
+    read_trains(atlas, world, level, mesh, places);
     share_openers(atlas, level);
+    shot_through_gates(atlas, level);
     read_exits(atlas, world, level, mesh, places);
     read_things(atlas, world, level, mesh, places);
     hand_missing_keys(atlas, places);
@@ -435,8 +455,11 @@ place its volume meets (a trigger to stand in, a button to walk into), and
 for a shot or a kill every place that sees it within 1024 units."""
 def opener_places_of(objective: Objective, collision: CollisionMap, mesh: NavMesh, places: list[Place]) -> list[Place] {
     found: list[Place] = [];
+    # The area under its point, when a body there reaches the point: a
+    # trigger hung higher over a floor than a jump takes the body is not
+    # touched from that floor.
     stand = mesh.locate(objective.point);
-    if 0 < stand < len(places) {
+    if 0 < stand < len(places) and (objective.kind in ["shoot", "kill"] or within_reach(places[stand], objective)) {
         found.append(places[stand]);
     }
     box = objective.box;
@@ -513,6 +536,7 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
     travels: dict[int, float] = {};
     motions: dict[int, Vec3] = {};
     hulls: dict[int, list[int]] = {};
+    raised: dict[int, Vec3] = {};
     bridges: list[int] = [];
     for door in door_parts(world) {
         if door.kind == "button" or door.model <= 0 {
@@ -532,6 +556,11 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
             kinds[door.model] = "lift" if door.kind == "platform" else "door";
             travels[door.model] = -door.rest.z if door.kind == "platform" else 0.0;
             motions[door.model] = door.travel;
+        }
+        # A plat waiting to be fired (Quake's func_plat with a targetname)
+        # waits at the top of its shaft, the shaft under it open.
+        if door.kind == "platform" and door.state == "locked" and door.position >= 0.99 {
+            raised[door.model] = door.travel;
         }
         hulls.setdefault(door.model, []).extend(door.hulls);
     }
@@ -564,17 +593,28 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
         gate.needs = [token];
         # A way that passes through it shut (into or out of a place it does
         # not bar) wants it open too.
-        swept = AABB(mins=box.mins.sub(Vec3(x=16.0, y=16.0, z=32.0)), maxs=box.maxs.add(Vec3(x=16.0, y=16.0, z=24.0)));
+        stands = box;
+        if model in raised {
+            stands = AABB(mins=box.mins.add(raised[model]), maxs=box.maxs.add(raised[model]));
+        }
+        swept = AABB(mins=stands.mins.sub(Vec3(x=16.0, y=16.0, z=32.0)), maxs=stands.maxs.add(Vec3(x=16.0, y=16.0, z=24.0)));
         for place in places[1:] {
             for move in [edge place->:Move:->] {
                 # A teleporter, a lift or a jump pad does not carry a body
                 # along the line between its ends.
-                if move.kind in [TRAVEL_TELEPORT, TRAVEL_ELEVATOR, TRAVEL_JUMPPAD] {
+                # A lift is no way through a secret door shut over its shaft
+                # (e3m1's plat under a slab that slides aside), though it
+                # carries a body past any other gate's box.
+                if move.kind in [TRAVEL_TELEPORT, TRAVEL_JUMPPAD] or (move.kind == TRAVEL_ELEVATOR and gate.kind != "secret") {
                     continue;
                 }
                 # Boarding the mover or stepping off it (an elevator car
-                # whose box takes in its walls) is no way through it shut.
-                if place.mover == model or (0 < move.to < len(places) and places[move.to].mover == model) {
+                # whose box takes in its walls) is no way through it shut;
+                # dropping down through it (a trapdoor stood on) or rising
+                # up through it is.
+                through = (move.start.z > box.maxs.z - 8.0 and move.finish.z < box.mins.z)
+                    or (move.start.z < box.mins.z and move.finish.z > box.maxs.z - 8.0);
+                if not through and (place.mover == model or (0 < move.to < len(places) and places[move.to].mover == model)) {
                     continue;
                 }
                 if move.gate == 0 and segment_meets(move.start, move.finish, swept) {
@@ -582,7 +622,12 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
                 }
             }
         }
-        for objective in mover_objectives(world, model, nobody) {
+        objectives = mover_objectives(world, model, nobody);
+        # A counter's inputs (Quake's trigger_counter, fired once all its
+        # buttons are): each gives a token of its own, and the gate's token
+        # comes with the last of them.
+        hits = counter_hits(objectives);
+        for objective in objectives {
             what = objective_what(objective);
             given = token;
             if objective.kind == "pickup" and what.startswith("key") {
@@ -592,9 +637,11 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
                     gate.needs.append(what);
                 }
             }
-            opener = Opener(kind=objective.kind, token=given, point=objective.point, what=what);
+            done_from = opener_places_of(objective, level.collision, mesh, places);
+            needs = opened_with(objective) + add_counter_input(atlas, objective, hits, what, done_from);
+            opener = Opener(kind=objective.kind, token=given, point=objective.point, what=what, needs=needs);
             atlas +>:Offers:+> opener;
-            for place in opener_places_of(objective, level.collision, mesh, places) {
+            for place in done_from {
                 opener +>:DoneFrom:+> place;
             }
         }
@@ -651,20 +698,241 @@ def read_bridges(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, p
                 }
             }
         }
-        for objective in mover_objectives(world, model, nobody, True) {
+        objectives = mover_objectives(world, model, nobody, True);
+        hits = counter_hits(objectives);
+        for objective in objectives {
             what = objective_what(objective);
             given = token;
             if objective.kind == "pickup" and what.startswith("key") {
                 given = what;
                 gate.needs = [what];
             }
-            opener = Opener(kind=objective.kind, token=given, point=objective.point, what=what);
+            done_from = opener_places_of(objective, level.collision, mesh, places);
+            needs = opened_with(objective) + add_counter_input(atlas, objective, hits, what, done_from);
+            opener = Opener(kind=objective.kind, token=given, point=objective.point, what=what, needs=needs);
             atlas +>:Offers:+> opener;
-            for place in opener_places_of(objective, level.collision, mesh, places) {
+            for place in done_from {
                 opener +>:DoneFrom:+> place;
             }
         }
     }
+}
+
+"""A switch shot from places whose every line to it passes through a shut
+gate (a cover that slides off it when something else opens it) is shot only
+once that gate is open: the opener wants the gate's tokens too."""
+def shot_through_gates(atlas: LevelGraph, level: Level) {
+    gates = [gate for gate in [atlas->:Guards:->][?:Gate] if gate.needs];
+    for opener in [atlas->:Offers:->][?:Opener] {
+        if opener.kind != "shoot" {
+            continue;
+        }
+        froms = [place for place in [opener->:DoneFrom:->][?:Place]];
+        if not froms {
+            continue;
+        }
+        for gate in gates {
+            if opener.token in gate.needs {
+                continue;
+            }
+            # The gate's own box, a little in from its faces: a line that
+            # ends on the switch behind it passes through.
+            inner = AABB(mins=gate.box.mins.add(Vec3(x=1.0, y=1.0, z=1.0)), maxs=gate.box.maxs.sub(Vec3(x=1.0, y=1.0, z=1.0)));
+            if inner.mins.x > inner.maxs.x or inner.mins.y > inner.maxs.y or inner.mins.z > inner.maxs.z {
+                continue;
+            }
+            blocked = True;
+            for place in froms {
+                eye = place.center.add(Vec3(z=level.collision.eye_height));
+                if not segment_meets(eye, opener.point, inner) {
+                    blocked = False;
+                    break;
+                }
+            }
+            if blocked {
+                for need in gate.needs {
+                    if need not in opener.needs {
+                        opener.needs.append(need);
+                    }
+                }
+            }
+        }
+    }
+}
+
+"""One stretch of a train's route: the box its brushes sweep from one path
+corner to the next, and the heights of its top at the two ends."""
+obj TrainLeg {
+    has box: AABB,
+        low: float,
+        high: float;
+}
+
+"""The legs of a train's route, each corner to the one after it (a corner
+the train jumps to, Quake II's teleporting path corner, is a stop of its
+own, not swept to)."""
+def train_legs(train: Train) -> list[TrainLeg] {
+    route = train.current spawn TrainRoute();
+    points = route.points;
+    boxes: list[AABB] = [];
+    for point in points {
+        shift = point.origin.sub(train.anchor);
+        boxes.append(AABB(mins=train.bounds.mins.add(shift), maxs=train.bounds.maxs.add(shift)));
+    }
+    legs: list[TrainLeg] = [];
+    for k in range(len(points)) {
+        ahead = [point for point in [points[k]->:TrackNext:->][?:TrackPoint] if point in points];
+        here = boxes[k];
+        legs.append(TrainLeg(box=here, low=here.maxs.z, high=here.maxs.z));
+        if not ahead or ahead[0].teleport {
+            continue;
+        }
+        there = boxes[points.index(ahead[0])];
+        swept = AABB(
+            mins=Vec3(x=min(here.mins.x, there.mins.x), y=min(here.mins.y, there.mins.y), z=min(here.mins.z, there.mins.z)),
+            maxs=Vec3(x=max(here.maxs.x, there.maxs.x), y=max(here.maxs.y, there.maxs.y), z=max(here.maxs.z, there.maxs.z))
+        );
+        legs.append(TrainLeg(box=swept, low=min(here.maxs.z, there.maxs.z), high=max(here.maxs.z, there.maxs.z)));
+    }
+    return legs;
+}
+
+"""Whether a body in `place` gets on or off a train along `leg`: standing
+over its top somewhere along the leg (on it, or where it rises through: a
+floor it lifts a body off), or beside it within a step or a short jump (a
+step across, a jump up a barrier's height or down a drop's) with nothing
+of the level between."""
+def train_rider(collision: CollisionMap, hulls: list[int], place: Place, leg: TrainLeg) -> bool {
+    box = leg.box;
+    gap_x = max(0.0, box.mins.x - place.box.maxs.x, place.box.mins.x - box.maxs.x);
+    gap_y = max(0.0, box.mins.y - place.box.maxs.y, place.box.mins.y - box.maxs.y);
+    if gap_x <= 16.0 and gap_y <= 16.0 {
+        return leg.low - 18.0 <= place.floor <= leg.high + 18.0;
+    }
+    if gap_x > EXTRACT_TRAIN_REACH or gap_y > EXTRACT_TRAIN_REACH or place.floor < leg.low - EXTRACT_TRAIN_REACH or place.floor > leg.high + 40.0 {
+        return False;
+    }
+    # Across from the place's edge nearest the train to the train's edge,
+    # at the height of the higher of the place's floor and the train's top.
+    top = min(max(place.floor, leg.low), leg.high);
+    z = max(place.floor, top) + 32.0;
+    middle = box.mins.add(box.maxs).scale(0.5);
+    start = Vec3(x=min(max(middle.x, place.box.mins.x), place.box.maxs.x), y=min(max(middle.y, place.box.mins.y), place.box.maxs.y), z=z);
+    finish = Vec3(x=min(max(start.x, box.mins.x), box.maxs.x), y=min(max(start.y, box.mins.y), box.maxs.y), z=z);
+    across = collision.trace(start, finish, hulls);
+    return not across.start_solid and across.fraction >= 1.0;
+}
+
+"""Trains (Quake's func_train): floors that carry a body along their route
+from corner to corner. A body that gets on one anywhere along its route
+(`train_rider`) is carried to everywhere else along it it gets off, and on
+to another train whose route runs beside it at the same height (e3m6's two
+platforms passing over a pit); a ride, as a lift's. A train that waits to
+be fired is a gate whose openers are what fires it."""
+def read_trains(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, places: list[Place]) {
+    trains = [train for train in [world->:HasTrain:->][?:Train] if train.kind == "train"];
+    if not trains {
+        return;
+    }
+    legs: list[list[TrainLeg]] = [train_legs(train) for train in trains];
+    # Trains whose routes run side by side at one height ride as one.
+    group = list(range(len(trains)));
+    for i in range(len(trains)) {
+        for j in range(i + 1, len(trains)) {
+            beside = False;
+            for a in legs[i] {
+                for b in legs[j] {
+                    near = a.box.mins.x - 32.0 <= b.box.maxs.x and b.box.mins.x - 32.0 <= a.box.maxs.x
+                        and a.box.mins.y - 32.0 <= b.box.maxs.y and b.box.mins.y - 32.0 <= a.box.maxs.y;
+                    if near and a.low - 18.0 <= b.high and b.low - 18.0 <= a.high {
+                        beside = True;
+                    }
+                }
+            }
+            if beside {
+                was = group[j];
+                for k in range(len(group)) {
+                    if group[k] == was {
+                        group[k] = group[i];
+                    }
+                }
+            }
+        }
+    }
+    riders: list[list[Place]] = [];
+    for index in range(len(trains)) {
+        on: list[Place] = [];
+        for place in places[1:] {
+            if place.deadly {
+                continue;
+            }
+            for leg in legs[index] {
+                if train_rider(level.collision, trains[index].hulls, place, leg) {
+                    on.append(place);
+                    break;
+                }
+            }
+        }
+        riders.append(on);
+    }
+    rides = 0;
+    for index in range(len(trains)) {
+        train = trains[index];
+        objectives = train_objectives(world, train);
+        if objectives {
+            token = "open:" + str(train.model);
+            gate = Gate(model=train.model, kind="train", needs=[token], box=AABB(mins=train.bounds.mins.add(train.motion), maxs=train.bounds.maxs.add(train.motion)));
+            atlas +>:Guards:+> gate;
+            for objective in objectives {
+                opener = Opener(kind=objective.kind, token=token, point=objective.point, what=objective_what(objective), needs=opened_with(objective));
+                atlas +>:Offers:+> opener;
+                for place in opener_places_of(objective, level.collision, mesh, places) {
+                    opener +>:DoneFrom:+> place;
+                }
+            }
+        }
+    }
+    for index in range(len(trains)) {
+        for other in range(len(trains)) {
+            if group[other] != group[index] {
+                continue;
+            }
+            for a in riders[index] {
+                for b in riders[other] {
+                    if a is b {
+                        continue;
+                    }
+                    a +>:Move(
+                        kind=TRAVEL_ELEVATOR,
+                        to=b.area,
+                        must=True,
+                        model=trains[index].model,
+                        start=a.center,
+                        finish=b.center,
+                        gate=trains[other].model if other != index else 0
+                    ):+> b;
+                    rides += 1;
+                }
+            }
+        }
+    }
+    atlas.notes.append("trains " + str(len(trains)) + ", rides " + str(rides));
+}
+
+"""An input of a counter (`hits` maps each to all its counter's inputs):
+its own opener, giving its own token, done where it is; answers the tokens
+the counter's mover then wants (none when it is no counter's input)."""
+def add_counter_input(atlas: LevelGraph, objective: Objective, hits: dict[str, list[str]], what: str, done_from: list[Place]) -> list[str] {
+    hit = objective_hit(objective);
+    if objective.counter is None or hit not in hits {
+        return [];
+    }
+    single = Opener(kind=objective.kind, token=hit, point=objective.point, what=what);
+    atlas +>:Offers:+> single;
+    for place in done_from {
+        single +>:DoneFrom:+> place;
+    }
+    return [name for name in hits[hit]];
 }
 
 """Whether a place is on top of a box: a body standing there has its feet
@@ -711,6 +979,89 @@ def share_openers(atlas: LevelGraph, level: Level) {
     }
 }
 
+"""The keys an objective is done only with: a locked door touched to open
+it (one that fires something as it opens)."""
+def opened_with(objective: Objective) -> list[str] {
+    door = objective.door;
+    if objective.kind == "touch" and door is not None and door.kind == "door" and not door.unlocked {
+        return list(door.keys);
+    }
+    return [];
+}
+
+"""The token of one input of a counter: the button's model, else where it
+is done."""
+def objective_hit(objective: Objective) -> str {
+    door = objective.door;
+    if door is not None and door.kind == "button" {
+        return "hit:" + str(door.model);
+    }
+    return "hit:" + str(int(objective.point.x)) + "_" + str(int(objective.point.y)) + "_" + str(int(objective.point.z));
+}
+
+"""For each input of a counter fed by two or more that it needs all of, its
+token, mapped to the tokens of all that counter's inputs."""
+def counter_hits(objectives: list[Objective]) -> dict[str, list[str]] {
+    groups: list[list[Objective]] = [];
+    counters: list[Signal] = [];
+    for objective in objectives {
+        counter = objective.counter;
+        if counter is None {
+            continue;
+        }
+        if counter not in counters {
+            counters.append(counter);
+            groups.append([]);
+        }
+        groups[counters.index(counter)].append(objective);
+    }
+    found: dict[str, list[str]] = {};
+    for index in range(len(counters)) {
+        tokens: list[str] = [];
+        for objective in groups[index] {
+            hit = objective_hit(objective);
+            if hit not in tokens {
+                tokens.append(hit);
+            }
+        }
+        if len(tokens) < 2 or len(tokens) > counters[index].remaining {
+            continue;
+        }
+        for hit in tokens {
+            found[hit] = tokens;
+        }
+    }
+    return found;
+}
+
+"""Note on `place` that it is a way out to the level `portal` leads to."""
+def exit_place_to(place: Place, portal: LevelExit) {
+    try {
+        destination = exit_map(portal.destination);
+    } except ValueError {
+        return;
+    }
+    if destination not in place.exits {
+        place.exits.append(destination);
+    }
+}
+
+"""Whether a body standing in `place` reaches what `objective` is done at:
+its box (or its point), against the body's (24 under and 32 over its
+middle) and a jump's height over that."""
+def within_reach(place: Place, objective: Objective) -> bool {
+    low = objective.point.z;
+    high = objective.point.z;
+    box = objective.box;
+    if box is not None {
+        low = box.mins.z;
+        high = box.maxs.z;
+    }
+    # A body's box spans 24 under its middle and 32 over it: some height
+    # stood at in the place, or jumped to from it, meets the box.
+    return place.box.mins.z - 24.0 <= high and low <= place.box.maxs.z + 32.0 + EXTRACT_JUMP_REACH;
+}
+
 """The ways out: the places their volumes meet, and what fires one that is
 fired rather than touched. A level with none is an arena."""
 def read_exits(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, places: list[Place]) {
@@ -728,15 +1079,29 @@ def read_exits(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
                 reached = opener_places_of(objective, level.collision, mesh, places);
                 # A trigger no floor reaches, where a mover carries a body to
                 # it (Quake II base1's lift down into the way out): the
-                # mover's places. (The proof does not then also want what
-                # sets the mover going.)
+                # mover's places, a way out once what sets the mover going
+                # is done (the button in the car).
                 box = objective.box;
+                ridden = False;
                 if not reached and box is not None {
                     reached = ridden_places(atlas, box, places);
+                    ridden = True;
                 }
                 for place in reached {
                     place.way_out = True;
+                    exit_place_to(place, portal);
                     found_any = True;
+                    if ridden {
+                        for gate in [atlas->:Guards:->][?:Gate] {
+                            if gate.model == place.mover {
+                                for need in gate.needs {
+                                    if need not in place.exit_needs {
+                                        place.exit_needs.append(need);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             continue;
@@ -747,6 +1112,7 @@ def read_exits(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
                 and box.mins.y - 16.0 <= place.box.maxs.y and place.box.mins.z <= box.maxs.z + 24.0 and box.mins.z - 32.0 <= place.box.maxs.z;
             if meets {
                 place.way_out = True;
+                exit_place_to(place, portal);
                 found_any = True;
             }
         }

@@ -36,10 +36,21 @@ import from ..math.aabb { AABB }
 
 # bg_public.h DEFAULT_GRAVITY and JUMP_VELOCITY; be_ai_move.c's sv_maxbarrier
 # for walking off a mover and sv_maxstep (bg_pmove.c's STEPSIZE).
-glob TRAVEL_GRAVITY: float = 800.0,
-    TRAVEL_JUMP_SPEED: float = 270.0,
+glob TRAVEL_JUMP_SPEED: float = 270.0,
     TRAVEL_MAX_BARRIER: float = 32.0,
     TRAVEL_MAX_STEP: float = 18.0;
+
+"""The gravity bots predict their jumps and falls by: DEFAULT_GRAVITY,
+or the level's own (Quake's e1m8), set as a bot reads a level."""
+obj TravelPhysics {
+    has gravity: float = 800.0;
+}
+
+glob _travel: TravelPhysics = TravelPhysics();
+
+def set_travel_gravity(gravity: float) {
+    _travel.gravity = gravity if gravity > 0.0 else 800.0;
+}
 
 """be_ai_move.c bot_moveresult_t for one frame. `direction` and `speed` are
 EA_Move's (400 is full speed); `view_set` asks for the ideal view `yaw` and
@@ -237,7 +248,7 @@ def predict_jump(
     step = velocity.scale(0.1);
     grounded = True;
     for n in range(30) {
-        step.z -= TRAVEL_GRAVITY * 0.01;
+        step.z -= _travel.gravity * 0.01;
         if n == 0 {
             speed = math.sqrt(step.x * step.x + step.y * step.y) * 10.0;
             if speed > 0.0 {
@@ -245,7 +256,7 @@ def predict_jump(
                 step.x *= keep;
                 step.y *= keep;
             }
-            step.z = TRAVEL_JUMP_SPEED * 0.1 - TRAVEL_GRAVITY * 0.01 + 5.0;
+            step.z = TRAVEL_JUMP_SPEED * 0.1 - _travel.gravity * 0.01 + 5.0;
             add = 320.0 - (step.x * direction.x + step.y * direction.y) * 10.0;
             if add > 0.0 {
                 gain = min(32.0, add) * 0.1;
@@ -374,7 +385,7 @@ def air_control(origin: Vec3, velocity: Vec3, goal: Vec3) -> TravelResult | None
     point = origin.add(Vec3());
     step = velocity.scale(0.1);
     for i in range(50) {
-        step.z -= TRAVEL_GRAVITY * 0.01;
+        step.z -= _travel.gravity * 0.01;
         if step.z < 0.0 and point.z + step.z < goal.z {
             point = point.add(step.scale((goal.z - point.z) / step.z));
             gap = goal.sub(point);
@@ -396,7 +407,7 @@ def fall_speed(start: Vec3, finish: Vec3) -> float | None {
     if drop < 0.0 {
         return None;
     }
-    falling = math.sqrt(drop / (0.5 * TRAVEL_GRAVITY));
+    falling = math.sqrt(drop / (0.5 * _travel.gravity));
     if falling == 0.0 {
         return None;
     }

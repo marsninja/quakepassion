@@ -1,11 +1,10 @@
-"""What the player bot has to make happen to get on: the objectives it
-plans from the level's own activation graph (issue #88, milestone 6).
+"""What a player has to make happen to get by a mover: the objectives read
+off the level's own activation graph, which the level graph's openers are
+made of (`engine/level/extract.jac`).
 
-The navigation compiles doors open and plats up, so a route runs through
-movers as though they were where a traveller needs them. When the route
-reaches a mover that is not there and will not come by itself (a door that
-opens by a button, a floor lowered by a switch, a door locked by a key), the
-bot needs an objective first:
+A mover that is not where a traveller needs it and will not come by itself
+(a door that opens by a button, a floor lowered by a switch, a door locked
+by a key) wants an objective first:
 
 - a key to pick up (Quake's silver and gold keys, Quake II's keys);
 - a door or button to shoot (one with health);
@@ -47,52 +46,14 @@ node Objective {
         # The mover (BSP model) it is to get by, 0 for none.
         mover: int = 0,
         # Where a body's origin does it, when that is a volume (a trigger to
-        # stand in, a button to walk into); and the area and point the bot
-        # chose to do it from.
+        # stand in, a button to walk into).
         box: AABB | None = None,
         # What is shot at, when it is a solid (a door, a secret door, a
         # button): a shot that ends on it hits it, however thick it is.
         aim_box: AABB | None = None,
-        stand: int = 0,
-        stand_point: Vec3 = Vec3(),
-        # How many times its signal had fired, when it was taken up, and how
-        # long it is given.
-        fired: int = 0,
-        started: float = 0.0,
-        allowed: float = 40.0,
-        # How near the bot has come to it, and when it last came nearer.
-        nearest: float = 1.0e9,
-        nearer_at: float = 0.0;
-
-    """Whether it is done: the signal fired since it was taken up, the
-    monster dead, the item taken, the door moving."""
-    def done(player: Player) -> bool {
-        if self.kind == "kill" {
-            body = self.body;
-            return body is None or body.health <= 0;
-        }
-        if self.kind == "pickup" {
-            item = self.item;
-            return item is None or not item.active;
-        }
-        signal = self.signal;
-        if signal is not None and signal.fired > self.fired {
-            return True;
-        }
-        secret = self.train;
-        if secret is not None and secret.motion.length() > 1.0 {
-            return True;
-        }
-        door = self.door;
-        if door is None {
-            return False;
-        }
-        # A plat held at the top is there already: done once it is going.
-        if door.kind == "platform" {
-            return door.state != "locked";
-        }
-        return door.position > 0.0 or door.state not in ["closed", "locked"];
-    }
+        # The counter it is one of the inputs of (a trigger_counter that
+        # fires once enough of them have), when it is.
+        counter: Signal | None = None;
 }
 
 """Where a player's origin picks an item up: its box (16 a side, 56 tall
@@ -181,6 +142,23 @@ def objective_owner_actions(world: World, source: Signal, why: str) -> list[Obje
             Objective(kind=kind, point=middle, aim=middle, why=why, signal=source, door=part, box=reach if kind == "press" else None)
         );
     }
+    # A door that fires its targets as it opens (Quake's func_door with a
+    # target, e4m6's gold door setting a plat going): shot open when it
+    # takes a shot, else opened by a touch, with the keys it wants (a door
+    # fired from elsewhere is looked behind).
+    for part in door_parts(world) {
+        if part.activation is not source or part.kind != "door" or not part.fire_on_start or part.state != "closed" {
+            continue;
+        }
+        if part.health > 0 {
+            box = part.bounds;
+            middle = box.mins.add(box.maxs).scale(0.5).add(part.rest);
+            found.append(Objective(kind="shoot", point=middle, aim=middle, why=why, signal=source, door=part, aim_box=AABB(mins=box.mins.add(part.rest), maxs=box.maxs.add(part.rest))));
+        } elif part.automatic {
+            middle = part.trigger.mins.add(part.trigger.maxs).scale(0.5);
+            found.append(Objective(kind="touch", point=middle, why=why, signal=source, door=part, box=part.trigger));
+        }
+    }
     for body in [world->:HasOpponent:->][?:Opponent] {
         if body.activation is source and body.health > 0 {
             found.append(Objective(kind="kill", point=body.pos, aim=body.pos, why=why, body=body, signal=source));
@@ -211,6 +189,7 @@ walker FindActions {
             return;
         }
         self.seen.append(here);
+        first = len(self.found);
         for trigger in [here<-:Activates:<-][?:TouchTrigger] {
             source = trigger.signal;
             if source is not None {
@@ -223,6 +202,14 @@ walker FindActions {
         for source in [here<-:Targets:<-][?:Signal] {
             self.found.extend(objective_owner_actions(self.world, source, self.why));
             behind.append(source);
+        }
+        # A counter: what fires it directly is one of its inputs.
+        if here.remaining > 0 {
+            for objective in self.found[first:] {
+                if objective.counter is None {
+                    objective.counter = here;
+                }
+            }
         }
         visit behind;
     }
@@ -273,6 +260,20 @@ def secret_objectives(world: World, train: Train, model: int) -> list[Objective]
         found.append(action);
     }
     return found;
+}
+
+"""What sets a train going that waits to be fired (a Quake func_train with a
+targetname stands where it was drawn until then): what fires it. Nothing
+for one already running."""
+def train_objectives(world: World, train: Train) -> list[Objective] {
+    if train.running or train.started {
+        return [];
+    }
+    search = train.activation spawn FindActions(world=world, why="train " + str(train.model));
+    for action in search.found {
+        action.mover = train.model;
+    }
+    return search.found;
 }
 
 """What the player must do before the mover with BSP `model` lets it by:
@@ -365,24 +366,6 @@ def mover_blocked(world: World, model: int, player: Player) -> bool {
         return leader.state == "locked";
     }
     return not leader.automatic;
-}
-
-"""Whether an area of the mover `model` is no way through now. One
-compiled with the mover at rest (`resting`) needs it where it rests, and a
-door that starts open where it closes to (a bridge drawn out); the others
-need it open."""
-def mover_area_blocked(world: World, model: int, player: Player, resting: bool) -> bool {
-    if resting {
-        leader = objective_mover(world, model);
-        if leader is None {
-            return False;
-        }
-        if door_starts_open(leader) {
-            return leader.position < 0.99;
-        }
-        return leader.position > 0.01;
-    }
-    return mover_blocked(world, model, player);
 }
 
 """What fires an exit that is not touched (Quake II's target_changelevel at

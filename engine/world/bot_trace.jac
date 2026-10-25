@@ -1,13 +1,11 @@
 """The player bot's trace: what it decided and why, as JSON lines, for
-reading a run back (scripts/autoplay_report.jac).
+reading a run back.
 
-- Events: a level begun, an objective chosen (with the choices it had and
-  what each would cost), an objective done or given up (and why), a route
-  planned or not found (and why), a change of mode, a death (what killed
-  it), a block.
+- Events: a level begun, a plan made (from where, holding what, and why),
+  a step failed, no plan left, a death, a level finished.
 - A black box: the last ten seconds at ten samples a second (where it was,
-  how fast it went, what it asked for, what the travel said, its health
-  and its enemy), written out when it dies, is blocked or gives up.
+  how fast it went, its health, the step under way), written out when a
+  step fails.
 
 QP_AUTOPLAY_TRACE names the file; without it nothing is written."""
 import from ..math.vec3 { Vec3 }
