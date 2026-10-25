@@ -12,6 +12,7 @@ import from ..math.vec3 { Vec3 }
 import from ..world.world { World, Player }
 import from ..world.objectives { mover_blocked, objective_mover }
 import from ..world.doors { door_parts }
+import from ..world.triggers { TouchTrigger, HasTrigger }
 import from ..world.inventory { quantity }
 import from ..world.particle_field { Particle, particle_field, PARTICLE_GLOW }
 import from .graph { LevelGraph, Place, graph_places, graph_gates }
@@ -120,6 +121,10 @@ node Guide {
                             held = True;
                         }
                     }
+                } elif not held {
+                    # A trigger input, named by where it is: had once it has
+                    # fired.
+                    held = hit_trigger_fired(world, token[4:]);
                 }
                 if held {
                     self.carried |= 1 << index;
@@ -257,6 +262,25 @@ node Guide {
 }
 
 edge HasGuide: World --> Guide {}
+
+"""Whether the trigger at `where` ("x_y_z", its middle) has fired."""
+def hit_trigger_fired(world: World, where: str) -> bool {
+    parts = where.split("_");
+    if len(parts) != 3 {
+        return False;
+    }
+    point = Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
+    for trigger in [world->:HasTrigger:->][?:TouchTrigger] {
+        if not trigger.volume.bounds {
+            continue;
+        }
+        box = trigger.volume.bounds[0];
+        if box.mins.add(box.maxs).scale(0.5).sub(point).length() < 8.0 {
+            return trigger.activations > 0;
+        }
+    }
+    return False;
+}
 
 """Each step of the world, the guide (when there is one) lays its trail
 if the player has asked for it."""

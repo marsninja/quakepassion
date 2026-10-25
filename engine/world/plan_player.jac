@@ -32,7 +32,7 @@ import from ..level.graph { LevelGraph }
 import from ..level.guide { Guide, HasGuide }
 import from ..level.routes { graph_aas }
 import from ..level.solve { Solver, Plan, Step, MoveStep, DoStep, Bans }
-import from ..formats.aas { TFL_DEFAULT, TRAVEL_JUMP, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE, TRAVEL_ELEVATOR, TRAVEL_TELEPORT, TRAVEL_JUMPPAD, TRAVEL_ROCKETJUMP, TRAVEL_BFGJUMP, TRAVEL_LADDER, TRAVEL_WATERJUMP, TRAVEL_FUNCBOB }
+import from ..formats.aas { TFL_DEFAULT, TRAVEL_WALK, TRAVEL_JUMP, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE, TRAVEL_ELEVATOR, TRAVEL_TELEPORT, TRAVEL_JUMPPAD, TRAVEL_ROCKETJUMP, TRAVEL_BFGJUMP, TRAVEL_LADDER, TRAVEL_WATERJUMP, TRAVEL_FUNCBOB }
 import from ..input.input { Intent }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..math.aabb { AABB }
@@ -690,6 +690,20 @@ def play_move(yaw: float, way: Vec3, share: float = 1.0, rise: float = 0.0) -> V
     return Vec3(x=way.dot(right_from(yaw)) * share, y=way.dot(forward_from(yaw, 0.0)) * share, z=rise);
 }
 
+"""Whether a stride along `way` from `origin` would take a body over a
+drop (no floor within 72 under it) or onto lava or slime."""
+def play_hazard(level: Level, origin: Vec3, way: Vec3) -> bool {
+    ahead = origin.add(way.scale(28.0));
+    down = level.collision.trace(ahead, ahead.sub(Vec3(z=72.0)));
+    if down.start_solid {
+        return False;
+    }
+    if down.fraction >= 1.0 {
+        return True;
+    }
+    return level.liquid_probe().kind_at(Vec3(x=ahead.x, y=ahead.y, z=down.end.z - 18.0)) >= 2;
+}
+
 """Whether `point` is within `room` of `box`."""
 def play_inside(point: Vec3, box: AABB, room: float) -> bool {
     return box.mins.x - room <= point.x <= box.maxs.x + room and box.mins.y - room <= point.y <= box.maxs.y + room
@@ -937,6 +951,14 @@ walker Act {
             if aimed is not None {
                 target = aimed[0].mins.add(aimed[0].maxs).scale(0.5);
             }
+            # Nothing held that reaches it with ammunition: fetch some first.
+            if play_weapon(player, self.state, target.sub(player.pos).length(), player.water_depth >= 2) <= 0 {
+                supply = ammo_near(self.world, player, self.state, self.origin);
+                if supply is not None {
+                    self.chase(supply);
+                }
+                return;
+            }
             line = self.level.collision.trace_point(player.pos, target);
             # At its middle: a line that ends on a brush model inside what is
             # shot (a button's own face), or a clear one (a trigger with
@@ -947,14 +969,6 @@ walker Act {
             }
             if ends_on or line.fraction > 0.97 or (aimed is None and line.end.sub(target).length() < 24.0) {
                 self.aim = target;
-                return;
-            }
-            # Nothing held that reaches it with ammunition: fetch some first.
-            if play_weapon(player, self.state, target.sub(player.pos).length(), player.water_depth >= 2) <= 0 {
-                supply = ammo_near(self.world, player, self.state, self.origin);
-                if supply is not None {
-                    self.chase(supply);
-                }
                 return;
             }
             # No clear line from here: to the nearest spot that has one (an
@@ -1175,6 +1189,20 @@ impl PlanPlayer.drive(world: World, level: Level, player: Player, state: CombatS
                 self.travel = TravelResult(direction=way.normalized(), speed=400.0);
             }
             intent.jump = touch and best.z > origin.z + 48.0 and self.frames % 40 == 0;
+        }
+    }
+    # Walking by a drop or a pool that kills (a walkway over lava): where
+    # the way would take the body over one in a stride, it slows to half and
+    # makes straight for the next waypoint (no corner cut over the edge).
+    walking = step is not None and isinstance(step, MoveStep) and step.kind == TRAVEL_WALK;
+    heading = Vec3(x=self.travel.direction.x, y=self.travel.direction.y);
+    if walking and player.grounded and player.water_depth == 0 and heading.length() > 0.1 and self.route.points
+        and play_hazard(level, origin, heading.normalized()) {
+        waypoint = self.route.points[0];
+        straight = Vec3(x=waypoint.x - origin.x, y=waypoint.y - origin.y);
+        if straight.length() > 4.0 {
+            intent.move = play_move(player.yaw, straight.normalized(), 0.5);
+            self.travel = TravelResult(direction=straight.normalized(), speed=200.0);
         }
     }
     # On a lift still going up or down: held still on it, at its middle,

@@ -263,6 +263,7 @@ def read_level_graph(world: World, level: Level, build: NavBuild | None = None, 
     atlas.notes.append("jumps sure " + str(sure_jumps) + "/" + str(jumps) + ", falls " + str(falls) + " in " + str(round(time.time() - began, 1)) + " s");
     read_gates(atlas, world, level, mesh, places);
     share_openers(atlas, level);
+    shot_through_gates(atlas, level);
     read_exits(atlas, world, level, mesh, places);
     read_things(atlas, world, level, mesh, places);
     hand_missing_keys(atlas, places);
@@ -622,15 +623,7 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
                 }
             }
             done_from = opener_places_of(objective, level.collision, mesh, places);
-            needs: list[str] = [];
-            if objective.counter is not None and objective_hit(objective) in hits {
-                needs = [hit for hit in hits[objective_hit(objective)]];
-                single = Opener(kind=objective.kind, token=objective_hit(objective), point=objective.point, what=what);
-                atlas +>:Offers:+> single;
-                for place in done_from {
-                    single +>:DoneFrom:+> place;
-                }
-            }
+            needs = add_counter_input(atlas, objective, hits, what, done_from);
             opener = Opener(kind=objective.kind, token=given, point=objective.point, what=what, needs=needs);
             atlas +>:Offers:+> opener;
             for place in done_from {
@@ -690,20 +683,82 @@ def read_bridges(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, p
                 }
             }
         }
-        for objective in mover_objectives(world, model, nobody, True) {
+        objectives = mover_objectives(world, model, nobody, True);
+        hits = counter_hits(objectives);
+        for objective in objectives {
             what = objective_what(objective);
             given = token;
             if objective.kind == "pickup" and what.startswith("key") {
                 given = what;
                 gate.needs = [what];
             }
-            opener = Opener(kind=objective.kind, token=given, point=objective.point, what=what);
+            done_from = opener_places_of(objective, level.collision, mesh, places);
+            needs = add_counter_input(atlas, objective, hits, what, done_from);
+            opener = Opener(kind=objective.kind, token=given, point=objective.point, what=what, needs=needs);
             atlas +>:Offers:+> opener;
-            for place in opener_places_of(objective, level.collision, mesh, places) {
+            for place in done_from {
                 opener +>:DoneFrom:+> place;
             }
         }
     }
+}
+
+"""A switch shot from places whose every line to it passes through a shut
+gate (a cover that slides off it when something else opens it) is shot only
+once that gate is open: the opener wants the gate's tokens too."""
+def shot_through_gates(atlas: LevelGraph, level: Level) {
+    gates = [gate for gate in [atlas->:Guards:->][?:Gate] if gate.needs];
+    for opener in [atlas->:Offers:->][?:Opener] {
+        if opener.kind != "shoot" {
+            continue;
+        }
+        froms = [place for place in [opener->:DoneFrom:->][?:Place]];
+        if not froms {
+            continue;
+        }
+        for gate in gates {
+            if opener.token in gate.needs {
+                continue;
+            }
+            # The gate's own box, a little in from its faces: a line that
+            # ends on the switch behind it passes through.
+            inner = AABB(mins=gate.box.mins.add(Vec3(x=1.0, y=1.0, z=1.0)), maxs=gate.box.maxs.sub(Vec3(x=1.0, y=1.0, z=1.0)));
+            if inner.mins.x > inner.maxs.x or inner.mins.y > inner.maxs.y or inner.mins.z > inner.maxs.z {
+                continue;
+            }
+            blocked = True;
+            for place in froms {
+                eye = place.center.add(Vec3(z=level.collision.eye_height));
+                if not segment_meets(eye, opener.point, inner) {
+                    blocked = False;
+                    break;
+                }
+            }
+            if blocked {
+                for need in gate.needs {
+                    if need not in opener.needs {
+                        opener.needs.append(need);
+                    }
+                }
+            }
+        }
+    }
+}
+
+"""An input of a counter (`hits` maps each to all its counter's inputs):
+its own opener, giving its own token, done where it is; answers the tokens
+the counter's mover then wants (none when it is no counter's input)."""
+def add_counter_input(atlas: LevelGraph, objective: Objective, hits: dict[str, list[str]], what: str, done_from: list[Place]) -> list[str] {
+    hit = objective_hit(objective);
+    if objective.counter is None or hit not in hits {
+        return [];
+    }
+    single = Opener(kind=objective.kind, token=hit, point=objective.point, what=what);
+    atlas +>:Offers:+> single;
+    for place in done_from {
+        single +>:DoneFrom:+> place;
+    }
+    return [name for name in hits[hit]];
 }
 
 """Whether a place is on top of a box: a body standing there has its feet
@@ -818,7 +873,9 @@ def within_reach(place: Place, objective: Objective) -> bool {
         low = box.mins.z;
         high = box.maxs.z;
     }
-    return place.box.mins.z - 32.0 <= high and low <= place.box.maxs.z + 32.0 + EXTRACT_JUMP_REACH;
+    # A body's box spans 24 under its middle and 32 over it: some height
+    # stood at in the place, or jumped to from it, meets the box.
+    return place.box.mins.z - 24.0 <= high and low <= place.box.maxs.z + 32.0 + EXTRACT_JUMP_REACH;
 }
 
 """The ways out: the places their volumes meet, and what fires one that is
