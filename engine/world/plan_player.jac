@@ -199,7 +199,34 @@ node PlanPlayer {
             }
         }
         guide = self.guide;
-        return guide.place_at(origin) if guide is not None else 0;
+        if guide is None {
+            return 0;
+        }
+        # In the air over a floor (a jump's height at most); else, stood on
+        # something that is no place of the graph (a mover's top, a ledge it
+        # left out), the nearest place at or under the body: where the way on
+        # starts from, the travel stepping or dropping down to it.
+        under = guide.place_at(origin, 64.0);
+        if under > 0 {
+            return under;
+        }
+        solver = self.solver;
+        if solver is None {
+            return 0;
+        }
+        best = 0;
+        nearest = 384.0;
+        for (area, place) in solver.by_area.items() {
+            if place.box.mins.z > origin.z + 24.0 {
+                continue;
+            }
+            gap = place.center.sub(origin).length();
+            if gap < nearest {
+                nearest = gap;
+                best = area;
+            }
+        }
+        return best;
     }
 
     """The places of the ways out of this level back to levels already

@@ -79,9 +79,13 @@ node Guide {
     }
 
     """The place a body at `origin` stands in: the one whose box holds the
-    point, or a point a little under it (in the air over a floor), else 0."""
-    def place_at(origin: Vec3) -> int {
+    point, or a point under it (in the air over a floor, at most `deepest`
+    down), else 0."""
+    def place_at(origin: Vec3, deepest: float = 256.0) -> int {
         for drop in [0.0, 8.0, 16.0, 24.0, 40.0, 64.0, 96.0, 128.0, 192.0, 256.0] {
+            if drop > deepest {
+                break;
+            }
             point = origin.sub(Vec3(z=drop));
             for place in self.cells.get((int(point.x // GUIDE_CELL), int(point.y // GUIDE_CELL)), []) {
                 box = place.box;
