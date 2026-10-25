@@ -142,6 +142,23 @@ def objective_owner_actions(world: World, source: Signal, why: str) -> list[Obje
             Objective(kind=kind, point=middle, aim=middle, why=why, signal=source, door=part, box=reach if kind == "press" else None)
         );
     }
+    # A door that fires its targets as it opens (Quake's func_door with a
+    # target, e4m6's gold door setting a plat going): shot open when it
+    # takes a shot, else opened by a touch, with the keys it wants (a door
+    # fired from elsewhere is looked behind).
+    for part in door_parts(world) {
+        if part.activation is not source or part.kind != "door" or not part.fire_on_start or part.state != "closed" {
+            continue;
+        }
+        if part.health > 0 {
+            box = part.bounds;
+            middle = box.mins.add(box.maxs).scale(0.5).add(part.rest);
+            found.append(Objective(kind="shoot", point=middle, aim=middle, why=why, signal=source, door=part, aim_box=AABB(mins=box.mins.add(part.rest), maxs=box.maxs.add(part.rest))));
+        } elif part.automatic {
+            middle = part.trigger.mins.add(part.trigger.maxs).scale(0.5);
+            found.append(Objective(kind="touch", point=middle, why=why, signal=source, door=part, box=part.trigger));
+        }
+    }
     for body in [world->:HasOpponent:->][?:Opponent] {
         if body.activation is source and body.health > 0 {
             found.append(Objective(kind="kill", point=body.pos, aim=body.pos, why=why, body=body, signal=source));
@@ -243,6 +260,20 @@ def secret_objectives(world: World, train: Train, model: int) -> list[Objective]
         found.append(action);
     }
     return found;
+}
+
+"""What sets a train going that waits to be fired (a Quake func_train with a
+targetname stands where it was drawn until then): what fires it. Nothing
+for one already running."""
+def train_objectives(world: World, train: Train) -> list[Objective] {
+    if train.running or train.started {
+        return [];
+    }
+    search = train.activation spawn FindActions(world=world, why="train " + str(train.model));
+    for action in search.found {
+        action.mover = train.model;
+    }
+    return search.found;
 }
 
 """What the player must do before the mover with BSP `model` lets it by:

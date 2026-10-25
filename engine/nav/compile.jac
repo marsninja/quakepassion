@@ -53,7 +53,7 @@ import from ..world.world { World }
 import from ..world.level { Level }
 import from ..world.doors { Door, HasDoor, DoorMember, door_parts, door_starts_open }
 import from ..world.trains { Train, HasTrain, TrackPoint, TrackNext, secret_open_motion }
-import from ..world.traversal { Traversal, HasTraversal, Destination, ArrivesAt, touches_volume }
+import from ..world.traversal { Traversal, HasTraversal, Destination, ArrivesAt, touches_volume, sweeps_volume }
 import from ..world.pickups { Pickup, HasPickup }
 import from ..world.hazards { Hazard, HasHazard }
 import from ..world.combat { Opponent, HasOpponent }
@@ -69,6 +69,8 @@ obj NavRules {
         drop: float = 320.0,
         speed: float = 320.0,
         jump_speed: float = 270.0,
+        # How fast a water jump lifts a body out (Q1 CheckWaterJump).
+        water_jump: float = 225.0,
         gravity: float = 800.0,
         # The longest gap jump looked for, in cells.
         reach: int = 12,
@@ -230,7 +232,19 @@ obj NavGrid {
             # lip a few units up that the level sweep slipped past): try it
             # as a step up instead, below.
         }
-        for lift in [rules.step, rules.barrier] {
+        # The highest a body here climbs to: a barrier's height, or out of
+        # the water higher (Q1 SV_WaterJump: the water jump rises at its
+        # own speed, no gravity on it, until the body is clear of the
+        # water, then on as a jump): about a body's height over the surface.
+        reach = a.z + rules.barrier;
+        lifts = [rules.step, rules.barrier];
+        if spot.liquid == 1 {
+            reach = max(reach, self.surface_over(a) + 24.0 + rules.water_jump * rules.water_jump / (2.0 * rules.gravity) - 4.0);
+            if reach > a.z + rules.barrier {
+                lifts.append(reach - a.z);
+            }
+        }
+        for lift in lifts {
             up = self.sweep(a, a.add(Vec3(z=lift)));
             if up.start_solid {
                 return [];
@@ -249,7 +263,7 @@ obj NavGrid {
                 return [(landing, TRAVEL_WALK)];
             }
             if rise > rules.step {
-                if rise > rules.barrier {
+                if landing > reach {
                     return [];
                 }
                 # Out of the water onto a ledge: no jump off a floor there,
@@ -259,6 +273,15 @@ obj NavGrid {
             return [(landing, TRAVEL_WALKOFFLEDGE)];
         }
         return [];
+    }
+
+    """The top of the water over `point`, to within four units."""
+    def surface_over(point: Vec3) -> float {
+        z = point.z;
+        while z < point.z + 128.0 and self.level.liquid_at(Vec3(x=point.x, y=point.y, z=z + 4.0)) == 1 {
+            z += 4.0;
+        }
+        return z;
     }
 
     """Up and down through the water from `spot` (a body in water swims
@@ -301,9 +324,13 @@ obj NavGrid {
         beside = self.middle(spot.column + across * cells, spot.row + along * cells);
         gap = Vec3(x=beside.x - a.x, y=beside.y - a.y);
         span = gap.length();
-        # As high as the jump rises, and no lower than it may fall to.
+        # As high as the jump rises, and no lower than it may fall to. A
+        # tunnel's mouth whose roof is under the jump's top is let down into
+        # from the takeoff's own height.
         apex = rules.jump_speed * rules.jump_speed / (2.0 * rules.gravity);
-        landing = self.ground(beside.x, beside.y, a.z + apex - 4.0, apex + rules.drop * 0.5);
+        high = Vec3(x=beside.x, y=beside.y, z=a.z + apex - 4.0);
+        top = high.z if not self.sweep(high, high).start_solid else a.z + 8.0;
+        landing = self.ground(beside.x, beside.y, top, top - a.z + 4.0 + rules.drop * 0.5);
         if landing is None or landing > a.z + apex - 8.0 {
             return None;
         }
@@ -319,8 +346,40 @@ obj NavGrid {
         if flight * rules.speed * 0.85 < span {
             return None;
         }
-        # Along the arc as run at full speed, then straight down to land.
-        run = span / rules.speed;
+        # Along the arc as run at full speed, then straight down to land;
+        # failing that, run slower (lower over the far side: into a tunnel's
+        # mouth the full-speed arc passes over), while it still comes down
+        # there and not short of it.
+        for pace in [1.0, 0.85, 0.7, 0.55] {
+            run = span / (rules.speed * pace);
+            if pace < 1.0 and run > flight {
+                break;
+            }
+            if self.arc_clear(a, gap, run, landing) {
+                return landing;
+            }
+        }
+        return None;
+    }
+
+    """How far a running jump from a floor at `takeoff` carries a body
+    before it comes down to `landing`, with room to spare."""
+    def jump_span(takeoff: float, landing: float) -> float {
+        rules = self.rules;
+        b = rules.jump_speed;
+        disc = b * b - 2.0 * rules.gravity * (landing - takeoff);
+        if disc < 0.0 {
+            return 0.0;
+        }
+        return (b + math.sqrt(disc)) / rules.gravity * rules.speed * 0.85;
+    }
+
+    """Whether the arc of a jump from `a` across `gap`, taking `run` seconds
+    to cross it, is clear of the level (straight down to `landing` once it
+    is below it)."""
+    def arc_clear(a: Vec3, gap: Vec3, run: float, landing: float) -> bool {
+        rules = self.rules;
+        b = rules.jump_speed;
         last = a;
         for k in range(1, 7) {
             t = run * float(k) / 6.0;
@@ -334,11 +393,11 @@ obj NavGrid {
             }
             leg = self.sweep(last, point);
             if leg.start_solid or leg.fraction < 1.0 {
-                return None;
+                return False;
             }
             last = point;
         }
-        return landing;
+        return True;
     }
 }
 
@@ -435,7 +494,11 @@ walker FloodFloors {
 }
 
 """Gap jumps from the spots at ledges: along each axis, the nearest column a
-running jump lands in that the walk and the drop beside it did not reach."""
+running jump lands in that the walk and the drop beside it did not reach;
+and across a pit (the nearest landing far below the ledge, on the pit's
+floor), each landing beyond it higher than any before it: the far side (a
+ledge, a step, a tunnel's mouth over it), which a drop into the pit does
+not reach."""
 walker FindJumps {
     has grid: NavGrid,
         fresh: list[NavSpot] = [],
@@ -455,24 +518,41 @@ walker FindJumps {
             if walked {
                 continue;
             }
-            for cells in range(3, grid.rules.reach + 1) {
+            # The highest landing yet once the nearest is far below the
+            # ledge (a pit's floor): a landing beyond must be higher still.
+            pit: float | None = None;
+            farthest = grid.rules.reach;
+            cells = 2;
+            while cells < farthest {
+                cells += 1;
                 landing = grid.jump(here, across, along, cells);
                 if landing is None {
+                    continue;
+                }
+                if pit is not None and landing <= pit + grid.rules.step {
                     continue;
                 }
                 column = here.column + across * cells;
                 row = here.row + along * cells;
                 index = grid.find(column, row, landing);
-                if index >= 0 and index in reached {
+                if index < 0 or index not in reached {
+                    spot = grid.spots[index] if index >= 0 else grid.add(column, row, landing);
+                    if index < 0 {
+                        self.fresh.append(spot);
+                    }
+                    here +>:NavStep(kind=TRAVEL_JUMP, target=spot.index):+> spot;
+                    reached.append(spot.index);
+                    self.found += 1;
+                }
+                if landing >= here.origin.z - grid.rules.step {
                     break;
                 }
-                spot = grid.spots[index] if index >= 0 else grid.add(column, row, landing);
-                if index < 0 {
-                    self.fresh.append(spot);
+                if pit is None {
+                    # Down to a pit's floor a jump flies longer: the far
+                    # side may be further than a level jump goes.
+                    farthest = max(farthest, min(2 * grid.rules.reach, int(grid.jump_span(here.origin.z, landing) / grid.rules.cell)));
                 }
-                here +>:NavStep(kind=TRAVEL_JUMP, target=spot.index):+> spot;
-                self.found += 1;
-                break;
+                pit = landing;
             }
         }
     }
@@ -614,24 +694,28 @@ def:priv nav_shut_collision(world: World, collision: CollisionMap) -> CollisionM
 }
 
 """Where a body put at `point` comes to stand: the point raised clear of
-the floor it is on, then let down to it. None when there is no room."""
-def:priv nav_seed_height(grid: NavGrid, point: Vec3) -> float | None {
+the floor it is on, then let down to it, at most `depth` below. None when
+there is no room."""
+def:priv nav_seed_height(grid: NavGrid, point: Vec3, depth: float = 256.0) -> float | None {
     for lift in [24.0, 8.0, 40.0, 0.0, 56.0] {
         top = point.add(Vec3(z=lift));
         if grid.sweep(top, top).start_solid {
             continue;
         }
-        return grid.ground(point.x, point.y, top.z, lift + 256.0);
+        return grid.ground(point.x, point.y, top.z, lift + depth);
     }
     return None;
 }
 
-"""Add the spot a seed point stands at, unless one is there; returns it."""
-def:priv nav_seed(grid: NavGrid, point: Vec3) -> NavSpot | None {
+"""Add the spot a seed point stands at, unless one is there; returns it.
+`depth` is how far below the point the floor may be: a teleporter's exit
+hung high in a room drops the body that arrives to the floor under it (as
+far as a drop the navigation takes)."""
+def:priv nav_seed(grid: NavGrid, point: Vec3, depth: float = 256.0) -> NavSpot | None {
     column = grid.column_at(point.x);
     row = grid.column_at(point.y);
     middle = grid.middle(column, row);
-    z = nav_seed_height(grid, Vec3(x=middle.x, y=middle.y, z=point.z));
+    z = nav_seed_height(grid, Vec3(x=middle.x, y=middle.y, z=point.z), depth);
     if z is None {
         return None;
     }
@@ -694,7 +778,7 @@ def:priv nav_teleports(world: World, grid: NavGrid) -> int {
         if not places {
             continue;
         }
-        exit_spot = nav_seed(grid, places[0].origin);
+        exit_spot = nav_seed(grid, places[0].origin, grid.rules.drop);
         # An exit by a wall puts its column's middle in the wall: the
         # nearest spot found there instead.
         if exit_spot is None {
@@ -704,9 +788,29 @@ def:priv nav_teleports(world: World, grid: NavGrid) -> int {
             continue;
         }
         for spot in grid.spots {
-            if spot.index != exit_spot.index and touches_volume(traversal.volume, spot.origin) {
+            if spot.index == exit_spot.index {
+                continue;
+            }
+            if touches_volume(traversal.volume, spot.origin) {
                 spot +>:NavStep(kind=TRAVEL_TELEPORT, target=exit_spot.index):+> exit_spot;
                 count += 1;
+                continue;
+            }
+            # A teleporter hung over a hole or a pit is touched falling
+            # through it: a drop or a jump off a ledge that passes it (out
+            # over the landing at the ledge's height, then straight down)
+            # is a teleport.
+            for step in [edge spot->:NavStep:->] {
+                if step.kind != TRAVEL_WALKOFFLEDGE and step.kind != TRAVEL_JUMP {
+                    continue;
+                }
+                landing = grid.spots[step.target].origin;
+                over = Vec3(x=landing.x, y=landing.y, z=spot.origin.z);
+                if sweeps_volume(traversal.volume, spot.origin, over) or sweeps_volume(traversal.volume, over, landing) {
+                    spot +>:NavStep(kind=TRAVEL_TELEPORT, target=exit_spot.index):+> exit_spot;
+                    count += 1;
+                    break;
+                }
             }
         }
     }
@@ -1233,8 +1337,10 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
     grid.mover_models = set([door.model for door in door_parts(world) if door.kind != "button"]);
     build = NavBuild(aas=Aas());
     seeds: list[NavSpot] = [];
+    # A body put at a seed point in the air (a teleporter's exit) falls to
+    # the floor under it: what is flooded from.
     for point in nav_seed_points(world, level) {
-        spot = nav_seed(grid, point);
+        spot = nav_seed(grid, point, rules.drop);
         if spot is not None {
             seeds.append(spot);
         }
