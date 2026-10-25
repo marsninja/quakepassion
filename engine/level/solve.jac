@@ -130,13 +130,14 @@ obj Solver {
         }
     }
 
-    """What being in `area` gives, without the tokens banned there."""
-    def gives(area: int, bans: Bans) -> int {
+    """What being in `area` holding `held` gives, without the tokens banned
+    there."""
+    def gives(area: int, held: int, bans: Bans) -> int {
         view = self.view;
         if view is None {
             return 0;
         }
-        mask = view.gives[area];
+        mask = view.give(area, held);
         if bans.takes {
             for index in range(len(view.tokens)) {
                 if mask & (1 << index) and bans.take_banned(area, view.tokens[index]) {
@@ -164,7 +165,7 @@ obj Solver {
         }
         span = self.span;
         # The search begins holding what this place gives too.
-        begun = held | self.gives(area, bans);
+        begun = held | self.gives(area, held, bans);
         first = area * span + begun;
         cost: dict[int, float] = {first: 0.0};
         came: dict[int, list[int]] = {};
@@ -183,7 +184,7 @@ obj Solver {
             popped += 1;
             at = state // span;
             mask = state % span;
-            if at in view.exits and at not in passed_over and (view.exit_bit == 0 or mask & view.exit_bit != 0) {
+            if at not in passed_over and view.out_with(at, mask) {
                 goal = state;
                 break;
             }
@@ -210,7 +211,7 @@ obj Solver {
                 if view.deadly[step[0]] {
                     length += SOLVE_DEADLY_COST;
                 }
-                after_mask = mask | self.gives(step[0], bans);
+                after_mask = mask | self.gives(step[0], mask, bans);
                 after = step[0] * span + after_mask;
                 total = top[0] + length + (SOLVE_TOKEN_COST if after_mask != mask else 0.0);
                 if after not in done and total < cost.get(after, 1.0e18) {
@@ -236,7 +237,7 @@ obj Solver {
         while states[0] in came {
             states.insert(0, came[states[0]][0]);
         }
-        wanted = view.exit_bit if plan.to_exit else 0;
+        wanted = (view.exit_bit | view.exit_wants[goal // span]) if plan.to_exit else 0;
         for at in range(1, len(states)) {
             link = came[states[at]];
             wanted |= view.maybe[link[1]][link[2]][1];
@@ -246,7 +247,7 @@ obj Solver {
         }
         last: Step | None = None;
         last_point = origin;
-        gained = self.gives(area, bans) & ~held & wanted;
+        gained = self.gives(area, held, bans) & ~held & wanted;
         for step in self.takes(gained, area, last_point) {
             last = solve_link(plan, last, step);
             last_point = step.point;

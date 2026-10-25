@@ -43,11 +43,36 @@ obj Search {
         maybe: list[list[list[int]]] = [],
         ways: list[list[Move]] = [],
         gives: list[int] = [],
+        # Per area, the tokens it gives only once others are held (a
+        # counter's door, opened by the last of its buttons): [bit, needs].
+        gives_if: list[list[list[int]]] = [],
         deadly: list[bool] = [],
         live: list[bool] = [],
         starts: list[int] = [],
         exits: list[int] = [],
-        exit_bit: int = 0;
+        exit_bit: int = 0,
+        # Per area, the tokens its way out takes beyond being there.
+        exit_wants: list[int] = [];
+
+    """What being in `area` holding `held` gives: its tokens, and those
+    whose needs its own tokens and `held` complete."""
+    def give(area: int, held: int) -> int {
+        got = self.gives[area];
+        for round_index in range(2) {
+            for pair in self.gives_if[area] {
+                if pair[1] & (held | got) == pair[1] {
+                    got |= pair[0];
+                }
+            }
+        }
+        return got;
+    }
+
+    """Whether `area` holding `held` is out: a way out, with the way out's
+    token when the level has one and what this way out takes."""
+    def out_with(area: int, held: int) -> bool {
+        return area in self.exits and (self.exit_bit == 0 or held & self.exit_bit != 0) and held & self.exit_wants[area] == self.exit_wants[area];
+    }
 }
 
 """The search's view of a graph, with some tokens left out (nothing gives
@@ -64,13 +89,24 @@ def search_of(atlas: LevelGraph, leave_out: list[str] = []) -> Search {
     view.live = [False for _ in range(count)];
     needs = [0 for _ in range(count)];
     lifts: dict[int, int] = {};
+    view.gives_if = [[] for _ in range(count)];
     for opener in graph_openers(atlas) {
         if opener.token in leave_out {
             continue;
         }
         bit = 1 << tokens.index(opener.token);
+        prior = 0;
+        for need in opener.needs {
+            if need in tokens {
+                prior |= 1 << tokens.index(need);
+            }
+        }
         for place in opener_places(opener) {
-            view.gives[place.area] |= bit;
+            if prior {
+                view.gives_if[place.area].append([bit, prior]);
+            } else {
+                view.gives[place.area] |= bit;
+            }
         }
     }
     for gate in graph_gates(atlas) {
@@ -84,6 +120,7 @@ def search_of(atlas: LevelGraph, leave_out: list[str] = []) -> Search {
         }
     }
     view.exit_bit = (1 << tokens.index("exit")) if "exit" in tokens else 0;
+    view.exit_wants = [0 for _ in range(count)];
     view.sure = [[] for _ in range(count)];
     view.maybe = [[] for _ in range(count)];
     view.ways = [[] for _ in range(count)];
@@ -95,6 +132,11 @@ def search_of(atlas: LevelGraph, leave_out: list[str] = []) -> Search {
         }
         if place.way_out {
             view.exits.append(place.area);
+            for need in place.exit_needs {
+                if need in tokens {
+                    view.exit_wants[place.area] |= 1 << tokens.index(need);
+                }
+            }
         }
         for move in [edge place->:Move:->] {
             if move.to <= 0 or move.to >= count {
@@ -139,7 +181,7 @@ def prove(atlas: LevelGraph, leave_out: list[str] = []) -> Proof {
     }
     span = 1 << len(view.tokens);
     start = view.starts[0];
-    first = start * span + view.gives[start];
+    first = start * span + view.give(start, 0);
     seen = reach_states(view, first, span);
     proof.states = len(seen);
     good = good_states(view, seen, span);
@@ -173,7 +215,7 @@ def reach_states(view: Search, first: int, span: int) -> dict[int, bool] {
             if step[1] & held != step[1] {
                 continue;
             }
-            after = step[0] * span + (held | view.gives[step[0]]);
+            after = step[0] * span + (held | view.give(step[0], held));
             if after not in seen {
                 seen[after] = True;
                 todo.append(after);
@@ -206,12 +248,12 @@ def good_states(view: Search, seen: dict[int, bool], span: int) -> dict[int, boo
             if not view.live[area] {
                 continue;
             }
-            if area in view.exits and (view.exit_bit == 0 or held & view.exit_bit != 0) {
+            if view.out_with(area, held) {
                 frontier.append(area);
                 continue;
             }
             for step in view.sure[area] {
-                gained = held | view.gives[step[0]];
+                gained = held | view.give(step[0], held);
                 if step[1] & held == step[1] and gained != held and (step[0] * span + gained) in good {
                     frontier.append(area);
                     break;
@@ -225,7 +267,7 @@ def good_states(view: Search, seen: dict[int, bool], span: int) -> dict[int, boo
         backward: list[list[int]] = [[] for _ in range(view.count)];
         for area in range(view.count) {
             for step in view.sure[area] {
-                if step[1] & held == step[1] and view.gives[step[0]] | held == held {
+                if step[1] & held == step[1] and view.give(step[0], held) | held == held {
                     backward[step[0]].append(area);
                 }
             }
@@ -258,7 +300,7 @@ def sure_route(view: Search, first: int, span: int, proof: Proof) {
         at += 1;
         area = state // span;
         mask = state % span;
-        if area in view.exits and (view.exit_bit == 0 or mask & view.exit_bit != 0) {
+        if view.out_with(area, mask) {
             goal = state;
             break;
         }
@@ -266,7 +308,7 @@ def sure_route(view: Search, first: int, span: int, proof: Proof) {
             if step[1] & mask != step[1] {
                 continue;
             }
-            after = step[0] * span + (mask | view.gives[step[0]]);
+            after = step[0] * span + (mask | view.give(step[0], mask));
             if after not in came {
                 came[after] = state;
                 todo.append(after);
@@ -311,7 +353,7 @@ def explain_proof(atlas: LevelGraph, proof: Proof) -> list[str] {
             have = state % span;
             for step in view.sure[area] {
                 if step[1] & have == step[1] {
-                    after = step[0] * span + (have | view.gives[step[0]]);
+                    after = step[0] * span + (have | view.give(step[0], have));
                     if after not in closure {
                         closure[after] = True;
                         todo.append(after);
@@ -381,20 +423,20 @@ def explain_proof(atlas: LevelGraph, proof: Proof) -> list[str] {
         if view.starts {
             span = 1 << len(view.tokens);
             start = view.starts[0];
-            seen = reach_states(view, start * span + view.gives[start], span);
+            seen = reach_states(view, start * span + view.give(start, 0), span);
             areas = set([state // span for state in seen.keys()]);
             lines.append("from the start " + str(len(areas)) + " of " + str(len(by_area)) + " places reached; ways out at " + str(view.exits[:4]));
             # The edge of what the start reaches for sure (tokens taken on
             # the way): the possible moves that leave it.
-            sure_seen: dict[int, bool] = {start * span + view.gives[start]: True};
-            todo = [start * span + view.gives[start]];
+            sure_seen: dict[int, bool] = {start * span + view.give(start, 0): True};
+            todo = [start * span + view.give(start, 0)];
             while todo {
                 state = todo.pop();
                 area = state // span;
                 held = state % span;
                 for step in view.sure[area] {
                     if step[1] & held == step[1] {
-                        after = step[0] * span + (held | view.gives[step[0]]);
+                        after = step[0] * span + (held | view.give(step[0], held));
                         if after not in sure_seen {
                             sure_seen[after] = True;
                             todo.append(after);
@@ -475,7 +517,7 @@ def mark_stages(atlas: LevelGraph) {
     }
     span = 1 << len(view.tokens);
     start = view.starts[0];
-    seen = reach_states(view, start * span + view.gives[start], span);
+    seen = reach_states(view, start * span + view.give(start, 0), span);
     best: dict[int, int] = {};
     for state in seen.keys() {
         area = state // span;
@@ -506,7 +548,7 @@ def prune_traps(atlas: LevelGraph, rounds: int = 4) -> int {
         view = search_of(atlas);
         span = 1 << len(view.tokens);
         start = view.starts[0];
-        first = start * span + view.gives[start];
+        first = start * span + view.give(start, 0);
         seen = reach_states(view, first, span);
         good = good_states(view, seen, span);
         alive: dict[int, bool] = {};
@@ -520,7 +562,7 @@ def prune_traps(atlas: LevelGraph, rounds: int = 4) -> int {
         }
         dead: dict[int, bool] = {};
         for area in reached.keys() {
-            if area in alive or view.deadly[area] or view.gives[area] != 0 or area in view.starts or area in view.exits {
+            if area in alive or view.deadly[area] or view.gives[area] != 0 or view.gives_if[area] or area in view.starts or area in view.exits {
                 continue;
             }
             dead[area] = True;

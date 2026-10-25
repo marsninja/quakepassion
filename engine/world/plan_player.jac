@@ -992,7 +992,10 @@ walker Act {
         self.walk_to(target, 1.0);
         rise = target.z - self.origin.z;
         waited = bot.clock - bot.step_since;
-        if player.grounded and ((rise > 48.0 and Vec3(x=target.x - self.origin.x, y=target.y - self.origin.y).length() < 96.0) or (waited > 3.0 and bot.frames % 45 == 0)) {
+        # Not where gravity is low (a jump there floats for seconds), unless
+        # it is above.
+        low_gravity = self.level.movement.gravity < 400.0;
+        if player.grounded and ((rise > 48.0 and Vec3(x=target.x - self.origin.x, y=target.y - self.origin.y).length() < 96.0) or (waited > 3.0 and bot.frames % 45 == 0 and not low_gravity)) {
             self.intent.jump = True;
         }
     }
@@ -1145,9 +1148,11 @@ impl PlanPlayer.drive(world: World, level: Level, player: Player, state: CombatS
             nearest = 384.0;
             touch = False;
             for portal in [world->:HasExit:->][?:LevelExit] {
+                # A way back is walked into only when every way out is one
+                # (a side level's).
                 going_back = False;
                 try {
-                    going_back = exit_map(portal.destination) in self.been;
+                    going_back = bool(self.back_places) and exit_map(portal.destination) in self.been;
                 } except ValueError {
                     going_back = False;
                 }
@@ -1194,8 +1199,10 @@ impl PlanPlayer.drive(world: World, level: Level, player: Player, state: CombatS
     if asked > 0.5 and (player.grounded or player.water_depth >= 1) and not self.travel.waiting and speed < 30.0 {
         self.blocked_time += dt;
         if self.blocked_time > 0.6 {
-            # On foot a jump; in water up out of it, against the edge.
-            intent.jump = True;
+            # On foot a jump (not where gravity is low: a jump there floats
+            # the body for seconds, off the way); in water up out of it,
+            # against the edge.
+            intent.jump = player.water_depth >= 1 or level.movement.gravity >= 400.0;
             if player.water_depth >= 1 {
                 intent.move.z = 1.0;
             }

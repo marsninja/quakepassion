@@ -35,6 +35,7 @@ import from ..physics.movement { MovePlayer, MovementProfile }
 import from ..world.world { World, Player }
 import from ..world.level { Level }
 import from ..world.exits { LevelExit, HasExit, exit_map }
+import from ..world.signals { Signal }
 import from ..world.objectives { Objective, mover_objectives, mover_blocked, exit_objectives }
 import from ..world.doors { Door, door_parts, door_starts_open }
 import from ..world.trains { Train, HasTrain }
@@ -592,8 +593,12 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
                     continue;
                 }
                 # Boarding the mover or stepping off it (an elevator car
-                # whose box takes in its walls) is no way through it shut.
-                if place.mover == model or (0 < move.to < len(places) and places[move.to].mover == model) {
+                # whose box takes in its walls) is no way through it shut;
+                # dropping down through it (a trapdoor stood on) or rising
+                # up through it is.
+                through = (move.start.z > box.maxs.z - 8.0 and move.finish.z < box.mins.z)
+                    or (move.start.z < box.mins.z and move.finish.z > box.maxs.z - 8.0);
+                if not through and (place.mover == model or (0 < move.to < len(places) and places[move.to].mover == model)) {
                     continue;
                 }
                 if move.gate == 0 and segment_meets(move.start, move.finish, swept) {
@@ -601,7 +606,12 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
                 }
             }
         }
-        for objective in mover_objectives(world, model, nobody) {
+        objectives = mover_objectives(world, model, nobody);
+        # A counter's inputs (Quake's trigger_counter, fired once all its
+        # buttons are): each gives a token of its own, and the gate's token
+        # comes with the last of them.
+        hits = counter_hits(objectives);
+        for objective in objectives {
             what = objective_what(objective);
             given = token;
             if objective.kind == "pickup" and what.startswith("key") {
@@ -611,9 +621,19 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
                     gate.needs.append(what);
                 }
             }
-            opener = Opener(kind=objective.kind, token=given, point=objective.point, what=what);
+            done_from = opener_places_of(objective, level.collision, mesh, places);
+            needs: list[str] = [];
+            if objective.counter is not None and objective_hit(objective) in hits {
+                needs = [hit for hit in hits[objective_hit(objective)]];
+                single = Opener(kind=objective.kind, token=objective_hit(objective), point=objective.point, what=what);
+                atlas +>:Offers:+> single;
+                for place in done_from {
+                    single +>:DoneFrom:+> place;
+                }
+            }
+            opener = Opener(kind=objective.kind, token=given, point=objective.point, what=what, needs=needs);
             atlas +>:Offers:+> opener;
-            for place in opener_places_of(objective, level.collision, mesh, places) {
+            for place in done_from {
                 opener +>:DoneFrom:+> place;
             }
         }
@@ -730,6 +750,51 @@ def share_openers(atlas: LevelGraph, level: Level) {
     }
 }
 
+"""The token of one input of a counter: the button's model, else where it
+is done."""
+def objective_hit(objective: Objective) -> str {
+    door = objective.door;
+    if door is not None and door.kind == "button" {
+        return "hit:" + str(door.model);
+    }
+    return "hit:" + str(int(objective.point.x)) + "_" + str(int(objective.point.y)) + "_" + str(int(objective.point.z));
+}
+
+"""For each input of a counter fed by two or more that it needs all of, its
+token, mapped to the tokens of all that counter's inputs."""
+def counter_hits(objectives: list[Objective]) -> dict[str, list[str]] {
+    groups: list[list[Objective]] = [];
+    counters: list[Signal] = [];
+    for objective in objectives {
+        counter = objective.counter;
+        if counter is None {
+            continue;
+        }
+        if counter not in counters {
+            counters.append(counter);
+            groups.append([]);
+        }
+        groups[counters.index(counter)].append(objective);
+    }
+    found: dict[str, list[str]] = {};
+    for index in range(len(counters)) {
+        tokens: list[str] = [];
+        for objective in groups[index] {
+            hit = objective_hit(objective);
+            if hit not in tokens {
+                tokens.append(hit);
+            }
+        }
+        if len(tokens) < 2 or len(tokens) > counters[index].remaining {
+            continue;
+        }
+        for hit in tokens {
+            found[hit] = tokens;
+        }
+    }
+    return found;
+}
+
 """Note on `place` that it is a way out to the level `portal` leads to."""
 def exit_place_to(place: Place, portal: LevelExit) {
     try {
@@ -773,16 +838,29 @@ def read_exits(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
                 reached = opener_places_of(objective, level.collision, mesh, places);
                 # A trigger no floor reaches, where a mover carries a body to
                 # it (Quake II base1's lift down into the way out): the
-                # mover's places. (The proof does not then also want what
-                # sets the mover going.)
+                # mover's places, a way out once what sets the mover going
+                # is done (the button in the car).
                 box = objective.box;
+                ridden = False;
                 if not reached and box is not None {
                     reached = ridden_places(atlas, box, places);
+                    ridden = True;
                 }
                 for place in reached {
                     place.way_out = True;
                     exit_place_to(place, portal);
                     found_any = True;
+                    if ridden {
+                        for gate in [atlas->:Guards:->][?:Gate] {
+                            if gate.model == place.mover {
+                                for need in gate.needs {
+                                    if need not in place.exit_needs {
+                                        place.exit_needs.append(need);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             continue;

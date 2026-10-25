@@ -50,7 +50,10 @@ node Objective {
         box: AABB | None = None,
         # What is shot at, when it is a solid (a door, a secret door, a
         # button): a shot that ends on it hits it, however thick it is.
-        aim_box: AABB | None = None;
+        aim_box: AABB | None = None,
+        # The counter it is one of the inputs of (a trigger_counter that
+        # fires once enough of them have), when it is.
+        counter: Signal | None = None;
 }
 
 """Where a player's origin picks an item up: its box (16 a side, 56 tall
@@ -169,6 +172,7 @@ walker FindActions {
             return;
         }
         self.seen.append(here);
+        first = len(self.found);
         for trigger in [here<-:Activates:<-][?:TouchTrigger] {
             source = trigger.signal;
             if source is not None {
@@ -181,6 +185,14 @@ walker FindActions {
         for source in [here<-:Targets:<-][?:Signal] {
             self.found.extend(objective_owner_actions(self.world, source, self.why));
             behind.append(source);
+        }
+        # A counter: what fires it directly is one of its inputs.
+        if here.remaining > 0 {
+            for objective in self.found[first:] {
+                if objective.counter is None {
+                    objective.counter = here;
+                }
+            }
         }
         visit behind;
     }

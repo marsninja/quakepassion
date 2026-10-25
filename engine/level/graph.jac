@@ -47,8 +47,11 @@ node Place {
         flags: int = 0,
         contents: int = 0,
         way_out: bool = False,
-        # The levels its ways out lead to (an exit's map), when it is one.
+        # The levels its ways out lead to (an exit's map), when it is one,
+        # and the tokens it takes to be one (a mover ridden down into the
+        # exit's trigger: what sets it going).
         exits: list[str] = [],
+        exit_needs: list[str] = [],
         start: bool = False,
         # Its progression stage: the tokens it takes to get there (a mask
         # over the graph's tokens), -1 unreached.
@@ -104,7 +107,10 @@ node Opener {
         token: str,
         point: Vec3 = Vec3(),
         # A key's classname, a monster's: what stands there.
-        what: str = "";
+        what: str = "",
+        # The tokens it gives its token only with (a counter's door opens on
+        # the last of its buttons: each button's own token first).
+        needs: list[str] = [];
 }
 
 edge DoneFrom: Opener --> Place {}
@@ -223,7 +229,8 @@ def graph_text(atlas: LevelGraph) -> str {
                 + graph_number(place.surface) + " " + graph_number(place.roof) + " " + graph_flag(place.sky) + " "
                 + graph_flag(place.deadly) + " " + str(place.mover) + " " + graph_flag(place.resting) + " "
                 + graph_flag(place.way_out) + " " + graph_flag(place.start) + " " + str(place.stage) + " " + str(place.flags) + " "
-                + str(place.contents) + " " + (",".join(place.exits) if place.exits else "-")
+                + str(place.contents) + " " + (",".join(place.exits) if place.exits else "-") + " "
+                + (",".join(place.exit_needs) if place.exit_needs else "-")
         );
     }
     for place in places {
@@ -246,7 +253,8 @@ def graph_text(atlas: LevelGraph) -> str {
         lines.append(
             "O " + opener.kind + " " + opener.token + " " + graph_number(opener.point.x) + " " + graph_number(opener.point.y) + " "
                 + graph_number(opener.point.z) + " " + (opener.what or "-") + " "
-                + (",".join([str(place.area) for place in opener_places(opener)]) or "-")
+                + (",".join([str(place.area) for place in opener_places(opener)]) or "-") + " "
+                + (",".join(opener.needs) if opener.needs else "-")
         );
     }
     for thing in graph_things(atlas) {
@@ -311,7 +319,8 @@ def graph_from_text(text: str) -> LevelGraph | None {
                 stage=int(words[18]),
                 flags=int(words[19]),
                 contents=int(words[20]),
-                exits=[] if len(words) < 22 or words[21] == "-" else words[21].split(",")
+                exits=[] if len(words) < 22 or words[21] == "-" else words[21].split(","),
+                exit_needs=[] if len(words) < 23 or words[22] == "-" else words[22].split(",")
             );
             place.center = place.box.mins.add(place.box.maxs).scale(0.5);
             by_area[place.area] = place;
@@ -348,7 +357,7 @@ def graph_from_text(text: str) -> LevelGraph | None {
                 }
             }
         } elif tag == "O" {
-            opener = Opener(kind=words[1], token=words[2], point=Vec3(x=float(words[3]), y=float(words[4]), z=float(words[5])), what="" if words[6] == "-" else words[6]);
+            opener = Opener(kind=words[1], token=words[2], point=Vec3(x=float(words[3]), y=float(words[4]), z=float(words[5])), what="" if words[6] == "-" else words[6], needs=[] if len(words) < 9 or words[8] == "-" else words[8].split(","));
             atlas +>:Offers:+> opener;
             for area in graph_areas(words[7]) {
                 if area in by_area {

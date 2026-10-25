@@ -11,6 +11,7 @@ player stands with what is held."""
 import from ..math.vec3 { Vec3 }
 import from ..world.world { World, Player }
 import from ..world.objectives { mover_blocked, objective_mover }
+import from ..world.doors { door_parts }
 import from ..world.inventory { quantity }
 import from ..world.particle_field { Particle, particle_field, PARTICLE_GLOW }
 import from .graph { LevelGraph, Place, graph_places, graph_gates }
@@ -106,6 +107,20 @@ node Guide {
             held = False;
             if token.startswith("key") {
                 held = quantity(player.inventory, token) > 0 or self.carried & (1 << index) != 0;
+                if held {
+                    self.carried |= 1 << index;
+                }
+            } elif token.startswith("hit:") {
+                # One input of a counter: had once its button has been seen
+                # pressed (the counter keeps the count).
+                held = self.carried & (1 << index) != 0;
+                if not held and token[4:].isdigit() {
+                    for part in door_parts(world) {
+                        if part.model == int(token[4:]) and part.kind == "button" and (part.state not in ["closed", "locked"] or part.position > 0.01) {
+                            held = True;
+                        }
+                    }
+                }
                 if held {
                     self.carried |= 1 << index;
                 }
