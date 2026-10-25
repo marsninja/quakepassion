@@ -227,7 +227,10 @@ def reach_states(view: Search, first: int, span: int) -> dict[int, bool] {
 
 """The states (of those seen) from which the way out is reached over sure
 moves. Larger holdings first: a sure move into a place that gives more
-leads to a holding already settled."""
+leads to a holding already settled. Each holding is worked back from its
+ways out and from the moves that gain it more into a state already good,
+over the sure moves that keep it, and only through the states seen: every
+sure move on from a state seen is to one seen, so no other bears on them."""
 def good_states(view: Search, seen: dict[int, bool], span: int) -> dict[int, bool] {
     masks: list[int] = [];
     for state in seen.keys() {
@@ -241,41 +244,47 @@ def good_states(view: Search, seen: dict[int, bool], span: int) -> dict[int, boo
         }
         masks.insert(at, held);
     }
+    # Into each area, the sure moves that come there: [from, tokens wanted].
+    backward: list[list[list[int]]] = [[] for _ in range(view.count)];
+    for area in range(view.count) {
+        for step in view.sure[area] {
+            backward[step[0]].append([area, step[1]]);
+        }
+    }
+    # Only a move into a place that gives something gains a holding more.
+    givers = [area for area in range(view.count) if view.gives[area] != 0 or view.gives_if[area]];
     good: dict[int, bool] = {};
     for held in masks {
         frontier: list[int] = [];
-        for area in range(view.count) {
-            if not view.live[area] {
-                continue;
-            }
-            if view.out_with(area, held) {
-                frontier.append(area);
-                continue;
-            }
-            for step in view.sure[area] {
-                gained = held | view.give(step[0], held);
-                if step[1] & held == step[1] and gained != held and (step[0] * span + gained) in good {
-                    frontier.append(area);
-                    break;
-                }
-            }
-        }
         reached: dict[int, bool] = {};
-        for area in frontier {
-            reached[area] = True;
+        for area in view.exits {
+            if area not in reached and (area * span + held) in seen and view.out_with(area, held) {
+                reached[area] = True;
+                frontier.append(area);
+            }
         }
-        backward: list[list[int]] = [[] for _ in range(view.count)];
-        for area in range(view.count) {
-            for step in view.sure[area] {
-                if step[1] & held == step[1] and view.give(step[0], held) | held == held {
-                    backward[step[0]].append(area);
+        for area in givers {
+            gained = held | view.give(area, held);
+            if gained == held or (area * span + gained) not in good {
+                continue;
+            }
+            for way in backward[area] {
+                before = way[0];
+                if way[1] & held == way[1] and before not in reached and (before * span + held) in seen {
+                    reached[before] = True;
+                    frontier.append(before);
                 }
             }
         }
         while frontier {
             area = frontier.pop();
-            for before in backward[area] {
-                if before not in reached {
+            # A move into a place that gives more leaves this holding.
+            if view.give(area, held) | held != held {
+                continue;
+            }
+            for way in backward[area] {
+                before = way[0];
+                if way[1] & held == way[1] and before not in reached and (before * span + held) in seen {
                     reached[before] = True;
                     frontier.append(before);
                 }
@@ -286,6 +295,44 @@ def good_states(view: Search, seen: dict[int, bool], span: int) -> dict[int, boo
         }
     }
     return good;
+}
+
+"""Whether the way out is reached over sure moves from `first`: the start's
+state is good (see good_states), searched forward alone."""
+def sure_finishes(view: Search, first: int, span: int) -> bool {
+    seen: dict[int, bool] = {first: True};
+    todo = [first];
+    while todo {
+        state = todo.pop();
+        area = state // span;
+        held = state % span;
+        if view.out_with(area, held) {
+            return True;
+        }
+        for step in view.sure[area] {
+            if step[1] & held != step[1] {
+                continue;
+            }
+            after = step[0] * span + (held | view.give(step[0], held));
+            if after not in seen {
+                seen[after] = True;
+                todo.append(after);
+            }
+        }
+    }
+    return False;
+}
+
+"""Whether a graph finishes with some tokens left out (nothing gives them):
+what `prove` answers as `finishes`, without the rest of the proof."""
+def finishes_without(atlas: LevelGraph, leave_out: list[str]) -> bool {
+    view = search_of(atlas, leave_out);
+    if not view.starts or not view.exits {
+        return False;
+    }
+    span = 1 << len(view.tokens);
+    start = view.starts[0];
+    return sure_finishes(view, start * span + view.give(start, 0), span);
 }
 
 """The shortest sure route from the start to the way out, tokens gathered
@@ -499,7 +546,7 @@ def prove_level(atlas: LevelGraph, required: bool = True) -> Proof {
     proof = prove(atlas);
     if proof.finishes and required {
         for token in proof.tokens {
-            if not prove(atlas, [token]).finishes {
+            if not finishes_without(atlas, [token]) {
                 proof.required.append(token);
             }
         }
@@ -541,16 +588,27 @@ them: no pocket to fall into."""
 def prune_traps(atlas: LevelGraph, rounds: int = 4) -> int {
     removed = 0;
     for round_index in range(rounds) {
-        proof = prove(atlas);
-        if not proof.finishes or proof.softlocks == 0 {
+        # The proof's own search, once a round: it finishes and strands a
+        # player somewhere, or there is nothing to prune.
+        view = search_of(atlas);
+        if not view.starts or not view.exits {
             break;
         }
-        view = search_of(atlas);
         span = 1 << len(view.tokens);
         start = view.starts[0];
         first = start * span + view.give(start, 0);
         seen = reach_states(view, first, span);
         good = good_states(view, seen, span);
+        stranded = False;
+        for state in seen.keys() {
+            if state not in good and not view.deadly[state // span] {
+                stranded = True;
+                break;
+            }
+        }
+        if first not in good or not stranded {
+            break;
+        }
         alive: dict[int, bool] = {};
         reached: dict[int, bool] = {};
         for state in seen.keys() {

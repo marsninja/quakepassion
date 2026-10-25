@@ -1,5 +1,6 @@
 import from engine.math.vec3 { Vec3 }
 import from engine.physics.collision { CollisionMap }
+import from engine.formats.aas { TRAVEL_WALK }
 import from engine.level.graph { LevelGraph, Place, Move, graph_text, graph_from_text, graph_places, graph_gates, graph_openers, graph_things, opener_places }
 import from engine.level.prove { prove, prove_level, prune_traps }
 import from engine.level.budget { budget_route, start_kit }
@@ -64,6 +65,26 @@ test "a key behind its own door leaves the level unfinished" {
     add_opener(atlas, "pickup", "key_gold", [place_of(atlas, 5)], "key_gold");
     add_gate(atlas, 7, ["key_gold"], [place_of(atlas, 4)]);
     assert not prove(atlas).finishes;
+}
+
+test "a pit climbed out of only with the key strands a player without it" {
+    atlas = row_graph(6);
+    store = side_place(atlas, 9, place_of(atlas, 1));
+    add_opener(atlas, "pickup", "key_gold", [store], "key_gold");
+    add_gate(atlas, 7, ["key_gold"], [place_of(atlas, 4)]);
+    pit = side_place(atlas, 10, place_of(atlas, 3));
+    pit del --> place_of(atlas, 3);
+    place_of(atlas, 3) del --> pit;
+    fall_to(place_of(atlas, 3), pit);
+    # Out of the pit by a way the key opens, back up to 3.
+    climb = side_place(atlas, 11, pit);
+    climb +>:Move(kind=TRAVEL_WALK, to=3, must=True, start=climb.center, finish=place_of(atlas, 3).center):+> place_of(atlas, 3);
+    add_gate(atlas, 12, ["key_gold"], [climb]);
+    proof = prove_level(atlas);
+    assert proof.finishes and proof.softlocks == 1;
+    assert proof.traps == ["10 holding []"];
+    assert proof.required == ["key_gold"];
+    assert prune_traps(atlas) == 0;
 }
 
 test "an arena proves when nothing strands a player, and not with a pit" {
