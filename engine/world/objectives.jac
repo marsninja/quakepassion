@@ -23,7 +23,7 @@ import from .combat { Opponent, HasOpponent }
 import from .pickups { Pickup, HasPickup }
 import from .inventory { quantity }
 import from .exits { LevelExit }
-import from .trains { Train, HasTrain, secret_open_motion }
+import from .trains { Train, HasTrain, secret_open_motion, train_waits }
 import from .bot_travel { BODY_REACH_BELOW, BODY_REACH_ABOVE }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
@@ -143,7 +143,7 @@ def objective_owner_actions(world: World, source: Signal, why: str) -> list[Obje
         );
     }
     # A door that fires its targets as it opens (Quake's func_door with a
-    # target, e4m6's gold door setting a plat going): shot open when it
+    # target: a key door that sets a plat going): shot open when it
     # takes a shot, else opened by a touch, with the keys it wants (a door
     # fired from elsewhere is looked behind).
     for part in door_parts(world) {
@@ -236,6 +236,17 @@ def objective_secret(world: World, model: int) -> Train | None {
     return None;
 }
 
+"""The train with BSP `model` that waits to be fired (see train_waits), or
+None."""
+def objective_waiting_train(world: World, model: int) -> Train | None {
+    for train in [world->:HasTrain:->][?:Train] {
+        if train.model == model and train_waits(train) {
+            return train;
+        }
+    }
+    return None;
+}
+
 """Whether a secret door stands fully open: at the third point of its track
 of four (the pose the navigation is compiled in), not part way there."""
 def objective_secret_open(train: Train) -> bool {
@@ -262,17 +273,11 @@ def secret_objectives(world: World, train: Train, model: int) -> list[Objective]
     return found;
 }
 
-"""What sets a train going that waits to be fired (a Quake func_train with a
-targetname stands where it was drawn until then): what fires it. Nothing
-for one already running."""
+"""What sets a train going that waits to be fired (see train_waits; a
+Quake func_train with a targetname stands at its first corner until then):
+what fires it."""
 def train_objectives(world: World, train: Train) -> list[Objective] {
-    if train.running or train.started {
-        return [];
-    }
     search = train.activation spawn FindActions(world=world, why="train " + str(train.model));
-    for action in search.found {
-        action.mover = train.model;
-    }
     return search.found;
 }
 
@@ -284,6 +289,10 @@ def mover_objectives(world: World, model: int, player: Player, resting: bool = F
     if leader is None {
         secret = objective_secret(world, model);
         found_secret = secret_objectives(world, secret, model) if secret is not None else [];
+        waiting = objective_waiting_train(world, model) if secret is None else None;
+        if waiting is not None {
+            found_secret = train_objectives(world, waiting);
+        }
         for action in found_secret {
             action.mover = model;
         }
@@ -348,7 +357,10 @@ def mover_blocked(world: World, model: int, player: Player) -> bool {
     leader = objective_mover(world, model);
     if leader is None {
         secret = objective_secret(world, model);
-        return secret is not None and not objective_secret_open(secret);
+        if secret is None {
+            return objective_waiting_train(world, model) is not None;
+        }
+        return not objective_secret_open(secret);
     }
     if leader.kind == "button" {
         return False;
