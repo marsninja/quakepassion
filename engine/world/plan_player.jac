@@ -638,6 +638,12 @@ def play_move(yaw: float, way: Vec3, share: float = 1.0, rise: float = 0.0) -> V
     return Vec3(x=way.dot(right_from(yaw)) * share, y=way.dot(forward_from(yaw, 0.0)) * share, z=rise);
 }
 
+"""Whether `point` is within `room` of `box`."""
+def play_inside(point: Vec3, box: AABB, room: float) -> bool {
+    return box.mins.x - room <= point.x <= box.maxs.x + room and box.mins.y - room <= point.y <= box.maxs.y + room
+        and box.mins.z - room <= point.z <= box.maxs.z + room;
+}
+
 """The shortest turn from angle `a` to `b`, radians."""
 def play_turn(a: float, b: float) -> float {
     gap = (b - a) % (2.0 * math.pi);
@@ -685,8 +691,8 @@ def exit_boxes(world: World, portal: LevelExit) -> list[AABB] {
 }
 
 """What a shoot step shoots: of the objectives that open its mover, the
-shot one nearest the step's point, as its box and its brush model (-1 when
-it has none of its own, a trigger with health); None when there is none."""
+shot one nearest the step's point, as its box and whether it is a brush (1;
+0 for a trigger with health); None when there is none."""
 def shot_target(world: World, player: Player, step: DoStep) -> tuple[AABB, int] | None {
     found: tuple[AABB, int] | None = None;
     nearest = 1.0e18;
@@ -698,14 +704,7 @@ def shot_target(world: World, player: Player, step: DoStep) -> tuple[AABB, int] 
         if objective.kind != "shoot" or solid is None {
             continue;
         }
-        model = -1;
-        door = objective.door;
-        train = objective.train;
-        if door is not None {
-            model = door.model;
-        } elif train is not None {
-            model = train.model;
-        }
+        model = 1;
         gap = objective.point.sub(step.point).length();
         if gap < nearest {
             nearest = gap;
@@ -852,25 +851,21 @@ walker Act {
         player = self.player;
         target = here.point;
         if here.kind == "shoot" {
-            # At the near side of what is shot (a button, a door, a secret
-            # door: the objective's box), and only along a line that ends on
-            # it.
+            # What is shot (a button, a door, a secret door, a trigger with
+            # health: the objective's box).
             aimed = shot_target(self.world, player, here);
-            model = -1;
             if aimed is not None {
-                solid = aimed[0];
-                model = aimed[1];
-                target = Vec3(
-                    x=max(solid.mins.x + 2.0, min(solid.maxs.x - 2.0, player.pos.x)),
-                    y=max(solid.mins.y + 2.0, min(solid.maxs.y - 2.0, player.pos.y)),
-                    z=max(solid.mins.z + 2.0, min(solid.maxs.z - 2.0, player.pos.z))
-                );
+                target = aimed[0].mins.add(aimed[0].maxs).scale(0.5);
             }
             line = self.level.collision.trace_point(player.pos, target);
-            # A line that ends on the thing itself (its own brush model); one
-            # with no model of its own (a trigger with health), a clear line.
-            ends_on = model > 0 and line.model == model;
-            if ends_on or (model <= 0 and (line.fraction > 0.97 or line.end.sub(target).length() < 24.0)) {
+            # At its middle: a line that ends on a brush model inside what is
+            # shot (a button's own face), or a clear one (a trigger with
+            # health, which a line passes through).
+            ends_on = line.model > 0 and aimed is not None and play_inside(line.end, aimed[0], 4.0);
+            if bot.frames % 120 == 0 {
+                print("PLAY aim", here.token, "line ends on", line.model, "fraction", round(line.fraction, 3), "at", point_words(line.end), "aiming", point_words(target));
+            }
+            if ends_on or line.fraction > 0.97 or (aimed is None and line.end.sub(target).length() < 24.0) {
                 self.aim = target;
                 return;
             }

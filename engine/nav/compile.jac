@@ -38,6 +38,7 @@ import from ..formats.aas {
     TRAVEL_ELEVATOR,
     TRAVEL_JUMPPAD,
     TRAVEL_SWIM,
+    TRAVEL_LADDER,
     AREA_GROUNDED,
     AREA_LIQUID,
     AREACONTENTS_WATER,
@@ -712,6 +713,71 @@ def:priv nav_teleports(world: World, grid: NavGrid) -> int {
     return count;
 }
 
+"""The ladders of the level's collision (each climbable brush tall enough to
+climb), with the spots at their tops: where a body climbing to the top
+steps off, beside the ladder at its top on each side that has a floor.
+A brush's box in the collision map is grown by the body's (the origins a
+body touching it has), so its top is the highest origin still on it."""
+def:priv nav_ladders(grid: NavGrid) -> tuple[list[AABB], list[NavSpot]] {
+    collision = grid.collision;
+    ladders: list[AABB] = [];
+    tops: list[NavSpot] = [];
+    for index in range(min(len(collision.hulls), len(collision.bounds))) {
+        if not collision.hulls[index].climbable {
+            continue;
+        }
+        box = collision.bounds[index];
+        if box.maxs.z - box.mins.z < grid.rules.step * 4.0 {
+            continue;
+        }
+        ladders.append(box);
+        middle = box.mins.add(box.maxs).scale(0.5);
+        half = box.maxs.sub(box.mins).scale(0.5);
+        for way in [Vec3(x=1.0), Vec3(x=-1.0), Vec3(y=1.0), Vec3(y=-1.0)] {
+            beyond = Vec3(x=middle.x + way.x * (half.x + 20.0), y=middle.y + way.y * (half.y + 20.0), z=box.maxs.z + 16.0);
+            spot = nav_seed(grid, beyond);
+            if spot is not None and spot.origin.z >= box.maxs.z - 72.0 and spot.origin.z <= box.maxs.z + 24.0 and spot not in tops {
+                tops.append(spot);
+            }
+        }
+    }
+    return (ladders, tops);
+}
+
+"""Climbs both ways between the floors along each ladder: from each spot
+touching it to each beside it higher up (a ladder runs on below the floor
+at its foot often enough, into a pit or a pool)."""
+def:priv nav_ladder_steps(grid: NavGrid, ladders: list[AABB]) -> int {
+    count = 0;
+    for box in ladders {
+        lows: list[NavSpot] = [];
+        highs: list[NavSpot] = [];
+        for spot in grid.spots {
+            o = spot.origin;
+            if o.z < box.mins.z - 8.0 or o.z > box.maxs.z + 24.0 {
+                continue;
+            }
+            if box.mins.x - 2.0 <= o.x <= box.maxs.x + 2.0 and box.mins.y - 2.0 <= o.y <= box.maxs.y + 2.0 {
+                lows.append(spot);
+            }
+            if box.mins.x - 40.0 <= o.x <= box.maxs.x + 40.0 and box.mins.y - 40.0 <= o.y <= box.maxs.y + 40.0 {
+                highs.append(spot);
+            }
+        }
+        for low in lows {
+            for high in highs {
+                if high.origin.z - low.origin.z < grid.rules.step * 2.0 {
+                    continue;
+                }
+                low +>:NavStep(kind=TRAVEL_LADDER, target=high.index):+> high;
+                high +>:NavStep(kind=TRAVEL_LADDER, target=low.index):+> low;
+                count += 1;
+            }
+        }
+    }
+    return count;
+}
+
 """Where each jump pad throws a body: from the middle of its trigger, at its
 floor, along the arc of its launch (swept a twentieth of a second at a
 time, sliding off walls) to the floor it comes down on. The pads that land
@@ -1194,6 +1260,14 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
     for summit in lifted[1] {
         summit spawn flood;
     }
+    # Ladders (Quake II's climbable brushes) lead up to floors perhaps
+    # reached no other way: the floor at each one's top is flooded from too,
+    # and joined both ways to the floor at its foot.
+    climbs = nav_ladders(grid);
+    for summit in climbs[1] {
+        summit spawn flood;
+    }
+    build.notes.append("ladders " + str(nav_ladder_steps(grid, climbs[0])) + " climbs");
     for jump_round in range(3) {
         leaps = FindJumps(grid=grid);
         for spot in list(grid.spots) {
