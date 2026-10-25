@@ -24,6 +24,8 @@ import from .bot_travel { FollowRoute, TravelResult, set_travel_gravity }
 import from .bot_trace { BotTrace, trace_text, trace_point }
 import from .combat { Opponent, HasOpponent, CombatState, owns_weapon, has_ammo_for, weapon_rule }
 import from .exits { LevelExit, HasExit, exit_map }
+import from .pickups { Pickup, HasPickup }
+import from .inventory { quantity }
 import from .doors { Door }
 import from .objectives { objective_mover, mover_objectives, exit_objectives }
 import from ..level.graph { LevelGraph }
@@ -100,6 +102,10 @@ node PlanPlayer {
         log_wait: float = 0.0,
         # The menu message last printed (`App.step` prints each once).
         menu_notice: str = "",
+        # Where a shoot step is shot from (a spot with a clear line), and
+        # the step it was found for.
+        shot_spot: Vec3 | None = None,
+        shot_spot_for: str = "",
         # Asked of the game (`App.step`): the `kill` command, for a bot that
         # lives on (god mode) in a place a body dies in, with no way out.
         wants_death: bool = False,
@@ -479,6 +485,52 @@ node PlanPlayer {
         return True;
     }
 
+    """Whether to keep the few shots left for a switch the plan shoots
+    later: a shoot step ahead, and under six shots held for the weapons
+    that reach."""
+    def saving_shots(player: Player, state: CombatState) -> bool {
+        ahead = [step for step in self.steps[self.at:] if isinstance(step, DoStep) and step.kind == "shoot"];
+        if not ahead {
+            return False;
+        }
+        shots = 0;
+        for rule in state.rules {
+            if rule.ammo and owns_weapon(player, rule) and rule.reach > 300.0 {
+                shots += quantity(player.inventory, rule.ammo) // max(1, rule.cost);
+            }
+        }
+        return shots < 6;
+    }
+
+    """Where `target` can be shot from: of the areas within 768 of it, the
+    nearest to `origin` whose middle at eye height has a line that ends on
+    what is shot (`solid`, when it is a brush) or a clear one; None when
+    none near has."""
+    def shooting_spot(level: Level, target: Vec3, solid: AABB | None, origin: Vec3) -> Vec3 | None {
+        mesh = self.mesh;
+        if mesh is None {
+            return None;
+        }
+        near: list[tuple[float, int]] = [];
+        for index in range(1, len(mesh.aas.areas)) {
+            info = mesh.aas.areas[index];
+            if info.reach_count == 0 or info.center.sub(target).length() > 768.0 {
+                continue;
+            }
+            near.append((info.center.sub(origin).length(), index));
+        }
+        near.sort();
+        eye_height = level.collision.eye_height;
+        for (gap, index) in near[0:96] {
+            eye = mesh.aas.areas[index].center.add(Vec3(z=eye_height));
+            line = level.collision.trace_point(eye, target);
+            if line.fraction > 0.97 or (solid is not None and line.model > 0 and play_inside(line.end, solid, 4.0)) {
+                return mesh.aas.areas[index].center;
+            }
+        }
+        return None;
+    }
+
     """The lift, plat or door the bot stands on while it is still going up
     or down, or None."""
     def rising_under(world: World, level: Level, origin: Vec3) -> Door | None {
@@ -714,6 +766,34 @@ def shot_target(world: World, player: Player, step: DoStep) -> tuple[AABB, int] 
     return found;
 }
 
+"""The nearest pickup that would give ammunition for a weapon held (its
+ammunition, or a weapon of that kind carrying some), or None."""
+def ammo_near(world: World, player: Player, state: CombatState, origin: Vec3) -> Vec3 | None {
+    wanted: set[str] = set();
+    for rule in state.rules {
+        if rule.ammo and owns_weapon(player, rule) and rule.reach > 300.0 {
+            wanted.add(rule.ammo);
+        }
+    }
+    best: Vec3 | None = None;
+    nearest = 1.0e18;
+    for item in [world->:HasPickup:->][?:Pickup] {
+        if not item.active {
+            continue;
+        }
+        gives = item.rule.kind in wanted or (item.rule.ammo in wanted and item.rule.ammo_amount > 0);
+        if not gives {
+            continue;
+        }
+        gap = item.pos.sub(origin).length();
+        if gap < nearest {
+            nearest = gap;
+            best = item.pos;
+        }
+    }
+    return best;
+}
+
 """The monster whose death a kill step wants: of those whose death fires
 what opens the step's mover, the nearest; else the nearest living one to
 the step's point."""
@@ -869,16 +949,26 @@ walker Act {
                 self.aim = target;
                 return;
             }
-            # No clear line from here: to the middle of the place it is shot
-            # from, and from there nearer it, for one.
-            mesh = bot.mesh;
-            if mesh is not None and here.area < len(mesh.aas.areas) {
-                middle = mesh.aas.areas[here.area].center;
-                if Vec3(x=middle.x - self.origin.x, y=middle.y - self.origin.y).length() > 24.0 and (bot.clock - bot.step_since) < 6.0 {
-                    self.walk_to(middle, 1.0);
-                } else {
-                    self.walk_to(target, 0.5);
+            # Nothing held that reaches it with ammunition: fetch some first.
+            if play_weapon(player, self.state, target.sub(player.pos).length(), player.water_depth >= 2) <= 0 {
+                supply = ammo_near(self.world, player, self.state, self.origin);
+                if supply is not None {
+                    self.chase(supply);
                 }
+                return;
+            }
+            # No clear line from here: to the nearest spot that has one (an
+            # area's middle at eye height), found once for the step.
+            words = step_words(here);
+            if bot.shot_spot_for != words {
+                bot.shot_spot_for = words;
+                bot.shot_spot = bot.shooting_spot(self.level, target, aimed[0] if aimed is not None else None, self.origin);
+            }
+            spot = bot.shot_spot;
+            if spot is not None and Vec3(x=spot.x - self.origin.x, y=spot.y - self.origin.y).length() > 16.0 {
+                self.chase(spot);
+            } else {
+                self.walk_to(target, 0.5);
             }
             return;
         }
@@ -892,21 +982,7 @@ walker Act {
             spot = prey.pos.sub(Vec3(z=prey.eye_height * 0.5));
             if self.level.collision.trace_point(eye, spot).fraction < 0.97 or spot.sub(eye).length() > 900.0 {
                 # Out of sight or far: after it over the mesh.
-                mesh = bot.mesh;
-                if mesh is not None {
-                    if not bot.route.points or bot.frames % 30 == 0 {
-                        bot.route = plan_route(mesh, self.origin, prey.pos, limit=48, flags=TFL_DEFAULT, now=bot.clock);
-                    }
-                    if bot.route.points {
-                        travel = player spawn FollowRoute(
-                            mesh=mesh, collision=self.level.collision, route=bot.route, eye_height=self.level.collision.eye_height,
-                            clock=bot.clock, view_yaw=math.degrees(player.yaw) % 360.0, view_pitch=-math.degrees(player.pitch), dt=self.dt
-                        );
-                        bot.travel = travel.result;
-                        self.head(travel.result.direction, travel.result.speed_scale());
-                        self.intent.jump = travel.result.jump;
-                    }
-                }
+                self.chase(prey.pos);
             }
             return;
         }
@@ -919,6 +995,32 @@ walker Act {
         if player.grounded and ((rise > 48.0 and Vec3(x=target.x - self.origin.x, y=target.y - self.origin.y).length() < 96.0) or (waited > 3.0 and bot.frames % 45 == 0)) {
             self.intent.jump = True;
         }
+    }
+
+    """Over the mesh to `point` (off the plan's moves: after a foe, to a spot
+    to shoot from, to ammunition), the route laid again every half second."""
+    def chase(point: Vec3) {
+        bot = self.bot;
+        mesh = bot.mesh;
+        if mesh is None {
+            return;
+        }
+        if not bot.route.points or bot.frames % 30 == 0 {
+            bot.route = plan_route(mesh, self.origin, point, limit=48, flags=TFL_DEFAULT, now=bot.clock);
+            bot.routed_at = -1;
+        }
+        if not bot.route.points {
+            self.walk_to(point, 1.0);
+            return;
+        }
+        player = self.player;
+        travel = player spawn FollowRoute(
+            mesh=mesh, collision=self.level.collision, route=bot.route, eye_height=self.level.collision.eye_height,
+            clock=bot.clock, view_yaw=math.degrees(player.yaw) % 360.0, view_pitch=-math.degrees(player.pitch), dt=self.dt
+        );
+        bot.travel = travel.result;
+        self.head(travel.result.direction, travel.result.speed_scale());
+        self.intent.jump = travel.result.jump or travel.launch is not None;
     }
 
     """Head along the flat world direction `heading` at `share` of a run."""
@@ -1131,6 +1233,11 @@ impl PlanPlayer.drive(world: World, level: Level, player: Player, state: CombatS
         # Near enough on it: a body's half width at its distance.
         close = max(0.02, min(0.12, math.atan2(16.0, max(1.0, distance))));
         intent.fire = slot > 0 and in_hand and abs(play_turn(player.yaw, want_yaw)) < close and abs(want_pitch - player.pitch) < close * 1.25;
+        # A switch to shoot still ahead and few shots left: kept for it
+        # (unless this foe is what the plan wants dead).
+        if intent.fire and step is not None and not (isinstance(step, DoStep) and step.kind == "kill") and self.saving_shots(player, state) {
+            intent.fire = False;
+        }
     } elif aim is not None {
         calm = False;
         line = aim.sub(player.pos);
