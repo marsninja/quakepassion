@@ -3,6 +3,7 @@ drawn in a prefab's own cells through its `Raising`: floors that float
 over others (balconies, bridges, galleries round a hall), jump pads with
 the edge they throw a body over kept free of railings, lava with its hurt,
 hints that speak again a little later (q3dm0's voice), and sliding doors."""
+import math;
 import from ..prefab { Raising, Cue, Fires }
 import from ..space { Space }
 import from ..kits { kit_of }
@@ -193,4 +194,19 @@ def lava_stones(build: Raising, x0: int, x1: int, y0: int, y1: int, z0: int, z1:
         }
     }
     return stones;
+}
+
+"""A jump pad on lift `z` at (x, y) that comes down at (lx, ly) on lift
+`lz`: the point it aims at (the top of its arc, 96 units over the higher
+of the two floors, which the body passes and goes on beyond) set short of
+the landing by the arc's rise and fall, so a long throw over a chasm lands
+where it is meant to and not past it. The box kx0..kx1, ky0..ky1 on lift
+`lz` (the edge it comes in over) is kept free of railings."""
+def pad_to(build: Raising, space: Space, x: float, y: float, z: int, lx: float, ly: float, lz: int, kx0: int, ky0: int, kx1: int, ky1: int) {
+    top = float(max(z, lz)) * 16.0 + 96.0;
+    rise = math.sqrt(top - float(z) * 16.0);
+    fall = math.sqrt(top - float(lz) * 16.0);
+    share = rise / (rise + fall);
+    build.jump_pad(x, y, z, x + (lx - x) * share, y + (ly - y) * share, lz);
+    keep_box(build, space, kx0, ky0, kx1, ky1, lz);
 }
