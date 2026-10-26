@@ -169,3 +169,28 @@ def keep_frame(build: Raising, space: Space, x0: int, y0: int, x1: int, y1: int,
         build.keep(space, x1 - 1, y, z);
     }
 }
+
+"""Lava from cell line x0 to x1 (y0..y1 across), lifts z0..z1, crossed by
+stepping stones along the lane lane0..lane1: a cell of lava, two of stone,
+a cell of lava... (so every gap is a cell, to jump), each reach of lava a
+pool of its own with its hurt. Answers where the stones stand ([x, ...])."""
+def lava_stones(build: Raising, x0: int, x1: int, y0: int, y1: int, z0: int, z1: int, lane0: int, lane1: int, damage: int = 30) -> list[int] {
+    stones: list[int] = [];
+    x = x0;
+    while x < x1 {
+        if (x - x0) % 3 == 0 or x + 1 >= x1 {
+            lava(build, x, y0, z0, x + 1, y1, z1, damage, False);
+            x += 1;
+        } else {
+            stones.append(x);
+            if y0 < lane0 {
+                lava(build, x, y0, z0, x + 2, lane0, z1, damage, False);
+            }
+            if lane1 < y1 {
+                lava(build, x, lane1, z0, x + 2, y1, z1, damage, False);
+            }
+            x += 2;
+        }
+    }
+    return stones;
+}
