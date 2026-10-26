@@ -11,6 +11,7 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Raising, Cue, Fires }
 import from ..space { Space }
 import from ..kits { kit_of }
+import from .common { key_item }
 
 """A deck of floor a lift thick, its top at lift `z`, over the cells
 x0..x1, y0..y1 (a gallery, a catwalk, a mezzanine): air under it stays
@@ -145,4 +146,66 @@ def hidden_closet(build: Raising, x0: int, y0: int, z: int, direction: int, item
     build.secret_door(float(panel[0]), float(panel[1]), float(z), float(panel[2]), float(panel[3]), float(z + 4), (direction + 2) % 4);
     build.supply(float(x0) + 2.0, float(y0) + 2.0, z, item, "q2");
     return build.secret(float(x0 + 1), float(y0 + 1), float(z), float(x0 + 3), float(y0 + 3), float(z + 3));
+}
+
+"""Glass panes that shatter one after another when `cue` fires, `step`
+seconds apart (the labs' tanks bursting in turn): each pane a breakable
+box [x0, y0, z0, x1, y1, z1] of the prefab's cells (in air carved for
+it), a blast at it, and the foe behind it (at `inside`'s point [x, y, z],
+one of `kinds` in turn) appearing as it goes. Answers the chain's last
+relay."""
+def shatter_row(build: Raising, cue: Cue, panes: list[list[float]], inside: list[list[float]], kinds: list[str], angle: float, step: float, deaths: Cue | None = None) -> Cue {
+    last = cue;
+    for (index, pane) in enumerate(panes) {
+        late = build.delay(step);
+        last +>:Fires:+> late;
+        late +>:Fires:+> build.breakable(pane[0], pane[1], pane[2], pane[3], pane[4], pane[5], 10);
+        late +>:Fires:+> build.explosion((pane[0] + pane[3]) * 0.5, (pane[1] + pane[4]) * 0.5, pane[2] + 1.0);
+        held = build.waiting();
+        late +>:Fires:+> held;
+        at = inside[index];
+        build.foe(at[0], at[1], int(at[2]), kinds[index % len(kinds)], angle, waits=held);
+        if deaths is not None {
+            held +>:Fires:+> deaths;
+        }
+        last = late;
+    }
+    return last;
+}
+
+"""A security laser (Quake II's target_laser) set at (x, y), `z` lifts up,
+beaming the way `direction` goes (0 +x ... 3 -y) and burning what it
+crosses: when `cue` fires it comes on, and `seconds` on it goes off."""
+def laser_burst(build: Raising, cue: Cue, x: float, y: float, z: float, direction: int, seconds: float) {
+    fields = {"classname": "target_laser", "angle": str(build.facing(direction)), "dmg": "4"};
+    build.put_point(fields, x, y, z, "q2");
+    beam = build.cue([fields], "laser");
+    cue +>:Fires:+> beam;
+    late = build.delay(seconds);
+    cue +>:Fires:+> late;
+    late +>:Fires:+> beam;
+}
+
+"""A key (`key_gold` or `key_silver`) on a floor at (x, y), lift `z`, as a
+cue: its taking fires what it is wired to."""
+def key_taken(build: Raising, key: str, x: float, y: float, z: int) -> Cue {
+    fields = {"classname": key_item(key), "asset_game": "q1"};
+    build.put_at(fields, x, y, z);
+    return build.cue([fields], "key");
+}
+
+"""Closets beyond a room's wall line y = `side` (the closets beyond it,
+three cells square), one at each of `xs` on lift `floor`, a foe of `foes`
+(in turn) in each, their doors opening when `cue` fires."""
+def closets(build: Raising, cue: Cue, side: int, floor: int, xs: list[int], foes: list[str]) {
+    doors: list[dict[str, str]] = [];
+    for (index, at) in enumerate(xs) {
+        closet = build.room(at, side + 1, floor, at + 3, side + 4, floor + 7);
+        build.widen(closet, at, side, floor, at + 3, side + 1, floor + 6);
+        fields = {"wait": "-1"};
+        build.rising_door(float(at), float(side), float(floor), float(at + 3), float(side + 1), float(floor + 6), fields);
+        doors.append(fields);
+        build.foe(float(at) + 1.5, float(side) + 2.5, floor, foes[index % len(foes)], 270.0);
+    }
+    cue +>:Fires:+> build.cue(doors, "closets");
 }
