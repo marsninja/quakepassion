@@ -256,3 +256,26 @@ def crane(build: Raising, x: int, a: int, b: int, z: int, along_x: bool = False)
     }
     return build.train([2.0, 2.0, 2.0], stops, 50.0, 3.0);
 }
+
+"""Quake II's laser: a beam from (x, y), `z` lifts up, out the way
+`direction` goes (0 +x ... 3 -y) to the first wall, hurting whoever
+crosses it; on from the start when `on`, and toggled each time its cue
+fires (a security grid a button shuts off)."""
+def laser(build: Raising, x: float, y: float, z: float, direction: int, on: bool = True, damage: int = 4) -> Cue {
+    fields = {"classname": "target_laser", "angle": str(build.facing(direction)), "spawnflags": "3" if on else "2", "dmg": str(damage)};
+    build.put_point(fields, x, y, z, "q2");
+    return build.cue([fields], "laser");
+}
+
+"""A grid of lasers across a hall: beams from the wall at the cell line
+y = `y` (pointing +y, or -y when `back`) at each x of `xs`, at each
+height of `heights` (lifts over lift `z`). Answers their cues."""
+def laser_grid(build: Raising, xs: list[float], y: float, z: int, heights: list[float], back: bool = False) -> list[Cue] {
+    found: list[Cue] = [];
+    for x in xs {
+        for height in heights {
+            found.append(laser(build, x, y, float(z) + height, 3 if back else 1));
+        }
+    }
+    return found;
+}
