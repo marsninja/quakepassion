@@ -129,3 +129,29 @@ def columns(build: Raising, spots: list[list[int]], z0: int, z1: int) {
         build.solid(spot[0], spot[1], z0, spot[0] + 1, spot[1] + 1, z1);
     }
 }
+
+"""A floating floor over the cells x0..x1, y0..y1 on lift `z` but for the
+box `hole` ([x0, y0, x1, y1], where a stair comes up through it): the
+pieces round the hole, each a slab."""
+def slab_except(build: Raising, x0: int, y0: int, x1: int, y1: int, z: int, hole: list[int]) {
+    if not hole or hole[2] <= x0 or x1 <= hole[0] or hole[3] <= y0 or y1 <= hole[1] {
+        slab(build, x0, y0, x1, y1, z);
+        return;
+    }
+    hx0 = max(x0, hole[0]);
+    hy0 = max(y0, hole[1]);
+    hx1 = min(x1, hole[2]);
+    hy1 = min(y1, hole[3]);
+    if x0 < hx0 {
+        slab(build, x0, y0, hx0, y1, z);
+    }
+    if hx1 < x1 {
+        slab(build, hx1, y0, x1, y1, z);
+    }
+    if y0 < hy0 {
+        slab(build, hx0, y0, hx1, hy0, z);
+    }
+    if hy1 < y1 {
+        slab(build, hx0, hy1, hx1, y1, z);
+    }
+}
