@@ -155,3 +155,17 @@ def slab_except(build: Raising, x0: int, y0: int, x1: int, y1: int, z: int, hole
         slab(build, hx0, hy1, hx1, y1, z);
     }
 }
+
+"""The cells round the edge of the box x0..x1, y0..y1 (its outermost ring
+of cells) on lift `z` kept free of railings: a floor's whole rim to drop
+from, as the arenas leave their ledges open."""
+def keep_frame(build: Raising, space: Space, x0: int, y0: int, x1: int, y1: int, z: int) {
+    for x in range(x0, x1) {
+        build.keep(space, x, y0, z);
+        build.keep(space, x, y1 - 1, z);
+    }
+    for y in range(y0 + 1, y1 - 1) {
+        build.keep(space, x0, y, z);
+        build.keep(space, x1 - 1, y, z);
+    }
+}
