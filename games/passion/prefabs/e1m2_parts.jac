@@ -7,7 +7,8 @@ Each takes the cue that sets it off (or answers the cue it is), so a
 stretch's set-piece is a small graph of `Cue`s joined by `Fires`."""
 import from ..prefab { Raising, Cue, Fires }
 import from ..space { Space }
-import from .common { key_item }
+import from ..random { Stream }
+import from .common { key_item, apart }
 
 """A slab: a floor a lift thick, its top at lift `z`, over the cells
 x0..x1, y0..y1 (a gallery, a catwalk, a bridge with air under it)."""
@@ -131,4 +132,93 @@ def key_cue(build: Raising, key: str, x: float, y: float, z: int) -> Cue {
 comes up to it: Quake's plain door, opened by a touch and shut again."""
 def plain_door(build: Raising, x0: float, y0: float, z0: float, x1: float, y1: float, z1: float) {
     build.rising_door(x0, y0, z0, x1, y1, z1, {});
+}
+
+"""A ramp of rock or a flight of steps three lifts thick (open under its
+higher steps): `steps` lifts climbed from lift `z` at the cell (x, y), a
+lift a cell the way `direction` goes (0 +x ... 3 -y), `width` cells
+across (+y, or +x when it climbs across y)."""
+def ramp(build: Raising, x: int, y: int, z: int, direction: int, steps: int, width: int) {
+    for step in range(steps) {
+        top = z + step + 1;
+        low = max(z, top - 3);
+        if direction == 0 {
+            build.solid(x + step, y, low, x + step + 1, y + width, top);
+        } elif direction == 2 {
+            build.solid(x - step, y, low, x - step + 1, y + width, top);
+        } elif direction == 1 {
+            build.solid(x, y + step, low, x + width, y + step + 1, top);
+        } else {
+            build.solid(x, y - step, low, x + width, y - step + 1, top);
+        }
+    }
+}
+
+"""Water in every cell of the box (lifts z0..z1): a flooded tunnel, a
+niche under water."""
+def flood(build: Raising, x0: int, y0: int, z0: int, x1: int, y1: int, z1: int) {
+    for z in range(z0, z1) {
+        for y in range(y0, y1) {
+            for x in range(x0, x1) {
+                build.liquid(x, y, z, 2);
+            }
+        }
+    }
+}
+
+"""The cells round the border of the box x0..x1, y0..y1 kept clear of
+railings on lift `z` (an island's or a stepping stone's edge, climbed onto
+out of the water or jumped to)."""
+def keep_ring(build: Raising, space: Space, x0: int, y0: int, x1: int, y1: int, z: int) {
+    for x in range(x0, x1) {
+        build.keep(space, x, y0, z);
+        build.keep(space, x, y1 - 1, z);
+    }
+    for y in range(y0, y1) {
+        build.keep(space, x0, y, z);
+        build.keep(space, x1 - 1, y, z);
+    }
+}
+
+"""Low rocks against the walls of a floor (the box x0..x1, y0..y1 on lift
+`z`): `count` lumps a cell or two across and `high` lifts high (low enough
+to be jumped onto, so none walls a body in), each touching the box's edge,
+clear of `clear` ([x0, y0, x1, y1] each, grown by each rock placed)."""
+def low_rocks(build: Raising, dice: Stream, x0: int, y0: int, x1: int, y1: int, z: int, count: int, high: int, clear: list[list[int]]) {
+    placed = 0;
+    tries = 0;
+    while placed < count and tries < count * 8 {
+        tries += 1;
+        wide = dice.between(1, 2);
+        deep = dice.between(1, 2);
+        side = dice.below(4);
+        if side == 0 {
+            x = x0;
+            y = dice.between(y0, max(y0, y1 - deep));
+        } elif side == 1 {
+            x = x1 - wide;
+            y = dice.between(y0, max(y0, y1 - deep));
+        } elif side == 2 {
+            x = dice.between(x0, max(x0, x1 - wide));
+            y = y0;
+        } else {
+            x = dice.between(x0, max(x0, x1 - wide));
+            y = y1 - deep;
+        }
+        box = [x, y, x + wide, y + deep];
+        if not apart(box, clear) {
+            continue;
+        }
+        build.solid(x, y, z, x + wide, y + deep, z + high);
+        clear.append(box);
+        placed += 1;
+    }
+}
+
+"""A sump: a well of water `wide` cells square from the cell (x, y) down
+from the bottom of a pool at lift `top` to lift `bottom`, swum down into
+and up out of (the deep water of a lake or a cistern)."""
+def sump(build: Raising, x: int, y: int, bottom: int, top: int, wide: int) {
+    build.room(x, y, bottom, x + wide, y + wide, top);
+    flood(build, x, y, bottom, x + wide, y + wide, top);
 }
