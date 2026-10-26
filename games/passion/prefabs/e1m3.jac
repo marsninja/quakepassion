@@ -42,7 +42,7 @@ import from ..kits { level_district }
 import from ..space { Space }
 import from .roster { q1_foe, q1_palette }
 import from .common { stair, pillars, apart, niches, spiral, ring_path, lift }
-import from .e1m1_parts { deck, stash }
+import from .e1m1_parts { deck, stash, bars }
 
 glob E1M3: str = "q1:e1m3";
 
@@ -54,24 +54,6 @@ def e1m3_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
 """What a secret of e1m3's holds."""
 def e1m3_reward(dice: Stream) -> str {
     return ["item_armor2", "item_artifact_super_damage", "weapon_rocketlauncher", "item_armor2"][dice.below(4)];
-}
-
-"""Bars across each of `ports` (ways out of the prefab whose box is `long`
-by `wide`), each a door rising when `lever` fires."""
-def bars(build: Raising, lever: Cue, ports: list[Port], long: int, wide: int) {
-    for port in ports {
-        low = port.along - float(port.wide) * 0.5;
-        high = port.along + float(port.wide) * 0.5;
-        floor = float(port.floor);
-        top = float(port.floor + port.high);
-        if port.face == 0 {
-            lever +>:Fires:+> build.opened(float(long - 1), low, floor, float(long), high, top);
-        } elif port.face == 1 {
-            lever +>:Fires:+> build.opened(low, float(wide - 1), floor, high, float(wide), top);
-        } elif port.face == 3 {
-            lever +>:Fires:+> build.opened(low, 0.0, floor, high, 1.0, top);
-        }
-    }
 }
 
 """The start: a landing high at one end of a crypt, a grand stair down (or

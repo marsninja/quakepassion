@@ -2,7 +2,7 @@
 e2m2, base1, q3dm6), drawn in a prefab's own cells through its
 `Raising`: decks over a floor, stashes behind walls that open when shot,
 stairs that turn back over themselves."""
-import from ..prefab { Raising, Cue, Fires }
+import from ..prefab { Raising, Cue, Fires, Port }
 import from ..space { Space }
 
 """A deck: a slab a lift thick over the cells x0..x1, y0..y1 whose top is
@@ -81,4 +81,22 @@ def switchback(build: Raising, space: Space, x: int, y: int, z: int, direction: 
         build.keep(space, turn_x, low_y + width + across, z + half);
     }
     return [top_x - step_x, other_y, z + steps];
+}
+
+"""Bars across each of `ports` (ways out of the prefab whose box is `long`
+by `wide`), each a door rising when `lever` fires."""
+def bars(build: Raising, lever: Cue, ports: list[Port], long: int, wide: int) {
+    for port in ports {
+        low = port.along - float(port.wide) * 0.5;
+        high = port.along + float(port.wide) * 0.5;
+        floor = float(port.floor);
+        top = float(port.floor + port.high);
+        if port.face == 0 {
+            lever +>:Fires:+> build.opened(float(long - 1), low, floor, float(long), high, top);
+        } elif port.face == 1 {
+            lever +>:Fires:+> build.opened(low, float(wide - 1), floor, high, float(wide), top);
+        } elif port.face == 3 {
+            lever +>:Fires:+> build.opened(low, 0.0, floor, high, 1.0, top);
+        }
+    }
 }
