@@ -24,7 +24,7 @@ import from .space { Space }
 import from .dress { Dressing, dress }
 import from .kits { kit_of }
 import from .cast { Casting }
-import from .prefab { Prefab, Next, Lay, Raise, Raising, prefab_box, passage_box, prefab_direction, prefab_point, port_middle, PREFAB_MARGIN, PORT_HIGH }
+import from .prefab { Prefab, Next, Lay, Raise, Raising, prefab_box, passage_box, prefab_direction, prefab_point, port_middle, loop_boxes, PREFAB_MARGIN, PORT_HIGH }
 import os;
 import from editor.formats.map { MapItem }
 import from .prefabs.library { library_stretches, make_stretch }
@@ -272,6 +272,17 @@ def settle_chain(chain: list[Prefab]) -> list[int] {
             lows[2] = min(lows[2], prefab.route_floor - 1);
             highs[2] = max(highs[2], prefab.route_floor + prefab.route_high * 2 + 1);
         }
+        # Its ways back.
+        for loop in prefab.loops {
+            for box in loop_boxes(prefab, loop) {
+                lows[0] = min(lows[0], box[0]);
+                lows[1] = min(lows[1], box[1]);
+                highs[0] = max(highs[0], box[2]);
+                highs[1] = max(highs[1], box[3]);
+                lows[2] = min(lows[2], box[4]);
+                highs[2] = max(highs[2], box[5]);
+            }
+        }
         # The passage into it, from the prefab before it in the tree.
         port = prefab.via;
         before = [prefab<-:Next:<-][?:Prefab];
@@ -308,8 +319,9 @@ def settle_chain(chain: list[Prefab]) -> list[int] {
 
 """Assemble a level from prefabs for a seed and a depth: a chain laid out
 (another chain tried when one does not fit), raised and dressed. None when
-no try fits (`notes` says why)."""
-def assemble_prefabs(seed: int, depth: int, notes: list[str], library: str = "derived") -> Assembly | None {
+no try fits (`notes` says why). `weaving` 2 weaves it in full (ways
+back, hatches, windows, shortcuts), 1 without hatches, 0 not at all."""
+def assemble_prefabs(seed: int, depth: int, notes: list[str], library: str = "derived", weaving: int = 2) -> Assembly | None {
     dice = stream_for(seed, "prefabs");
     pieces: list[Piece] = [];
     if library == "derived" {
@@ -323,13 +335,25 @@ def assemble_prefabs(seed: int, depth: int, notes: list[str], library: str = "de
             notes.append("try " + str(attempt) + ": " + " | ".join(laid.notes));
             continue;
         }
+        woven = library != "derived" and os.getenv("QP_PREFAB_NOWEAVE", "") != "1" and weaving > 0;
+        if woven {
+            laid.close_loops(chain, 2);
+            for line in laid.notes {
+                notes.append("try " + str(attempt) + ": " + line);
+            }
+        }
         size = settle_chain(chain);
         mass = Massing(nx=size[0], ny=size[1], nz=size[2]);
         build = Raising(mass=mass, dice=trial.derive("rise"), casting=Casting(), district=0);
         chain[0] spawn Raise(build=build);
+        for prefab in chain {
+            for loop in prefab.loops {
+                build.loop_passage(prefab, loop);
+            }
+        }
         build.wire_cues();
-        if library != "derived" and os.getenv("QP_PREFAB_NOWEAVE", "") != "1" {
-            build.weave(chain);
+        if woven {
+            build.weave(chain, weaving > 1);
         }
         build.settle_liquids();
         build.settle_rocks();

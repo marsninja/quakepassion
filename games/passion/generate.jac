@@ -451,16 +451,38 @@ def prefab_steps(forge: Forge, record: Survey, seed: int, library: str) -> Itera
     spare_finishes = False;
     # QP_PREFAB_CANDIDATE=n makes that candidate alone (to look at it).
     only = int(os.getenv("QP_PREFAB_CANDIDATE", "-1"));
+    # A candidate woven (ways back, hatches...) that does not prove is
+    # tried again as laid, without its hatches and then unwoven, before the
+    # next is laid.
+    tries: list[list[int]] = [];
     for attempt in range(CANDIDATES) {
+        for weaving in [2, 1, 0] {
+            tries.append([attempt, weaving]);
+        }
+    }
+    retry: list[int] = [];
+    for trial in tries {
+        attempt = trial[0];
+        weaving = trial[1];
         if only >= 0 and attempt != only {
+            continue;
+        }
+        if weaving < 2 and retry != [attempt, weaving] {
             continue;
         }
         record.candidates += 1;
         forge.stage = "sculpt";
-        built = assemble_prefabs(mix32(seed * 31 + attempt) % 2147483646 + 1, record.depth, record.notes, library);
+        weave_notes = len(record.notes);
+        built = assemble_prefabs(mix32(seed * 31 + attempt) % 2147483646 + 1, record.depth, record.notes, library, weaving);
         if built is None {
             record.notes.append("candidate " + str(attempt) + ": the prefabs did not fit");
             continue;
+        }
+        made_notes = record.notes[weave_notes:];
+        hatched = len([line for line in made_notes if "hatch from" in line]) > 0;
+        wove = len([line for line in made_notes if "loop from" in line or "window from" in line or "shortcut from" in line]) > 0;
+        if weaving < 2 {
+            forge_note(forge.name + " candidate " + str(attempt) + ": again " + ("without hatches" if weaving == 1 else "unwoven"));
         }
         forge_note(forge.name + " candidate " + str(attempt) + ": " + built.briefing);
         yield "assembled";
@@ -488,6 +510,16 @@ def prefab_steps(forge: Forge, record: Survey, seed: int, library: str) -> Itera
         record.notes.append("candidate " + str(attempt) + ": " + verdict[1]);
         forge_note(forge.name + " candidate " + str(attempt) + ": " + verdict[1][:160]);
         finishes = verdict[0] or "(finishes True" in verdict[1];
+        # Woven and failing: the same again with less of its weaving, when
+        # it cut something that less weaving leaves out.
+        retry = [];
+        if not verdict[0] and library != "derived" {
+            if weaving == 2 and hatched {
+                retry = [attempt, 1];
+            } elif weaving > 0 and wove {
+                retry = [attempt, 0];
+            }
+        }
         if not verdict[0] {
             if spare is None or (finishes and not spare_finishes) {
                 spare = built;

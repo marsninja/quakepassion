@@ -113,10 +113,124 @@ node Prefab {
         route_floor: int = 0,
         route_high: int = 8,
         route_door: list[float] = [],
-        route_x: bool = True;
+        route_x: bool = True,
+        # The ways back it leads to stretches it was reached through.
+        loops: list[Loop] = [];
 }
 
 edge Next: Prefab --> Prefab {}
+
+"""A way back from a stretch into one it was reached through (`older`):
+a passage from a way out of its own the level left free (`mine`) to one
+of `older`'s (`theirs`), with a door opened from its own side, as the
+originals' later rooms open back onto earlier ones."""
+obj Loop {
+    has older: Prefab | None = None,
+        mine: Port | None = None,
+        theirs: Port | None = None;
+}
+
+"""A loop's passage where its stretches now lie, a leg at a time: [x, y,
+direction, length, floor at its start, floor at its end, landing] (x, y
+where its middle line starts, in the world's cells; a leg climbing or
+falling a lift a cell after `landing` cells level). Straight, or bent
+twice (a jog across), when the ways face each other; bent once when they
+face across. Empty when no such passage joins them."""
+def loop_path(later: Prefab, loop: Loop) -> list[list[float]] {
+    older = loop.older;
+    mine = loop.mine;
+    theirs = loop.theirs;
+    if older is None or mine is None or theirs is None {
+        return [];
+    }
+    a = port_middle(later, mine);
+    s = prefab_point(later, a[0], a[1]);
+    b = port_middle(older, theirs);
+    t = prefab_point(older, b[0], b[1]);
+    out = prefab_direction(later, mine.face);
+    back = (prefab_direction(older, theirs.face) + 2) % 4;
+    step = prefab_step(out);
+    last = prefab_step(back);
+    dx = t[0] - s[0];
+    dy = t[1] - s[1];
+    turns: list[list[float]] = [];
+    if out == back {
+        along = dx * float(step[0]) + dy * float(step[1]);
+        offset = dy if out % 2 == 0 else dx;
+        if along < 8.0 {
+            return [];
+        }
+        if abs(offset) < 0.5 {
+            turns = [[float(out), along]];
+        } elif abs(offset) < 4.0 {
+            return [];
+        } else {
+            side = (1 if offset > 0.0 else 3) if out % 2 == 0 else (0 if offset > 0.0 else 2);
+            first = float(math.floor(along * 0.5));
+            turns = [[float(out), first], [float(side), abs(offset)], [float(out), along - first]];
+        }
+    } elif out % 2 != back % 2 {
+        first = dx * float(step[0]) + dy * float(step[1]);
+        second = dx * float(last[0]) + dy * float(last[1]);
+        if first < 5.0 or second < 5.0 {
+            return [];
+        }
+        turns = [[float(out), first], [float(back), second]];
+    } else {
+        return [];
+    }
+    low = float(later.oz + mine.floor);
+    high = float(older.oz + theirs.floor);
+    rise = high - low;
+    climb = 0;
+    for index in range(len(turns)) {
+        if turns[index][1] > turns[climb][1] {
+            climb = index;
+        }
+    }
+    landing = 3.0 if climb == 0 else 1.0;
+    if turns[climb][1] < abs(rise) + landing + 2.0 or abs(rise) > 16.0 {
+        return [];
+    }
+    legs: list[list[float]] = [];
+    x = s[0];
+    y = s[1];
+    floor = low;
+    for index in range(len(turns)) {
+        direction = int(turns[index][0]);
+        length = turns[index][1];
+        ends = high if index == climb else floor;
+        legs.append([x, y, float(direction), length, floor, ends, landing if index == climb else 0.0]);
+        move = prefab_step(direction);
+        x += float(move[0]) * length;
+        y += float(move[1]) * length;
+        floor = ends;
+    }
+    return legs;
+}
+
+"""The boxes a loop's passage takes, its walls and a door's room in them
+([x0, y0, x1, y1, z0, z1] each, z in lifts), a leg each; empty when no
+passage joins its ways."""
+def loop_boxes(later: Prefab, loop: Loop) -> list[list[int]] {
+    found: list[list[int]] = [];
+    legs = loop_path(later, loop);
+    for (index, leg) in enumerate(legs) {
+        move = prefab_step(int(leg[2]));
+        # Past its end by half the passage's width, round the corner (not
+        # the last, which ends at the way in).
+        reach = leg[3] + (0.0 if index == len(legs) - 1 else 2.0);
+        ex = leg[0] + float(move[0]) * reach;
+        ey = leg[1] + float(move[1]) * reach;
+        across = 5.0;
+        x0 = min(leg[0], ex) - (across if move[0] == 0 else 0.0);
+        x1 = max(leg[0], ex) + (across if move[0] == 0 else 0.0);
+        y0 = min(leg[1], ey) - (across if move[1] == 0 else 0.0);
+        y1 = max(leg[1], ey) + (across if move[1] == 0 else 0.0);
+        found.append([int(math.floor(x0)), int(math.floor(y0)), int(math.ceil(x1)), int(math.ceil(y1)), int(min(leg[4], leg[5])) - 1, int(max(leg[4], leg[5])) + 10]);
+    }
+    return found;
+}
 
 """Something in a level that fires or is fired, as the originals' own
 triggers are: a touch, a button, a door, foes lying in wait, a train, a
@@ -269,6 +383,27 @@ def stacked_cells(a: list[int], b: list[int]) -> int {
     }
     gap = max(a[4] - b[5], b[4] - a[5]);
     return across if 0 <= gap and gap <= 8 else 0;
+}
+
+"""How long a wall box `a` shares with box `b` where they stand side by
+side, four cells apart at most, their storeys overlapping eight lifts or
+more (room for a shortcut between): the cells along it, short of their
+corners; 0 when they do not."""
+def beside_span(a: list[int], b: list[int]) -> int {
+    rise = min(a[5], b[5]) - max(a[4], b[4]);
+    if rise < 8 {
+        return 0;
+    }
+    best = 0;
+    gap = max(b[0] - a[2], a[0] - b[2]);
+    if 0 <= gap and gap <= 4 {
+        best = max(best, min(a[3], b[3]) - max(a[1], b[1]) - 6);
+    }
+    gap = max(b[1] - a[3], a[1] - b[3]);
+    if 0 <= gap and gap <= 4 {
+        best = max(best, min(a[2], b[2]) - max(a[0], b[0]) - 6);
+    }
+    return max(0, best);
 }
 
 """The passage from a way out to the next way in: its box in the world's
@@ -568,6 +703,7 @@ walker Lay {
         # the first that fits when none does.
         best: list[int] = [];
         best_stack = -1;
+        ancestors = prefab_ancestors(prefab);
         for index in order {
             if index in last.taken_index {
                 continue;
@@ -610,10 +746,21 @@ walker Lay {
                     }
                 }
                 if clear {
+                    # Over a stretch it is reached through counts thrice (a
+                    # hatch may drop back into it), and beside one (a
+                    # shortcut may lead back into it).
                     stack = 0;
                     for other in self.laid {
                         if other != last {
-                            stack += stacked_cells(box, prefab_box(other));
+                            under = prefab_box(other);
+                            over = stacked_cells(box, under);
+                            if other in ancestors {
+                                if box[4] >= under[5] - 1 {
+                                    over *= 3;
+                                }
+                                over += 6 * beside_span(box, under);
+                            }
+                            stack += over;
                         }
                     }
                     if stack > best_stack {
@@ -642,6 +789,66 @@ walker Lay {
         }
         self.notes.append(prefab.title + " found no room after " + last.title);
         self.fits = False;
+    }
+
+    """Lay ways back once all are placed: from a way out a stretch left
+    free to a free way out of one it was reached through (not the one just
+    before it), by a passage clear of all laid; `most` of them, the latest
+    stretches first."""
+    def close_loops(chain: list[Prefab], most: int) {
+        if not self.fits or os.getenv("QP_PREFAB_SOLO", "") != "" {
+            return;
+        }
+        made = 0;
+        for later in reversed(chain) {
+            if made >= most or later.cells {
+                break;
+            }
+            found = False;
+            for older in prefab_ancestors(later)[1:] {
+                if found {
+                    break;
+                }
+                for mine_index in self.dice.order(len(later.leaves)) {
+                    mine = later.leaves[mine_index];
+                    if found or mine_index in later.taken_index or mine.gate {
+                        continue;
+                    }
+                    for theirs_index in self.dice.order(len(older.leaves)) {
+                        theirs = older.leaves[theirs_index];
+                        if theirs_index in older.taken_index or theirs.gate {
+                            continue;
+                        }
+                        loop = Loop(older=older, mine=mine, theirs=theirs);
+                        boxes = loop_boxes(later, loop);
+                        if not boxes {
+                            continue;
+                        }
+                        clear = True;
+                        for box in boxes {
+                            for other in self.taken {
+                                if boxes_meet(box, other, 0) {
+                                    clear = False;
+                                }
+                            }
+                        }
+                        if not clear {
+                            continue;
+                        }
+                        later.taken.append(mine);
+                        later.taken_index.append(mine_index);
+                        older.taken.append(theirs);
+                        older.taken_index.append(theirs_index);
+                        later.loops.append(loop);
+                        self.taken.extend(boxes);
+                        self.notes.append("loop from " + later.title + " back to " + older.title);
+                        made += 1;
+                        found = True;
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1376,6 +1583,74 @@ obj Raising {
         self.passage_door(gate, along_x, door_at, float(lo), float(hi), floor, high);
     }
 
+    """A way back (`Loop`) from `later`: its passage a leg at a time, each
+    leg a corridor climbing or falling a lift a cell where it must, and a
+    door two cells in from `later`'s way out, opened by walking up to it
+    from that side (so it never lets a body round what bars `later`)."""
+    def loop_passage(later: Prefab, loop: Loop) {
+        legs = loop_path(later, loop);
+        mine = loop.mine;
+        theirs = loop.theirs;
+        if not legs or mine is None or theirs is None {
+            return;
+        }
+        wide = mine.wide;
+        half = float(wide) * 0.5;
+        high = max(mine.high, theirs.high);
+        self.district = later.district;
+        for (index, leg) in enumerate(legs) {
+            direction = int(leg[2]);
+            move = prefab_step(direction);
+            length = int(round(leg[3])) + (0 if index == len(legs) - 1 else wide // 2);
+            rise = int(round(leg[5] - leg[4]));
+            landing = int(leg[6]);
+            climb = 1 if rise > 0 else -1;
+            space = Space(id=len(self.spaces), role="corridor", district=later.district, x=0, y=0, z=int(min(leg[4], leg[5])), w=1, d=1, h=high + abs(rise), levels=[int(leg[4]), int(leg[5])]);
+            self.spaces.append(space);
+            lows: list[int] = [];
+            highs: list[int] = [];
+            for k in range(length) {
+                floor = int(leg[4]) + climb * min(abs(rise), max(0, k - landing)) if rise != 0 else int(leg[4]);
+                along = leg[0] + float(move[0]) * float(k) if move[0] != 0 else leg[1] + float(move[1]) * float(k);
+                a0 = int(math.floor(min(along, along + float(move[0] + move[1])) + 0.01));
+                if move[0] != 0 {
+                    c0 = int(math.floor(leg[1] - half + 0.01));
+                    self.mass.carve(a0, c0, floor, a0 + 1, c0 + wide, floor + high, space.id);
+                    lows = [min(lows[0], a0), min(lows[1], c0)] if lows else [a0, c0];
+                    highs = [max(highs[0], a0 + 1), max(highs[1], c0 + wide)] if highs else [a0 + 1, c0 + wide];
+                } else {
+                    c0 = int(math.floor(leg[0] - half + 0.01));
+                    self.mass.carve(c0, a0, floor, c0 + wide, a0 + 1, floor + high, space.id);
+                    lows = [min(lows[0], c0), min(lows[1], a0)] if lows else [c0, a0];
+                    highs = [max(highs[0], c0 + wide), max(highs[1], a0 + 1)] if highs else [c0 + wide, a0 + 1];
+                }
+            }
+            if lows {
+                space.x = lows[0];
+                space.y = lows[1];
+                space.w = highs[0] - lows[0];
+                space.d = highs[1] - lows[1];
+            }
+        }
+        # The door across the first leg, and the touch before it.
+        first = legs[0];
+        move = prefab_step(int(first[2]));
+        along_x = move[0] != 0;
+        start = first[0] if along_x else first[1];
+        sign = float(move[0] + move[1]);
+        middle = first[1] if along_x else first[0];
+        floor = int(first[4]);
+        gate = self.cue_name("loop");
+        self.passage_door(gate, along_x, start + sign * 2.0, middle - half, middle + half, floor, high);
+        t0 = min(start, start + sign * 1.5);
+        t1 = max(start, start + sign * 1.5);
+        low = Vec3(x=t0 * CELL, y=(middle - half) * CELL, z=float(floor) * LIFT) if along_x else Vec3(x=(middle - half) * CELL, y=t0 * CELL, z=float(floor) * LIFT);
+        top = Vec3(x=t1 * CELL, y=(middle + half) * CELL, z=float(floor + high) * LIFT) if along_x else Vec3(x=(middle + half) * CELL, y=t1 * CELL, z=float(floor + high) * LIFT);
+        self.casting.put_brushed({"classname": "trigger_once", "target": gate}, [plain_box(low, top, "trigger", 1.0)]);
+        older = loop.older;
+        self.notes.append("loop from " + later.title + " back into " + (older.title if older is not None else "?") + " over " + str(len(legs)) + " legs");
+    }
+
     """A passage laid as a route (`Lay.place_by_cells`): each leg a corridor,
     and the double door across the first leg."""
     def join_route(gate: str, after: Prefab) {
@@ -1430,11 +1705,11 @@ obj Raising {
     body into one it was reached through, under it (a way back the branch
     did not come by), and barred windows between stretches side by side
     (a look into what is ahead, or down into what is behind)."""
-    def weave(chain: list[Prefab]) {
+    def weave(chain: list[Prefab], hatching: bool = True) {
         taken = self.entity_boxes();
         hatches = 0;
         for prefab in chain {
-            if hatches >= 3 {
+            if hatches >= 3 or not hatching {
                 break;
             }
             for older in prefab_ancestors(prefab) {
@@ -1452,7 +1727,22 @@ obj Raising {
                 }
             }
         }
-        self.notes.append("woven: " + str(hatches) + " hatches, " + str(windows) + " windows");
+        shortcuts = 0;
+        for prefab in chain {
+            if shortcuts >= 3 {
+                break;
+            }
+            for older in prefab_ancestors(prefab)[1:] {
+                if os.getenv("QP_WEAVE_DEBUG", "") {
+                    self.notes.append("beside " + prefab.title + " / " + older.title + " span " + str(beside_span(prefab_box(prefab), prefab_box(older))) + " boxes " + str(prefab_box(prefab)) + " " + str(prefab_box(older)));
+                }
+                if self.shortcut(prefab, older, taken) {
+                    shortcuts += 1;
+                    break;
+                }
+            }
+        }
+        self.notes.append("woven: " + str(hatches) + " hatches, " + str(windows) + " windows, " + str(shortcuts) + " shortcuts");
     }
 
     """The boxes the entities take, in the world's cells (z in lifts):
@@ -1465,7 +1755,16 @@ obj Raising {
                 ys = [side.plane.dist for side in brush if side.plane.normal.y > 0.5] + [-side.plane.dist for side in brush if side.plane.normal.y < -0.5];
                 zs = [side.plane.dist for side in brush if side.plane.normal.z > 0.5] + [-side.plane.dist for side in brush if side.plane.normal.z < -0.5];
                 if xs and ys and zs {
-                    found.append([min(xs) / CELL, min(ys) / CELL, min(zs) / LIFT, max(xs) / CELL, max(ys) / CELL, max(zs) / LIFT]);
+                    box = [min(xs) / CELL, min(ys) / CELL, min(zs) / LIFT, max(xs) / CELL, max(ys) / CELL, max(zs) / LIFT];
+                    # A mover takes all it may move through: as far again
+                    # as it is big any way, and a lift its whole fall.
+                    kind = item.fields.get("classname", "");
+                    if kind.startswith("func_") and kind not in ["func_wall", "func_illusionary"] {
+                        span = [box[3] - box[0], box[4] - box[1], box[5] - box[2]];
+                        fall = float(item.fields.get("height", "0") or "0") / LIFT if kind == "func_plat" else 0.0;
+                        box = [box[0] - span[0], box[1] - span[1], box[2] - span[2] - fall - (span[2] + 8.0 if kind == "func_plat" else 0.0), box[3] + span[0], box[4] + span[1], box[5] + span[2]];
+                    }
+                    found.append(box);
                 }
             }
             words = item.fields.get("origin", "").split();
@@ -1514,6 +1813,9 @@ obj Raising {
         a = prefab_box(upper);
         b = prefab_box(lower);
         mass = self.mass;
+        # It lands on a floor one of `lower`'s ways stands on (its main
+        # floors, walked from), never a pit or a ledge of its own.
+        floors = [lower.oz + port.floor for port in [lower.enter] + lower.taken];
         for x in range(max(a[0], b[0]) + 3, min(a[2], b[2]) - 4) {
             for y in range(max(a[1], b[1]) + 3, min(a[3], b[3]) - 4) {
                 for top in range(max(a[4], b[4]) + 1, a[5] - 4) {
@@ -1534,7 +1836,7 @@ obj Raising {
                         bottom -= 1;
                     }
                     drop = top - bottom;
-                    if drop < 4 or drop > 22 or bottom < b[4] or not self.level_floor(x, y, bottom) {
+                    if drop < 4 or drop > 22 or bottom < b[4] or bottom not in floors or not self.level_floor(x, y, bottom) {
                         continue;
                     }
                     owner = mass.at(x, y, bottom);
@@ -1622,6 +1924,104 @@ obj Raising {
                         self.spaces.append(space);
                         mass.carve(x0, y0, sill, x1, y1, sill + 3, space.id);
                         self.notes.append("window from " + pair[0].title + " into " + pair[1].title);
+                        return True;
+                    }
+                }
+            }
+        }
+        return False;
+    }
+
+    """A way back from `later` into `older` (a stretch it was reached
+    through) where the two stand side by side, four cells apart at most: a
+    passage four cells wide and six lifts high through the walls between,
+    level with a floor of each, and a door across it opened by walking up
+    to it from `later`'s side, so it is a way back and never a way round
+    what bars the way to `later`. Whether one was cut."""
+    def shortcut(later: Prefab, older: Prefab, taken: list[list[float]]) -> bool {
+        mass = self.mass;
+        wide = 4;
+        high = 6;
+        for pair in [[later, older], [older, later]] {
+            a = prefab_box(pair[0]);
+            b = prefab_box(pair[1]);
+            for along_x in [True, False] {
+                near = a[2] if along_x else a[3];
+                far = b[0] if along_x else b[1];
+                if far < near or far - near > 4 {
+                    continue;
+                }
+                lo = max(a[1], b[1]) + 3 if along_x else max(a[0], b[0]) + 3;
+                hi = min(a[3], b[3]) - 3 - wide if along_x else min(a[2], b[2]) - 3 - wide;
+                inside = near - 2;
+                beyond = far + 1;
+                for across in range(lo, hi + 1) {
+                    for floor in range(max(a[4], b[4]) + 1, min(a[5], b[5]) - high - 1) {
+                        ok = True;
+                        for side in range(across - 1, across + wide + 1) {
+                            # Floor to walk up to the passage on both sides,
+                            # dry, two cells deep.
+                            if across <= side and side < across + wide {
+                                for at in [inside - 1, inside, beyond, beyond + 1] {
+                                    x = at if along_x else side;
+                                    y = side if along_x else at;
+                                    if not mass.standing(x, y, floor) or mass.headroom(x, y, floor) < high or self.wet.get((floor * mass.ny + y) * mass.nx + x, 0) != 0 {
+                                        ok = False;
+                                    }
+                                }
+                            }
+                            # The walls between solid, and the cells beside
+                            # the passage too, for the door's halves.
+                            for step in range(inside + 1, beyond) {
+                                wx = step if along_x else side;
+                                wy = side if along_x else step;
+                                for z in range(floor, floor + high) {
+                                    if mass.air(wx, wy, z) {
+                                        ok = False;
+                                    }
+                                }
+                            }
+                            if not ok {
+                                break;
+                            }
+                        }
+                        if not ok {
+                            continue;
+                        }
+                        x0 = inside + 1 if along_x else across;
+                        x1 = beyond if along_x else across + wide;
+                        y0 = across if along_x else inside + 1;
+                        y1 = across + wide if along_x else beyond;
+                        if not self.clear_of_entities([float(x0 - 2), float(y0 - 2), float(floor), float(x1 + 2), float(y1 + 2), float(floor + high)], taken) {
+                            continue;
+                        }
+                        self.district = later.district;
+                        space = Space(id=len(self.spaces), role="corridor", district=later.district, x=x0, y=y0, z=floor, w=x1 - x0, d=y1 - y0, h=high, levels=[floor]);
+                        self.spaces.append(space);
+                        mass.carve(x0, y0, floor, x1, y1, floor + high, space.id);
+                        for side in range(across, across + wide) {
+                            for at in [inside, beyond] {
+                                x = at if along_x else side;
+                                y = side if along_x else at;
+                                owner = mass.at(x, y, floor);
+                                if 0 < owner and owner <= len(self.spaces) {
+                                    self.spaces[owner - 1].kept.append([x, y, floor]);
+                                }
+                            }
+                        }
+                        # The door halfway through; the touch that opens it
+                        # on `later`'s side of it.
+                        gate = self.cue_name("shortcut");
+                        mid = float(inside + 1 + beyond) * 0.5;
+                        self.passage_door(gate, along_x, mid, float(across), float(across + wide), floor, high);
+                        near_side = pair[0] == later;
+                        t0 = float(inside + 1) if near_side else mid + 0.5;
+                        t1 = mid - 0.5 if near_side else float(beyond);
+                        low = Vec3(x=t0 * CELL, y=float(across) * CELL, z=float(floor) * LIFT) if along_x else Vec3(x=float(across) * CELL, y=t0 * CELL, z=float(floor) * LIFT);
+                        top = Vec3(x=t1 * CELL, y=float(across + wide) * CELL, z=float(floor + high) * LIFT) if along_x else Vec3(x=float(across + wide) * CELL, y=t1 * CELL, z=float(floor + high) * LIFT);
+                        self.casting.put_brushed({"classname": "trigger_once", "target": gate}, [plain_box(low, top, "trigger", 1.0)]);
+                        taken.append([float(x0 - 1), float(y0 - 1), float(floor), float(x1 + 1), float(y1 + 1), float(floor + high)]);
+                        self.notes.append("shortcut from " + later.title + " back into " + older.title);
                         return True;
                     }
                 }
