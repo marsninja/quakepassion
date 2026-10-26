@@ -58,7 +58,7 @@ node Gatehouse(Prefab) {
         drop: int = 10,
         well: int = 4,
         well_y: int = 3,
-        deck: int = 7,
+        deck_top: int = 7,
         deck_long: int = 4,
         moat: bool = False,
         moat_x: int = 0,
@@ -71,9 +71,9 @@ node Gatehouse(Prefab) {
         self.title = "Gatehouse";
         self.source = E1M1;
         self.hall_wide = dice.between(12, 14);
-        self.deck = dice.between(6, 8);
+        self.deck_top = dice.between(6, 8);
         self.deck_long = dice.between(4, 5);
-        foot = 1 + self.deck_long + self.deck;
+        foot = 1 + self.deck_long + self.deck_top;
         self.moat = dice.chance(0.5);
         if self.moat {
             self.moat_long = dice.between(5, 6);
@@ -82,7 +82,7 @@ node Gatehouse(Prefab) {
         } else {
             self.hall_long = foot + dice.between(8, 10) - 1;
         }
-        self.hall_high = self.deck + dice.between(8, 10);
+        self.hall_high = self.deck_top + dice.between(8, 10);
         self.drop = dice.between(10, 14);
         self.well = dice.between(5, 6);
         self.well_y = dice.between(2, self.hall_wide - self.well);
@@ -92,7 +92,7 @@ node Gatehouse(Prefab) {
         self.wide = self.hall_wide + 2;
         self.low = -self.drop - 1;
         self.high = self.hall_high + 1;
-        self.enter = Port(face=2, along=self.wide // 2, floor=self.deck);
+        self.enter = Port(face=2, along=self.wide // 2, floor=self.deck_top);
         self.leaves = [Port(face=0, along=float(self.well_y) + float(self.well) * 0.5, floor=-self.drop)];
         visitor.place(self);
     }
@@ -105,7 +105,7 @@ node Gatehouse(Prefab) {
         side = 1 + self.hall_wide;
         mid = 1 + self.hall_wide // 2;
         hall = build.room(1, 1, 0, well_x + self.well, side, self.hall_high, variant=dice.below(3));
-        build.level(hall, self.deck);
+        build.level(hall, self.deck_top);
         shaft = build.room(well_x, self.well_y, -self.drop, well_x + self.well, self.well_y + self.well, 0);
         # No railing round the well: its top is floor until it lowers.
         for y in range(self.well_y - 1, self.well_y + self.well + 1) {
@@ -122,22 +122,22 @@ node Gatehouse(Prefab) {
         # on under it), and its stair down along a side wall; a hint at its
         # edge, where no railing stands.
         rim = self.deck_long;
-        deck(build, 1, 1, 1 + rim, side, self.deck);
+        deck(build, 1, 1, 1 + rim, side, self.deck_top);
         stair_y = 1 if self.stair_low else side - 3;
-        stair(build, rim + self.deck, stair_y, 0, 2, self.deck, 3);
+        stair(build, rim + self.deck_top, stair_y, 0, 2, self.deck_top, 3);
         for y in range(stair_y, stair_y + 3) {
-            build.keep(hall, rim, y, self.deck);
+            build.keep(hall, rim, y, self.deck_top);
         }
         for y in range(mid - 1, mid + 2) {
-            build.keep(hall, rim, y, self.deck);
+            build.keep(hall, rim, y, self.deck_top);
         }
-        build.touch(float(rim), float(mid - 1), float(self.deck), float(rim + 1), float(mid + 2), float(self.deck + 5), True, "You can jump down from here");
-        build.start(2.5, float(mid) + 0.5, self.deck, 0.0);
-        build.supply(2.5, float(stair_y) + 1.5, self.deck, "item_shells");
+        build.touch(float(rim), float(mid - 1), float(self.deck_top), float(rim + 1), float(mid + 2), float(self.deck_top + 5), True, "You can jump down from here");
+        build.start(2.5, float(mid) + 0.5, self.deck_top, 0.0);
+        build.supply(2.5, float(stair_y) + 1.5, self.deck_top, "item_shells");
         # Under the deck, a box of shells and what keeps watch there.
         under_y = side - 2.5 if self.stair_low else 2.5;
         build.supply(2.5, under_y, 0, "item_spikes");
-        foot = 1 + rim + self.deck;
+        foot = 1 + rim + self.deck_top;
         if self.moat {
             # The moat across the hall, steps out of it on both sides, the
             # footbridge over it, and down at its far side an alcove under
