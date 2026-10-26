@@ -71,3 +71,28 @@ def pad_to(build: Raising, x: float, y: float, z: int, lx: float, ly: float, lz:
     share = 1.0 / (1.0 + math.sqrt(fall / 400.0) / math.sqrt(rise / 400.0));
     build.jump_pad(x, y, z, x + (lx - x) * share, y + (ly - y) * share, lz);
 }
+
+"""Closets beyond a room's wall (the cell line y = `side`, the closets
+beyond it), one at each of `xs` on lift `floor`, a foe of `foes` (in turn)
+in each, behind doors that open when `opens` fires: what waits there
+meets the player on the way back (a key's ambush, as the cue graph)."""
+def closets(build: Raising, opens: Cue, side: int, floor: int, xs: list[int], foes: list[str]) {
+    for (index, at) in enumerate(xs) {
+        closet = build.room(at, side + 1, floor, at + 3, side + 4, floor + 7);
+        build.widen(closet, at, side, floor, at + 3, side + 1, floor + 6);
+        opens +>:Fires:+> build.opened(float(at), float(side), float(floor), float(at + 3), float(side + 1), float(floor + 6));
+        build.foe(float(at) + 1.5, float(side) + 2.5, floor, foes[index % len(foes)], 270.0);
+    }
+}
+
+"""A touch over the box x0..x1, y0..y1 from lift `z` (`high` lifts tall)
+that lets loose what lies in wait, `after` seconds on: answers the cue of
+the foes to wait on it."""
+def wake_on(build: Raising, x0: float, y0: float, x1: float, y1: float, z: float, after: float = 0.5, high: float = 6.0) -> Cue {
+    touched = build.touch(x0, y0, z, x1, y1, z + high);
+    late = build.delay(after);
+    foes = build.waiting();
+    touched +>:Fires:+> late;
+    late +>:Fires:+> foes;
+    return foes;
+}
