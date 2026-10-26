@@ -404,6 +404,7 @@ node ForgottenVault(Prefab) {
         if self.cross == 0 {
             # A jump pad over the chasm to the platform, another back.
             pad_to(build, vault, float(x0) - 3.0, float(cy) + 0.5, 0, float(far) + 3.0, float(cy) + 0.5, 4, far, cy - 2, far + 1, cy + 3);
+            keep_box(build, vault, x0 - 1, cy - 1, x0, cy + 2, 0);
             pad_to(build, vault, float(far) + 3.0, float(cy) - 3.5, 4, 3.0, float(cy) - 3.5, 0, x0 - 1, cy - 6, x0, cy - 1);
             keep_box(build, vault, far, cy - 6, far + 1, cy - 1, 4);
         } elif self.cross == 1 {
@@ -469,6 +470,7 @@ node ForgottenSanctum(Prefab) {
             keep_box(build, room, x0 - 1, middle - 1, x0, middle + 2, 0);
         } elif self.cross == 1 {
             pad_to(build, room, float(x0) - 3.0, float(middle) + 0.5, 0, float(ix) + 3.0, float(middle) + 0.5, 4, ix, middle - 2, ix + 1, middle + 3);
+            keep_box(build, room, x0 - 1, middle - 1, x0, middle + 2, 0);
         } else {
             slab(build, wall + 1, 1, self.long - 1, 4, 9);
             stair(build, wall + 2, 4, 0, 0, 9, 3);

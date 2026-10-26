@@ -282,12 +282,14 @@ node IntroPit(Prefab) {
             build.teleporter(float(cx) - 2.0, float(cy) + 0.5, 0, float(bx) + 0.5, float(self.wide) - 3.0, b, 0.0);
         } else {
             pad(build, hall, float(bx), float(self.wide - 9), 0, float(bx), float(self.wide) - 4.0, b, bx - 2, self.wide - 6, bx + 2, self.wide - 5);
+            keep_box(build, hall, bx - 2, self.wide - 6, bx + 2, self.wide - 5, r);
         }
         # The drop back to the ring.
         keep_box(build, hall, self.long - 10, self.wide - 6, self.long - 7, self.wide - 5, b);
         if self.twin {
             slab(build, 6, 1, self.long - 1, 6, b);
             pad(build, hall, float(bx), 9.0, 0, float(bx), 4.0, b, bx - 2, 5, bx + 2, 6);
+            keep_box(build, hall, bx - 2, 5, bx + 2, 6, r);
             keep_box(build, hall, self.long - 10, 5, self.long - 7, 6, b);
         }
         build.doorway(hall, self.enter);
