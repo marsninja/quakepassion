@@ -203,9 +203,11 @@ def closets(build: Raising, cue: Cue, xs: list[int], line: int, out: int, z: int
 
 """An end's way in for Quake II: a hall from the near wall to the cell
 line `wall`, its way in cut, and a pair of doors through `wall` into the
-room beyond (from `wall` to the far wall, lifts `low` to `tall`), both
-wanting `key` when one is given (a gate). Answers the room beyond."""
-def gate_pair(build: Raising, dice: Stream, enter: Port, long: int, wide: int, wall: int, low: int, tall: int, key: str) -> Space {
+room beyond (from `wall` to the far wall, lifts `low` to `tall`), the
+door `panels` panels two cells wide each (a loading bay's big door when
+four), all wanting `key` when one is given (a gate). Answers the room
+beyond."""
+def gate_pair(build: Raising, dice: Stream, enter: Port, long: int, wide: int, wall: int, low: int, tall: int, key: str, panels: int = 2) -> Space {
     middle = wide // 2;
     hall = build.room(1, 1, 0, wall, wide - 1, 10, variant=dice.below(3));
     room = build.room(wall + 1, 1, low, long - 1, wide - 1, tall, variant=dice.below(3));
@@ -213,10 +215,44 @@ def gate_pair(build: Raising, dice: Stream, enter: Port, long: int, wide: int, w
         build.level(room, 0);
     }
     build.doorway(hall, enter);
-    build.widen(room, wall, middle - 2, 0, wall + 1, middle + 2, 8);
+    half = panels;
+    build.widen(room, wall, middle - half, 0, wall + 1, middle + half, 8);
     if key {
-        build.rising_door(float(wall), float(middle - 2), 0.0, float(wall + 1), float(middle), 8.0, {"key": key, "wait": "-1"});
-        build.rising_door(float(wall), float(middle), 0.0, float(wall + 1), float(middle + 2), 8.0, {"key": key, "wait": "-1"});
+        # The panels side by side, touching, so they open as one (a key
+        # taken once).
+        for panel in range(panels) {
+            y = middle - half + panel * 2;
+            build.rising_door(float(wall), float(y), 0.0, float(wall + 1), float(y + 2), 8.0, {"key": key, "wait": "-1"});
+        }
     }
     return room;
+}
+
+"""A button on a post: a pillar a cell square at (x, y) from lift `z`
+three lifts high, the button on its face toward `direction` (0 +x ... 3
+-y), pushed (or shot) as a cue."""
+def post_button(build: Raising, x: int, y: int, z: int, direction: int, shot: bool = False) -> Cue {
+    build.solid(x, y, z, x + 1, y + 1, z + 3);
+    if direction == 0 {
+        return build.push(float(x + 1), float(y) + 0.5, float(z) + 1.0, 0, shot);
+    }
+    if direction == 2 {
+        return build.push(float(x), float(y) + 0.5, float(z) + 1.0, 2, shot);
+    }
+    if direction == 1 {
+        return build.push(float(x) + 0.5, float(y + 1), float(z) + 1.0, 1, shot);
+    }
+    return build.push(float(x) + 0.5, float(y), float(z) + 1.0, 3, shot);
+}
+
+"""A crane's crate riding to and fro high over a floor: a train two cells
+square and two lifts high from (x, a) to (x, b) on lift `z` (from (a, x)
+to (b, x) when `along_x`), out of a body's reach."""
+def crane(build: Raising, x: int, a: int, b: int, z: int, along_x: bool = False) -> Cue {
+    if along_x {
+        stops = [[float(a), float(x), float(z)], [float(b), float(x), float(z)]];
+    } else {
+        stops = [[float(x), float(a), float(z)], [float(x), float(b), float(z)]];
+    }
+    return build.train([2.0, 2.0, 2.0], stops, 50.0, 3.0);
 }
