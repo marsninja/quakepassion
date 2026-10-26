@@ -24,7 +24,7 @@ import from vendor.raylib {
 }
 
 import from games.arenas { ArenaProgress, parse_arenas, ladder }
-import from games.passion.generate { level_name, run_of }
+import from games.passion.generate { level_name, run_of, level_engine, VERSION, PREFAB_VERSION, HANDMADE_VERSION }
 import from ..world.arena { ordinal }
 
 # The settings rows' pitch: all of them above the buttons under the list.
@@ -138,6 +138,8 @@ obj LevelMenu {
         # Passion's seed as typed, and the characters typed this frame (the
         # app hands them over while the menu is open).
         seed_text: str = "",
+        # The engine Passion's run is made by: essences (v4) or prefabs.
+        passion_engine: str = "v4",
         typed: list[str] = [],
         games: list[str] = ["q1", "q2", "q3", "passion"],
         # The chosen game's installed packs, and the one whose maps are listed.
@@ -240,7 +242,7 @@ obj LevelMenu {
             self.message = "A seed is a whole number from 1 to 2147483646";
             return;
         }
-        self.maps = [level_name(seed, 1)];
+        self.maps = [level_name(seed, 1, self.passion_engine)];
         self.labels = list(self.maps);
         self.message = "";
     }
@@ -249,6 +251,7 @@ obj LevelMenu {
     def show_run(name: str) {
         try {
             self.seed_text = str(run_of(name)[0]);
+            self.passion_engine = level_engine(name);
         } except ValueError {
             return;
         }
@@ -488,6 +491,12 @@ obj LevelMenu {
             self.roll_seed();
             changed = True;
         }
+        for (column, engine) in enumerate([VERSION, HANDMADE_VERSION, PREFAB_VERSION]) {
+            if click and self.hit(380 + column * 195, 322, 185, 40) and self.passion_engine != engine {
+                self.passion_engine = engine;
+                changed = True;
+            }
+        }
         if changed {
             self.choose_seed();
         }
@@ -649,6 +658,13 @@ obj LevelMenu {
         self.label(self.seed_text + caret, 392, 270, 26, amber);
         self.box(560, 260, 160, 44, brown);
         self.label("Roll the dice", 572, 272, 20, white);
+        self.label("Made by", 310, 332, 18, white);
+        titles = {VERSION: "Essences", HANDMADE_VERSION: "Hand-made prefabs", PREFAB_VERSION: "Originals' stretches"};
+        for (column, engine) in enumerate([VERSION, HANDMADE_VERSION, PREFAB_VERSION]) {
+            chosen = self.passion_engine == engine;
+            self.box(380 + column * 195, 322, 185, 40, brown if chosen else Color(r=48, g=45, b=41, a=255));
+            self.label(titles[engine], 388 + column * 195, 333, 17, white);
+        }
         lines = [
             "Type a seed, or roll one. A seed is a whole run:",
             "each level's way out leads on to the next,",
@@ -657,7 +673,7 @@ obj LevelMenu {
             "Health, armour and weapons carry on; keys do not."
         ];
         for (row, line) in enumerate(lines) {
-            self.label(line, 310, 340 + row * 28, 20, white);
+            self.label(line, 310, 390 + row * 28, 20, white);
         }
         self.label(self.message[:75], 310, 580, 16, amber);
         self.box(310, 610, 260, 42, brown);

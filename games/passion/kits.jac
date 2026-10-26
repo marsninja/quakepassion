@@ -40,6 +40,8 @@ obj Kit {
         ambient: float = 0.08;
 }
 
+import from .level_kits { LEVEL_KITS }
+
 glob KITS: list[Kit] = [
          Kit(
              name="Slipgate Base",
@@ -265,7 +267,64 @@ def kit_water(kit: Kit) -> str {
     return "q2:e1u1/bluwter" if kit.game == "q2" else "q1:e1m2/*04water1";
 }
 
+"""A kit from a row of `LEVEL_KITS` (one original's own palette): what it
+lacks (a sky, a liquid) taken from the first kit of its game."""
+def kit_from_row(row: list[str]) -> Kit {
+    game = row[0];
+    first = KITS[0];
+    for kit in KITS {
+        if kit.game == game {
+            first = kit;
+            break;
+        }
+    }
+    return Kit(
+        name=game + " " + row[1],
+        game=game,
+        source=row[1],
+        floor=row[2],
+        wall=row[3],
+        ceiling=row[4],
+        trim=row[5],
+        support=row[6],
+        lower=row[7],
+        accent=row[8],
+        light=row[9],
+        door=row[10],
+        step=row[11],
+        sky=row[12] if row[12] else first.sky,
+        liquid=row[13] if row[13] else first.liquid,
+        scale=0.5 if game == "q3" else 1.0,
+        walls=[name for name in row[14].split("|") if name],
+        floors=[name for name in row[15].split("|") if name],
+        ceilings=[name for name in row[16].split("|") if name],
+        lamp_color=first.lamp_color,
+        lamp_level=first.lamp_level
+    );
+}
+
+"""The hand-picked kits, then every original's own (`level_kits.jac`), in
+the order `LEVEL_KITS` lists them."""
+glob ALL_KITS: list[Kit] = KITS + [kit_from_row(row) for row in LEVEL_KITS];
+
+"""The district of an original's own kit (`game:map`), or the first kit of
+its game when it has none."""
+def level_district(spec: str) -> int {
+    parts = spec.split(":");
+    for (index, row) in enumerate(LEVEL_KITS) {
+        if row[0] == parts[0] and row[1] == parts[1] {
+            return len(KITS) + index;
+        }
+    }
+    for (index, kit) in enumerate(KITS) {
+        if kit.game == parts[0] {
+            return index;
+        }
+    }
+    return 0;
+}
+
 """The kit of a district (districts past the last kit wrap round)."""
 def kit_of(district: int) -> Kit {
-    return KITS[district % len(KITS)];
+    return ALL_KITS[district % len(ALL_KITS)];
 }

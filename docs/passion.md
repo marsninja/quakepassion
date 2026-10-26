@@ -119,6 +119,54 @@ way out, which tokens are wanted and who gives them).
 each candidate went; `QP_PASSION_UNPROVEN=1` lets the game play the last
 candidate when none proves (to look at what the proof found).
 
+## Prefabs (`prefab.jac`, `prefabs/`, `assemble.jac`)
+
+A second engine, side by side with the essences: a run named `pf-<seed>`
+(the Passion page's "Prefabs" choice, or `QP_MAP=pf-42`) assembles each
+level from prefabs. A prefab is a stretch of an original level made again
+by code, at its scale and with its flow (its doors, buttons, lifts and
+bridges), and varied by the seed: its sizes, heights, which way it lies,
+what stands on its floors.
+
+- A prefab is a node (`Prefab`) with a box of its own cells, a way in on
+  its -x face and the ways out it offers (`Port`). Prefabs stand in a chain
+  (`Next`). The `Lay` walker has each choose itself (its own `choose`
+  ability) and places it, mirrored and turned so its way in meets a way
+  out of the one before across a short passage, clear of all laid. The
+  `Raise` walker has each carve itself into the massing and put down its
+  entities (its own `rise` ability, through `Raising`), and cuts the
+  passage from the one before, with a double door that slides into its
+  walls.
+- The level is then dressed, compiled, proven and lit as an essence's is.
+  The pilot plays its best candidate even when none proves (the forge log
+  says so).
+- A `pfh-<seed>` run takes the hand-made library (`prefabs/library.jac`):
+  a module per original of all three games (Quake's 31, Quake II's 39,
+  Quake III's 26), each about five stretches drawn after that original's
+  flow, each playing a part: `start`, `flow`, `hub`, `keyroom`, `end` or
+  `gate` (an end behind a key's door). A level is a tree of them: a start,
+  a flow or two, a hub; from the hub a branch to a key room, and the hub's
+  way on locked by that key, so the key is fetched and the branch walked
+  back; from level 2 a second hub and the gold key; then the end. Any
+  original's stretch may follow any other's.
+- Quake III's arenas hold no foes of their own, so each arena's stretches
+  take Quake's and Quake II's; the arenas share their entry, pad tower,
+  atrium, vault and portal (`prefabs/q3arena.jac`, made for each arena
+  in its own palette) and each adds a stretch of its own (a chasm of
+  bridges, a tower climbed by a spiral stair, platforms thrown between by
+  jump pads, ledges over a void with teleporters back up...).
+- Supplies follow the foes (`provision`): health at every second foe and
+  every Quake II one, ammunition at every third in its foe's game, and at
+  the start Quake's super shotgun, nailgun and grenade launcher and Quake
+  II's super shotgun, machinegun and grenade launcher, so either game's
+  ammunition feeds a gun.
+- Trying stretches: `QP_PREFAB_SOLO=<original>:<name>:<role>` makes one
+  stretch alone between plain rooms (`QP_PREFAB_SOLO_LEAVE=n` takes its
+  n-th way out); `QP_PREFAB_FOCUS=<original>` takes that original's
+  stretches first in every level.
+- Jump pads sit three cells back from the edge they throw a body over and
+  `keep` that edge, since the dressing rails any drop of four lifts.
+
 ## Districts (`kits.jac`)
 
 | District | Read from |

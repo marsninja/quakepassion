@@ -230,7 +230,8 @@ def load_triggers(world: World, bsp: Bsp, collision: CollisionMap | None = None)
         fields = bsp.entities[index].fields;
         kind = fields.get("classname", "");
         target = fields.get("target", "");
-        secret = kind == "trigger_secret" and bsp.game == "q1";
+        # Passion casts Quake's secrets.
+        secret = kind == "trigger_secret" and bsp.game in ["q1", "passion"];
         setskill = kind == "trigger_setskill" and bsp.game == "q1";
         if not secret
             and not setskill

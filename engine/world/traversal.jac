@@ -493,12 +493,13 @@ def load_traversal(world: World, bsp: Bsp) {
             volume=volume,
             kind="teleport" if kind == "trigger_teleport" or point_pad else "push",
             activation=Signal(entities=[entity_index]),
-            gated=bsp.game == "q1"
+            # Passion casts Quake's teleporters (info_teleport_destination).
+            gated=bsp.game in ["q1", "passion"]
                 and kind == "trigger_teleport"
                 and bool(fields.get("targetname", "")),
             # Q1 teleporters take monsters unless PLAYER_ONLY; Q1/Q2 pushes take
             # anything alive. Q2 teleporter_touch and Q3 are players-only here.
-            monsters=(bsp.game == "q1" and kind == "trigger_teleport" and flags & 1 == 0)
+            monsters=(bsp.game in ["q1", "passion"] and kind == "trigger_teleport" and flags & 1 == 0)
                 or (bsp.game in ["q1", "q2"] and kind == "trigger_push")
         );
         world +>:HasSignal:+> traversal.activation;
