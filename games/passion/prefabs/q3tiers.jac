@@ -6,6 +6,7 @@ import math;
 import from ..prefab { Raising, Cue, Fires }
 import from ..space { Space }
 import from .common { key_item }
+import from ..kits { kit_of }
 
 """Keep every cell of the box x0..x1, y0..y1 on lift `z` clear of
 railings (a pad's landing edge, a drop's lip, a bridge's ends)."""
@@ -95,4 +96,26 @@ def wake_on(build: Raising, x0: float, y0: float, x1: float, y1: float, z: float
     touched +>:Fires:+> late;
     late +>:Fires:+> foes;
     return foes;
+}
+
+"""A doorway through a wall a cell thick at the cell line `x`, from `y0`
+to `y1` on lift `z`, `high` lifts tall, shut by two halves that slide apart
+into the wall when touched (Quake III's sliding doors), as air of `space`."""
+def sliding_pair(build: Raising, space: Space, x: int, y0: int, y1: int, z: int, high: int) {
+    build.widen(space, x, y0, z, x + 1, y1, z + high);
+    split = float(y0 + y1) * 0.5;
+    kit = kit_of(build.district);
+    for side in [1, -1] {
+        lo = split if side > 0 else float(y0);
+        hi = float(y1) if side > 0 else split;
+        fields = {"classname": "func_door", "angle": str(build.facing(1 if side > 0 else 3)), "speed": "160", "wait": "3", "lip": "8"};
+        build.put_box(fields, float(x) + 0.25, lo, float(z), float(x) + 0.75, hi, float(z + high), kit.door);
+        span = hi - lo;
+        if side > 0 {
+            build.rock_round(float(x), hi, float(z), float(x + 1), hi + span, float(z + high));
+        } else {
+            build.rock_round(float(x), lo - span, float(z), float(x + 1), lo, float(z + high));
+        }
+        build.casting.doors += 1;
+    }
 }
