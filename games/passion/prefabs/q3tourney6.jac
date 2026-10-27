@@ -205,6 +205,7 @@ node TrapdoorBridge(Prefab) {
         build.foe(float(self.long) - 2.5, float(middle) + 3.5, 0, end_foe(dice, self.danger), 180.0, waits=far_side);
         build.supply(float(self.long) - 3.0, float(middle) + 0.5, 0, Q3_HEALTH, "q3");
         build.supply(3.0, 3.0, 0, "ammo_slugs", "q3");
+        build.supply(3.0, float(self.wide) - 3.0, 0, Q3_HEALTH, "q3");
     }
 }
 
@@ -274,6 +275,7 @@ node LaunchSpire(Prefab) {
         build.foe(float(self.long) - 2.5, py + 3.0, hz, end_foe(dice, self.danger, True), 180.0, waits=guards);
         build.supply(float(self.long) - 3.0, py - 3.0, hz, Q3_HEALTH, "q3");
         build.supply(3.0, py, 0, Q3_HEALTH, "q3");
+        build.supply(float(px) - 3.0, py + 4.0, 0, Q3_HEALTH, "q3");
     }
 }
 
@@ -366,6 +368,8 @@ node VoidCross(Prefab) {
         build.foe(float(self.long) - 3.0, float(cy) + 2.5, 0, end_foe(dice, self.danger), 180.0, waits=guards);
         build.timer(6.0) +>:Fires:+> build.sparks(float(cx) - 1.8, float(cy) - 1.5, 5.0, 2);
         build.supply(3.0, float(cy) - 1.5, 0, Q3_HEALTH, "q3");
+        build.supply(float(self.long) - 3.0, float(cy) - 1.5, 0, Q3_HEALTH, "q3");
+        build.supply(float(cx) + 0.5, 3.0, 0, "ammo_rockets", "q3");
     }
 }
 
@@ -481,7 +485,7 @@ node VeryEnd(Prefab) {
         door = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
         guards = wake_later(build, door, 1.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(lx) + 3.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, 0, end_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(lx) + 3.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, 0, end_foe(dice, self.danger), 180.0, waits=guards);
         }
         for index in range(dice.between(1, 2)) {
             build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, end_foe(dice, self.danger), 180.0);
