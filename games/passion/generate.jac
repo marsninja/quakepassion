@@ -556,13 +556,16 @@ def prove_made(
         }
     }
     ledger = budget_route(atlas, proof.route, level.collision, start_kit(lead));
-    clean = proof.finishes and proof.softlocks == 0;
+    # A made level always has a way out: a graph with no place at it (read
+    # as an arena) has it where no body comes, and does not prove.
+    lost_exit = len(casting.exit_low) > 0 and atlas.arena;
+    clean = proof.finishes and proof.softlocks == 0 and not lost_exit;
     survey = forge.survey;
     if survey is not None {
         survey.lowest = ledger.lowest;
         survey.atlas = atlas;
     }
-    line = ("proves clean" if clean else "does not prove (finishes " + str(proof.finishes) + ", " + str(proof.softlocks) + " softlocks)")
+    line = ("proves clean" if clean else "does not prove (finishes " + str(proof.finishes and not lost_exit) + ", " + str(proof.softlocks) + " softlocks" + (", the way out on no place" if lost_exit else "") + ")")
         + (" with " + str(pruned) + " dead-end places pruned" if pruned else "")
         + ": " + str(len(graph_places(atlas))) + " places, budget lowest "
         + str(int(ledger.lowest)) + ", in " + str(round(time.time() - began, 1)) + " s";
