@@ -53,9 +53,27 @@ def inside_port(prefab: Prefab, port: Port) -> list[float] {
     return [low, 2.0, high, 4.0];
 }
 
+"""The cells just outside the doorway `port` makes, in the passage beyond
+the prefab's face, as a box [x0, y0, x1, y1] (two cells deep)."""
+def outside_port(prefab: Prefab, port: Port) -> list[float] {
+    low = port.along - float(port.wide) * 0.5;
+    high = low + float(port.wide);
+    if port.face == 0 {
+        return [float(prefab.long), low, float(prefab.long + 2), high];
+    }
+    if port.face == 2 {
+        return [-2.0, low, 0.0, high];
+    }
+    if port.face == 1 {
+        return [low, float(prefab.wide), high, float(prefab.wide + 2)];
+    }
+    return [low, -2.0, high, 0.0];
+}
+
 """Shutters across the ways out `ports` that open as a body comes up to
-them (a touch just inside each, Quake II's doors fired by a
-trigger_multiple), each pair now and then (`chance`)."""
+them from either side (a touch just inside each and one just outside,
+Quake II's doors fired by a trigger_multiple), each pair now and then
+(`chance`)."""
 def auto_shutters(build: Raising, dice: Stream, prefab: Prefab, ports: list[Port], chance: float) {
     for port in ports {
         if not dice.chance(chance) {
@@ -63,7 +81,12 @@ def auto_shutters(build: Raising, dice: Stream, prefab: Prefab, ports: list[Port
         }
         box = inside_port(prefab, port);
         near = build.touch(box[0], box[1], float(port.floor), box[2], box[3], float(port.floor + 6), False);
-        near +>:Fires:+> shutter(build, prefab, port);
+        doors = shutter(build, prefab, port);
+        near +>:Fires:+> doors;
+        # And one just outside, in the passage, so a body coming back the
+        # other way is not shut out.
+        beyond = outside_port(prefab, port);
+        build.touch(beyond[0], beyond[1], float(port.floor), beyond[2], beyond[3], float(port.floor + 6), False) +>:Fires:+> doors;
     }
 }
 
