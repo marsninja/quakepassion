@@ -19,7 +19,7 @@ q3dm7's are knight, wizard, hell_knight. Raised in q3dm7's own palette.
   floor and both balconies.
 - `RetributionDepths`: a well, a stair winding down its walls over itself
   from the way in at the top to the floor, the middle open to drop down, a
-  teleporter at the foot back up.
+  teleporter (or a jump pad) at the foot back up.
 - `RetributionShrine`: the key room. The key on a shrine high along the
   far wall, thrown up to by a jump pad or climbed by stairs along two
   walls; a button by the key sinks a floor down from the shrine; taking
@@ -309,10 +309,11 @@ node RetributionCourt(Prefab) {
 }
 
 """A well, a stair winding down its walls over itself from the way in at
-the top to the floor, the middle open to drop down, a teleporter at the
-foot back up."""
+the top to the floor, the middle open to drop down, a teleporter (or a
+jump pad) at the foot back up."""
 node RetributionDepths(Prefab) {
     has steps: int = 20,
+        pad_up: bool = False,
         tall: int = 29;
 
     can choose with Lay entry {
@@ -330,6 +331,7 @@ node RetributionDepths(Prefab) {
             }
         }
         self.steps = fits[dice.below(len(fits))];
+        self.pad_up = dice.chance(0.5);
         top = ring_landing(1, 1, self.long - 1, self.wide - 1, 3, self.steps, 5);
         self.tall = self.steps + 9;
         self.low = -1;
@@ -369,7 +371,13 @@ node RetributionDepths(Prefab) {
             lx = top[1];
             ly = 2.5;
         }
-        build.teleporter(cx, cy, 0, lx, ly, s, 0.0);
+        if self.pad_up {
+            # A jump pad in the well's floor up to the landing, by the wall
+            # behind it.
+            pad_to(build, well, cx, cy, 0, lx, ly, s, 1, 1, 1, 1);
+        } else {
+            build.teleporter(cx, cy, 0, lx, ly, s, 0.0);
+        }
         foot = build.touch(4.0, 4.0, 0.0, float(self.long - 4), float(self.wide - 4), 6.0);
         below = wake_later(build, foot, 0.5);
         build.foe(2.5, cy, 0, q3dm7_foe(dice, self.danger, True), 0.0, waits=below);
