@@ -12,9 +12,10 @@ own palette.
   closet in the hall's corner.
 - `DrownedPassage`: three rooms in a row, the middle one's doors shut: the
   first opens when its guards die (a counter of their deaths) or when the
-  button over it is shot, the second when shot. Under the middle room a
-  siphon runs flooded from a shaft in the first room's floor to one in the
-  last's, swum through; some seeds open a well up into the middle room.
+  button over it is shot, the second when the button over it is shot.
+  Under the middle room a siphon runs flooded from a shaft in the first
+  room's floor to one in the last's, swum through; some seeds open a well
+  up into the middle room.
 - `AzureCistern`: deep water ringed by a ledge, galleries over the ledge
   and the water's edge on two walls up lifts or stairs, a high bridge from
   one across the water to the far wall; ways on from the ledge, the
@@ -246,9 +247,11 @@ node DrownedPassage(Prefab) {
             shot +>:Fires:+> door_a;
             build.foe(float(wa) - 3.5, float(middle) + 3.5, 0, e4m7_foe(dice, self.danger, True), 180.0);
         }
-        # The second door: shot open, or opened by a touch.
+        # The second door: opened by shooting the button over it, or by a
+        # touch.
         if self.shot_second {
-            build.rising_door(float(wb), float(middle - 2), 0.0, float(wb + 1), float(middle + 2), 8.0, {"health": "1", "wait": "-1"});
+            door_b = build.opened(float(wb), float(middle - 2), 0.0, float(wb + 1), float(middle + 2), 8.0);
+            build.push(float(wb), float(middle) + 0.5, 9.0, 2, True) +>:Fires:+> door_b;
         } else {
             build.rising_door(float(wb), float(middle - 2), 0.0, float(wb + 1), float(middle + 2), 8.0, {"wait": "-1"});
         }
@@ -717,7 +720,7 @@ node AzureExit(Prefab) {
         self.targets = dice.chance(0.65);
         self.spiked = dice.chance(0.5);
         self.low = -8;
-        self.high = self.tall + 1;
+        self.high = self.tall + 8;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
