@@ -246,7 +246,8 @@ edge Fires: Cue --> Cue {}
 
 """Names a cue's targets: walked from a cue that fires others, its entities
 target a name of its own and every cue it fires answers to that name (or,
-when it answers to another already, a relay of that name fires it)."""
+when it answers to another already, or is fired by more than one cue and
+so answers to a name of its own, a relay of that name fires it)."""
 walker Wire {
     has build: Raising,
         name: str = "";
@@ -265,6 +266,17 @@ walker Wire {
             return;
         }
         answered = [item.get("targetname", "") for item in here.items if item.get("targetname", "")];
+        # Fired from more than one cue, it answers to a name of its own, each
+        # firer's reaching it by a relay, so no firer fires what another's
+        # name fires besides it.
+        firers = [here<-:Fires:<-][?:Cue];
+        if not answered and len(firers) > 1 {
+            solo_name = self.build.cue_name(here.word);
+            for item in here.items {
+                item["targetname"] = solo_name;
+            }
+            answered = [solo_name];
+        }
         if not answered {
             for item in here.items {
                 item["targetname"] = self.name;
