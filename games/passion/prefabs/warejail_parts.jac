@@ -319,3 +319,21 @@ def drip(build: Raising, x: float, y: float, z: float, every: float) {
     build.put_point(fields, x, y, z, "q2");
     build.timer(every) +>:Fires:+> build.cue([fields], "drip");
 }
+
+"""A hurting box of the prefab's cells (a live wire's current in water,
+scalding steam): Quake II's trigger_hurt, `damage` a second; on from the
+start when `on`, toggled each time its cue fires."""
+def hurt(build: Raising, x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, damage: int, on: bool = True) -> Cue {
+    fields = {"classname": "trigger_hurt", "dmg": str(damage), "spawnflags": "18" if on else "19", "asset_game": "q2"};
+    build.put_box(fields, x0, y0, z0, x1, y1, z1, "trigger");
+    return build.cue([fields], "hurt");
+}
+
+"""Merlons along the outer edge of a wall's top: a block a cell square and
+two lifts high on lift `z` every other cell from x `start` to `finish` on
+the cell line y = `line`."""
+def merlons(build: Raising, line: int, start: int, finish: int, z: int) {
+    for x in range(start, finish, 2) {
+        build.solid(x, line, z, x + 1, line + 1, z + 2);
+    }
+}
