@@ -73,15 +73,15 @@ node PrisonApproach(Prefab) {
         self.title = "Prison approach";
         self.source = JAIL1;
         self.district = level_district(JAIL1);
-        self.plateau = dice.between(4, 6);
+        self.plateau = dice.between(6, 8);
         self.blocks = dice.between(9, 11);
         self.wide = dice.between(22, 25);
         self.rows = (self.wide - 2) // 3;
         self.wall = dice.between(10, 12);
         self.drawbridge = dice.chance(0.45);
-        self.long = 1 + 2 * self.blocks + 4 + 9 + 5 + 1;
+        self.long = 1 + 2 * self.blocks + 7 + 9 + 5 + 1;
         self.tall = self.plateau + self.wall + 8;
-        self.low = self.plateau - 19;
+        self.low = self.plateau - 31;
         self.high = self.tall + 1;
         # The ground's heights, a block two cells along by a row three
         # across: the middle row climbs a lift a block at most; the others
@@ -113,8 +113,8 @@ node PrisonApproach(Prefab) {
         self.enter = Port(face=2, along=middle, floor=0);
         self.leaves = [
             Port(face=0, along=middle, floor=self.plateau),
-            Port(face=1, along=float(tx + 2), floor=self.plateau),
-            Port(face=3, along=float(tx + 2), floor=self.plateau)
+            Port(face=1, along=float(tx + 3), floor=self.plateau),
+            Port(face=3, along=float(tx + 3), floor=self.plateau)
         ];
         visitor.place(self);
     }
@@ -139,10 +139,13 @@ node PrisonApproach(Prefab) {
         }
         # The plateau, the moat, the wall.
         tx = 1 + 2 * self.blocks;
-        mx = tx + 4;
+        mx = tx + 7;
         wx = mx + 9;
         build.solid(tx, 1, 0, mx, self.wide - 1, top);
-        build.pool(mx, 1, top - 8, wx, self.wide - 1, top, 2, False, True, True);
+        # (As deep as its steps out at both ends climb before they reach the
+        # bridge in the middle.)
+        dm = min(14, middle - 3);
+        build.pool(mx, 1, top - dm, wx, self.wide - 1, top, 2, False, True, True);
         build.solid(wx, 1, 0, self.long - 1, self.wide - 1, top + self.wall);
         build.widen(ground, wx, middle - 2, top, self.long - 1, middle + 2, top + 8);
         for y in range(2, self.wide - 2, 2) {
@@ -151,7 +154,7 @@ node PrisonApproach(Prefab) {
         # The way over the moat: a bridge, or a drawbridge lowered by the
         # button on a post at its head.
         if self.drawbridge {
-            bridge = build.drawn(float(mx), float(middle - 2), float(wx), float(middle + 2), top, 10);
+            bridge = build.drawn(float(mx), float(middle - 2), float(wx), float(middle + 2), top, dm + 2);
             post_button(build, mx - 1, middle + 3, top, 2) +>:Fires:+> bridge;
             build.touch(float(mx - 3), float(middle - 2), float(top), float(mx - 1), float(middle + 2), float(top + 6), True, "The drawbridge is worked from the post");
         } else {
@@ -162,16 +165,16 @@ node PrisonApproach(Prefab) {
             build.keep(ground, wx, y, top);
         }
         # A nook under the water at the wall's foot, a secret.
-        build.room(wx, 3, top - 8, wx + 2, 6, top - 5);
-        for z in range(top - 8, top - 5) {
+        build.room(wx, 3, top - dm, wx + 2, 6, top - dm + 3);
+        for z in range(top - dm, top - dm + 3) {
             for y in range(3, 6) {
                 for x in range(wx, wx + 2) {
                     build.liquid(x, y, z, 2);
                 }
             }
         }
-        build.secret(float(wx), 3.0, float(top - 8), float(wx + 2), 6.0, float(top - 6));
-        build.supply(float(wx) + 1.0, 4.5, top - 8, Q2_ARMOR, "q2");
+        build.secret(float(wx), 3.0, float(top - dm), float(wx + 2), 6.0, float(top - dm + 2));
+        build.supply(float(wx) + 1.0, 4.5, top - dm, Q2_ARMOR, "q2");
         build.doorway(ground, self.enter);
         for port in self.taken {
             build.doorway(ground, port);
@@ -202,7 +205,7 @@ node PrisonApproach(Prefab) {
 """A hall barred by gates of lasers, a catwalk over them to a control
 booth over its far end."""
 node SecurityGrid(Prefab) {
-    has booth: int = 9,
+    has booth: int = 12,
         gates: int = 2,
         shot: bool = False,
         tall: int = 16;
@@ -306,7 +309,7 @@ node Gatehouse(Prefab) {
         self.district = level_district(JAIL1);
         self.long = dice.between(24, 27);
         self.wide = dice.between(18, 20);
-        self.balcony = dice.between(6, 7);
+        self.balcony = dice.between(9, 10);
         self.north = dice.chance(0.5);
         self.by_lift = dice.chance(0.35);
         self.second = dice.chance(0.6);
@@ -385,14 +388,14 @@ node GuardTowerYard(Prefab) {
         self.title = "Guard tower yard";
         self.source = JAIL1;
         self.district = level_district(JAIL1);
-        self.long = dice.between(28, 31);
+        self.long = dice.between(34, 36);
         self.wide = dice.between(25, 27);
-        self.tower = dice.between(9, 10);
+        self.tower = dice.between(11, 12);
         self.by_lift = dice.chance(0.4);
         self.drawn_bridge = dice.chance(0.4);
         self.winch = dice.chance(0.65);
         self.tall = self.tower + 12;
-        self.low = -1;
+        self.low = -8;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -441,7 +444,9 @@ node GuardTowerYard(Prefab) {
         keep_row(build, yard, cx - 2, cy + 2, self.tower, 1, 4);
         keep_row(build, yard, cx - 2, walk_y, self.tower, 1, 4);
         # Rubble about the yard.
-        clear = [[0, cy - 4, 5, cy + 4], [cx - 7 - self.tower, cy - 6, cx + 4, cy + 4], [cx - 4, 0, cx + 4, 5], [self.long - 6, cy - 6, self.long, cy], [cx - 4, walk_y - 3, cx + 4, walk_y], [0, walk_y - 2, self.long, walk_y]];
+        # A cistern sunk in the yard's far corner, steps out at both ends.
+        build.pool(cx + 5, 2, -6, self.long - 6, cy - 4, 0, 2, False, True, True);
+        clear = [[cx + 4, 1, self.long - 5, cy - 3], [0, cy - 4, 5, cy + 4], [cx - 7 - self.tower, cy - 6, cx + 4, cy + 4], [cx - 4, 0, cx + 4, 5], [self.long - 6, cy - 6, self.long, cy], [cx - 4, walk_y - 3, cx + 4, walk_y], [0, walk_y - 2, self.long, walk_y]];
         boulders(build, dice, 1, 1, self.long - 4, walk_y, 0, dice.between(4, 6), clear);
         # A field of rubble heaped on the yard's floor, one to three lifts.
         for index in range(dice.between(10, 16)) {
@@ -489,7 +494,7 @@ node GuardTowerYard(Prefab) {
 """The channels under the moat: walkways along a flooded channel crossed
 by bridges, a guard post over the far end."""
 node MoatTunnels(Prefab) {
-    has post: int = 9,
+    has post: int = 12,
         by_lift: bool = False,
         grate: bool = True,
         tall: int = 16;
@@ -499,12 +504,12 @@ node MoatTunnels(Prefab) {
         self.title = "Moat tunnels";
         self.source = JAIL1;
         self.district = level_district(JAIL1);
-        self.long = dice.between(32, 35);
+        self.long = dice.between(36, 38);
         self.wide = dice.between(19, 21);
         self.by_lift = dice.chance(0.45);
         self.grate = dice.chance(0.7);
         self.tall = self.post + 7;
-        self.low = -10;
+        self.low = -16;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
         self.enter = Port(face=2, along=3.0, floor=0);
@@ -526,9 +531,9 @@ node MoatTunnels(Prefab) {
         # The channel down the middle, steps up out of it at its near end;
         # bridges across it a lift over the water.
         cx1 = self.long - 8;
-        build.pool(4, cy - 3, -8, cx1, cy + 4, 0, 2);
-        # (The steps out of the channel climb its first ten cells.)
-        for bx in [16, cx1 - 4] {
+        build.pool(4, cy - 3, -14, cx1, cy + 4, 0, 2);
+        # (The steps out of the channel climb its first fourteen cells.)
+        for bx in [19, cx1 - 4] {
             build.solid(bx, cy - 3, -1, bx + 3, cy + 4, 0);
             for x in range(bx, bx + 3) {
                 build.keep(tunnel, x, cy - 4, 0);
@@ -537,30 +542,30 @@ node MoatTunnels(Prefab) {
         }
         # A cistern under the north walkway, flooded, opening off the
         # channel under the water.
-        build.room(13, cy + 4, -8, cx1 - 1, self.wide - 2, -3);
-        for z in range(-8, -3) {
+        build.room(13, cy + 4, -14, cx1 - 1, self.wide - 2, -3);
+        for z in range(-14, -3) {
             for y in range(cy + 4, self.wide - 2) {
                 for x in range(13, cx1 - 1) {
                     build.liquid(x, y, z, 2);
                 }
             }
         }
-        build.supply(float(cx1) - 2.5, float(self.wide) - 3.5, -8, "ammo_cells", "q2");
+        build.supply(float(cx1) - 2.5, float(self.wide) - 3.5, -14, "ammo_cells", "q2");
         # A nook under the south walkway, open to the channel under the
         # water, behind a grate that breaks (a secret), or open.
-        build.room(16, cy - 6, -8, 19, cy - 3, -5);
-        for z in range(-8, -5) {
+        build.room(21, cy - 6, -14, 24, cy - 3, -11);
+        for z in range(-14, -11) {
             for y in range(cy - 6, cy - 3) {
-                for x in range(16, 19) {
+                for x in range(21, 24) {
                     build.liquid(x, y, z, 2);
                 }
             }
         }
         if self.grate {
-            build.breakable(16.0, float(cy - 4), -8.0, 19.0, float(cy - 3), -5.0, 15);
+            build.breakable(21.0, float(cy - 4), -14.0, 24.0, float(cy - 3), -11.0, 15);
         }
-        build.secret(16.0, float(cy - 6), -8.0, 19.0, float(cy - 4), -6.0);
-        build.supply(17.5, float(cy) - 5.5, -8, "ammo_rockets", "q2");
+        build.secret(21.0, float(cy - 6), -14.0, 24.0, float(cy - 4), -12.0);
+        build.supply(22.5, float(cy) - 5.5, -14, "ammo_rockets", "q2");
         # The guard post over the far end, a slab over the floor, up a stair
         # along the south wall or a lift.
         gx = self.long - 8;
@@ -579,7 +584,7 @@ node MoatTunnels(Prefab) {
         # Crossing the far bridge, guards appear on the post.
         crossing = build.touch(float(cx1 - 4), float(cy - 3), 0.0, float(cx1 - 1), float(cy + 4), 6.0);
         guards(build, crossing, [[float(self.long) - 3.5, float(cy) + 0.5], [float(self.long) - 3.5, float(self.wide) - 3.5]], self.post, jail1_foes(dice, self.danger, 2, True), 180.0);
-        build.foe(3.5, 2.5, 0, "monster_infantry", 0.0, patrol=[[3.5, 2.5], [float(self.long) - 18.5, 2.5]]);
+        build.foe(3.5, 2.5, 0, "monster_infantry", 0.0, patrol=[[3.5, 2.5], [float(self.long) - 21.5, 2.5]]);
         build.foe(float(cx1) - 2.5, float(self.wide) - 2.5, 0, "monster_infantry", 180.0, patrol=[[float(cx1) - 2.5, float(self.wide) - 2.5], [5.5, float(self.wide) - 2.5]]);
         build.foe(float(gx) + 1.5, float(cy) + 0.5, 0, jail1_foe(dice, self.danger), 180.0);
         build.supply(float(self.long) - 2.5, 2.5, self.post, Q2_HEALTH, "q2");
@@ -653,7 +658,7 @@ node WardenOffice(Prefab) {
 joined by a bridge, the way out at the far end."""
 node CellBlock(Prefab) {
     has key: str = "",
-        gallery: int = 7,
+        gallery: int = 9,
         out_high: bool = False,
         tall: int = 14;
 
@@ -665,7 +670,7 @@ node CellBlock(Prefab) {
         self.long = dice.between(28, 31);
         self.wide = dice.between(22, 24);
         self.out_high = dice.chance(0.45);
-        self.tall = self.gallery + 8;
+        self.tall = self.gallery + 12;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
