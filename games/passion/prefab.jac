@@ -1061,7 +1061,8 @@ obj Raising {
         prefab = self.lying();
         low = int(round(port.along - float(port.wide) * 0.5));
         high = low + port.wide;
-        top = port.floor + port.high;
+        # Never through its own roof (that air would stand outside its walls).
+        top = min(port.floor + port.high, prefab.high - 1);
         if port.face == 0 {
             self.widen(space, prefab.long - 2, low, port.floor, prefab.long, high, top);
         } elif port.face == 2 {

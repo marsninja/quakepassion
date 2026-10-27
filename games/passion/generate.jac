@@ -587,7 +587,25 @@ def prove_made(
             lead = game;
         }
     }
-    ledger = budget_route(atlas, proof.route, level.collision, start_kit(lead));
+    # The weapons where the player starts are held from the first step.
+    kit = start_kit(lead);
+    if casting.start {
+        for item in casting.items {
+            kind = item.fields.get("classname", "");
+            words = item.fields.get("origin", "").split();
+            if kind.startswith("weapon_") and len(words) == 3 and abs(float(words[0]) - casting.start[0]) < 64.0 and abs(float(words[1]) - casting.start[1]) < 64.0 and abs(float(words[2]) - casting.start[2]) < 64.0 {
+                kit.take(item.fields.get("asset_game", lead), kind, 0);
+            }
+        }
+    }
+    ledger = budget_route(atlas, proof.route, level.collision, kit);
+    # QP_FORGE_BUDGET=1: the ledger walked along the route, a line a fight
+    # or a supply taken.
+    if os.getenv("QP_FORGE_BUDGET", "") {
+        for ledger_line in ledger.lines {
+            print("FORGE", forge.name, "budget", ledger_line);
+        }
+    }
     # A made level always has a way out: a graph with no place at it (read
     # as an arena) has it where no body comes, and does not prove.
     lost_exit = len(casting.exit_low) > 0 and atlas.arena;
