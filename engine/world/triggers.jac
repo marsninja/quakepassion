@@ -287,7 +287,8 @@ def load_triggers(world: World, bsp: Bsp, collision: CollisionMap | None = None)
         if bsp.game == "q3" {
             interval += atof(fields.get("random", "0"));
         }
-        health = int(atof(fields.get("health", "0"))) if bsp.game == "q1" else 0;
+        # Quake's triggers that open to a shot (a Passion level's too).
+        health = int(atof(fields.get("health", "0"))) if bsp.game in ["q1", "passion"] else 0;
         trigger = TouchTrigger(
             model=model,
             volume=volume,
