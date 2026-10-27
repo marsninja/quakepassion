@@ -7,6 +7,7 @@ import math;
 import from ..random { Stream }
 import from ..prefab { Raising, Cue, Fires }
 import from ..space { Space }
+import from ..kits { kit_of }
 
 """A deck: solid over the cells x0..x1, y0..y1 from `thick` lifts under lift
 `z` up to it, so its top is a floor at `z` with air under it."""
@@ -63,6 +64,21 @@ def throw(build: Raising, space: Space, x: float, y: float, z: int, lx: float, l
     }
 }
 
+"""The void's floor, the cells x0..x1, y0..y1 on lift `z`: it burns
+whoever falls to it, and jump pads on it throw them back up (as
+q3dm19's pad at the foot of its void does): each of `pads` [x, y, lx,
+ly, lz] from (x, y) on the floor to (lx, ly) on lift lz, the landing's
+edge `keeps` ([x0, y0, x1, y1, z] each) clear of railings."""
+def void_pads(build: Raising, space: Space, x0: int, y0: int, x1: int, y1: int, z: int, pads: list[list[float]], keeps: list[list[int]]) {
+    hurt(build, float(x0), float(y0), float(z), float(x1), float(y1), float(z) + 2.0, 8);
+    for spot in pads {
+        throw(build, space, spot[0], spot[1], z, spot[2], spot[3], int(spot[4]), None, None);
+    }
+    for box in keeps {
+        keep_box(build, space, box[0], box[1], box[2], box[3], box[4]);
+    }
+}
+
 """Foes woken a while after a touch: a cue for `foe(..., waits=)` fired
 `seconds` after `touched` fires (the arenas' items respawning, made foes
 that come for the player when the timer runs out)."""
@@ -99,4 +115,23 @@ def columns(build: Raising, spots: list[list[int]], z0: int, z1: int) {
 calls out what lies ahead. Answers its cue."""
 def hint(build: Raising, x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, message: str) -> Cue {
     return build.touch(x0, y0, z0, x1, y1, z1, True, message);
+}
+
+"""A floor slab over the cells x0..x1, y0..y1, its top a floor at lift `z`
+(`thick` lifts thick), but for the `holes` ([x0, y0, x1, y1] each) cut
+through it as air of `space`: a stairwell, a shaft, an atrium."""
+def floor_slab(build: Raising, space: Space, x0: int, y0: int, x1: int, y1: int, z: int, holes: list[list[int]], thick: int = 2) {
+    build.solid(x0, y0, z - thick, x1, y1, z);
+    for hole in holes {
+        build.widen(space, hole[0], hole[1], z - thick, hole[2], hole[3], z);
+    }
+}
+
+"""A door that slides aside into the wall when touched: a slab of the
+prefab's cells x0..x1, y0..y1 from lift z0 to z1, moving the way
+`direction` goes (0 +x ... 3 -y) into solid beside it, and back a while
+after (the original's doors that open as a body comes up to them)."""
+def slide_door(build: Raising, x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, direction: int) {
+    build.put_box({"classname": "func_door", "angle": str(build.facing(direction)), "speed": "160", "wait": "3", "lip": "4"}, x0, y0, z0, x1, y1, z1, kit_of(build.district).door);
+    build.casting.doors += 1;
 }

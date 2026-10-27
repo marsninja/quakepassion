@@ -40,7 +40,7 @@ import from ..kits { level_district }
 import from ..space { Space }
 import from .common { stair, key_ambush, spiral, ring_path }
 import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
-import from .q3late_parts { deck, keep_box, void_floor, throw, wake_later, hurt }
+import from .q3late_parts { deck, keep_box, throw, wake_later, void_pads }
 
 glob Q3DM19: str = "q3:q3dm19",
      Q3DM19_LIGHT: list[str] = ["monster_knight", "monster_ogre"],
@@ -74,21 +74,6 @@ def bobbing(build: Raising, space: Space, x: int, y: int, bottom: int, top: int,
     }
 }
 
-
-"""The void's floor, the cells x0..x1, y0..y1 on lift `z`: it burns
-whoever falls to it, and jump pads on it throw them back up (as q3dm19's
-pad at the foot of its void does): each of `pads` [x, y, lx, ly, lz]
-from (x, y) on the floor to (lx, ly) on lift lz, the landing's edge
-`keeps` ([x0, y0, x1, y1, z] each) clear of railings."""
-def void_pit(build: Raising, space: Space, x0: int, y0: int, x1: int, y1: int, z: int, pads: list[list[float]], keeps: list[list[int]]) {
-    hurt(build, float(x0), float(y0), float(z), float(x1), float(y1), float(z) + 2.0, 8);
-    for spot in pads {
-        throw(build, space, spot[0], spot[1], z, spot[2], spot[3], int(spot[4]), None, None);
-    }
-    for box in keeps {
-        keep_box(build, space, box[0], box[1], box[2], box[3], box[4]);
-    }
-}
 
 """The start: an island over the void, a balcony over its back, a terrace
 down its side and a pad from it over to the far ledge."""
@@ -154,7 +139,7 @@ node VoidLanding(Prefab) {
         throw(build, void, 21.0, float(ty) + 4.0, -6, float(self.long) - 3.5, float(ty) + 4.0, self.far_z, [23, ty + 2, 24, ty + 6], [self.long - 7, ty + 2, self.long - 6, ty + 6]);
         keep_box(build, void, 20, ty + 7, 23, ty + 8, -6);
         other_y = float(ty) + 12.0 if self.terrace_side == 0 else float(ty) - 4.0;
-        void_pit(build, void, 1, 1, self.long - 1, self.wide - 1, low, [[25.5, float(ty) + 4.0, 20.5, float(ty) + 6.5, -6.0], [19.0, other_y, float(self.long) - 3.5, other_y, float(self.far_z)]], [[23, ty + 5, 24, ty + 8, -6], [self.long - 7, int(other_y) - 1, self.long - 6, int(other_y) + 2, self.far_z]]);
+        void_pads(build, void, 1, 1, self.long - 1, self.wide - 1, low, [[25.5, float(ty) + 4.0, 20.5, float(ty) + 6.5, -6.0], [19.0, other_y, float(self.long) - 3.5, other_y, float(self.far_z)]], [[23, ty + 5, 24, ty + 8, -6], [self.long - 7, int(other_y) - 1, self.long - 6, int(other_y) + 2, self.far_z]]);
         build.doorway(void, self.enter);
         for port in self.taken {
             build.doorway(void, port);
@@ -236,7 +221,7 @@ node BobbingCrossing(Prefab) {
         keep_box(build, void, 17, low_y if self.side == 1 else low_y + 5, 20, low_y + 1 if self.side == 1 else low_y + 6, -4);
         # From the low island's middle, a pad back up to the high one.
         throw(build, void, 22.0, float(low_y) + 3.0, -4, 15.0, float(ay) + 2.0, hi, None, [13, ay - 1 if self.side == 1 else ay + 4, 21, ay if self.side == 1 else ay + 5]);
-        void_pit(build, void, 1, 1, self.long - 1, self.wide - 1, low, [[16.0, py, 4.0, py, 0.0], [float(far) - 8.0, py, float(self.long) - 3.5, py, float(fz)]], [[7, middle - 1, 8, middle + 2, 0], [far, middle - 1, far + 1, middle + 2, fz]]);
+        void_pads(build, void, 1, 1, self.long - 1, self.wide - 1, low, [[16.0, py, 4.0, py, 0.0], [float(far) - 8.0, py, float(self.long) - 3.5, py, float(fz)]], [[7, middle - 1, 8, middle + 2, 0], [far, middle - 1, far + 1, middle + 2, fz]]);
         build.doorway(void, self.enter);
         for port in self.taken {
             build.doorway(void, port);
@@ -330,7 +315,7 @@ node SpireStair(Prefab) {
         throw(build, void, sx - 1.0, py + 3.0, perch, 4.0, py + 3.0, 0, [12, middle + 2, 13, middle + 5], [6, middle + 2, 7, middle + 5]);
         build.supply(sx, py - 3.0, perch, "weapon_railgun", "q3");
         open_y = float(self.wide) - 2.0 if self.start == 0 else 2.0;
-        void_pit(build, void, 1, 1, self.long - 1, self.wide - 1, low, [[8.0, open_y, 4.0, open_y, 0.0], [float(bx1) - 1.0, 2.0 if self.start == 0 else float(self.wide) - 2.0, 4.0, 2.0 if self.start == 0 else float(self.wide) - 2.0, 0.0]], [[6, int(open_y) - 1, 7, int(open_y) + 1, 0], [6, 1, 7, 4, 0], [6, self.wide - 4, 7, self.wide - 1, 0]]);
+        void_pads(build, void, 1, 1, self.long - 1, self.wide - 1, low, [[8.0, open_y, 4.0, open_y, 0.0], [float(bx1) - 1.0, 2.0 if self.start == 0 else float(self.wide) - 2.0, 4.0, 2.0 if self.start == 0 else float(self.wide) - 2.0, 0.0]], [[6, int(open_y) - 1, 7, int(open_y) + 1, 0], [6, 1, 7, 4, 0], [6, self.wide - 4, 7, self.wide - 1, 0]]);
         build.doorway(void, self.enter);
         for port in self.taken {
             build.doorway(void, port);
@@ -427,7 +412,7 @@ node ApocalypseKeep(Prefab) {
         } else {
             deck(build, cx - 2, 1, cx + 2, cy - 4, kt, 2);
         }
-        void_pit(build, void, 1, 1, self.long - 1, self.wide - 1, low, [[6.0, 2.0, 6.0, 7.0, 0.0], [6.0, float(self.wide) - 2.0, 6.0, float(self.wide) - 7.0, 0.0]], [[5, 4, 8, 5, 0], [5, self.wide - 5, 8, self.wide - 4, 0]]);
+        void_pads(build, void, 1, 1, self.long - 1, self.wide - 1, low, [[6.0, 2.0, 6.0, 7.0, 0.0], [6.0, float(self.wide) - 2.0, 6.0, float(self.wide) - 7.0, 0.0]], [[5, 4, 8, 5, 0], [5, self.wide - 5, 8, self.wide - 4, 0]]);
         build.doorway(void, self.enter);
         for port in self.taken {
             build.doorway(void, port);
@@ -512,7 +497,7 @@ node SkyAltar(Prefab) {
         keep_box(build, room, ax, ay if self.side == 1 else ay + 6, self.long - 2, ay + 1 if self.side == 1 else ay + 7, az);
         throw(build, room, 19.5, float(my) + 3.0, mz, float(ax) + 3.5, float(ay) + 3.5, az, [20, my, 21, my + 6], None);
         build.teleporter(float(self.long) - 3.5, float(ay) + 5.5, az, 4.0, float(cy) + 0.5, 0, 0.0);
-        void_pit(build, room, 1, 1, self.long - 1, side, low, [[13.0, float(cy) + 0.5, 6.0, float(cy) + 0.5, 0.0]], [[10, cy - 1, 11, cy + 2, 0]]);
+        void_pads(build, room, 1, 1, self.long - 1, side, low, [[13.0, float(cy) + 0.5, 6.0, float(cy) + 0.5, 0.0]], [[10, cy - 1, 11, cy + 2, 0]]);
         key_ambush(build, self.key, float(self.long) - 4.5, float(ay) + 2.0, az, side, 0, [2, 7], [apocalypse_foe(dice, self.danger, True), apocalypse_foe(dice, self.danger)]);
         build.foe(float(ax) + 2.0, float(ay) + 5.0, az, apocalypse_foe(dice, self.danger), 180.0);
         build.foe(18.0, float(my) + 1.5, mz, apocalypse_foe(dice, self.danger), 180.0);
@@ -575,7 +560,7 @@ node VoidGate(Prefab) {
             keep_box(build, void, ix, middle, ix + 1, middle + 4, 0);
         }
         build.way_out(float(self.long) - 3.5, py + 1.0, self.exit_z);
-        void_pit(build, void, wall + 1, 1, self.long - 1, self.wide - 1, low, [[float(ex) + 4.0, 3.0, float(ex) - 3.0, 3.0, 0.0]], [[ex - 1, 2, ex, 5, 0]]);
+        void_pads(build, void, wall + 1, 1, self.long - 1, self.wide - 1, low, [[float(ex) + 4.0, 3.0, float(ex) - 3.0, 3.0, 0.0]], [[ex - 1, 2, ex, 5, 0]]);
         door = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
         guards = build.waiting();
         door +>:Fires:+> guards;

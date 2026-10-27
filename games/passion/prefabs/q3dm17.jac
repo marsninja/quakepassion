@@ -23,8 +23,8 @@ them back up to where the stretch was entered.
 - `BounceIsles`: islands bounced across pad to pad, rising as they zigzag
   over the void (three or four of them), the mega health on the last; by
   the seed a catwalk low along one wall under them and the far ledge, with
-  a lift up through the ledge and a way on of its own. The first bounce wakes the far
-  ledge's guards.
+  a lift up through the ledge and a way on of its own. A teleporter on the
+  far ledge leads back. The first bounce wakes the far ledge's guards.
 - `YardHub`: the hub. The main yard's two tiers: a long deck over the
   void and a high bridge crossing over its middle, thrown up to by pads
   from both ends of the deck; the red armor's island off one side, a pad
@@ -412,6 +412,10 @@ node BounceIsles(Prefab) {
         last = spots[-1];
         throw(build, isles, float(last[0]) + 4.5, float(last[1]) + 3.0, last[2], float(far) + 4.5, float(last[1]) + 3.0, self.far_z, None, [far, last[1], far + 1, last[1] + 6]);
         keep_box(build, isles, far, middle - 1, far + 1, middle + 2, self.far_z);
+        # The way back: a teleporter on the far ledge, off the line from the
+        # last bounce's landing to the ways on, to the near ledge.
+        back_y = float(middle) + 3.5 if float(spots[-1][1]) + 3.0 < float(middle) else float(middle) - 3.0;
+        build.teleporter(float(far) + 1.0, back_y, self.far_z, 3.5, float(middle) + 0.5, 0, 0.0);
         if self.catwalk {
             # The catwalk along the first isle's wall, under every other
             # isle and on under the far ledge, and a lift up through it.
