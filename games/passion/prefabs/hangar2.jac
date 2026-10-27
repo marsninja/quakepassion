@@ -189,7 +189,7 @@ node BlastPens(Prefab) {
         self.tall = self.mez + dice.between(9, 10);
         self.catwalk = dice.chance(0.6);
         self.walk_x = dice.between(self.mez + 9, self.long - 9);
-        self.low = -1;
+        self.low = -4;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.side // 2 + 2), floor=0);
         self.leaves = [

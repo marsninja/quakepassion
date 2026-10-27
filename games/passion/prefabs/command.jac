@@ -595,7 +595,7 @@ node LaunchAccess(Prefab) {
         self.top = 12;
         self.by_lift = dice.chance(0.5);
         self.tall = self.top + 10;
-        self.low = -1;
+        self.low = -5;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
