@@ -207,12 +207,16 @@ node DespairTeleports(Prefab) {
         build.teleporter(3.5, 3.5, first, float(cx) + 0.5, float(wide) - 3.0, second, 0.0);
         build.teleporter(3.5, float(wide) - 3.5, second, float(long) - 4.0, 3.5, top, 0.0);
         # A lift by the east wall up to the first ledge.
-        lift(build, long - 4, 6, long - 1, 9, 0, first);
-        keep_run(build, shaft, long - 4, 5, long - 1, 6, first);
-        keep_run(build, shaft, long - 5, 6, long - 1, 10, 0);
+        if dice.chance(0.6) {
+            lift(build, long - 4, 6, long - 1, 9, 0, first);
+            keep_run(build, shaft, long - 4, 5, long - 1, 6, first);
+            keep_run(build, shaft, long - 5, 6, long - 1, 10, 0);
+        }
         # A closet off the top ledge behind a wall that opens when shot.
-        build.solid(1, 1, top, 6, 5, top + 6);
-        shot_closet(build, 2, 1, 4, 3, top, [2, 3, 4, 5], 3, "item_armor2");
+        if dice.chance(0.7) {
+            build.solid(1, 1, top, 6, 5, top + 6);
+            shot_closet(build, 2, 1, 4, 3, top, [2, 3, 4, 5], 3, "item_armor2");
+        }
         shot = build.cue([build.button(float(long // 2) + 0.5, float(wide - 1), float(top) + 2.0, 3, "", True)], "button");
         build.doorway(shaft, self.enter);
         for port in self.taken {
@@ -371,7 +375,8 @@ node ShotGates(Prefab) {
             build.solid(x0, y0, 1, x1, y1, 9);
         }
         build.solid(cx - 3, cy - 3, 9, cx + 4, cy + 4, 10);
-        for (x0, y0, x1, y1) in [(cx - 1, cy - 3, cx + 2, cy - 2), (cx - 1, cy + 3, cx + 2, cy + 4), (cx - 3, cy - 1, cx - 2, cy + 2), (cx + 3, cy - 1, cx + 4, cy + 2)] {
+        doors = [(cx - 1, cy - 3, cx + 2, cy - 2), (cx - 1, cy + 3, cx + 2, cy + 4), (cx - 3, cy - 1, cx - 2, cy + 2), (cx + 3, cy - 1, cx + 4, cy + 2)];
+        for (x0, y0, x1, y1) in doors {
             build.widen(hall, x0, y0, 1, x1, y1, 7);
             shot_door(build, float(x0), float(y0), 1.0, float(x1), float(y1), 7.0);
         }
@@ -380,6 +385,10 @@ node ShotGates(Prefab) {
         # A lift back down from the gallery.
         lift(build, gx - 3, 2, gx, 5, 0, g);
         keep_run(build, hall, gx - 4, 1, gx, 6, 0);
+        if dice.chance(0.5) {
+            # A teleporter from the gallery's far corner back to the way in.
+            build.teleporter(float(long) - 3.5, float(wide) - 4.5, g, 3.0, 3.0, 0, 0.0);
+        }
         # A closet in the gallery's end wall behind a wall that opens when
         # shot (a secret).
         build.solid(long - 4, cy - 7, g, long - 1, cy - 2, g + 6);
@@ -438,7 +447,14 @@ node DespairSummit(Prefab) {
         build.level(hall, self.steps);
         build.doorway(hall, self.enter);
         build.solid(cx - 2, cy - 2, 0, cx + 2, cy + 2, self.steps);
-        spiral(build, cx - 4, cy - 4, cx + 4, cy + 4, 0, self.steps, 2, 2);
+        if dice.chance(0.6) {
+            spiral(build, cx - 4, cy - 4, cx + 4, cy + 4, 0, self.steps, 2, 2);
+        } else {
+            # A lift up beside the pillar instead.
+            lift(build, cx + 2, cy - 1, cx + 5, cy + 2, 0, self.steps);
+            keep_run(build, hall, cx + 1, cy - 1, cx + 2, cy + 2, self.steps);
+            keep_run(build, hall, cx + 2, cy - 2, cx + 6, cy + 3, 0);
+        }
         key_ambush(build, self.key, float(cx) - 0.5, float(cy) - 0.5, self.steps, side, 0, [2, long - 5], [e4m2_foe(dice, self.danger, True), e4m2_foe(dice, self.danger)]);
         # A teleporter on the top back down by the way in.
         build.teleporter(float(cx) + 0.5, float(cy) + 0.5, self.steps, 3.0, 3.0, 0, 0.0);

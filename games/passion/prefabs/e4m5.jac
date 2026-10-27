@@ -264,8 +264,15 @@ node AtriumHall(Prefab) {
         pillars(build, 6, 6, long - 5, wide - 5, 0, under, 5, clear);
         # Teleporters: from the floor up onto the gallery's far corner, and
         # from the gallery's near corner back down.
-        build.teleporter(8.5, 7.5, 0, float(long) - 2.5, float(wide) - 2.5, g, 180.0);
-        build.teleporter(2.5, float(wide) - 2.5, g, 6.5, float(middle) + 0.5, 0, 0.0);
+        if dice.chance(0.6) {
+            build.teleporter(8.5, 7.5, 0, float(long) - 2.5, float(wide) - 2.5, g, 180.0);
+            build.teleporter(2.5, float(wide) - 2.5, g, 6.5, float(middle) + 0.5, 0, 0.0);
+        } else {
+            # A lift up to the gallery's south-west corner instead.
+            lift(build, 4, 4, 7, 7, 0, g);
+            keep_run(build, hall, 4, 3, 7, 4, g);
+            keep_run(build, hall, 3, 4, 8, 8, 0);
+        }
         # A target on the gallery's far wall, shot, opens the floor's ways
         # on.
         shot = build.cue([build.button(float(long - 1), float(middle) + 0.5, float(g) + 3.0, 2, "", True)], "button");
@@ -485,10 +492,12 @@ node AtriumExit(Prefab) {
         for index in range(dice.between(2, 3)) {
             build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, e4m5_foe(dice, self.danger, index == 0), 180.0, waits=hall_guard);
         }
-        build.room(2, side + 1, 0, 5, side + 4, 4);
-        build.secret_door(2.0, float(side), 0.0, 5.0, float(side + 1), 4.0, 1);
-        build.secret(2.0, float(side + 1), 0.0, 5.0, float(side + 4), 3.0);
-        build.supply(3.5, float(side) + 2.5, 0, "item_artifact_super_damage");
+        if dice.chance(0.7) {
+            build.room(2, side + 1, 0, 5, side + 4, 4);
+            build.secret_door(2.0, float(side), 0.0, 5.0, float(side + 1), 4.0, 1);
+            build.secret(2.0, float(side + 1), 0.0, 5.0, float(side + 4), 3.0);
+            build.supply(3.5, float(side) + 2.5, 0, "item_artifact_super_damage");
+        }
         rounds(build, "monster_zombie", float(wall) + 2.5, 2.5, float(bx) - 2.5, 2.5, 0);
         build.supply(2.5, 2.5, 0, "item_health");
     }

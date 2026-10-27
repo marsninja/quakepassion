@@ -469,10 +469,12 @@ node GuardianCage(Prefab) {
         build.solid(5, 1, 0, 9, 4, 6);
         false_wall(build, hall, 6, 3, 8, 4, 0, 5, [6, 1, 8, 3], "item_spikes");
         # A store by the cage, its door sunk by a button on the south wall.
-        build.solid(9, 1, 0, 13, 4, 6);
-        build.room(10, 1, 0, 12, 4, 5);
-        relayed(build, build.push(14.5, 1.0, 1.2, 1), 0.5) +>:Fires:+> build.sinking(10.0, 3.0, 12.0, 4.0, 5, 5);
-        build.supply(11.0, 2.0, 0, "item_health");
+        if dice.chance(0.6) {
+            build.solid(9, 1, 0, 13, 4, 6);
+            build.room(10, 1, 0, 12, 4, 5);
+            relayed(build, build.push(14.5, 1.0, 1.2, 1), 0.5) +>:Fires:+> build.sinking(10.0, 3.0, 12.0, 4.0, 5, 5);
+            build.supply(11.0, 2.0, 0, "item_health");
+        }
         come = build.touch(1.0, 1.0, 0.0, 5.0, float(side), 6.0);
         dead = build.waiting();
         come +>:Fires:+> dead;
@@ -524,10 +526,15 @@ node ShrineExit(Prefab) {
         build.pool(x0, 1, -4, long - 1, wide - 1, 0, 2);
         ix = long - 5;
         build.solid(ix - 2, middle - 2, -4, ix + 2, middle + 2, 0);
-        for at in [x0 + 1, x0 + 3, x0 + 5] {
-            if at < ix - 3 {
-                build.solid(at, middle - 1, -4, at + 1, middle + 1, 0);
+        if dice.chance(0.5) {
+            for at in [x0 + 1, x0 + 3, x0 + 5] {
+                if at < ix - 3 {
+                    build.solid(at, middle - 1, -4, at + 1, middle + 1, 0);
+                }
             }
+        } else {
+            # A causeway just over the water instead, out to the island.
+            build.solid(x0, middle - 1, -1, ix - 2, middle + 2, 0);
         }
         stair(build, ix - 1, middle - 6, -4, 1, 4, 2);
         build.way_out(float(ix), float(middle), 0);
