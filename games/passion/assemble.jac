@@ -27,6 +27,7 @@ import from .cast { Casting }
 import from .prefab { Prefab, Next, Lay, Raise, Raising, prefab_box, passage_box, prefab_direction, prefab_point, port_middle, loop_boxes, PREFAB_MARGIN, PORT_HIGH }
 import os;
 import from editor.formats.map { MapItem }
+import from engine.level.budget { foe_stats, BUDGET_EXPOSURE }
 import from .prefabs.library { library_stretches, make_stretch }
 import from .prefabs.testbed { TestStart, TestKey, TestEnd }
 import from .derive { Piece, Derived, derived_library }
@@ -211,16 +212,27 @@ def derived_chain(dice: Stream, library: list[Piece]) -> list[Prefab] {
     return chain;
 }
 
+"""The rate a fight is reckoned at when supplies are shared out: about the
+start's guns (the nailgun, the machinegun)."""
+glob PROVISION_RATE: float = 90.0;
+
 """Supplies for a level made of hand-made prefabs, after what each stretch
-put down: health where every second foe stands (every one of Quake II's)
-and ammunition where every third does (in the foe's own game's kinds, for the weapons the start
+put down: health where every second foe stands (every one of Quake II's),
+more by each heavy foe for what it costs to fight, and ammunition where
+every third does (in the foe's own game's kinds, for the weapons the start
 gives, there for the taking once it falls), and at the start the weapons
 both Quake's and Quake II's foes want, so either game's ammunition feeds
 one of them."""
 def provision(casting: Casting, dice: Stream) {
     health = {"q1": "item_health", "q2": "item_health_large", "q3": "item_health"};
     ammo = {"q1": ["item_shells", "item_spikes", "item_rockets"], "q2": ["ammo_shells", "ammo_bullets", "ammo_grenades"], "q3": ["ammo_shells", "ammo_bullets", "ammo_rockets"]};
+    armor = {"q1": "item_armor1", "q2": "item_armor_jacket", "q3": "item_armor_combat"};
     count = 0;
+    # What the heavy foes cost past what a light one does (the budget's own
+    # estimate of a fight, with the start's guns): health for it, a pack of
+    # health a 25 owed; armour by a foe that costs 60 or more; and
+    # ammunition by how much there is of a foe to kill.
+    owed = 0.0;
     extra: list[MapItem] = [];
     for item in casting.items {
         kind = item.fields.get("classname", "");
@@ -229,13 +241,34 @@ def provision(casting: Casting, dice: Stream) {
         }
         count += 1;
         game = item.fields.get("asset_game", "q1");
+        origin = item.fields["origin"];
         # Quake II's foes hit harder for their numbers: health at every one.
         if count % 2 == 0 or game == "q2" {
-            extra.append(MapItem(fields={"classname": health.get(game, "item_health"), "origin": item.fields["origin"], "asset_game": game}));
+            extra.append(MapItem(fields={"classname": health.get(game, "item_health"), "origin": origin, "asset_game": game}));
         }
         if count % 3 == 0 {
             kinds = ammo.get(game, ammo["q1"]);
-            extra.append(MapItem(fields={"classname": kinds[dice.below(len(kinds))], "origin": item.fields["origin"], "asset_game": game}));
+            extra.append(MapItem(fields={"classname": kinds[dice.below(len(kinds))], "origin": origin, "asset_game": game}));
+        }
+        stats = foe_stats(game, kind);
+        cost = stats[1] * stats[0] / PROVISION_RATE * BUDGET_EXPOSURE;
+        owed += max(0.0, cost - 12.0);
+        words = origin.split();
+        spot = 0;
+        while owed >= 25.0 and len(words) == 3 {
+            owed -= 25.0;
+            spot += 1;
+            # Beside the foe, a step round it each.
+            shift = [[24.0, 0.0], [0.0, 24.0], [-24.0, 0.0], [0.0, -24.0]][spot % 4];
+            near = str(int(float(words[0]) + shift[0])) + " " + str(int(float(words[1]) + shift[1])) + " " + words[2];
+            extra.append(MapItem(fields={"classname": health.get(game, "item_health"), "origin": near, "asset_game": game}));
+        }
+        if cost >= 60.0 {
+            extra.append(MapItem(fields={"classname": armor.get(game, "item_armor1"), "origin": origin, "asset_game": game}));
+        }
+        for _ in range(int(stats[0] // 250.0)) {
+            kinds = ammo.get(game, ammo["q1"]);
+            extra.append(MapItem(fields={"classname": kinds[dice.below(len(kinds))], "origin": origin, "asset_game": game}));
         }
     }
     if casting.start {
