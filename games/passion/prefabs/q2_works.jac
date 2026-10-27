@@ -209,3 +209,38 @@ def closets(build: Raising, cue: Cue, side: int, floor: int, xs: list[int], foes
     }
     cue +>:Fires:+> build.cue(doors, "closets");
 }
+
+"""Shells falling in water now and then: a timer throwing up a spray of
+water at (x, y), `z` lifts up (the surface)."""
+def splashing(build: Raising, x: float, y: float, z: float, seconds: float) {
+    fields = {"classname": "target_splash", "angle": "-1", "count": "24", "sounds": "2"};
+    build.put_point(fields, x, y, z, "q2");
+    build.timer(seconds) +>:Fires:+> build.cue([fields], "spray");
+}
+
+"""Barrels or crates on a floor (lift `z`) that burst when shot: `count`
+of them two cells square and two or three lifts high, at points of the
+box x0..x1, y0..y1 kept a cell off each of `clear` ([x0, y0, x1, y1]
+each, the ones placed added to it)."""
+def barrels(build: Raising, dice: Stream, x0: int, y0: int, x1: int, y1: int, z: int, count: int, clear: list[list[int]]) {
+    placed = 0;
+    tries = 0;
+    while placed < count and tries < count * 10 {
+        tries += 1;
+        x = dice.between(x0, max(x0, x1 - 2));
+        y = dice.between(y0, max(y0, y1 - 2));
+        box = [x, y, x + 2, y + 2];
+        clash = False;
+        for other in clear {
+            if box[0] < other[2] + 1 and other[0] < box[2] + 1 and box[1] < other[3] + 1 and other[1] < box[3] + 1 {
+                clash = True;
+            }
+        }
+        if clash {
+            continue;
+        }
+        clear.append(box);
+        build.breakable(float(x), float(y), float(z), float(x + 2), float(y + 2), float(z + dice.between(2, 3)), 10);
+        placed += 1;
+    }
+}
