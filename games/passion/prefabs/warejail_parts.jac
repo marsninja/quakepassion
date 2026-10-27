@@ -8,6 +8,7 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Raising, Cue, Fires }
 import from ..space { Space }
 import from ..kits { kit_of }
+import from ..cast { origin_text }
 import from .common { key_item }
 
 """A pair of shutters across the doorway `port` makes in the prefab's wall
@@ -285,7 +286,8 @@ def crane(build: Raising, x: int, a: int, b: int, z: int, along_x: bool = False)
 crosses it; on from the start when `on`, and toggled each time its cue
 fires (a security grid a button shuts off)."""
 def laser(build: Raising, x: float, y: float, z: float, direction: int, on: bool = True, damage: int = 4) -> Cue {
-    fields = {"classname": "target_laser", "angle": str(build.facing(direction)), "spawnflags": "3" if on else "2", "dmg": str(damage)};
+    # A name of its own, so each cue firing it reaches it alone.
+    fields = {"classname": "target_laser", "angle": str(build.facing(direction)), "spawnflags": "3" if on else "2", "dmg": str(damage), "targetname": build.name("beam" + str(len(build.casting.items)))};
     build.put_point(fields, x, y, z, "q2");
     return build.cue([fields], "laser");
 }
@@ -324,7 +326,7 @@ def drip(build: Raising, x: float, y: float, z: float, every: float) {
 scalding steam): Quake II's trigger_hurt, `damage` a second; on from the
 start when `on`, toggled each time its cue fires."""
 def hurt(build: Raising, x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, damage: int, on: bool = True) -> Cue {
-    fields = {"classname": "trigger_hurt", "dmg": str(damage), "spawnflags": "18" if on else "19", "asset_game": "q2"};
+    fields = {"classname": "trigger_hurt", "dmg": str(damage), "spawnflags": "18" if on else "19", "asset_game": "q2", "targetname": build.name("hurt" + str(len(build.casting.items)))};
     build.put_box(fields, x0, y0, z0, x1, y1, z1, "trigger");
     return build.cue([fields], "hurt");
 }
@@ -335,5 +337,37 @@ the cell line y = `line`."""
 def merlons(build: Raising, line: int, start: int, finish: int, z: int) {
     for x in range(start, finish, 2) {
         build.solid(x, line, z, x + 1, line + 1, z + 2);
+    }
+}
+
+"""A sweeping laser: a small block riding to and fro between (x0, y0) and
+(x1, y1) on lift `z` (a train, fast, running from the start), and a laser
+from (lx, ly) `lz` lifts up aimed at it, so its beam sweeps across what lies
+between (security's grid). Answers the laser's cue (toggled when fired)."""
+def sweeper(build: Raising, x0: float, y0: float, x1: float, y1: float, z: float, lx: float, ly: float, lz: float, speed: float) -> Cue {
+    mark = build.name("sweep" + str(len(build.casting.items)));
+    names = [mark + "_a", mark + "_b"];
+    for (index, stop) in enumerate([[x0, y0], [x1, y1]]) {
+        low = build.units(stop[0], stop[1], z);
+        build.casting.put({"classname": "path_corner", "targetname": names[index], "target": names[1 - index], "origin": origin_text(low.x, low.y, low.z)});
+    }
+    build.put_box({"classname": "func_train", "targetname": mark, "target": names[0], "speed": str(speed), "dmg": "0", "spawnflags": "1", "asset_game": "q2"}, x0, y0, z, x0 + 0.5, y0 + 0.5, z + 0.5, kit_of(build.district).step);
+    fields = {"classname": "target_laser", "target": mark, "spawnflags": "3", "dmg": "4", "targetname": mark + "_beam"};
+    build.put_point(fields, lx, ly, lz, "q2");
+    return build.cue([fields], "laser");
+}
+
+"""A wave running along `beams` every `period` seconds: each beam in turn,
+`step` seconds after the last, goes off and comes back on two steps later
+(a timer and a relay chain, as security's grid pulses)."""
+def pulse_wave(build: Raising, beams: list[Cue], period: float, step: float) {
+    clock = build.timer(period);
+    for (index, beam) in enumerate(beams) {
+        off = build.delay(step * float(index + 1));
+        back = build.delay(step * float(index + 3));
+        clock +>:Fires:+> off;
+        clock +>:Fires:+> back;
+        off +>:Fires:+> beam;
+        back +>:Fires:+> beam;
     }
 }
