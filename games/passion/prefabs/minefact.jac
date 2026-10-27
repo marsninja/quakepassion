@@ -6,6 +6,8 @@ timed sparks, stashes behind panels that break, presses and carts.
 Each wiring goes through the prefab's `Cue` / `Fires` graph."""
 import from ..prefab { Raising, Cue, Fires, Port }
 import from ..space { Space }
+import from ..kits { kit_of }
+import from ..cast { origin_text }
 
 """A floor slab `thick` lifts thick, its top at lift `z` over the cells
 x0..x1, y0..y1: a gallery, a catwalk, a bridge over open floor."""
@@ -146,4 +148,29 @@ def sealed(build: Raising, long: int, wide: int, port: Port, material: str) {
     } else {
         build.put_box(fields, low, 1.0, float(port.floor), high, 1.25, top, material);
     }
+}
+
+"""A crusher: a block of the prefab's cells `size` [x, y, lifts] slamming
+down from lift `high` to lift `low` at (x, y) and up again, pausing at
+each, hurting `damage` whatever it is stopped by (Quake II's stamping
+presses, func_train with dmg). Answers its train's cue."""
+def crusher(build: Raising, x: float, y: float, size: list[float], low: float, high: float, speed: float, pause: float, damage: int) -> Cue {
+    stops = [[x, y, high], [x, y, low]];
+    names = [build.name("crush" + str(len(build.casting.items) + index)) for index in range(2)];
+    for index in range(2) {
+        stop = stops[index];
+        corner = build.box_units(stop[0], stop[1], stop[2], stop[0] + size[0], stop[1] + size[1], stop[2] + size[2])[0];
+        build.casting.put({"classname": "path_corner", "targetname": names[index], "target": names[(index + 1) % 2], "wait": str(pause), "origin": origin_text(corner.x, corner.y, corner.z)});
+    }
+    fields = {"classname": "func_train", "target": names[0], "speed": str(speed), "dmg": str(damage)};
+    build.put_box(fields, x, y, high, x + size[0], y + size[1], high + size[2], kit_of(build.district).step);
+    return build.cue([], "train");
+}
+
+"""Quake II's earthquake: when its cue fires, the ground shakes for
+`seconds` (a cave-in, a blast deep in the rock)."""
+def quake(build: Raising, x: float, y: float, z: float, seconds: int) -> Cue {
+    fields = {"classname": "target_earthquake", "count": str(seconds), "speed": "200"};
+    build.put_point(fields, x, y, z, "q2");
+    return build.cue([fields], "quake");
 }

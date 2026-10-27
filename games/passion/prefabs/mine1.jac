@@ -578,6 +578,9 @@ node BarrierBridge(Prefab) {
             control = build.push(float(x1), float(self.wide) - 3.5, float(low) + 1.0, 2);
         }
         control +>:Fires:+> barrier;
+        # A control on the far ledge's wall lifts it too, for a body come
+        # round to the far side.
+        build.push(float(self.long - 1), float(cy) + 3.5, 1.0, 2) +>:Fires:+> barrier;
         sparking(build, float(x0) - 1.5, float(cy) - 2.2, 4.0, 3, 3.0);
         sparking(build, float(x0) - 1.5, float(cy) + 2.2, 5.0, 1, 4.0);
         build.doorway(gorge, self.enter);
