@@ -50,11 +50,13 @@ def e4m4_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
 to burst a fiend's door, the healing pool under the water."""
 node HateAntechamber(Prefab) {
     has balcony: int = 6,
-        tall: int = 16;
+        tall: int = 16,
+        twin: bool = True;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Hate antechamber";
+        self.twin = dice.chance(0.5);
         self.source = E4M4;
         self.district = level_district(E4M4);
         self.long = dice.between(24, 26);
@@ -82,7 +84,12 @@ node HateAntechamber(Prefab) {
         bx = long - 5;
         build.solid(bx, 1, b - 1, long - 1, side, b);
         stair(build, bx - b, 1, 0, 0, b, 3);
-        stair(build, bx - b, side - 3, 0, 0, b, 3);
+        if self.twin {
+            stair(build, bx - b, side - 3, 0, 0, b, 3);
+        } else {
+            lift(build, bx - 3, side - 3, bx, side, 0, b);
+            keep_run(build, hall, bx - 4, side - 4, bx, side, 0);
+        }
         keep_run(build, hall, bx, 1, bx + 1, 4, b);
         keep_run(build, hall, bx, side - 3, bx + 1, side, b);
         keep_run(build, hall, bx, middle - 1, bx + 1, middle + 2, b);
@@ -107,11 +114,11 @@ node HateAntechamber(Prefab) {
         burst = relayed(build, shot, 0.3);
         loose = build.waiting();
         burst +>:Fires:+> loose;
-        for at in [8, 14] {
+        for at in [6, 11] {
             build.room(at, side + 1, 0, at + 3, side + 4, 7);
             build.widen(hall, at, side, 0, at + 3, side + 1, 6);
             burst +>:Fires:+> bursting(build, float(at), float(side), 0.0, float(at + 3), float(side + 1), 6.0);
-            build.foe(float(at) + 1.5, float(side) + 2.5, 0, "monster_demon1" if at == 8 and self.danger > 0.2 else "monster_knight", 270.0, waits=loose);
+            build.foe(float(at) + 1.5, float(side) + 2.5, 0, "monster_demon1" if at == 6 and self.danger > 0.2 else "monster_knight", 270.0, waits=loose);
         }
         build.doorway(hall, self.enter);
         for port in self.taken {
@@ -132,7 +139,8 @@ a walkway along one wall over the water."""
 node FishGallery(Prefab) {
     has deep: int = 8,
         tall: int = 15,
-        walk: int = 7;
+        walk: int = 7,
+        raft: bool = True;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -144,6 +152,7 @@ node FishGallery(Prefab) {
         self.deep = dice.between(7, 9);
         self.walk = dice.between(7, 8);
         self.tall = self.walk + dice.between(8, 9);
+        self.raft = dice.chance(0.6);
         self.low = -self.deep - 2;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -168,7 +177,16 @@ node FishGallery(Prefab) {
         stair(build, x1 - d, 1, -d, 0, d, 2);
         # The raft riding from shore to shore across the water.
         ty = middle - 2;
-        ride = build.train([3.0, 3.0, 1.0], [[float(x0), float(ty), -1.0], [float(x1 - 3), float(ty), -1.0]], 90.0, 2.0);
+        build.train([3.0, 3.0, 1.0], [[float(x0), float(ty), -1.0], [float(x1 - 3), float(ty), -1.0]], 90.0, 2.0);
+        if not self.raft {
+            # Stepping stones across beside the raft's way, two cells of
+            # water between each.
+            for x in range(x0 + 1, x1 - 1, 3) {
+                build.solid(x, ty + 4, -d, x + 1, ty + 6, 0);
+            }
+            keep_run(build, gallery, x0 - 1, ty + 4, x0, ty + 6, 0);
+            keep_run(build, gallery, x1, ty + 4, x1 + 1, ty + 6, 0);
+        }
         keep_run(build, gallery, x0 - 1, ty - 1, x0, ty + 4, 0);
         keep_run(build, gallery, x1, ty - 1, x1 + 1, ty + 4, 0);
         # The walkway along the north wall over the water, a lift up to it
@@ -377,10 +395,12 @@ node PalaceVault(Prefab) {
     has key: str = "key_silver",
         hall_wide: int = 16,
         shelf: int = 8,
-        tall: int = 16;
+        tall: int = 16,
+        climb: int = 0;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
+        self.climb = dice.below(2);
         self.title = "Palace vault (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = E4M4;
         self.district = level_district(E4M4);
@@ -407,9 +427,15 @@ node PalaceVault(Prefab) {
         build.doorway(vault, self.enter);
         sx = long - 5;
         build.solid(sx, 1, self.shelf - 1, long - 1, side, self.shelf);
-        lift(build, sx - 3, cy - 1, sx, cy + 2, 0, self.shelf);
-        keep_run(build, vault, sx, cy - 2, sx + 1, cy + 3, self.shelf);
-        keep_run(build, vault, sx - 4, cy - 2, sx, cy + 3, 0);
+        if self.climb == 0 {
+            lift(build, sx - 3, cy - 1, sx, cy + 2, 0, self.shelf);
+            keep_run(build, vault, sx, cy - 2, sx + 1, cy + 3, self.shelf);
+            keep_run(build, vault, sx - 4, cy - 2, sx, cy + 3, 0);
+        } else {
+            # A stair up the south wall to the shelf.
+            stair(build, sx - self.shelf, 1, 0, 0, self.shelf, 3);
+            keep_run(build, vault, sx, 1, sx + 1, 4, self.shelf);
+        }
         fields: dict[str, str] = {"classname": key_item(self.key), "asset_game": "q1"};
         build.put_at(fields, float(long) - 2.5, float(cy) + 0.5, self.shelf);
         taken = build.cue([fields], "key");
@@ -441,7 +467,7 @@ node PalaceExit(Prefab) {
         self.long = dice.between(24, 26);
         self.wide = dice.between(19, 21);
         self.tall = dice.between(14, 16);
-        self.low = -1;
+        self.low = -5;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float((self.wide - 5) // 2), floor=0);
         self.leaves = [];
@@ -463,6 +489,11 @@ node PalaceExit(Prefab) {
             build.rising_door(float(wall), float(middle - 2), 0.0, float(wall + 1), float(middle + 2), 8.0, {"key": self.key, "wait": "-1"});
         }
         dais_x = long - 7;
+        if dice.chance(0.5) {
+            # A moat before the dais, a bridge over it.
+            build.pool(dais_x - 8, 1, -4, dais_x - 4, side, 0, 2, False, True, True);
+            build.solid(dais_x - 8, middle - 1, -1, dais_x - 4, middle + 2, 0);
+        }
         build.solid(dais_x, middle - 4, 0, long - 1, middle + 4, 3);
         stair(build, dais_x - 3, middle - 2, 0, 0, 3, 4);
         for y in [middle - 4, middle + 3] {
