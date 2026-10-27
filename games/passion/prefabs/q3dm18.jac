@@ -244,7 +244,7 @@ node SpaceWalk(Prefab) {
         upper: int = 9,
         upper_first: bool = False,
         twist: bool = False,
-        gap: int = 16,
+        brk: int = 16,
         tall: int = 20;
 
     can choose with Lay entry {
@@ -258,7 +258,7 @@ node SpaceWalk(Prefab) {
         self.upper = dice.between(8, 10);
         self.upper_first = dice.chance(0.5);
         self.twist = dice.chance(0.5);
-        self.gap = self.long // 2 - 2 + dice.between(-2, 2);
+        self.brk = self.long // 2 - 2 + dice.between(-2, 2);
         self.tall = self.upper + 10;
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
@@ -288,7 +288,7 @@ node SpaceWalk(Prefab) {
             ly1 = ly0 - (3 if self.twist else 0);
         }
         far = self.long - 8;
-        g = self.gap;
+        g = self.brk;
         # The near deck, the far decks one over the other, a lift between.
         deck(build, 1, 1, 10, self.wide - 1, 0, 3);
         deck(build, far, 1, self.long - 1, self.wide - 1, 0, 3);
