@@ -386,6 +386,7 @@ node BounceArena(Prefab) {
 """The key room: platforms rising to the key over a hurting ground."""
 node BounceVault(Prefab) {
     has key: str = "key_silver",
+        tower: bool = False,
         hall_wide: int = 16,
         tall: int = 18;
 
@@ -397,7 +398,8 @@ node BounceVault(Prefab) {
         self.long = dice.between(24, 26);
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
-        self.tall = 18;
+        self.tower = dice.chance(0.5);
+        self.tall = 22 if self.tower else 18;
         self.low = -11;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -417,25 +419,49 @@ node BounceVault(Prefab) {
         build.level(room, 8);
         build.doorway(room, self.enter);
         build.solid(1, 1, lo, 7, side, 0);
-        build.solid(9, 1, lo, 17, 8, 4);
-        build.solid(19, side - 8, lo, self.long - 1, side, 8);
-        pad_to(build, 4.0, 4.5, 0, 11.0, 4.5, 4);
-        keep_box(build, room, 6, 2, 7, 8, 0);
-        keep_box(build, room, 9, 2, 10, 8, 4);
-        pad_to(build, 14.0, 5.5, 4, 21.5, float(side) - 4.0, 8);
-        keep_box(build, room, 16, 2, 17, 8, 4);
-        keep_box(build, room, 19, side - 8, 20, side, 8);
         guards = build.waiting();
-        pit_fall(build, 7, 1, self.long - 1, side, lo, "The ground burns", guards);
-        pad_to(build, 10.0, float(side) - 3.0, lo, 4.0, float(side) - 3.0, 0);
-        keep_box(build, room, 6, side - 5, 7, side - 1, 0);
-        taken = key_taken(build, self.key, float(self.long) - 3.0, float(side) - 3.0, 8);
-        closets(build, taken, side, 0, [2], [bounce_foe(dice, self.danger, True)]);
-        taken +>:Fires:+> guards;
-        taken +>:Fires:+> build.summon(8, side + 1, 0, bounce_foe(dice, self.danger), 3.5, float(cy) + 0.5, 0, 0.0);
-        build.foe(float(self.long) - 3.5, float(side) - 6.5, 8, bounce_foe(dice, self.danger), 180.0, waits=guards);
-        build.foe(12.5, 3.5, 4, "monster_army", 0.0);
-        build.foe(14.0, float(side) - 3.0, 2, "monster_wizard", 0.0);
+        taken: Cue | None = None;
+        if self.tower {
+            # A block six lifts up beyond a slot of lava a body jumps, a
+            # perch over its far end, the key on the perch.
+            build.level(room, 6);
+            build.level(room, 12);
+            build.solid(8, 1, lo, self.long - 1, side, 6);
+            build.pool(7, 1, lo, 8, side, 0, 4, True, False);
+            keep_box(build, room, 6, 1, 7, side, 0);
+            keep_box(build, room, 8, 1, 9, side, 6);
+            pad_to(build, 4.0, float(cy) + 0.5, 0, 12.0, float(cy) + 0.5, 6);
+            deck(build, self.long - 6, 1, self.long - 1, side, 12);
+            pad_to(build, float(self.long - 9), float(cy) + 0.5, 6, float(self.long) - 3.0, float(cy) + 0.5, 12);
+            keep_box(build, room, self.long - 6, cy - 1, self.long - 5, cy + 2, 12);
+            keep_box(build, room, self.long - 6, side - 4, self.long - 5, side - 1, 12);
+            taken = key_taken(build, self.key, float(self.long) - 3.0, float(side) - 3.0, 12);
+            build.foe(float(self.long) - 10.5, float(side) - 3.5, 6, bounce_foe(dice, self.danger), 180.0, waits=guards);
+        } else {
+            build.solid(9, 1, lo, 17, 8, 4);
+            build.solid(19, side - 8, lo, self.long - 1, side, 8);
+            pad_to(build, 4.0, 4.5, 0, 11.0, 4.5, 4);
+            keep_box(build, room, 6, 2, 7, 8, 0);
+            keep_box(build, room, 9, 2, 10, 8, 4);
+            pad_to(build, 14.0, 5.5, 4, 21.5, float(side) - 4.0, 8);
+            keep_box(build, room, 16, 2, 17, 8, 4);
+            keep_box(build, room, 19, side - 8, 20, side, 8);
+            pit_fall(build, 7, 1, self.long - 1, side, lo, "The ground burns", guards);
+            pad_to(build, 10.0, float(side) - 3.0, lo, 4.0, float(side) - 3.0, 0);
+            keep_box(build, room, 6, side - 5, 7, side - 1, 0);
+            taken = key_taken(build, self.key, float(self.long) - 3.0, float(side) - 3.0, 8);
+            build.foe(12.5, 3.5, 4, "monster_army", 0.0);
+            build.foe(float(self.long) - 3.5, float(side) - 6.5, 8, bounce_foe(dice, self.danger), 180.0, waits=guards);
+            build.foe(14.0, float(side) - 3.0, 2, "monster_wizard", 0.0);
+        }
+        if taken is not None {
+            closets(build, taken, side, 0, [2], [bounce_foe(dice, self.danger, True)]);
+        }
+        if taken is not None {
+            taken +>:Fires:+> guards;
+            taken +>:Fires:+> build.summon(8, side + 1, 0, bounce_foe(dice, self.danger), 3.5, float(cy) + 0.5, 0, 0.0);
+        }
+        build.foe(5.5, 2.5, 0, "monster_army", 0.0, waits=guards);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(15.0, 2.5, 4, Q3_HEALTH, "q3");
     }
@@ -445,6 +471,8 @@ node BounceVault(Prefab) {
 ground, a pad on each up to the next."""
 node BounceExit(Prefab) {
     has key: str = "",
+        zig: bool = False,
+        long_pad: bool = False,
         tall: int = 22;
 
     can choose with Lay entry {
@@ -455,6 +483,8 @@ node BounceExit(Prefab) {
         self.long = dice.between(32, 34);
         self.wide = dice.between(18, 20);
         self.tall = dice.between(22, 23);
+        self.zig = dice.chance(0.5);
+        self.long_pad = dice.chance(0.5);
         self.low = -11;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -473,23 +503,33 @@ node BounceExit(Prefab) {
         build.level(room, 12);
         build.widen(room, wall + 1, 1, lo, self.long - 1, self.wide - 1, 0);
         build.solid(wall + 1, 1, lo, 15, self.wide - 1, 0);
-        build.solid(18, mid - 3, lo, 26, mid + 3, 6);
+        # The middle platform in the middle, or over against the north wall.
+        p0 = self.wide - 8 if self.zig else mid - 3;
+        py = float(p0) + 3.5;
+        build.solid(18, p0, lo, 26, p0 + 7, 6);
         build.solid(28, 1, lo, self.long - 1, self.wide - 1, 12);
-        pad_to(build, 12.0, float(mid) + 0.5, 0, 20.0, float(mid) + 0.5, 6);
-        keep_box(build, room, 14, mid - 1, 15, mid + 2, 0);
-        keep_box(build, room, 18, mid - 1, 19, mid + 2, 6);
-        pad_to(build, 23.0, float(mid) + 0.5, 6, float(self.long) - 3.5, float(mid) + 3.5, 12);
-        keep_box(build, room, 25, mid - 2, 26, mid + 3, 6);
+        pad_to(build, 12.0, py, 0, 20.0, py, 6);
+        keep_box(build, room, 14, p0 + 2, 15, p0 + 5, 0);
+        keep_box(build, room, 18, p0 + 2, 19, p0 + 5, 6);
+        pad_to(build, 23.0, py, 6, float(self.long) - 3.5, float(mid) + 3.5, 12);
+        keep_box(build, room, 25, p0 + 1, 26, p0 + 6, 6);
+        if self.long_pad {
+            pad_to(build, 11.0, float(self.wide) - 3.0 if not self.zig else 6.0, 0, float(self.long) - 3.0, float(self.wide) - 3.0 if not self.zig else 3.0, 12);
+        }
         keep_box(build, room, 28, mid - 2, 29, mid + 3, 12);
         build.way_out(float(self.long) - 3.0, float(mid) - 2.0, 12);
         guards = build.waiting();
         pit_fall(build, 15, 1, 28, self.wide - 1, lo, "The ground burns", guards);
-        pad_to(build, 18.0, 3.0, lo, 12.0, 3.0, 0);
-        keep_box(build, room, 14, 2, 15, 5, 0);
+        gy = float(self.wide) - 3.0 if not self.zig else 3.0;
+        if not self.zig and self.long_pad {
+            gy = 3.0;
+        }
+        pad_to(build, 18.0, gy, lo, 12.0, gy, 0);
+        keep_box(build, room, 14, int(gy) - 2, 15, int(gy) + 2, 0);
         inside = build.touch(float(wall + 1), float(mid - 2), 0.0, float(wall + 3), float(mid + 2), 6.0);
         inside +>:Fires:+> guards;
         build.foe(float(self.long) - 3.0, 3.0, 12, bounce_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(22.0, float(mid) - 1.5, 6, bounce_foe(dice, self.danger), 180.0, waits=guards);
+        build.foe(22.0, py - 2.0, 6, bounce_foe(dice, self.danger), 180.0, waits=guards);
         for index in range(dice.between(2, 3)) {
             build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, bounce_foe(dice, self.danger, index == 0), 180.0);
         }

@@ -32,7 +32,7 @@ knights as a run goes deeper.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
-import from .common { stair, gate_into }
+import from .common { stair, gate_into, lift }
 import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pad_to, closets, wake_on, sliding_pair }
 
@@ -119,7 +119,9 @@ node GrimHall(Prefab) {
 """A deep shaft, a bobbing platform, ledges at two depths, pads from ledge
 to ledge."""
 node GrimShaft(Prefab) {
-    has tall: int = 10;
+    has bobbing: bool = True,
+        lava: bool = True,
+        tall: int = 10;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -129,6 +131,8 @@ node GrimShaft(Prefab) {
         self.long = dice.between(20, 22);
         self.wide = dice.between(16, 18);
         self.tall = dice.between(10, 11);
+        self.bobbing = dice.chance(0.6);
+        self.lava = dice.chance(0.6);
         self.low = -27;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -149,9 +153,14 @@ node GrimShaft(Prefab) {
         build.solid(1, 1, -24, 6, self.wide - 1, 0);
         deck(build, 6, 1, self.long - 1, 5, -8);
         deck(build, 6, self.wide - 5, self.long - 1, self.wide - 1, -16);
-        # The platform bobbing between the top and the bottom.
-        build.train([3.0, 3.0, 1.0], [[6.0, float(mid - 1), -1.0], [6.0, float(mid - 1), -24.0]], 80.0, 2.0);
-        keep_box(build, shaft, 5, mid - 1, 6, mid + 2, 0);
+        # The platform bobbing between the top and the bottom; without it, the
+        # way down is a drop from ledge to ledge.
+        if self.bobbing {
+            build.train([3.0, 3.0, 1.0], [[6.0, float(mid - 1), -1.0], [6.0, float(mid - 1), -24.0]], 80.0, 2.0);
+            keep_box(build, shaft, 5, mid - 1, 6, mid + 2, 0);
+        } else {
+            keep_box(build, shaft, 10, 4, 14, 5, -8);
+        }
         # Pads: the bottom to the lower ledge, across to the higher, up to the
         # top.
         pad_to(build, float(self.long - 6), float(self.wide - 8), -24, float(self.long - 6), float(self.wide) - 3.0, -16);
@@ -161,9 +170,11 @@ node GrimShaft(Prefab) {
         keep_box(build, shaft, self.long - 11, 4, self.long - 9, 5, -8);
         pad_to(build, 9.0, 3.0, -8, 3.0, 3.0, 0);
         keep_box(build, shaft, 5, 1, 6, 5, 0);
-        # Lava under the higher ledge's far end.
-        build.pool(self.long - 8, 1, -26, self.long - 1, 5, -24, 4, False, False);
-        hurt(build, float(self.long - 8), 1.0, -26.0, float(self.long - 1), 5.0, -24.0);
+        # Lava under the higher ledge's far end, now and then.
+        if self.lava {
+            build.pool(self.long - 8, 1, -26, self.long - 1, 5, -24, 4, False, False);
+            hurt(build, float(self.long - 8), 1.0, -26.0, float(self.long - 1), 5.0, -24.0);
+        }
         build.doorway(shaft, self.enter);
         for port in self.taken {
             build.doorway(shaft, port);
@@ -258,7 +269,9 @@ node GrimCells(Prefab) {
 """The hub: a dungeon floor round a lava pit under walkways and a platform,
 a bridge over the pit, pads, a stair, sliding doors."""
 node GrimUndercroft(Prefab) {
-    has tall: int = 12;
+    has bridged: bool = True,
+        lifted: bool = False,
+        tall: int = 12;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -268,6 +281,8 @@ node GrimUndercroft(Prefab) {
         self.long = dice.between(30, 32);
         self.wide = dice.between(26, 28);
         self.tall = dice.between(12, 13);
+        self.bridged = dice.chance(0.6);
+        self.lifted = dice.chance(0.4);
         self.low = -15;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
@@ -294,7 +309,9 @@ node GrimUndercroft(Prefab) {
         deck(build, 6, 1, self.long - 6, 5, 0);
         deck(build, 6, self.wide - 5, self.long - 6, self.wide - 1, 0);
         build.solid(self.long - 6, 1, -10, self.long - 1, self.wide - 1, 0);
-        deck(build, 6, cy - 1, self.long - 6, cy + 2, 0);
+        if self.bridged {
+            deck(build, 6, cy - 1, self.long - 6, cy + 2, 0);
+        }
         # The lava pit in the dungeon floor.
         build.pool(cx - 4, cy - 4, -14, cx + 4, cy + 4, -10, 4, False, False);
         hurt(build, float(cx - 4), float(cy - 4), -14.0, float(cx + 4), float(cy + 4), -10.0);
@@ -303,7 +320,12 @@ node GrimUndercroft(Prefab) {
         keep_box(build, hall, cx - 8, self.wide - 5, cx - 6, self.wide - 4, 0);
         pad_to(build, float(cx + 7), 8.0, -10, float(cx + 7), 3.0, 0);
         keep_box(build, hall, cx + 6, 4, cx + 8, 5, 0);
-        stair(build, self.long - 16, cy + 4, -10, 0, 10, 3);
+        if self.lifted {
+            lift(build, self.long - 9, cy + 4, self.long - 6, cy + 7, -10, 0);
+            keep_box(build, hall, self.long - 6, cy + 4, self.long - 5, cy + 7, 0);
+        } else {
+            stair(build, self.long - 16, cy + 4, -10, 0, 10, 3);
+        }
         # A vestibule behind sliding doors on the platform.
         build.solid(self.long - 5, 1, 0, self.long - 4, self.wide - 1, self.tall);
         sliding_pair(build, hall, self.long - 5, cy - 2, cy + 2, 0, 7);
@@ -311,8 +333,9 @@ node GrimUndercroft(Prefab) {
         for port in self.taken {
             build.doorway(hall, port);
         }
-        # Out on the bridge, the walkways' guards wake.
-        bridge = wake_on(build, float(cx - 2), float(cy - 1), float(cx + 2), float(cy + 2), 0.0);
+        # Out on the bridge (or down on the dungeon floor), the walkways'
+        # guards wake.
+        bridge = wake_on(build, float(cx - 2), float(cy - 1), float(cx + 2), float(cy + 2), 0.0) if self.bridged else wake_on(build, 7.0, 6.0, float(cx - 5), float(self.wide - 6), -10.0);
         build.foe(float(cx) + 3.5, 3.0, 0, grim_foe(dice, self.danger), 90.0, waits=bridge);
         build.foe(float(cx) - 3.5, float(self.wide) - 3.0, 0, grim_foe(dice, self.danger, True), 270.0, waits=bridge);
         for index in range(dice.between(2, 3)) {

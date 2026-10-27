@@ -279,7 +279,9 @@ node DredPumpRoom(Prefab) {
 """The hub: a sunken furnace floor, the floor round it, galleries along
 both walls, a perch over the north gallery's end."""
 node DredFurnace(Prefab) {
-    has tall: int = 25;
+    has bridged: bool = False,
+        pools: int = 2,
+        tall: int = 25;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -289,6 +291,8 @@ node DredFurnace(Prefab) {
         self.long = dice.between(30, 32);
         self.wide = dice.between(26, 28);
         self.tall = dice.between(25, 26);
+        self.bridged = dice.chance(0.5);
+        self.pools = dice.between(1, 2);
         self.low = -11;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
@@ -315,7 +319,7 @@ node DredFurnace(Prefab) {
         # The furnace floor sunk in the middle, lava in two pools on it, a
         # stair down along its south side, a pad back up at its east end.
         build.widen(hall, 7, 8, -8, self.long - 7, self.wide - 8, 0);
-        for px in [9, self.long - 13] {
+        for px in ([9, self.long - 13] if self.pools == 2 else [self.long // 2 - 2]) {
             build.pool(px, cy - 2, -10, px + 4, cy + 2, -8, 4, False, False);
             hurt(build, float(px), float(cy - 2), -10.0, float(px + 4), float(cy + 2), -8.0);
         }
@@ -334,6 +338,13 @@ node DredFurnace(Prefab) {
         }
         stair(build, 2, 5, 0, 0, gal, 3);
         keep_box(build, hall, 8, 4, 11, 5, gal);
+        # A bridge across the furnace floor between the floor's two sides,
+        # now and then.
+        if self.bridged {
+            deck(build, cx - 1, 8, cx + 2, self.wide - 8, 0);
+            keep_box(build, hall, cx - 1, 7, cx + 2, 8, 0);
+            keep_box(build, hall, cx - 1, self.wide - 8, cx + 2, self.wide - 7, 0);
+        }
         stair(build, self.long - 3, self.wide - 8, 0, 2, gal, 3);
         keep_box(build, hall, self.long - 11, self.wide - 5, self.long - 8, self.wide - 4, gal);
         # The perch over the north gallery's east end, a pad up to it.

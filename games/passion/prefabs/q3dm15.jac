@@ -290,7 +290,9 @@ node DemonHall(Prefab) {
 """The hub: a dais in a hall, pads from its top to galleries along both
 walls, a hurting pit behind it, a teleporter back down."""
 node DemonThrone(Prefab) {
-    has tall: int = 22;
+    has padded: bool = False,
+        pit: bool = True,
+        tall: int = 22;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -300,6 +302,8 @@ node DemonThrone(Prefab) {
         self.long = dice.between(30, 32);
         self.wide = dice.between(26, 28);
         self.tall = dice.between(22, 23);
+        self.padded = dice.chance(0.4);
+        self.pit = dice.chance(0.7);
         self.low = -9;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
@@ -323,9 +327,14 @@ node DemonThrone(Prefab) {
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, 6);
         build.level(hall, gal);
-        # The dais and its stair.
+        # The dais, and its stair (or a pad up onto it).
         build.solid(cx - 5, cy - 5, 0, cx + 5, cy + 5, 6);
-        stair(build, cx - 11, cy - 1, 0, 0, 6, 3);
+        if self.padded {
+            pad_to(build, float(cx - 8), float(cy) + 0.5, 0, float(cx) - 2.0, float(cy) + 0.5, 6);
+            keep_box(build, hall, cx - 5, cy - 1, cx - 4, cy + 2, 6);
+        } else {
+            stair(build, cx - 11, cy - 1, 0, 0, 6, 3);
+        }
         # The galleries on their arcades, pads up to them from the dais.
         deck(build, 1, 1, self.long - 1, 5, gal);
         deck(build, 1, self.wide - 5, self.long - 1, self.wide - 1, gal);
@@ -342,12 +351,15 @@ node DemonThrone(Prefab) {
         keep_box(build, hall, 3, 4, 6, 5, gal);
         keep_box(build, hall, 3, self.wide - 5, 6, self.wide - 4, gal);
         build.teleporter(float(self.long) - 3.0, 3.0, gal, 3.0, float(cy) + 0.5, 0, 0.0);
-        # The hurting pit behind the dais, a pad out of it.
+        # The hurting pit behind the dais, a pad out of it, now and then.
         guards = build.waiting();
-        build.widen(hall, cx + 8, cy - 3, -8, self.long - 4, cy + 3, 0);
-        pit_fall(build, cx + 8, cy - 3, self.long - 4, cy + 3, -8, "The pit's floor burns", guards);
-        pad_to(build, float(cx) + 9.5, float(cy), -8, float(cx) + 9.5, float(cy) + 5.5, 0);
-        keep_box(build, hall, cx + 8, cy + 3, cx + 11, cy + 4, 0);
+        if self.pit {
+            build.widen(hall, cx + 8, cy - 3, -8, self.long - 4, cy + 3, 0);
+            pit_fall(build, cx + 8, cy - 3, self.long - 4, cy + 3, -8, "The pit's floor burns", guards);
+            pad_to(build, float(cx) + 9.5, float(cy), -8, float(cx) + 9.5, float(cy) + 5.5, 0);
+            keep_box(build, hall, cx + 8, cy + 3, cx + 11, cy + 4, 0);
+            build.foe(float(self.long) - 3.5, float(cy) + 6.5, 0, demon_foe(dice, self.danger), 180.0, waits=guards);
+        }
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
@@ -356,7 +368,6 @@ node DemonThrone(Prefab) {
         top = wake_on(build, float(cx - 5), float(cy - 5), float(cx + 5), float(cy + 5), 6.0);
         build.foe(float(cx) + 5.5, 2.5, gal, demon_foe(dice, self.danger), 90.0, waits=top);
         build.foe(float(cx) - 5.5, float(self.wide) - 2.5, gal, demon_foe(dice, self.danger), 270.0, waits=top);
-        build.foe(float(self.long) - 3.5, float(cy) + 6.5, 0, demon_foe(dice, self.danger), 180.0, waits=guards);
         build.foe(float(cx) + 2.5, float(cy) + 2.5, 6, demon_foe(dice, self.danger, True), 180.0);
         for index in range(dice.between(2, 3)) {
             build.foe(float(cx - 6 + index * 6) + 0.5, float(cy) + (8.5 if index % 2 == 0 else -8.5), 0, demon_foe(dice, self.danger), 0.0);
