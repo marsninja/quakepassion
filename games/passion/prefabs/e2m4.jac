@@ -167,6 +167,21 @@ def e2m4_stash(build: Raising, x0: int, y0: int, x1: int, y1: int, z: int, face:
     build.supply(float(x0 + x1) * 0.5, float(y0 + y1) * 0.5, z, item);
 }
 
+"""Closets beyond a wall: one three cells wide at each of `xs` past the
+cell line y = `side` (on its +y side), their doors in the wall's cells
+rising when `opens` fires, on lift `floor`, a foe of `kinds` (in turn) in
+each waiting on `wake`."""
+def e2m4_closets(build: Raising, xs: list[int], side: int, floor: int, opens: Cue, wake: Cue, kinds: list[str]) {
+    for (index, at) in enumerate(xs) {
+        closet = build.room(at, side + 1, floor, at + 3, side + 4, floor + 7);
+        build.widen(closet, at, side, floor, at + 3, side + 1, floor + 6);
+        fields = {"wait": "-1"};
+        build.rising_door(float(at), float(side), float(floor), float(at + 3), float(side + 1), float(floor + 6), fields);
+        opens +>:Fires:+> build.cue([fields], "door");
+        build.foe(float(at) + 1.5, float(side) + 2.5, floor, kinds[index % len(kinds)], 270.0, waits=wake);
+    }
+}
+
 """The start: a yard, a moat, the fortress wall and its barred gate."""
 node MoatGate(Prefab) {
     has wall: int = 10,
