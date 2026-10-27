@@ -220,20 +220,24 @@ def splashing(build: Raising, x: float, y: float, z: float, seconds: float) {
 }
 
 """Barrels or crates on a floor (lift `z`) that burst when shot: `count`
-of them two cells square and two or three lifts high, at points of the
-box x0..x1, y0..y1 kept a cell off each of `clear` ([x0, y0, x1, y1]
-each, the ones placed added to it)."""
+of them two cells square and two or three lifts high, two cells inside
+the box x0..x1, y0..y1 and two cells off each of `clear` ([x0, y0, x1,
+y1] each, the ones placed added to it), so no gap they leave is too
+narrow for a body."""
 def barrels(build: Raising, dice: Stream, x0: int, y0: int, x1: int, y1: int, z: int, count: int, clear: list[list[int]]) {
     placed = 0;
     tries = 0;
     while placed < count and tries < count * 10 {
         tries += 1;
-        x = dice.between(x0, max(x0, x1 - 2));
-        y = dice.between(y0, max(y0, y1 - 2));
+        if x1 - x0 < 6 or y1 - y0 < 6 {
+            break;
+        }
+        x = dice.between(x0 + 2, x1 - 4);
+        y = dice.between(y0 + 2, y1 - 4);
         box = [x, y, x + 2, y + 2];
         clash = False;
         for other in clear {
-            if box[0] < other[2] + 1 and other[0] < box[2] + 1 and box[1] < other[3] + 1 and other[1] < box[3] + 1 {
+            if box[0] < other[2] + 2 and other[0] < box[2] + 2 and box[1] < other[3] + 2 and other[1] < box[3] + 2 {
                 clash = True;
             }
         }

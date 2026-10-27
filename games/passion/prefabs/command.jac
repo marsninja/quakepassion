@@ -35,8 +35,8 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
-import from .common { stair, gate_into, lift, apart }
-import from .q2_works { deck, keep_box, sparking, blast_chain, stash, squad, rounds, beamed, held_door, key_taken, closets }
+import from .common { stair, gate_into, lift }
+import from .q2_works { deck, keep_box, sparking, blast_chain, stash, squad, rounds, beamed, held_door, key_taken, closets, barrels, hurting }
 
 glob COMMAND: str = "q2:command";
 
@@ -44,32 +44,6 @@ glob COMMAND: str = "q2:command";
 tanks deeper in."""
 def command_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
     return q1_foe(dice, q1_palette(["monster_gunner", "monster_gladiator"] if heavy else ["monster_gunner", "monster_soldier_light", "monster_chick"], ["monster_tank"] if heavy else ["monster_floater"], danger * 0.3 if heavy else danger * 0.6));
-}
-
-"""Crates on a floor (lift `z`) that burst when shot: `count` of them two
-cells square and two or three lifts high, at points of the box x0..x1,
-y0..y1 clear of `clear` ([x0, y0, x1, y1] each, kept a cell off)."""
-def crates(build: Raising, dice: Stream, x0: int, y0: int, x1: int, y1: int, z: int, count: int, clear: list[list[int]]) {
-    placed = 0;
-    tries = 0;
-    while placed < count and tries < count * 10 {
-        tries += 1;
-        x = dice.between(x0, max(x0, x1 - 2));
-        y = dice.between(y0, max(y0, y1 - 2));
-        box = [x, y, x + 2, y + 2];
-        if not apart(box, clear) {
-            continue;
-        }
-        clear.append(box);
-        build.breakable(float(x), float(y), float(z), float(x + 2), float(y + 2), float(z + dice.between(2, 3)), 10);
-        placed += 1;
-    }
-}
-
-"""A box of the prefab's cells that hurts whoever stands in it (`damage`
-a tenth of a second): a pump's shaft, a machine's works."""
-def hurting(build: Raising, x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, damage: int) {
-    build.put_box({"classname": "trigger_hurt", "dmg": str(damage), "asset_game": "q2"}, x0, y0, z0, x1, y1, z1, "trigger");
 }
 
 """The start: a vestibule, a concourse under a mezzanine up a great lift
@@ -142,7 +116,7 @@ node CommandEntry(Prefab) {
         build.touch(1.0, 1.0, 0.0, 4.0, float(self.wide - 1), 8.0) +>:Fires:+> build.objective("Destroy the black hole generator. Shut off the coolant to the CPU");
         # Crates on the concourse floor, clear of the ways and the lift.
         clear = [[self.long - 9, self.wide - 8, self.long, self.wide], [6, middle - 3, 10, middle + 3], [dx - 6, middle - 3, dx + 1, middle + 3], [dx - self.up - 1, 1, dx + 1, 5], [self.long - 5, middle - 6, self.long - 1, middle + 6], [7, self.wide - 4, 12, self.wide - 1]];
-        crates(build, dice, 8, 2, self.long - 3, self.wide - 2, 0, dice.between(3, 4), clear);
+        barrels(build, dice, 8, 2, self.long - 3, self.wide - 2, 0, dice.between(3, 4), clear);
         # The mezzanine's guards come out as the player arrives up there.
         arrive = build.touch(float(dx), 1.0, float(self.up), float(dx + 2), float(self.wide - 1), float(self.up + 6));
         squad(build, arrive, [[float(self.long) - 4.5, 3.5, float(self.up)], [float(self.long) - 4.5, float(self.wide) - 3.5, float(self.up)]], [command_foe(dice, self.danger, True), "monster_gunner"], 180.0);
@@ -310,7 +284,7 @@ node TankHall(Prefab) {
             build.doorway(hall, port);
         }
         clear = [[0, 0, 13, 8], [0, middle - 5, 5, middle + 2], [self.long - 6, middle - 7, self.long, middle - 1], [self.long // 2, 0, self.long // 2 + 8, 5], [nx - 2, 3, nx + 4, 9], [4, my - 5, 11, my], [self.long - 11, my - 5, self.long - 4, my], [self.long - 5, 1, self.long, my], [self.long - 12, my - 4, self.long, my]];
-        crates(build, dice, 3, 2, self.long - 3, my - 1, 0, dice.between(4, 5), clear);
+        barrels(build, dice, 3, 2, self.long - 3, my - 1, 0, dice.between(4, 5), clear);
         # The tanks on the floor; guards come onto the mezzanine and the nest
         # as the player comes in.
         build.foe(float(self.long) - 7.5, float(middle) - 6.5, 0, "monster_tank" if self.danger > 0.3 else "monster_gladiator", 180.0);
