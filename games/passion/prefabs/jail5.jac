@@ -83,8 +83,8 @@ node GuardCourtyard(Prefab) {
         self.long = dice.between(28, 31);
         self.wide = dice.between(22, 24);
         self.porch = dice.between(3, 4);
-        self.walk = dice.between(9, 11);
-        self.tall = self.walk + 10;
+        self.walk = dice.between(12, 14);
+        self.tall = self.walk + 12;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -92,7 +92,7 @@ node GuardCourtyard(Prefab) {
         self.leaves = [
             Port(face=0, along=middle, floor=self.porch),
             Port(face=1, along=float(self.long - 4), floor=self.porch),
-            Port(face=1, along=float(self.long // 2), floor=self.walk)
+            Port(face=1, along=7.0, floor=self.walk)
         ];
         visitor.place(self);
     }
@@ -136,6 +136,10 @@ node GuardCourtyard(Prefab) {
         merlons(build, wy, 8, px - 1, self.walk);
         post_button(build, 7, wy - 4, 0, 0) +>:Fires:+> called_lift(build, 3, wy - 3, 6, wy, 0, self.walk);
         keep_row(build, yard, 2, wy, self.walk, 1, 6);
+        # A watchtower on the walk's far end, up a stair along the wall.
+        build.solid(px - 5, wy, self.walk, px - 1, self.wide - 1, self.walk + 5);
+        stair(build, px - 10, self.wide - 4, self.walk, 0, 5, 3);
+        guards(build, build.touch(3.0, float(wy), float(self.walk), 7.0, float(self.wide - 1), float(self.walk + 6)), [[float(px) - 3.0, float(self.wide) - 3.0]], self.walk + 5, jail5_foes(dice, self.danger, 1), 180.0);
         crate_heaps(build, dice, 6, 6, px - 2, wy - 1, 0, dice.between(3, 5), [[0, middle - 3, 5, middle + 3], [cx - 5, middle - 5, cx + 5, middle + 5], [px - p - 2, middle - 3, px, middle + 3], [2, wy - 5, 9, wy]]);
         build.doorway(yard, self.enter);
         for port in self.taken {
@@ -149,7 +153,7 @@ node GuardCourtyard(Prefab) {
         build.touch(1.0, 1.0, 0.0, 4.0, float(self.wide - 1), 8.0) +>:Fires:+> build.objective("Locate the pyramid key, then return");
         # At the fountain, guards appear on the wall-walk.
         fountain = build.touch(float(cx - 5), float(middle - 5), 0.0, float(cx - 3), float(middle + 5), 6.0);
-        guards(build, fountain, [[float(cx) + 0.5, float(self.wide) - 3.0], [float(px) - 3.5, float(self.wide) - 3.0]], self.walk, jail5_foes(dice, self.danger, 2), 270.0);
+        guards(build, fountain, [[float(cx) + 0.5, float(self.wide) - 3.0], [float(px) - 11.5, float(self.wide) - 3.0]], self.walk, jail5_foes(dice, self.danger, 2), 270.0);
         build.foe(float(cx) - 4.5, float(middle) - 4.5, 0, "monster_soldier", 0.0, patrol=[[float(cx) - 4.5, float(middle) - 4.5], [float(cx) + 4.5, float(middle) - 4.5], [float(cx) + 4.5, float(middle) + 4.5], [float(cx) - 4.5, float(middle) + 4.5]]);
         for index in range(dice.between(2, 3)) {
             build.foe(float(self.long) - 3.5, 3.5 + float(index) * 5.0, p, jail5_foe(dice, self.danger, index == 0), 180.0);
@@ -171,14 +175,14 @@ node Battlement(Prefab) {
         self.source = JAIL5;
         self.district = level_district(JAIL5);
         self.long = dice.between(29, 32);
-        self.wall = dice.between(8, 10);
+        self.wall = dice.between(12, 14);
         # The yard deep enough that the stairs up start clear of the ditch.
         self.wide = self.wall + dice.between(12, 13);
         self.tall = self.wall + 12;
         self.low = -3;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=4.0, floor=0);
-        self.leaves = [Port(face=0, along=4.0, floor=0), Port(face=0, along=float(self.wide - 3), floor=self.wall), Port(face=1, along=float(self.long // 2), floor=self.wall)];
+        self.leaves = [Port(face=0, along=4.0, floor=0), Port(face=0, along=float(self.wide - 3), floor=self.wall + 5), Port(face=1, along=float(self.long // 2), floor=self.wall)];
         visitor.place(self);
     }
 
@@ -200,6 +204,9 @@ node Battlement(Prefab) {
         # Towers at both ends, a stair up each one's face to the walk.
         build.solid(1, wy - 3, 0, 6, wy, w + 4);
         build.solid(self.long - 6, wy - 3, 0, self.long - 1, wy, w + 4);
+        # A tower on the wall's far end, up a stair along the walk.
+        build.solid(self.long - 6, wy, w, self.long - 1, self.wide - 1, w + 5);
+        stair(build, self.long - 11, wy, w, 0, 5, 3);
         stair(build, 12, wy - w, 0, 1, w, 3);
         stair(build, self.long - 15, wy - w, 0, 1, w, 3);
         keep_row(build, ground, 11, wy, w, 1, 5);
@@ -228,7 +235,7 @@ node Battlement(Prefab) {
         for index in range(dice.between(2, 3)) {
             build.foe(float(8 + index * 6) + 0.5, 6.5, 0, jail5_foe(dice, self.danger), 90.0);
         }
-        build.foe(9.5, float(self.wide) - 4.5, w, "monster_soldier", 0.0, patrol=[[9.5, float(self.wide) - 4.5], [float(self.long) - 9.5, float(self.wide) - 4.5]]);
+        build.foe(9.5, float(self.wide) - 3.5, w, "monster_soldier", 0.0, patrol=[[9.5, float(self.wide) - 3.5], [float(self.long) - 12.5, float(self.wide) - 3.5]]);
         build.foe(float(self.long // 2) + 0.5, 5.5, w + 5, jail5_foe(dice, self.danger, False, True), 90.0);
         build.supply(3.5, float(wy) - 1.5, w + 4, Q2_ARMOR, "q2");
         build.supply(float(self.long // 2) + 0.5, float(wy) + 3.5, 0, Q2_HEALTH, "q2");
@@ -248,7 +255,7 @@ node Barracks(Prefab) {
         self.district = level_district(JAIL5);
         self.long = dice.between(27, 29);
         self.wide = dice.between(22, 24);
-        self.gallery = dice.between(7, 8);
+        self.gallery = dice.between(9, 10);
         self.by_lift = dice.chance(0.4);
         self.tall = self.gallery + 10;
         self.low = -1;
@@ -337,7 +344,7 @@ node PowerTrench(Prefab) {
         self.district = level_district(JAIL5);
         self.long = dice.between(28, 30);
         self.wide = dice.between(19, 21);
-        self.deep = dice.between(5, 6);
+        self.deep = dice.between(8, 9);
         self.drawn_bridge = dice.chance(0.5);
         self.tall = self.booth + 7;
         self.low = -self.deep - 2;
@@ -514,7 +521,7 @@ node CaptainQuarters(Prefab) {
         self.district = level_district(JAIL5);
         self.long = dice.between(22, 24);
         self.wide = 24;
-        self.steps = dice.between(8, 11);
+        self.steps = dice.between(14, 18);
         self.tall = self.steps + 8;
         self.low = -1;
         self.high = self.tall + 1;
