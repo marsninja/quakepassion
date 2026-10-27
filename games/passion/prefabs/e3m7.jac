@@ -494,7 +494,7 @@ node SpikeRhythm(Prefab) {
         self.long = dice.between(28, 32);
         self.wide = dice.between(13, 15);
         self.walk = dice.between(9, 10);
-        self.tall = self.walk + dice.between(7, 9);
+        self.tall = self.walk + dice.between(8, 10);
         self.climb = dice.below(2);
         self.low = -8;
         self.high = self.tall + 1;
