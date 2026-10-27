@@ -288,3 +288,11 @@ def bars(build: Raising, x0: float, y0: float, z0: float, x1: float, y1: float, 
     build.put_box(fields, x0, y0, z0, x1, y1, z1, kit_of(build.district).door);
     return build.cue([fields], "bars");
 }
+
+"""A leaking pipe at (x, y), `z` lifts up, dripping water every `every`
+seconds or so (a timer and Quake II's splash, falling)."""
+def drip(build: Raising, x: float, y: float, z: float, every: float) {
+    fields = {"classname": "target_splash", "angle": "-2", "count": "6", "sounds": "2"};
+    build.put_point(fields, x, y, z, "q2");
+    build.timer(every) +>:Fires:+> build.cue([fields], "drip");
+}
