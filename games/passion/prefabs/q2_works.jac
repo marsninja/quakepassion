@@ -7,6 +7,7 @@ the ways out that a cue opens.
 
 Each wiring goes through the `Cue` / `Fires` graph, as the stretches'
 own do."""
+import math;
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Raising, Cue, Fires }
 import from ..space { Space }
@@ -243,4 +244,21 @@ def barrels(build: Raising, dice: Stream, x0: int, y0: int, x1: int, y1: int, z:
         build.breakable(float(x), float(y), float(z), float(x + 2), float(y + 2), float(z + dice.between(2, 3)), 10);
         placed += 1;
     }
+}
+
+"""A jump pad at (x, y) on lift `z` that lands a body at (lx, ly) on lift
+`lz`: the pad aims the top of its arc, so it is aimed short of the landing
+by the share of the arc spent rising."""
+def pad_to(build: Raising, x: float, y: float, z: int, lx: float, ly: float, lz: int) {
+    top = float(max(z, lz)) * 16.0 + 96.0;
+    rise = top - (float(z) * 16.0 + 22.0);
+    fall = max(1.0, top + 3.0 - (float(lz) * 16.0 + 24.0));
+    share = 1.0 / (1.0 + math.sqrt(fall / 400.0) / math.sqrt(rise / 400.0));
+    build.jump_pad(x, y, z, x + (lx - x) * share, y + (ly - y) * share, lz);
+}
+
+"""A box of the prefab's cells that hurts whoever stands in it (`damage`
+a tenth of a second): an exhaust, a vent to the vacuum, a machine's works."""
+def hurting(build: Raising, x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, damage: int) {
+    build.put_box({"classname": "trigger_hurt", "dmg": str(damage), "asset_game": "q2"}, x0, y0, z0, x1, y1, z1, "trigger");
 }
