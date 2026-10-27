@@ -1005,6 +1005,28 @@ obj Raising {
         self.carve_cells(self.cells(float(x0), float(y0), float(z0), float(x1), float(y1), float(z1)), -1);
     }
 
+    """Air where a mover of its own stands in a wall (a secret door, a panel
+    that breaks), so the world's rock does not stand there too and it opens
+    onto a way through: the box of the prefab's cells carved into the space
+    of the air beside it (none when no air is beside it)."""
+    def hollow(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float) {
+        found = self.cells(x0, y0, z0, x1, y1, z1);
+        box = [int(round(value)) for value in found];
+        owner = 0;
+        for z in range(box[2], box[5]) {
+            for y in range(box[1] - 1, box[4] + 1) {
+                for x in range(box[0] - 1, box[3] + 1) {
+                    if owner == 0 and self.mass.at(x, y, z) > 0 {
+                        owner = self.mass.at(x, y, z);
+                    }
+                }
+            }
+        }
+        if owner > 0 {
+            self.mass.carve(box[0], box[1], box[2], box[3], box[4], box[5], owner - 1);
+        }
+    }
+
     """A floor level a space's lamps light (in the prefab's lifts)."""
     def level(space: Space, z: int) {
         lift = z + self.lying().oz;
@@ -1232,6 +1254,7 @@ obj Raising {
     district's wall that breaks apart when shot enough (`health`), firing
     its cue's targets as it goes (a panel over a stash, a grate)."""
     def breakable(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, health: int) -> Cue {
+        self.hollow(x0, y0, z0, x1, y1, z1);
         fields = {"classname": "func_explosive", "health": str(health), "asset_game": "q2"};
         self.put_box(fields, x0, y0, z0, x1, y1, z1, kit_of(self.district).wall);
         return self.cue([fields], "breakable");
@@ -1505,6 +1528,7 @@ obj Raising {
     opens (back, then aside) when shot, with rock round it to open into.
     `direction` (0 +x ... 3 -y) is the way it slides back into the wall."""
     def secret_door(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, direction: int) {
+        self.hollow(x0, y0, z0, x1, y1, z1);
         kit = kit_of(self.district);
         self.put_box({"classname": "func_door_secret", "angle": str(self.facing(direction)), "sounds": "1"}, x0, y0, z0, x1, y1, z1, kit.wall);
         reach = max(x1 - x0, y1 - y0) + 1.0;
