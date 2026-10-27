@@ -215,6 +215,9 @@ node FloodGate(Prefab) {
         # enforcers stand.
         build.solid(4, wide - 4, p - 1, gx - 6, wide - 1, p);
         build.solid(gx + 1, 1, p - 1, long - 6, 4, p);
+        build.solid(gx + 1, wide - 4, p - 1, long - 8, wide - 1, p);
+        # A bridge across the channel between the far balconies.
+        build.solid(long - 12, 4, p - 1, long - 9, wide - 4, p);
         keep_run(build, hall, 8, wide - 5, 12, wide - 4, p);
         for index in range(dice.between(1, 2)) {
             build.foe(float(gx + 4 + index * 5) + 0.5, 2.5, p, "monster_enforcer", 90.0, waits=balcony);
@@ -349,7 +352,8 @@ node SettlingTanks(Prefab) {
     has spine: int = 5,
         deep: int = 10,
         tall: int = 17,
-        bridges: bool = True;
+        bridges: bool = True,
+        east: bool = False;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -360,8 +364,9 @@ node SettlingTanks(Prefab) {
         self.wide = dice.between(24, 26);
         self.spine = dice.between(5, 6);
         self.deep = dice.between(8, 9);
-        self.tall = self.spine + dice.between(10, 12);
-        self.bridges = dice.chance(0.6);
+        self.tall = self.spine + dice.between(15, 16);
+        self.bridges = True;
+        self.east = dice.chance(0.5);
         self.low = -self.deep - 2;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -417,7 +422,7 @@ node SettlingTanks(Prefab) {
         if self.bridges {
             # Bridges from the spine over each tank to ledges on the side
             # walls at the spine's height.
-            bx = long // 2 - 1;
+            bx = long // 2 - 1 + (3 if self.east else 0);
             build.solid(sx, 1, s - 1, long - 1, 4, s);
             build.solid(sx, wide - 4, s - 1, long - 1, wide - 1, s);
             build.solid(bx, 4, s - 1, bx + 3, cy - 1, s);
@@ -425,6 +430,16 @@ node SettlingTanks(Prefab) {
             keep_run(build, hall, bx - 3, 3, bx, 4, s);
             keep_run(build, hall, bx + 3, wide - 4, bx + 6, wide - 3, s);
         }
+        # A high catwalk over the spine, a lift up to it from the spine's
+        # near end, and a high bridge across both tanks near the far end.
+        hi = s + 7;
+        build.level(hall, hi);
+        lift(build, sx, cy - 1, sx + 3, cy + 2, s, hi);
+        build.solid(sx + 3, cy - 2, hi - 1, long - 3, cy + 3, hi);
+        build.solid(long - 9, 1, hi - 1, long - 6, wide - 1, hi);
+        keep_run(build, hall, sx + 3, cy - 2, sx + 4, cy + 3, hi);
+        keep_run(build, hall, sx + 6, cy - 3, sx + 9, cy - 2, hi);
+        build.foe(float(long) - 7.5, 3.5, hi, e4m1_foe(dice, self.danger), 90.0, patrol=[[float(long) - 7.5, 3.5], [float(long) - 7.5, float(wide) - 3.5]]);
         # Drops off the spine into the tanks.
         keep_run(build, hall, sx + 4, cy - 1, sx + 8, cy, s);
         keep_run(build, hall, sx + 4, cy + 1, sx + 8, cy + 2, s);
@@ -505,6 +520,11 @@ node CisternDrop(Prefab) {
         # onto the low floor.
         build.solid(7, 1, -1, fx - 2, 4, 0);
         keep_run(build, cistern, fx - 3, 1, fx - 2, 4, 0);
+        # Catwalks across the cistern between the two along the walls.
+        for x in [9, fx - 9] {
+            build.solid(x, 4, -1, x + 3, wide - 4, 0);
+        }
+        keep_run(build, cistern, 12, 6, 13, wide - 6, 0);
         # The catwalk along the north wall from ledge to ledge, a span of it
         # missing over the water (drawn out by the shot button, by the dice).
         build.solid(7, wide - 4, -1, fx, wide - 1, 0);
@@ -584,6 +604,11 @@ node SumpKey(Prefab) {
         # A catwalk high along the south wall over the sump, a lift up to it
         # from the near side, a drop off its far end onto the shelf.
         build.solid(4, 1, 6, x1, 4, 7);
+        # Catwalks from it across the sump to the north wall.
+        for x in [9, x1 - 5] {
+            build.solid(x, 4, 6, x + 3, side, 7);
+        }
+        keep_run(build, hall, 12, 6, 13, side - 2, 7);
         lift(build, 1, 1, 4, 4, 0, 7);
         keep_run(build, hall, 4, 1, 5, 4, 7);
         keep_run(build, hall, x1 - 1, 1, x1, 4, 7);
