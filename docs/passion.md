@@ -142,28 +142,54 @@ what stands on its floors.
   says so).
 - A `pfh-<seed>` run takes the hand-made library (`prefabs/library.jac`):
   a module per original of all three games (Quake's 31, Quake II's 39,
-  Quake III's 26), each about five stretches drawn after that original's
-  flow, each playing a part: `start`, `flow`, `hub`, `keyroom`, `end` or
-  `gate` (an end behind a key's door). A level is a tree of them: a start,
-  a flow or two, a hub; from the hub a branch to a key room, and the hub's
-  way on locked by that key, so the key is fetched and the branch walked
-  back; from level 2 a second hub and the gold key; then the end. Any
-  original's stretch may follow any other's.
+  Quake III's 26), each five to eight stretches drawn after that
+  original's flow and set-pieces (e1m2's drawbridge, jail1's laser grid,
+  q3dm17's platforms over the void...), each playing a part: `start`,
+  `flow`, `hub`, `keyroom`, `end` or `gate` (an end behind a key's door).
+  Each stretch chooses by its dice between ways of being built, not only
+  sizes (a lift or a stair, which side its gallery runs, a bridge or
+  stepping stones, whether a secret is there), and most stand on two or
+  more floors that see and reach each other. A level is a tree of them: a
+  start, a flow or two, a hub; from the hub a branch to a key room, and
+  the hub's way on locked by that key, so the key is fetched and the
+  branch walked back; from level 2 a second hub and the gold key; then
+  the end. Any original's stretch may follow any other's.
 - Quake III's arenas hold no foes of their own, so each arena's stretches
-  take Quake's and Quake II's; the arenas share their entry, pad tower,
-  atrium, vault and portal (`prefabs/q3arena.jac`, made for each arena
-  in its own palette) and each adds a stretch of its own (a chasm of
-  bridges, a tower climbed by a spiral stair, platforms thrown between by
-  jump pads, ledges over a void with teleporters back up...).
+  take Quake's and Quake II's; every arena has stretches of its own for
+  each part, drawn after its own architecture (`prefabs/q3arena.jac`
+  keeps the arenas' shared foes and supplies).
+- What fires what is a graph: a `Cue` node holds entities (a touch, a
+  button, a key, foes lying in wait, a door, a bridge, a counter, a
+  relay, a timer) and `Fires` edges say what each sets off. The `Wire`
+  walker names targets once all are laid; a cue fired from more than one
+  cue answers to a name of its own, each firer reaching it by a relay.
+  The builder (`Raising`) has the cues the originals use: woken and
+  patrolling foes, sinking floors, drawn bridges, rising stairs, trains,
+  teleported ambushes, counters, delays, timers, secrets, spike
+  shooters, Quake II's sparks, explosions, breakables and objectives.
+- Stretches are woven together after they are raised, as the originals'
+  rooms wind over and back into each other: the layout favours lying
+  over or beside a stretch already passed; a way back (`Loop`) leads from
+  a later stretch's free way out to a free way out of one it was reached
+  through, onto that one's own floor, behind a door that opens only from
+  the later side (so it never leads round a locked door); hatches drop
+  a body down into a stretch it came through; barred windows look into
+  the next. A woven candidate that does not prove is tried again without
+  its hatches, then unwoven, before the next is laid.
 - Supplies follow the foes (`provision`): health at every second foe and
-  every Quake II one, ammunition at every third in its foe's game, and at
-  the start Quake's super shotgun, nailgun and grenade launcher and Quake
-  II's super shotgun, machinegun and grenade launcher, so either game's
-  ammunition feeds a gun.
+  every Quake II one, more by each heavy foe for what the budget reckons
+  it costs to fight, armour by the heaviest, ammunition at every third
+  and by each foe's health, and at the start Quake's super shotgun,
+  nailgun and grenade launcher and Quake II's super shotgun, machinegun
+  and grenade launcher, so either game's ammunition feeds a gun.
 - Trying stretches: `QP_PREFAB_SOLO=<original>:<name>:<role>` makes one
   stretch alone between plain rooms (`QP_PREFAB_SOLO_LEAVE=n` takes its
-  n-th way out); `QP_PREFAB_FOCUS=<original>` takes that original's
-  stretches first in every level.
+  n-th way out); `QP_PREFAB_FOCUS=<original>[,<original>...]` takes
+  those originals' stretches first in every level, `QP_PREFAB_PURE=1`
+  only theirs; `QP_PREFAB_CANDIDATE=n` makes candidate n alone,
+  `QP_PREFAB_NOWEAVE=1` leaves the weaving out. The forge's
+  `QP_FORGE_ENTITIES=<folder>` writes each level's entities and
+  `QP_FORGE_BUDGET=1` prints the budget's ledger along the route.
 - Jump pads sit three cells back from the edge they throw a body over and
   `keep` that edge, since the dressing rails any drop of four lifts.
 
