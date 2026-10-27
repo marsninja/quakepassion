@@ -828,7 +828,10 @@ walker Lay {
                     }
                     for theirs_index in self.dice.order(len(older.leaves)) {
                         theirs = older.leaves[theirs_index];
-                        if theirs_index in older.taken_index or theirs.gate {
+                        # Onto the floor its way in stands on, so a body that
+                        # comes to the door from that side came in walking
+                        # (never stranded on a ledge it reached one way).
+                        if theirs_index in older.taken_index or theirs.gate or theirs.floor != older.enter.floor {
                             continue;
                         }
                         loop = Loop(older=older, mine=mine, theirs=theirs);
