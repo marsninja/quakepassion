@@ -279,3 +279,12 @@ def laser_grid(build: Raising, xs: list[float], y: float, z: int, heights: list[
     }
     return found;
 }
+
+"""Quake II's bars: a wall of the prefab's cells (a cell's bars, a
+grate) there from the start and gone, or back, each time its cue fires
+(func_wall TOGGLE and START_ON)."""
+def bars(build: Raising, x0: float, y0: float, z0: float, x1: float, y1: float, z1: float) -> Cue {
+    fields = {"classname": "func_wall", "spawnflags": "6", "asset_game": "q2"};
+    build.put_box(fields, x0, y0, z0, x1, y1, z1, kit_of(build.district).door);
+    return build.cue([fields], "bars");
+}
