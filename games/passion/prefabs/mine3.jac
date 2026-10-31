@@ -1,6 +1,6 @@
 """Prefabs drawn from Quake II's mine3, the Drilling Area: a drilling
 cavern, a pier out over its pit to the drill's platform; an access bridge
-lowered from a service gallery; a chamber sealed until two charges are
+lowered from a balcony off a service tunnel; a chamber sealed until two charges are
 shot; a hall round a great drill rig; a shaft climbed by service
 elevators; the key among core samples; and the drill that cuts a new
 passage to the lower mines. Raised in mine3's own palette.
@@ -12,10 +12,10 @@ passage to the lower mines. Raised in mine3's own palette.
   guards walk the floor and the pit, more come out of the pit as the
   player steps onto the pier; a panel in the pit's wall breaks open on a
   stash (the secret). Ways on from the platform, the floor and the pit.
-- `AccessBridge`: a chasm over lava, a service gallery along its side
-  reached by a stair or a service elevator, the switch at its end that
-  lowers the access bridge ("Access bridge lowered"); guards appear on the
-  far ledge as it comes down.
+- `AccessBridge`: a chasm over lava, a service tunnel behind its wall from
+  the near ledge, up a stair or a service elevator at the tunnel's far end to
+  a balcony over the chasm, the switch on it lowering the access bridge
+  ("Access bridge lowered"); guards appear on the far ledge as it comes down.
 - `ChargeChamber`: a hall with galleries along both sides and a bridge
   between them, drill pistons pumping in its floor; its ways on are sealed
   ("Access denied") until the two charges high on its end walls are shot
@@ -28,8 +28,9 @@ passage to the lower mines. Raised in mine3's own palette.
 - `ServiceShaft`: a shaft climbed ledge over ledge by service elevators (or
   an elevator and a stair); each ledge's guards come as the player reaches
   the one below.
-- `CoreSamples`: the key among core samples on a rack up steps; taking it
-  opens the closets; a guard walks the floor.
+- `CoreSamples`: the sample store: racks from wall to roof across it, each
+  with its gap at the other end from the last, walked back and forth to the
+  key in a cage up steps at the far end; taking it opens the closets.
 - `DrillBreak`: the end. A door (a key's, as a gate), a hall with the drill
   on its bed against a rock face; the drill's control on a pulpit sets it
   going: charges go off along the face, it opens on the way out ("New
@@ -39,6 +40,7 @@ import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, boulders, key_ambush, gate_into, lift }
+import from .q2floors_parts { sunken, stepped_bed }
 import from .minefact { slab, hurt, burning, sparking, stash, charges, port_door, sealed, press, cart }
 
 glob MINE3: str = "q2:mine3";
@@ -85,6 +87,7 @@ node DrillPlatform(Prefab) {
         build.level(cave, low);
         # The floor ends at the pit; the pier out over it to the platform.
         build.solid(1, 1, low, 10, self.wide - 1, 0);
+        sunken(build, cave, 4, 1, 10, self.wide - 1, 0);
         slab(build, 10, cy - 2, self.long - 9, cy + 2, 0, 2);
         slab(build, self.long - 9, cy - 5, self.long - 1, cy + 5, 0, 2);
         # The drill head riding up and down through a hole in the platform.
@@ -126,8 +129,9 @@ node DrillPlatform(Prefab) {
     }
 }
 
-"""A chasm over lava, a service gallery along its side, the switch at
-its end that lowers the access bridge."""
+"""A chasm over lava, the access bridge lowered from a balcony over it; the
+balcony reached along a service tunnel behind the chasm's wall, up a stair or
+a service elevator at the tunnel's end."""
 node AccessBridge(Prefab) {
     has span: int = 11,
         deep: int = 11,
@@ -140,20 +144,21 @@ node AccessBridge(Prefab) {
         self.title = "Access bridge";
         self.source = MINE3;
         self.district = level_district(MINE3);
-        self.span = dice.between(10, 12);
+        self.span = dice.between(11, 13);
         self.long = 9 + self.span + 3 + 1;
-        self.wide = dice.between(18, 20);
+        self.wide = dice.between(21, 23);
         self.deep = dice.between(10, 12);
         self.gallery = 8;
         self.by_stair = dice.chance(0.5);
         self.tall = self.gallery + dice.between(7, 9);
         self.low = -2 * self.deep - 4;
         self.high = self.tall + 1;
-        cy = self.wide // 2;
-        self.enter = Port(face=2, along=3.0 if self.by_stair else float(dice.between(3, cy - 3)), floor=0);
+        wy = self.wide - 6;
+        cy = wy // 2;
+        self.enter = Port(face=2, along=float(dice.between(4, wy - 4)), floor=0);
         self.leaves = [Port(face=0, along=float(cy), floor=0)];
-        if dice.chance(0.3) {
-            self.leaves.append(Port(face=1, along=6.0, floor=self.gallery));
+        if dice.chance(0.5) {
+            self.leaves.append(Port(face=1, along=float(dice.between(3, 8)), floor=0));
         }
         visitor.place(self);
     }
@@ -162,57 +167,72 @@ node AccessBridge(Prefab) {
         build = visitor.build;
         dice = build.begin(self);
         low = -self.deep;
-        cy = self.wide // 2;
+        wy = self.wide - 6;
+        cy = wy // 2;
         x0 = 9;
         x1 = 9 + self.span;
-        chasm = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        g = self.gallery;
+        chasm = build.room(1, 1, low, self.long - 1, wy, self.tall, variant=dice.below(3));
         build.level(chasm, 0);
-        build.level(chasm, self.gallery);
-        build.solid(1, 1, low, x0, self.wide - 1, 0);
-        build.solid(x1, 1, low, self.long - 1, self.wide - 1, 0);
-        burning(build, x0, 1, low, x1, self.wide - 1, low + 3, 4);
-        # The service gallery along the north wall over the ledge and the
-        # chasm; up to it by a stair or a service elevator.
-        gy = self.wide - 5;
-        slab(build, 1, gy, x1 - 3, self.wide - 1, self.gallery, 1);
+        build.level(chasm, g);
+        build.solid(1, 1, low, x0, wy, 0);
+        build.solid(x1, 1, low, self.long - 1, wy, 0);
+        burning(build, x0, 1, low, x1, wy, low + 3, 4);
+        # The service tunnel behind the chasm's north wall, in from the near
+        # ledge; its far end tall, up to the balcony over the chasm.
+        tunnel = build.room(1, wy + 1, -1, x1 + 1, self.wide - 1, 8, variant=dice.below(3));
+        build.level(tunnel, g);
+        build.widen(tunnel, 3, wy, 0, 6, wy + 1, 7);
+        build.widen(tunnel, x1 - 11, wy + 1, 8, x1 + 1, self.wide - 1, g + 7);
+        build.solid(x1 - 2, wy + 1, -1, x1 + 1, self.wide - 1, g);
         if self.by_stair {
-            stair(build, 1, gy - self.gallery, 0, 1, self.gallery, 3);
+            stair(build, x1 - 3 - g, wy + 1, -1, 0, g + 1, 3);
         } else {
-            cart(build, [[4.0, float(gy - 3), 0.0], [4.0, float(gy - 3), float(self.gallery - 1)]], 70.0, 2.0);
-            for x in range(4, 7) {
-                build.keep(chasm, x, gy, self.gallery);
-            }
+            lift(build, x1 - 5, wy + 1, x1 - 2, wy + 4, -1, g);
+        }
+        for y in range(wy + 1, wy + 4) {
+            build.keep(tunnel, x1 - 2, y, g);
+        }
+        # The balcony, out from the tunnel's head through the wall.
+        build.widen(tunnel, x1 - 2, wy, g, x1 + 1, wy + 1, g + 6);
+        slab(build, x1 - 6, wy - 4, x1 + 2, wy, g, 1);
+        for x in range(x1 - 2, x1 + 1) {
+            build.keep(chasm, x, wy - 1, g);
         }
         build.doorway(chasm, self.enter);
         for port in self.taken {
-            build.doorway(chasm, port);
+            if port.face == 1 {
+                build.doorway(tunnel, port);
+            } else {
+                build.doorway(chasm, port);
+            }
         }
         for y in range(cy - 2, cy + 2) {
             build.keep(chasm, x0 - 1, y, 0);
             build.keep(chasm, x1, y, 0);
         }
-        # The service switch at the gallery's end lowers the access bridge.
-        service = build.push(float(x1) - 4.5, float(self.wide - 1), float(self.gallery) + 1.0, 3);
+        # The service switch on the balcony lowers the access bridge.
+        service = build.push(float(x1) - 4.5, float(wy), float(g) + 1.0, 3);
         lowered = build.drawn(float(x0), float(cy - 2), float(x1), float(cy + 2), 0, self.deep + 1);
         service +>:Fires:+> lowered;
         # A switch on the far ledge's wall lowers it too, for a body come
         # round to the far side.
         build.push(float(self.long - 1), float(cy) + 3.5, 1.0, 2) +>:Fires:+> lowered;
         service +>:Fires:+> build.objective("Access bridge lowered. Find the drill controls.");
-        build.touch(float(x0 - 3), float(cy - 3), 0.0, float(x0), float(cy + 3), 6.0, True, "Lower the access bridge. Find the service switch.");
+        build.touch(float(x0 - 3), float(cy - 3), 0.0, float(x0), float(cy + 3), 6.0, True, "Lower the access bridge. Find the service tunnel.");
         far_ledge = build.waiting();
         service +>:Fires:+> far_ledge;
         service +>:Fires:+> build.summon(2, 2, low + 1, MINE3_FOES.pick(dice, self.danger, True), float(x1) + 1.5, float(cy) - 0.5, 0, 180.0);
         for index in range(dice.between(1, 2)) {
             build.foe(float(x1) + 1.5, float(cy) + (2.5 if index == 0 else -3.5), 0, MINE3_FOES.pick(dice, self.danger), 180.0, waits=far_ledge);
         }
-        gallery_y = float(gy) + 2.0;
-        build.foe(5.5, gallery_y, self.gallery, "monster_soldier", 0.0, patrol=[[5.5, gallery_y], [float(x1) - 5.5, gallery_y]]);
+        tunnel_y = float(wy) + 3.0;
+        build.foe(7.5, tunnel_y, 0, "monster_soldier", 0.0, patrol=[[7.5, tunnel_y], [float(x1 - 12) + 0.5, tunnel_y]]);
         build.foe(4.5, 3.5, 0, "monster_soldier_light", 0.0, patrol=[[4.5, 3.5], [float(x0) - 1.5, 3.5]]);
-        build.foe(float(x0 + x1) * 0.5, float(cy) - 4.5, 5, MINE3_FOES.pick(dice, self.danger, True), 90.0);
-        sparking(build, float(x1) - 4.5, float(self.wide) - 1.1, float(self.gallery) + 3.0, 3, 4.0);
-        build.supply(2.5, 6.5, 0, Q2_HEALTH, "q2");
-        build.supply(float(x1) - 6.5, gallery_y, self.gallery, "ammo_bullets", "q2");
+        build.foe(float(x0 + x1) * 0.5, float(cy) - 2.5, 5, MINE3_FOES.pick(dice, self.danger, True), 90.0);
+        sparking(build, float(x1) - 4.5, float(wy) - 0.1, float(g) + 3.0, 3, 4.0);
+        build.supply(2.5, float(wy) - 2.5, 0, Q2_HEALTH, "q2");
+        build.supply(float(x1) - 5.5, float(wy) - 2.0, g, "ammo_bullets", "q2");
     }
 }
 
@@ -254,6 +274,8 @@ node ChargeChamber(Prefab) {
         bx = self.bridge_x;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, d);
+        # The floor between the galleries a step down, the pistons' pits in it.
+        sunken(build, hall, 7, 5, self.long - 7, self.wide - 5, 0);
         # The galleries along both long walls, the bridge across between
         # them, a stair up to each.
         slab(build, 1, 1, self.long - 1, 5, d, 1);
@@ -348,6 +370,9 @@ node DrillRig(Prefab) {
         cy = self.wide // 2;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, self.rig);
+        # The floor round the rig falls a step to its east and north.
+        sunken(build, hall, cx + 5, 1, self.long - 1, self.wide - 1, 0);
+        sunken(build, hall, 1, cy + 5, cx + 5, self.wide - 1, 0);
         # The rig: a block, its drill column up through the roof, the walk
         # round its top; bridges north and east to the walls.
         build.solid(cx - 4, cy - 4, 0, cx + 4, cy + 4, self.rig);
@@ -363,7 +388,7 @@ node DrillRig(Prefab) {
         }
         # Sample cases on the floor, that break when shot.
         build.breakable(2.0, 2.0, 0.0, 4.0, 4.0, 2.0, 30);
-        build.breakable(float(self.long - 4), float(self.wide - 4), 0.0, float(self.long - 2), float(self.wide - 2), 2.0, 30);
+        build.breakable(float(self.long - 4), float(self.wide - 4), -1.0, float(self.long - 2), float(self.wide - 2), 1.0, 30);
         build.solid(cx - 2, cy + 4, self.rig - 1, cx + 2, self.wide - 1, self.rig);
         build.solid(cx + 4, cy - 2, self.rig - 1, self.long - 1, cy + 2, self.rig);
         for at in range(-2, 2) {
@@ -416,7 +441,7 @@ node ServiceShaft(Prefab) {
         self.long = max(dice.between(16, 18), self.second - self.first + 13);
         self.wide = dice.between(15, 17);
         self.tall = self.second + 9;
-        self.low = -1;
+        self.low = -2;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(dice.between(3, self.wide - 10)), floor=0);
         self.leaves = [Port(face=0, along=float(self.wide // 2), floor=self.second), Port(face=1, along=float(self.long // 2), floor=self.first)];
@@ -432,6 +457,7 @@ node ServiceShaft(Prefab) {
         shaft = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(shaft, self.first);
         build.level(shaft, self.second);
+        sunken(build, shaft, 6, 1, self.long - 1, self.wide - 1, 0);
         north = self.wide - 5;
         rise = self.second - self.first;
         # The first ledge along the north wall, the second along the east
@@ -445,7 +471,7 @@ node ServiceShaft(Prefab) {
         if self.stair_up {
             # Steps that rise out of the first ledge when the switch on its
             # wall is pressed, rock under them to sink into.
-            build.solid(self.long - 5 - rise, north, 0, self.long - 5, north + 3, self.first);
+            build.solid(self.long - 5 - rise, north, -1, self.long - 5, north + 3, self.first);
             build.push(float(self.long - 7 - rise) + 0.5, float(self.wide - 1), float(self.first) + 1.0, 3) +>:Fires:+> build.rising_steps(self.long - 5 - rise, north, self.first, 0, rise, 3);
         } else {
             cart(build, [[float(self.long - 8), float(north - 3), float(self.first - 1)], [float(self.long - 8), float(north - 3), float(self.second - 1)]], 70.0, 2.0);
@@ -473,11 +499,14 @@ node ServiceShaft(Prefab) {
     }
 }
 
-"""The key among core samples on a rack up steps."""
+"""The key at the far end of the sample store, racks of core samples across
+it from wall to roof, each with its gap at the other end from the last, so
+the store is walked back and forth."""
 node CoreSamples(Prefab) {
     has key: str = "key_silver",
         hall_wide: int = 16,
-        rack: int = 3,
+        rack: int = 2,
+        flip: bool = False,
         tall: int = 12;
 
     can choose with Lay entry {
@@ -485,10 +514,11 @@ node CoreSamples(Prefab) {
         self.title = "Core samples (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = MINE3;
         self.district = level_district(MINE3);
-        self.long = dice.between(20, 22);
+        self.long = dice.between(26, 28);
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
-        self.rack = dice.between(3, 4);
+        self.rack = dice.between(2, 3);
+        self.flip = dice.chance(0.5);
         self.tall = dice.between(11, 13);
         self.low = -1;
         self.high = self.tall + 1;
@@ -505,20 +535,33 @@ node CoreSamples(Prefab) {
         room = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
         build.level(room, self.rack);
         build.doorway(room, self.enter);
-        rx = self.long - 6;
-        build.solid(rx, cy - 3, 0, self.long - 1, cy + 3, self.rack);
-        stair(build, rx - self.rack, cy - 1, 0, 0, self.rack, 2);
-        for y in [cy - 3, cy + 2] {
-            for x in range(rx + 1, self.long - 1, 2) {
+        # The racks across the store, each gap at the other end from the
+        # last.
+        rows = [6, 11, 16];
+        for (index, rx) in enumerate(rows) {
+            low_gap = (index % 2 == 0) != self.flip;
+            if low_gap {
+                build.solid(rx, 5, 0, rx + 1, side, self.tall);
+            } else {
+                build.solid(rx, 1, 0, rx + 1, side - 4, self.tall);
+            }
+        }
+        # The cage at the far end, its sample posts, up its steps.
+        kx = rows[2] + 5;
+        build.solid(kx, 1, 0, self.long - 1, side, self.rack);
+        stair(build, kx - self.rack, cy - 1, 0, 0, self.rack, 3);
+        for y in [cy - 3, cy + 3] {
+            for x in range(kx + 1, self.long - 1, 2) {
                 build.solid(x, y, self.rack, x + 1, y + 1, self.rack + 3);
             }
         }
-        key_ambush(build, self.key, float(self.long) - 2.5, float(cy) + 0.5, self.rack, side, 0, [2, rx - 4], [MINE3_FOES.pick(dice, self.danger, True), MINE3_FOES.pick(dice, self.danger)]);
-        build.foe(4.5, 2.5, 0, "monster_soldier", 0.0, patrol=[[4.5, 2.5], [float(rx) - 1.5, 2.5]]);
-        build.breakable(float(rx - 4), float(side - 3), 0.0, float(rx - 2), float(side - 1), 2.0, 30);
+        key_ambush(build, self.key, float(self.long) - 2.5, float(cy) + 0.5, self.rack, side, 0, [2, 12], [MINE3_FOES.pick(dice, self.danger, True), MINE3_FOES.pick(dice, self.danger)]);
+        lane_y = float(cy) + 0.5;
+        build.foe(8.5, 2.5, 0, "monster_soldier", 0.0, patrol=[[8.5, 2.5], [8.5, float(side) - 4.5]]);
         rack_guard = build.waiting();
-        build.touch(float(rx - self.rack), float(cy - 1), 0.0, float(rx), float(cy + 1), 6.0) +>:Fires:+> rack_guard;
+        build.touch(float(kx - self.rack - 2), float(cy - 3), 0.0, float(kx - self.rack), float(cy + 4), 6.0) +>:Fires:+> rack_guard;
         build.foe(float(self.long) - 2.5, float(cy) - 2.0, self.rack, MINE3_FOES.pick(dice, self.danger), 180.0, waits=rack_guard);
+        build.foe(13.5, lane_y, 0, MINE3_FOES.pick(dice, self.danger), 180.0);
         sparking(build, float(self.long) - 1.1, float(cy) + 2.5, float(self.rack) + 2.0, 2, 4.0);
         build.supply(2.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
     }

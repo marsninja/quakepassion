@@ -17,6 +17,10 @@ Raised in biggun's own palette.
 - `ShellHoist`: a shaft, a stair up to a ledge halfway, a lift on to the
   top landing, and the hoist riding all the way; the gun's charges shake
   the top as the player reaches the ledge.
+- `GunStores`: the shell magazines: a corridor climbing in two flights
+  between closets of shells, a step up into each, a bulkhead across its upper
+  run opened by a switch in a magazine on the middle run; charges go off down
+  the corridor as it opens.
 - `GunTurret`: a hub. The gun's breech standing in a hall, a gallery round
   the walls up a stair or a lift, a flight up from the gallery onto the
   breech's top. The turret fires; flyers come in at the gallery.
@@ -33,6 +37,7 @@ import from ..kits { level_district }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush }
 import from .plant_parts { key_doors, open_ways, charges, sparking, shelling, stash, crate_pile, squad, keep_box, plat, port_door, laser, quake }
+import from .q2floors_parts { sunken }
 
 glob BIGGUN: str = "q2:biggun";
 
@@ -59,7 +64,7 @@ node GunYard(Prefab) {
         self.tall = self.barrel + dice.between(8, 10);
         self.porch = 5;
         self.fence_x = dice.between(self.long // 2 - 3, self.long // 2 + 2);
-        self.low = -1;
+        self.low = -2;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
         self.enter = Port(face=2, along=cy, floor=0);
@@ -76,6 +81,10 @@ node GunYard(Prefab) {
         yard = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(yard, self.porch);
         build.level(yard, top);
+        # The yard's floor sunk a step on the far side of its fence, and along
+        # its high wall on the near side.
+        sunken(build, yard, self.fence_x + 1, 1, self.long - 12, self.wide - 1, 0);
+        sunken(build, yard, 1, cy + 3, self.fence_x, self.wide - 1, 0);
         # The barrel high over the yard, walked along its top.
         build.solid(6, cy - 2, b, self.long - 1, cy + 2, top);
         # The bunker at the far end under it, its steps; the lift up to the
@@ -86,7 +95,7 @@ node GunYard(Prefab) {
         keep_box(build, yard, bx, cy - 6, bx + 1, cy - 3, self.porch);
         plat(build, yard, bx - 4, cy + 2, bx - 1, cy + 5, 0, top);
         stash(build, bx, cy + 6, 0, True, -1, Q2_ARMOR);
-        crate_pile(build, 2, self.wide - 3, 0, 0, 2);
+        crate_pile(build, 2, self.wide - 3, -1, 0, 2);
         open_ways(build, yard, self);
         build.start(2.5, float(cy) + 0.5, 0, 0.0);
         build.supply(2.5, float(cy) - 1.5, 0, "ammo_bullets", "q2");
@@ -145,7 +154,7 @@ node LaserGuard(Prefab) {
         self.tall = self.gallery + dice.between(7, 9);
         self.fences = dice.between(2, 3);
         self.shot = dice.chance(0.4);
-        self.low = -1;
+        self.low = -2;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
         self.enter = Port(face=2, along=cy - 2.0, floor=0);
@@ -160,11 +169,14 @@ node LaserGuard(Prefab) {
         g = self.gallery;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, g);
+        # Every other bay between the fences a step down.
+        sunken(build, hall, 11, 1, 16, self.wide - 1, 0);
+        sunken(build, hall, 23, 1, self.long - 1, self.wide - 1, 0);
         # The gallery along the high wall, its stair at the near end.
         build.solid(g + 1, self.wide - 5, g - 1, self.long - 1, self.wide - 1, g);
         stair(build, 1, self.wide - 4, 0, 0, g, 3);
         # An updraft from the floor onto the gallery's far end.
-        build.jump_pad(float(self.long - 5), float(self.wide - 8), 0, float(self.long - 5), float(self.wide) - 2.5, g);
+        build.jump_pad(float(self.long - 5), float(self.wide - 8), -1, float(self.long - 5), float(self.wide) - 2.5, g);
         keep_box(build, hall, self.long - 7, self.wide - 5, self.long - 2, self.wide - 4, g);
         # Pillars down the hall's middle, the fences between them.
         beams: list[Cue] = [];
@@ -222,7 +234,7 @@ node ShellHoist(Prefab) {
         self.long = self.top // 2 + 16;
         self.wide = dice.between(16, 18);
         self.hoist = dice.chance(0.6);
-        self.low = -1;
+        self.low = -2;
         self.high = self.top + 9;
         cy = float(self.wide // 2);
         m = self.top // 2;
@@ -240,6 +252,8 @@ node ShellHoist(Prefab) {
         shaft = build.room(1, 1, 0, self.long - 1, self.wide - 1, h + 8, variant=dice.below(3));
         build.level(shaft, m);
         build.level(shaft, h);
+        # The floor's high side a step down.
+        sunken(build, shaft, 7, cy + 3, self.long - 12, self.wide - 1, 0);
         # The top landing across the far end, the ledge halfway along the
         # low wall, the stair up to the ledge.
         tx = self.long - 7;
@@ -276,6 +290,100 @@ node ShellHoist(Prefab) {
     }
 }
 
+"""The shell magazines: a corridor climbing in two flights between closets
+of shells, a step up into each; a bulkhead across its upper run opened from a
+magazine on the middle run."""
+node GunStores(Prefab) {
+    has flight: int = 4,
+        run: int = 11;
+
+    can choose with Lay entry {
+        dice = visitor.dice_for(self);
+        self.title = "Gun stores";
+        self.source = BIGGUN;
+        self.district = level_district(BIGGUN);
+        self.run = dice.between(10, 12);
+        self.flight = dice.between(3, 5);
+        self.long = 3 * self.run + 2 * self.flight + 2;
+        self.wide = dice.between(19, 21);
+        self.low = -1;
+        self.high = 2 * self.flight + 12;
+        cy = self.wide // 2;
+        run0 = 1 + self.run + self.flight;
+        self.enter = Port(face=2, along=float(cy), floor=0);
+        self.leaves = [
+            Port(face=0, along=float(cy), floor=2 * self.flight),
+            Port(face=3, along=float(run0 + 3), floor=self.flight + 1)
+        ];
+        visitor.place(self);
+    }
+
+    can rise with Raise entry {
+        build = visitor.build;
+        dice = build.begin(self);
+        cy = self.wide // 2;
+        y0 = cy - 2;
+        y1 = cy + 2;
+        f = self.flight;
+        run = self.run;
+        tops = [0, f, 2 * f];
+        starts = [1, 1 + run + f, 1 + 2 * run + 2 * f];
+        hall = build.room(1, y0, 0, self.long - 1, y1, 2 * f + 9, variant=dice.below(3));
+        for z in tops {
+            build.level(hall, z);
+        }
+        build.solid(starts[1], y0, 0, self.long - 1, y1, f);
+        build.solid(starts[2], y0, f, self.long - 1, y1, 2 * f);
+        for index in [0, 1] {
+            stair(build, starts[index] + run, y0, tops[index], 0, f, 4);
+        }
+        # The corridor's ceiling follows it up: lower over its first run.
+        build.solid(1, y0, 11, starts[1], y1, 2 * f + 9);
+        # The magazines off each run, north and south, a step up into each.
+        closets: list[list[int]] = [];
+        for index in [0, 1, 2] {
+            z = tops[index];
+            for at in [starts[index] + 1, starts[index] + run - 4] {
+                closets.append([at, y1 + 1, self.wide - 1, z, y1]);
+                closets.append([at, 1, y0 - 1, z, y0 - 1]);
+            }
+        }
+        for box in closets {
+            room = build.room(box[0], box[1], box[3] + 1, box[0] + 4, box[2], box[3] + 7, variant=dice.below(3));
+            build.widen(room, box[0] + 1, box[4], box[3] + 1, box[0] + 4, box[4] + 1, box[3] + 7);
+        }
+        # The middle run's first south magazine takes the way out on that side.
+        open_ways(build, hall, self);
+        # The bulkhead across the upper run, opened from a magazine on the
+        # middle run; shells stacked in the others.
+        bx = starts[2] - 1;
+        build.solid(bx, y0, 2 * f, bx + 1, y1, 2 * f + 9);
+        build.widen(hall, bx, y0, 2 * f, bx + 1, y1, 2 * f + 8);
+        door = build.opened(float(bx), float(y0), float(2 * f), float(bx + 1), float(y1), float(2 * f + 8));
+        lever_at = closets[4 + dice.below(4)];
+        lever_y = float(self.wide - 1) if lever_at[1] > cy else 1.0;
+        lever = build.push(float(lever_at[0]) + 2.0, lever_y, float(lever_at[3] + 2), 3 if lever_at[1] > cy else 1);
+        lever +>:Fires:+> door;
+        lever +>:Fires:+> build.objective("Bulkhead open.\nDestroy Big Gun.", False);
+        build.touch(float(bx - 3), float(y0), float(2 * f), float(bx), float(y1), float(2 * f + 6), True, "Magazine lock-down.\nThe bulkhead's switch is in a magazine.");
+        charges(build, lever, [[float(starts[0] + 3), float(cy), 5.0], [float(starts[1] + 3), float(cy), float(f + 5)], [float(starts[2] + 3), float(cy), float(2 * f + 5)]], 0.5);
+        beyond = build.touch(float(bx + 1), float(y0), float(2 * f), float(bx + 3), float(y1), float(2 * f + 6));
+        squad(build, beyond, [[float(self.long) - 3.5, float(cy) + 0.5, float(2 * f)]], [BIGGUN_FOES.pick(dice, self.danger, True)], 180.0);
+        # A guard in the corridor, more in the magazines.
+        build.foe(float(starts[1]) + 4.5, float(cy) + 0.5, f, "monster_soldier_ss", 180.0, patrol=[[float(starts[1]) + 3.5, float(cy) + 0.5], [float(starts[1] + run) - 1.5, float(cy) + 0.5]]);
+        for index in range(dice.between(2, 3)) {
+            box = closets[index * 3 + 1];
+            build.foe(float(box[0]) + 2.0, float(box[1] + box[2]) * 0.5, box[3] + 1, BIGGUN_FOES.pick(dice, self.danger), 90.0);
+        }
+        kinds = ["ammo_rockets", "ammo_grenades", Q2_HEALTH, "ammo_bullets", Q2_ARMOR];
+        for (index, at) in enumerate(closets[2:7]) {
+            build.supply(float(at[0]) + 1.5, float(at[1] + at[2]) * 0.5, at[3] + 1, kinds[index], "q2");
+        }
+        sparking(build, dice.uniform(3.0, 5.0), float(starts[0] + 3), float(y0) + 0.1, 4.0, 1);
+        sparking(build, dice.uniform(3.0, 5.0), float(starts[2] + 3), float(y1) - 0.1, float(2 * f) + 4.0, 3);
+    }
+}
+
 """The gun's breech standing in a hall, a gallery round the walls, a
 flight up from the gallery onto the breech's top."""
 node GunTurret(Prefab) {
@@ -295,12 +403,12 @@ node GunTurret(Prefab) {
         self.tall = self.gallery + 6 + dice.between(9, 11);
         self.hoist = dice.chance(0.5);
         self.flights = dice.between(1, 2);
-        self.low = -1;
+        self.low = -2;
         self.high = self.tall + 1;
         cx = float(self.long // 2);
         cy = float(self.wide // 2);
         self.enter = Port(face=2, along=cy, floor=0);
-        self.leaves = [Port(face=0, along=cy, floor=0), Port(face=0, along=cy, floor=self.gallery), Port(face=1, along=cx, floor=self.gallery), Port(face=1, along=cx + 8.0, floor=0)];
+        self.leaves = [Port(face=0, along=cy, floor=0), Port(face=0, along=cy, floor=self.gallery), Port(face=1, along=cx, floor=self.gallery + 1), Port(face=1, along=cx + 8.0, floor=0)];
         visitor.place(self);
     }
 
@@ -314,12 +422,19 @@ node GunTurret(Prefab) {
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, g);
         build.level(hall, b);
+        # The floor round the breech in bays, every other one a step down.
+        sunken(build, hall, 16, 1, cx + 5, 11, 0);
+        sunken(build, hall, cx + 5, cy, self.long - 1, self.wide - 1, 0);
+        sunken(build, hall, 1, cy, cx - 5, self.wide - 1, 0);
         # The breech, its top six lifts over the gallery round the walls.
         build.solid(cx - 5, 11, 0, cx + 5, self.wide - 11, b);
         build.solid(1, 1, g - 1, self.long - 1, 5, g);
         build.solid(1, self.wide - 5, g - 1, self.long - 1, self.wide - 1, g);
         build.solid(1, 5, g - 1, 5, self.wide - 5, g);
         build.solid(self.long - 5, 5, g - 1, self.long - 1, self.wide - 5, g);
+        # The gallery a step up in its middle on the low and the high sides.
+        build.solid(16, 1, g, cx + 6, 5, g + 1);
+        build.solid(cx - 6, self.wide - 5, g, cx + 6, self.wide - 1, g + 1);
         # The flight from the gallery up onto the breech (and its twin from
         # the far side in some seeds).
         stair(build, cx - 1, 5, g, 1, 6, 3);
@@ -340,7 +455,7 @@ node GunTurret(Prefab) {
         # The turret fires now and then; flyers come in at the gallery.
         shelling(build, dice.uniform(6.0, 9.0), [[float(cx), float(cy), float(b + 4)], [float(cx) - 3.0, float(cy) + 3.0, float(b + 6)], [float(cx) + 3.0, float(cy) - 3.0, float(b + 5)], [float(cx) - 4.0, float(cy) - 4.0, float(b + 7)], [float(cx) + 4.0, float(cy) + 4.0, float(b + 7)], [float(cx), float(cy), float(b + 8)]]);
         # An updraft from the floor onto the gallery along the high wall.
-        build.jump_pad(float(cx + 8), float(self.wide - 8), 0, float(cx + 8), float(self.wide) - 2.5, g);
+        build.jump_pad(float(cx + 8), float(self.wide - 8), -1, float(cx + 8), float(self.wide) - 2.5, g);
         keep_box(build, hall, cx + 6, self.wide - 5, cx + 11, self.wide - 4, g);
         up = build.touch(float(6 + g - 3), 1.0, float(g), float(6 + g), 5.0, float(g + 6));
         squad(build, up, [[float(cx) - 8.0, float(cy) + 0.5, float(g + 3)], [float(cx) + 8.0, float(cy) + 0.5, float(g + 3)], [float(cx) + 0.5, float(cy) + 0.5, float(b)]], ["monster_flyer", BIGGUN_FOES.pick(dice, self.danger, False, True), BIGGUN_FOES.pick(dice, self.danger, True)], 180.0);
@@ -376,7 +491,7 @@ node GunBay(Prefab) {
         self.wide = self.hall_wide + 4;
         self.pad = dice.between(4, 5);
         self.tall = dice.between(13, 15);
-        self.low = -1;
+        self.low = -2;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
@@ -392,6 +507,8 @@ node GunBay(Prefab) {
         bay = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
         build.level(bay, p);
         build.doorway(bay, self.enter);
+        # The floor before the pad's steps a step down.
+        sunken(build, bay, 8, 1, self.long - 8 - p, side, 0);
         # The pad at the far end; its steps rise when the switch is pressed.
         px = self.long - 7;
         build.solid(px, cy - 3, 0, self.long - 1, cy + 4, p);
@@ -406,7 +523,7 @@ node GunBay(Prefab) {
         build.foe(float(px) - 8.5, float(cy) + 0.5, 0, heavy, 180.0);
         build.foe(5.5, 3.5, 0, "monster_soldier_ss", 0.0, patrol=[[5.5, 3.5], [float(px) - 3.5, 3.5]]);
         sparking(build, dice.uniform(4.0, 6.0), float(self.long) - 1.2, float(cy) - 4.5, 3.0, 2);
-        crate_pile(build, 6, side - 3, 0, 0, 2);
+        crate_pile(build, 4, side - 3, 0, 0, 1);
         build.supply(2.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
     }
 }
@@ -427,7 +544,7 @@ node GunBreech(Prefab) {
         self.wide = dice.between(22, 26);
         self.tall = dice.between(18, 22);
         self.shot = dice.chance(0.4);
-        self.low = -1;
+        self.low = -2;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
@@ -450,7 +567,8 @@ node GunBreech(Prefab) {
         }
         # The breech in the chamber's middle, its control platform.
         bx = wall + 8;
-        build.solid(bx - 3, cy - 3, 0, bx + 3, cy + 3, self.tall - 4);
+        sunken(build, chamber, wall + 1, 1, bx + 3, self.wide - 1, 0);
+        build.solid(bx - 3, cy - 3, -1, bx + 3, cy + 3, self.tall - 4);
         build.solid(ex - 6, self.wide - 6, 0, ex, self.wide - 1, 4);
         stair(build, ex - 6, self.wide - 10, 0, 1, 4, 3);
         # The escape room beyond the chamber's far wall, its door.
@@ -493,8 +611,8 @@ glob BIGGUN_STRETCHES: list[list[str]] = [
          ["yard", "start"],
          ["lasers", "flow"],
          ["hoist", "flow"],
+         ["stores", "flow"],
          ["turret", "hub"],
-         ["hoist", "hub"],
          ["bay", "keyroom"],
          ["breech", "end"],
          ["breech", "gate"]
@@ -510,6 +628,9 @@ def make_biggun(name: str, key: str) -> Prefab {
     }
     if name == "hoist" {
         return ShellHoist();
+    }
+    if name == "stores" {
+        return GunStores();
     }
     if name == "turret" {
         return GunTurret();

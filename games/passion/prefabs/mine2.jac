@@ -5,7 +5,8 @@ mine machinery that two switches set going, the key at the bottom of a
 flooded sump, the elevator shaft down to the way out. Raised in mine2's
 own palette.
 
-- `ElevatorStation`: the start (or a hub). Three storeys over each other
+- `ElevatorStation`: the start. Three storeys over each other, the lowest
+  flooded either side,
   round an open shaft, the mine's elevator riding between them (mine2's
   trigger_elevator cage), stairs between the storeys (some, or none);
   guards on the lower storeys come out as the player reaches them, one
@@ -55,13 +56,13 @@ node ElevatorStation(Prefab) {
         self.district = level_district(MINE2);
         self.long = dice.between(24, 28);
         self.wide = dice.between(22, 26);
-        self.storey = dice.between(9, 10);
-        self.tall = 10;
+        self.storey = dice.between(11, 13);
+        self.tall = 14;
         self.low_stair = dice.chance(0.6);
         self.high_stair = dice.chance(0.6);
         h = self.storey;
         self.low = -2 * h - 10;
-        self.high = self.tall + 1;
+        self.high = self.tall + 22;
         self.enter = Port(face=2, along=float(dice.between(5, self.wide - 6)), floor=0);
         self.leaves = [
             Port(face=0, along=float(dice.between(5, self.wide - 8)), floor=0),
@@ -112,6 +113,9 @@ node ElevatorStation(Prefab) {
             build.keep(hall, sx - 1, y, 0);
             build.keep(hall, sx - 1, y, -h);
         }
+        # The bottom storey flooded either side of the shaft, walked round.
+        build.pool(2, 6, bottom - 4, sx - 3, self.wide - 6, bottom, 2);
+        build.pool(sx + 6, 8, bottom - 4, self.long - 4, self.wide - 5, bottom, 2);
         # A pump on the bottom storey, a stash behind a panel on it.
         build.solid(self.long - 6, 2, bottom, self.long - 2, 6, -h - 1);
         stash(build, self.long - 5, 3, bottom, 2, Q2_ARMOR);
@@ -166,7 +170,7 @@ node BoreholeStair(Prefab) {
         self.wide = self.well + 2;
         deep = self.flight * self.flights;
         self.low = -deep - 6;
-        self.high = 9;
+        self.high = 26;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
         self.leaves = [
@@ -241,9 +245,9 @@ node ConveyorWorks(Prefab) {
         self.wide = dice.between(18, 20);
         self.buckets = dice.between(1, 2);
         self.fired = dice.chance(0.6);
-        self.tall = dice.between(15, 17);
+        self.tall = dice.between(30, 34);
         self.low = -4;
-        self.high = self.tall + 1;
+        self.high = self.tall + 22;
         self.enter = Port(face=2, along=float(dice.between(3, self.wide - 9)), floor=0);
         self.leaves = [Port(face=0, along=float(dice.between(3, self.wide // 2)), floor=0)];
         if dice.chance(0.5) {
@@ -334,14 +338,14 @@ node MachineHall(Prefab) {
         self.district = level_district(MINE2);
         self.long = dice.between(26, 30);
         self.wide = dice.between(24, 26);
-        self.tall = dice.between(16, 18);
+        self.tall = dice.between(20, 24);
         self.by_lift = dice.chance(0.4);
         self.booth_x = dice.between(10, self.long - 12);
         mid = self.wide // 2;
         self.low_door = dice.between(6, mid - 3);
         self.low_switch = self.low_door + 4 if self.low_door + 4 <= mid - 2 else self.low_door - 4;
         self.low = -13;
-        self.high = self.tall + 1;
+        self.high = self.tall + 22;
         self.enter = Port(face=2, along=float(dice.between(6, mid - 3)), floor=0);
         self.leaves = [
             Port(face=1, along=float(dice.between(4, self.long - 5)), floor=8),
@@ -430,7 +434,7 @@ node FloodedSump(Prefab) {
         self.deep = dice.between(5, 7);
         self.tall = dice.between(11, 13);
         self.low = -self.deep - 1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 22;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -481,7 +485,7 @@ node ShaftBottom(Prefab) {
         self.shaft = dice.between(12, 16);
         self.tall = dice.between(11, 13);
         self.low = -self.shaft - 1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 22;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -528,7 +532,6 @@ glob MINE2_STRETCHES: list[list[str]] = [
          ["borehole", "flow"],
          ["conveyor", "flow"],
          ["machines", "hub"],
-         ["station", "hub"],
          ["sump", "keyroom"],
          ["exit", "end"],
          ["exit", "gate"]

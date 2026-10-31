@@ -37,6 +37,7 @@ import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, stalactites, key_ambush, gate_into, lift }
+import from .q2floors_parts { sunken, stepped_bed }
 import from .minefact { slab, hurt, burning, sparking, stash, charges, cart, crusher, quake }
 
 glob MINE4: str = "q2:mine4";
@@ -68,7 +69,7 @@ node LowerLanding(Prefab) {
         self.landing = dice.between(10, 12);
         self.tall = dice.between(11, 13);
         self.low = -self.drop - 4;
-        self.high = self.tall + 1;
+        self.high = self.tall + 16;
         lx = self.landing;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -102,9 +103,12 @@ node LowerLanding(Prefab) {
             build.keep(cave, lx - 1, y, 0);
         }
         # The flooded floor beyond, steps out of it on both sides.
-        build.pool(lx + 4, 6, low - 3, self.long - 4, self.wide - 6, low, 2, False, True, True);
-        # A rock pillar under the landing, a stash behind a panel in it.
-        build.solid(2, 2, low, 5, 5, -2);
+        build.pool(lx + 1, 5, low - 3, self.long - 4, self.wide - 5, low, 2, False, True, True);
+        stepped_bed(build, lx + 3, 5, self.long - 4, self.wide - 5, low - 3, 5);
+        # The floor under the landing a step down; a rock pillar on it, a
+        # stash behind a panel in it.
+        sunken(build, cave, 1, 1, lx, self.wide - 1, low);
+        build.solid(2, 2, low - 1, 5, 5, -2);
         stash(build, 2, 2, low, 0, Q2_ARMOR);
         stalactites(build, dice, lx, 3, self.long - 3, self.wide - 3, self.tall, dice.between(5, 8));
         rock_fall(build, self.long - 4, 2, low, 2);
@@ -147,9 +151,9 @@ node FloodedGallery(Prefab) {
         self.long = dice.between(30, 34);
         self.wide = dice.between(14, 16);
         self.deep = dice.between(4, 6);
-        self.tall = dice.between(11, 13);
+        self.tall = dice.between(15, 18);
         self.low = -self.deep - 1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 16;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
         self.leaves = [Port(face=0, along=middle, floor=0), Port(face=3, along=float(self.long - 3), floor=0)];
@@ -164,6 +168,7 @@ node FloodedGallery(Prefab) {
         x0 = 4;
         x1 = self.long - 4;
         build.pool(x0, 1, -self.deep, x1, self.wide - 1, 0, 2);
+        stepped_bed(build, x0 + 2, 1, x1, self.wide - 1, -self.deep, 6);
         gaps = [x0 + (x1 - x0) // 3, x0 + 2 * (x1 - x0) // 3];
         x = x0;
         for gap in gaps + [x1] {
@@ -212,13 +217,13 @@ node CaveIn(Prefab) {
         self.source = MINE4;
         self.district = level_district(MINE4);
         self.under = dice.between(12, 14);
-        self.long = dice.between(self.under + 22, self.under + 26);
+        self.long = dice.between(self.under + 26, self.under + 30);
         self.wide = dice.between(14, 16);
         self.by_lift = dice.chance(0.4);
         # A ceiling nine lifts and more over the floor the updraft lands on.
         self.tall = dice.between(10, 11);
-        self.low = -self.under - 1;
-        self.high = self.tall + 1;
+        self.low = -self.under - 4;
+        self.high = self.tall + 16;
         cy = self.wide // 2;
         self.enter = Port(face=2, along=float(cy), floor=0);
         self.leaves = [
@@ -247,6 +252,11 @@ node CaveIn(Prefab) {
         slab(build, 8, 1, self.long - 1, self.wide - 1, 0, 1);
         build.widen(drift, hx, 3, -1, east, self.wide - 3, 0);
         stair(build, hx + self.under - 1, 3, low, 2, self.under, self.wide - 6);
+        # What is left of the floor beside the hole heaved up a step.
+        build.solid(hx, 1, 0, east, 3, 1);
+        build.solid(hx, self.wide - 3, 0, east, self.wide - 1, 1);
+        # The lower drift flooded beyond the hole.
+        build.pool(east + 1, 4, low - 3, self.long - 5, self.wide - 4, low, 2);
         # Back up on the far side: an updraft three cells back from the
         # floor's edge, or a cage.
         if self.by_lift {
@@ -280,7 +290,7 @@ node CaveIn(Prefab) {
         rock_fall(build, self.long - 4, 1, low, 2);
         rock_fall(build, self.long - 4, cy - 1, 0, 2);
         build.supply(float(east) + 2.5, 2.5, 0, Q2_HEALTH, "q2");
-        build.supply(float(east) + 3.5, float(cy) + 2.5, low, "ammo_bullets", "q2");
+        build.supply(float(east) + 3.5, 2.5, low, "ammo_bullets", "q2");
     }
 }
 
@@ -300,9 +310,9 @@ node OreCrusher(Prefab) {
         self.wide = dice.between(16, 18);
         self.deck = 6;
         self.presses = dice.between(2, 3);
-        self.tall = dice.between(12, 14);
-        self.low = -3;
-        self.high = self.tall + 1;
+        self.tall = dice.between(15, 17);
+        self.low = -5;
+        self.high = self.tall + 16;
         cy = self.wide // 2;
         self.enter = Port(face=2, along=float(dice.between(3, cy - 4)), floor=0);
         self.leaves = [Port(face=0, along=float(dice.between(3, cy - 4)), floor=0)];
@@ -321,6 +331,7 @@ node OreCrusher(Prefab) {
         cy = self.wide // 2;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, self.deck);
+        sunken(build, hall, 8, 1, self.long - 8, cy - 2, 0);
         # The conveyor pit down the middle, a step out at each end, an ore
         # cart riding along it.
         build.widen(hall, 4, cy - 1, -2, self.long - 4, cy + 2, 0);
@@ -333,6 +344,8 @@ node OreCrusher(Prefab) {
             crusher(build, float(px), float(cy - 1), [3.0, 3.0, 3.0], -1.0, 5.0, 120.0, 1.5, 20);
             hurt(build, float(px), float(cy - 1), -2.0, float(px + 3), float(cy + 2), 0.0, 10);
         }
+        # A channel flooded along the north wall under the catwalk.
+        build.pool(6, cy + 2, -3, self.long - 6, self.wide - 1, 0, 2);
         # The catwalk along the north wall, a stair up at each end.
         slab(build, 1, self.wide - 4, self.long - 1, self.wide - 1, self.deck, 1);
         stair(build, 1, self.wide - 4 - self.deck, 0, 1, self.deck, 3);
@@ -349,7 +362,7 @@ node OreCrusher(Prefab) {
         }
         walk_y = float(self.wide) - 2.5;
         build.foe(5.5, walk_y, self.deck, "monster_gunner", 0.0, patrol=[[5.5, walk_y], [float(self.long) - 2.5, walk_y]]);
-        build.foe(float(self.long // 2) + 0.5, float(cy) + 3.5, 0, "monster_floater", 180.0);
+        build.foe(float(self.long // 2) + 0.5, float(cy) + 3.5, 3, "monster_floater", 180.0);
         timer = build.timer(4.0);
         timer +>:Fires:+> build.sparks(8.5, float(cy) - 1.2, 4.0, 3);
         rock_fall(build, 1, self.wide - 3, 0, 2);
@@ -375,9 +388,9 @@ node LavaCavern(Prefab) {
         self.wide = dice.between(24, 26);
         self.walk = dice.between(3, 4);
         self.upper = dice.between(10, 11);
-        self.tall = self.upper + dice.between(8, 10);
+        self.tall = self.upper + dice.between(13, 17);
         self.low = -13;
-        self.high = self.tall + 1;
+        self.high = self.tall + 16;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
         self.leaves = [
@@ -397,6 +410,7 @@ node LavaCavern(Prefab) {
         build.level(cave, self.walk);
         build.level(cave, self.upper);
         burning(build, 6, 6, -4, self.long - 6, self.wide - 6, 0, 4);
+        sunken(build, cave, 7, 1, self.long - 1, 5, 0);
         build.solid(6, middle - 1, -4, self.long - 1, middle + 2, self.walk);
         stair(build, 6 - self.walk, middle - 1, 0, 0, self.walk, 3);
         for x in range(9, self.long - 6, 5) {
@@ -461,7 +475,7 @@ node OreVault(Prefab) {
         self.vault = dice.between(3, 4);
         self.tall = dice.between(11, 13);
         self.low = -1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 16;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -511,7 +525,7 @@ node LiftCage(Prefab) {
         self.upper = dice.between(15, 18);
         self.tall = self.upper + 9;
         self.low = -4;
-        self.high = self.tall + 1;
+        self.high = self.tall + 16;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -525,6 +539,7 @@ node LiftCage(Prefab) {
         room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key);
         build.level(room, self.upper);
         ux = self.long - 7;
+        sunken(build, room, wall + 1, 1, ux - 4, self.wide - 1, 0);
         slab(build, ux, 1, self.long - 1, self.wide - 1, self.upper, 1);
         lift(build, ux - 3, middle - 1, ux, middle + 2, 0, self.upper);
         for y in range(middle - 2, middle + 3) {
@@ -549,7 +564,7 @@ node LiftCage(Prefab) {
         for index in range(dice.between(1, 2)) {
             build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, MINE4_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        rock_fall(build, wall + 2, self.wide - 4, 0, 2);
+        rock_fall(build, wall + 2, self.wide - 4, -1, 2);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
     }
 }

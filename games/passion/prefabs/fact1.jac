@@ -14,10 +14,13 @@ Raised in fact1's own palette.
 - `SorterBelts`: two conveyors raised along a hall, the second over the
   first, up a ramp or a lift; a crane riding a crate along under the roof;
   guards on the upper belt come as the player climbs the first.
-- `ProcessingFloor`: a floor of slime vats with presses pumping in them, a
-  catwalk ring over it ridden up to by a lift or climbed by a stair, and a
+- `ProcessingFloor`: a floor of two long slime vats with presses pumping in
+  them and a walk across each, a catwalk ring over it ridden up to by a lift or climbed by a stair, and a
   bridge across the ring (or not); ways on from the floor and the ring (a
   hub).
+- `SlimeCanal`: a canal of slime across a hall's whole sub-floor, a pier out
+  along its middle, a barge shuttling on to the far bank; a gantry along its
+  wall the long way round.
 - `RemoteDoor`: a hall whose way on is shut ("This door is opened
   elsewhere"); the switch is in a control room on stilts over the floor,
   up a stair or a lift; throwing it opens the way and brings guards.
@@ -34,6 +37,7 @@ import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush, gate_into, lift }
 import from .bunk1 { crates }
+import from .q2floors_parts { sunken, stepped_bed }
 import from .minefact { slab, hurt, burning, sparking, stash, charges, port_door, press, cart, crusher }
 
 glob FACT1: str = "q2:fact1";
@@ -64,18 +68,18 @@ node ReceivingDock(Prefab) {
         self.district = level_district(FACT1);
         self.long = dice.between(28, 32);
         self.wide = dice.between(20, 23);
-        self.channel = dice.between(10, 12);
+        self.channel = dice.between(9, 11);
         self.bridges = dice.between(1, 2);
         self.deck = 9;
         self.rising = dice.chance(0.5);
-        self.tall = self.deck + dice.between(7, 9);
+        self.tall = self.deck + dice.between(18, 22);
         self.low = -self.deck - 2;
-        self.high = self.tall + 1;
+        self.high = self.tall + 8;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
         self.leaves = [
             Port(face=0, along=float(dice.between(4, self.wide - 15)), floor=0),
-            Port(face=1, along=float(dice.between(self.channel + 7, self.long - 6)), floor=0),
+            Port(face=1, along=float(dice.between(self.channel + 11, self.long - 6)), floor=0),
             Port(face=1, along=float(dice.between(4, self.channel - 2)), floor=self.deck),
             Port(face=0, along=float(self.wide - 3), floor=self.deck)
         ];
@@ -90,13 +94,13 @@ node ReceivingDock(Prefab) {
         dock = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(dock, self.deck);
         # The channel of slime across the dock, bridged once or twice.
-        burning(build, cx, 1, -3, cx + 5, self.wide - 1, 0, 3, 10);
+        burning(build, cx, 1, -3, cx + 9, self.wide - 1, 0, 3, 10);
         spans = [[middle - 1, middle + 2]] if self.bridges == 1 else [[4, 7], [self.wide - 8, self.wide - 5]];
         for span in spans {
-            build.solid(cx, span[0], -1, cx + 5, span[1], 0);
+            build.solid(cx, span[0], -1, cx + 9, span[1], 0);
             for along in range(span[0], span[1]) {
                 build.keep(dock, cx - 1, along, 0);
-                build.keep(dock, cx + 5, along, 0);
+                build.keep(dock, cx + 9, along, 0);
             }
         }
         # The conveyor along the south wall, its crates set going one after
@@ -122,9 +126,9 @@ node ReceivingDock(Prefab) {
         # A crate stack by the near wall, a stash in it behind a panel.
         build.solid(4, self.wide - 9, 0, 8, self.wide - 5, 5);
         stash(build, 5, self.wide - 8, 0, 3, Q2_ARMOR);
-        crate(build, cx + 8, 4 if self.bridges == 1 else middle - 1, 0);
+        crate(build, cx + 10, 4 if self.bridges == 1 else middle - 1, 0);
         crate(build, self.long - 8, self.wide - 7, 0);
-        crates(build, dice, [[cx + 11, middle - 3]], 0);
+        crates(build, dice, [[cx + 10, middle + 1]], 0);
         build.doorway(dock, self.enter);
         for port in self.taken {
             build.doorway(dock, port);
@@ -136,14 +140,14 @@ node ReceivingDock(Prefab) {
         # Crossing the channel brings the far floor's guards out.
         far_side = build.waiting();
         for span in spans {
-            build.touch(float(cx + 1), float(span[0]), 0.0, float(cx + 4), float(span[1]), 6.0) +>:Fires:+> far_side;
+            build.touch(float(cx + 3), float(span[0]), 0.0, float(cx + 6), float(span[1]), 6.0) +>:Fires:+> far_side;
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long - 5 - index * 3) + 0.5, float(4 + index * 4) + 0.5, 0, FACT1_FOES.pick(dice, self.danger, index == 0), 180.0, waits=far_side);
+            build.foe(float(self.long - 4 - index * 2) + 0.5, float(4 + index * 4) + 0.5, 0, FACT1_FOES.pick(dice, self.danger, index == 0), 180.0, waits=far_side);
         }
         walk_y = float(self.wide) - 2.5;
         build.foe(4.5, walk_y, self.deck, "monster_soldier", 0.0, patrol=[[4.5, walk_y], [float(self.long) - 2.5, walk_y]]);
-        build.foe(float(cx) + 7.5, float(middle) - 3.5, 0, "monster_gunner", 90.0, patrol=[[float(cx) + 7.5, float(middle) - 3.5], [float(self.long) - 5.5, float(middle) - 3.5]]);
+        build.foe(float(cx) + 10.5, float(middle) - 3.5, 0, "monster_gunner", 90.0, patrol=[[float(cx) + 10.5, float(middle) - 3.5], [float(self.long) - 5.5, float(middle) - 3.5]]);
         build.foe(float(cx) + 2.5, float(middle) + 0.5, 6, "monster_hover", 180.0);
         build.supply(float(self.long) - 2.5, 4.5, 0, Q2_HEALTH, "q2");
     }
@@ -165,9 +169,9 @@ node SorterBelts(Prefab) {
         self.wide = dice.between(16, 18);
         self.first = dice.between(4, 5);
         self.by_lift = dice.chance(0.4);
-        self.tall = 2 * self.first + dice.between(8, 9);
-        self.low = -1;
-        self.high = self.tall + 1;
+        self.tall = 2 * self.first + dice.between(18, 22);
+        self.low = -5;
+        self.high = self.tall + 8;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
         self.leaves = [Port(face=0, along=float(self.wide - 3), floor=2 * self.first), Port(face=0, along=3.0, floor=0)];
@@ -203,8 +207,10 @@ node SorterBelts(Prefab) {
                 build.keep(hall, x, self.wide - 5, 2 * f);
             }
         }
+        # A slime drain along the north wall under the upper belt.
+        burning(build, 9, self.wide - 5, -3, self.long - 1, self.wide - 1, 0, 3, 8);
         crates(build, dice, [[8 + f, middle - 2]], f);
-        crate(build, self.long // 2, self.wide - 7, 0);
+        crate(build, self.long // 2, self.wide - 8, 0);
         build.solid(7, 1, 0, 11, 5, 5);
         stash(build, 8, 2, 0, 1, "ammo_grenades");
         crate(build, 3, 2, 0);
@@ -250,9 +256,9 @@ node ProcessingFloor(Prefab) {
         self.walk = dice.between(7, 8);
         self.by_lift = dice.chance(0.5);
         self.across = dice.chance(0.6);
-        self.tall = self.walk + 10;
+        self.tall = self.walk + 20;
         self.low = -self.walk - 2;
-        self.high = self.tall + 1;
+        self.high = self.tall + 8;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
         self.leaves = [
@@ -270,16 +276,19 @@ node ProcessingFloor(Prefab) {
         middle = self.wide // 2;
         floor = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(floor, self.walk);
+        # The bays between and beyond the vats a step down.
+        sunken(build, floor, 12, 11, self.long - 7, self.wide - 11, 0);
+        sunken(build, floor, 7, self.wide - 3, self.long - 1, self.wide - 1, 0);
+        # Two long vats of slime down the floor, a walk across each.
         vats: list[list[int]] = [];
-        for vx in range(7, self.long - 8, 7) {
-            for vy in [5, self.wide - 10] {
-                burning(build, vx, vy, -2, vx + 5, vy + 5, 0, 3, 8);
-                vats.append([vx, vy]);
-            }
+        for vy in [4, self.wide - 10] {
+            burning(build, 7, vy, -3, self.long - 6, vy + 6, 0, 3, 8);
+            build.solid(self.long // 2 - 1, vy, -1, self.long // 2 + 2, vy + 6, 0);
+            vats.append([8, vy]);
         }
-        # Presses pumping in two of the vats.
-        for vat in vats[:2] {
-            crusher(build, float(vat[0] + 1), float(vat[1] + 1), [3.0, 3.0, 3.0], -1.0, 4.0, 80.0, 1.0, 20);
+        # Presses pumping in the vats.
+        for vat in vats {
+            crusher(build, float(vat[0] + 1), float(vat[1] + 1), [3.0, 3.0, 3.0], -2.0, 4.0, 80.0, 1.0, 20);
         }
         under = self.walk - 1;
         build.solid(1, 1, under, self.long - 1, 4, self.walk);
@@ -327,6 +336,89 @@ node ProcessingFloor(Prefab) {
     }
 }
 
+"""A canal of slime across the whole sub-floor, a pier out along its
+middle, a barge shuttling on from the pier's end to the far bank; a gantry along
+its wall the long way round."""
+node SlimeCanal(Prefab) {
+    has bank: int = 6,
+        deck: int = 8,
+        pier_end: int = 20,
+        tall: int = 24;
+
+    can choose with Lay entry {
+        dice = visitor.dice_for(self);
+        self.title = "Slime canal";
+        self.source = FACT1;
+        self.district = level_district(FACT1);
+        self.long = dice.between(32, 36);
+        self.wide = dice.between(20, 24);
+        self.bank = 6;
+        self.deck = 8;
+        self.pier_end = self.long - dice.between(14, 16);
+        self.tall = self.deck + dice.between(16, 20);
+        self.low = -5;
+        self.high = self.tall + 8;
+        cy = self.wide // 2;
+        self.enter = Port(face=2, along=float(cy), floor=0);
+        self.leaves = [
+            Port(face=0, along=float(cy), floor=0),
+            Port(face=1, along=float(self.long - 4), floor=0),
+            Port(face=0, along=3.0, floor=self.deck)
+        ];
+        visitor.place(self);
+    }
+
+    can rise with Raise entry {
+        build = visitor.build;
+        dice = build.begin(self);
+        cy = self.wide // 2;
+        x0 = 1 + self.bank;
+        x1 = self.long - 1 - self.bank;
+        canal = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        build.level(canal, self.deck);
+        burning(build, x0, 1, -3, x1, self.wide - 1, 0, 3, 10);
+        # The pier along the middle, a step above the banks.
+        build.solid(x0 - 1, cy - 2, -1, self.pier_end, cy + 2, 1);
+        for y in range(cy - 2, cy + 2) {
+            build.keep(canal, self.pier_end - 1, y, 1);
+        }
+        # The barge between the pier's end and the far bank.
+        build.train([4.0, 4.0, 1.0], [[float(self.pier_end), float(cy - 2), 0.0], [float(x1 - 4), float(cy - 2), 0.0]], 60.0, 2.5);
+        for y in range(cy - 2, cy + 2) {
+            build.keep(canal, x1, y, 0);
+        }
+        # The gantry along the south wall, a stair up from the near bank, a
+        # lift down to the far one.
+        stair(build, 1, 1, 0, 0, self.deck, 4);
+        slab(build, 1 + self.deck, 1, self.long - 1, 5, self.deck, 1);
+        for y in range(1, 5) {
+            build.keep(canal, 1 + self.deck, y, self.deck);
+        }
+        lift(build, x1 + 1, 5, x1 + 4, 8, 0, self.deck);
+        for at in range(x1 + 1, x1 + 4) {
+            build.keep(canal, at, 4, self.deck);
+        }
+        build.doorway(canal, self.enter);
+        for port in self.taken {
+            build.doorway(canal, port);
+        }
+        # Halfway along the pier guards come on the far bank.
+        out_on = build.touch(float(x0 + 3), float(cy - 2), 1.0, float(x0 + 5), float(cy + 2), 7.0);
+        far_side = build.waiting();
+        out_on +>:Fires:+> far_side;
+        for index in range(dice.between(1, 2)) {
+            build.foe(float(self.long) - 3.5, float(self.wide) - 3.5 - float(index) * 3.0, 0, FACT1_FOES.pick(dice, self.danger, index == 0), 180.0, waits=far_side);
+        }
+        walk_y = 3.0;
+        build.foe(float(x0) + 1.5, walk_y, self.deck, "monster_soldier", 0.0, patrol=[[float(x0) + 1.5, walk_y], [float(self.long) - 2.5, walk_y]]);
+        build.foe(float(self.long // 2) + 0.5, float(cy) + 5.5, 5, "monster_hover", 180.0);
+        crate(build, 2, self.wide - 4, 0);
+        sparking(build, float(self.long) - 1.1, float(cy) + 4.5, 4.0, 2, 4.0);
+        build.supply(2.5, float(cy) + 3.5, 0, Q2_HEALTH, "q2");
+        build.supply(float(self.long) - 3.0, 3.0, self.deck, "ammo_bullets", "q2");
+    }
+}
+
 """A hall whose way on is opened from a control room on stilts over its
 floor."""
 node RemoteDoor(Prefab) {
@@ -343,9 +435,9 @@ node RemoteDoor(Prefab) {
         self.wide = dice.between(18, 22);
         self.deck = 7;
         self.way_up = dice.below(3);
-        self.tall = self.deck + dice.between(7, 9);
+        self.tall = self.deck + dice.between(18, 22);
         self.low = -self.deck - 1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 8;
         self.enter = Port(face=2, along=float(dice.between(3, self.wide - 10)), floor=0);
         self.leaves = [Port(face=0, along=float(dice.between(4, self.wide - 9)), floor=0)];
         if dice.chance(0.4) {
@@ -382,6 +474,9 @@ node RemoteDoor(Prefab) {
         }
         crate(build, self.long - 8, 2, 0);
         crate(build, 14, self.wide - 4, 0);
+        burning(build, 14, self.wide // 2 + 2, -3, self.long - 7, self.wide - 5, 0, 3, 10);
+        # And under the control room.
+        burning(build, 1, self.wide - 6, -3, 10, self.wide - 1, 0, 3, 8);
         crates(build, dice, [[self.long // 2, 3]], 0);
         build.doorway(hall, self.enter);
         # The way on, shut until the switch in the control room is thrown.
@@ -428,9 +523,9 @@ node FreightLift(Prefab) {
         self.up = dice.between(14, 16);
         self.down = dice.chance(0.4);
         self.lift_x = dice.between(4, self.long - 9);
-        self.tall = self.up + 9;
-        self.low = -1;
-        self.high = self.tall + 1;
+        self.tall = self.up + 18;
+        self.low = -5;
+        self.high = self.tall + 8;
         top_along = float(self.wide - 4);
         foot_along = float(dice.between(3, self.wide - 13));
         if self.down {
@@ -451,6 +546,8 @@ node FreightLift(Prefab) {
         build.level(shaft, self.up);
         slab(build, 1, self.wide - 6, self.long - 1, self.wide - 1, self.up, 2);
         lift(build, lx, self.wide - 11, lx + 5, self.wide - 6, 0, self.up);
+        # A slime sump under the landing.
+        burning(build, 1, self.wide - 6, -3, self.long - 1, self.wide - 1, 0, 3, 8);
         for x in range(lx, lx + 5) {
             build.keep(shaft, x, self.wide - 6, self.up);
         }
@@ -505,9 +602,9 @@ node ShippingOffice(Prefab) {
         self.wide = self.hall_wide + 4;
         self.office = dice.between(6, 7);
         self.by_lift = dice.chance(0.5);
-        self.tall = self.office + 8;
+        self.tall = self.office + 14;
         self.low = -self.office - 1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 8;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -563,9 +660,9 @@ node LoadingBay(Prefab) {
         self.wide = dice.between(16, 18);
         self.dock = dice.between(3, 4);
         self.shot = dice.chance(0.5);
-        self.tall = dice.between(13, 15);
+        self.tall = dice.between(18, 22);
         self.low = -1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 8;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -617,8 +714,8 @@ glob FACT1_STRETCHES: list[list[str]] = [
          ["belts", "flow"],
          ["remote", "flow"],
          ["freight", "flow"],
+         ["canal", "flow"],
          ["processing", "hub"],
-         ["processing", "flow"],
          ["office", "keyroom"],
          ["exit", "end"],
          ["exit", "gate"]
@@ -634,6 +731,9 @@ def make_fact1(name: str, key: str) -> Prefab {
     }
     if name == "remote" {
         return RemoteDoor();
+    }
+    if name == "canal" {
+        return SlimeCanal();
     }
     if name == "freight" {
         return FreightLift();
