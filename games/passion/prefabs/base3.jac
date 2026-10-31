@@ -21,9 +21,11 @@ vault opened from a booth up a lift. Raised in base3's own palette.
   galleries along two walls up stairs (a hub). Pressing the main console
   sets the alarms off: charges one after another, guards appearing, the
   doors on opening (base3's long chain of relays).
-- `DishBooth`: the key room. A booth high on a wall up a lift; the key in
-  a vault under the booth opened a moment after the booth's console is
-  pressed, or lying in the booth; taking it opens the closets.
+- `DishBooth`: the key room. A landing over a deep tank, a walk along one
+  wall of it, a booth over the landing up a lift. The key in a drowned vault
+  under the landing, its door under the water opened a moment after the
+  booth's console is pressed, or lying in the booth; taking it opens the
+  closets on the landing and the walk.
 - `CommExit`: the end. A door (a key's, as a gate), a landing over a hall
   below, a stair (or a lift) down to the way out; the help computer says
   to locate the unit's exit, guards appear and charges go off below."""
@@ -135,7 +137,7 @@ node DishYard(Prefab) {
         if self.walkway {
             spawn_in(build, dice, self.danger, climb, [[float(cx + 9) + 0.5, float(self.wide) - 6.0], [float(self.long) - 3.5, float(self.wide) - 6.0]], self.walk, 180.0);
         }
-        spawn_in(build, dice, self.danger, climb, [[float(cx + 2) + 0.5, float(self.wide) - 7.0], [float(self.long) - 4.5, 4.5]], 0, 180.0, True);
+        spawn_in(build, dice, self.danger, climb, [[float(cx + 2) + 0.5, float(self.wide) - 9.5], [float(self.long) - 4.5, 4.5]], 0, 180.0, True);
         for index in range(dice.between(2, 3)) {
             build.foe(float(cx + index % 2 * 3) + 0.5, 3.5 + float(index) * 3.0, 0, base3_foe(dice, self.danger), 180.0);
         }
@@ -231,7 +233,7 @@ node DescentShaft(Prefab) {
         }
         # Going down, guards appear on the floor and charges go off.
         down = build.touch(6.0, float(middle - 2), float(low), 10.0, float(middle + 2), float(low + 6));
-        spawn_in(build, dice, self.danger, down, [[float(self.long) - 3.5, 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5], [14.5, 3.5]], low, 180.0, True);
+        spawn_in(build, dice, self.danger, down, [[float(self.long) - 3.5, 5.5], [float(self.long) - 3.5, float(self.wide) - 3.5], [14.5, 5.5]], low, 180.0, True);
         blast_chain(build, down, [[float(self.long) - 6.5, float(middle) + 0.5, float(low + 2)], [14.5, float(self.wide) - 3.5, float(low + 4)]]);
         build.touch(1.0, float(middle - 2), 0.0, 4.0, float(middle + 2), 6.0, True, "The lift goes down to the base");
         for (index, at) in enumerate([[float(self.long) - 1.1, float(middle) + 3.5, 2], [11.5, 1.1, 1], [11.5, float(self.wide) - 1.1, 3]]) {
@@ -434,27 +436,30 @@ node ControlCenter(Prefab) {
     }
 }
 
-"""The key room: a booth high on a wall up a lift; the key in a vault under
-it opened from the booth's console, or lying in the booth."""
+"""The key room: a landing over a deep tank, a booth over the landing up a
+lift; the key in a drowned vault under the landing, opened from the booth's
+console, or lying in the booth."""
 node DishBooth(Prefab) {
     has key: str = "key_silver",
         hall_wide: int = 16,
-        booth: int = 7,
+        booth: int = 10,
+        deep: int = 8,
         vault: bool = True,
-        tall: int = 15;
+        tall: int = 19;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Dish booth (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = BASE3;
         self.district = level_district(BASE3);
-        self.long = dice.between(20, 22);
-        self.hall_wide = dice.between(16, 18);
+        self.long = dice.between(24, 26);
+        self.hall_wide = dice.between(17, 19);
         self.wide = self.hall_wide + 4;
-        self.booth = dice.between(7, 8);
-        self.vault = dice.chance(0.6);
-        self.tall = self.booth + 8;
-        self.low = -1;
+        self.booth = 10;
+        self.deep = dice.between(8, 9);
+        self.vault = dice.chance(0.7);
+        self.tall = self.booth + 9;
+        self.low = -self.deep - 1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
@@ -466,43 +471,56 @@ node DishBooth(Prefab) {
         dice = build.begin(self);
         side = self.hall_wide - 1;
         cy = side // 2;
+        d = self.deep;
         room = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
         build.level(room, self.booth);
         build.doorway(room, self.enter);
-        bx = self.long - 6;
-        # The booth: a slab high on the far wall, a rail along its lip but
-        # for the lift's head.
-        build.solid(bx, 1, self.booth - 1, self.long - 1, side, self.booth);
-        build.solid(bx, 1, self.booth, bx + 1, cy - 2, self.booth + 2);
-        build.solid(bx, cy + 3, self.booth, bx + 1, side, self.booth + 2);
-        build.put_box({"classname": "func_plat", "height": str(self.booth * 16), "speed": "200"}, float(bx - 3), float(cy - 1), float(self.booth) - 0.5, float(bx), float(cy + 2), float(self.booth), kit_of(build.district).step);
+        # The tank past the landing, a walk along its +y side; steps up out of
+        # it onto the landing.
+        lx = 8;
+        build.pool(lx, 1, -d, self.long - 1, side - 3, 0, 2, False, False);
+        pool_steps(build, lx, 1, d, 3);
+        # The booth: a slab over the landing's near end, a parapet along its
+        # lip but for the lift's head.
+        build.solid(1, 1, self.booth - 1, 5, side, self.booth);
+        build.solid(4, 1, self.booth, 5, cy - 2, self.booth + 2);
+        build.solid(4, cy + 3, self.booth, 5, side, self.booth + 2);
+        build.put_box({"classname": "func_plat", "height": str(self.booth * 16), "speed": "200"}, 5.0, float(cy - 1), float(self.booth) - 0.5, 8.0, float(cy + 2), float(self.booth), kit_of(build.district).step);
         for y in range(cy - 2, cy + 3) {
-            build.keep(room, bx, y, self.booth);
+            build.keep(room, 4, y, self.booth);
         }
-        console = build.push(float(self.long - 1), float(cy) + 3.5, float(self.booth) + 1.5, 2);
+        console = build.push(1.0, float(cy) + 3.5, float(self.booth) + 1.5, 0);
+        closets_at = [2, self.long - 6];
+        heavy = [base3_foe(dice, self.danger, True), base3_foe(dice, self.danger)];
         if self.vault {
-            # The vault under the booth behind a wall, its door opened a
-            # moment after the console is pressed; the key in it.
-            build.solid(bx - 1, 1, 0, bx, side, self.booth - 1);
-            build.widen(room, bx - 1, cy + 3, 0, bx, cy + 6, 6);
-            vault_door = build.opened(float(bx - 1), float(cy + 3), 0.0, float(bx), float(cy + 6), 6.0);
-            late = told(build, 3.0, "The vault is open");
+            # The vault under the landing, drowned, its door in the tank's
+            # wall under the water, opened a moment after the console is
+            # pressed; the key in it.
+            cell = build.room(2, cy - 2, -d, lx - 1, cy + 3, -d + 5);
+            build.widen(cell, lx - 1, cy - 2, -d, lx, cy + 1, -d + 4);
+            flood(build, 2, cy - 2, -d, lx, cy + 3, -d + 5);
+            door = build.opened(float(lx - 1), float(cy - 2), float(-d), float(lx), float(cy + 1), float(-d + 4));
+            late = told(build, 3.0, "The vault under the landing is open");
             console +>:Fires:+> late;
-            late +>:Fires:+> vault_door;
-            blast_chain(build, late, [[float(bx) + 2.5, 3.5, 3.0], [float(bx) + 2.5, float(side) - 3.5, 3.0]]);
-            key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, 0, side, 0, [2, bx - 6], [base3_foe(dice, self.danger, True), base3_foe(dice, self.danger)]);
-            build.touch(float(bx - 4), float(cy - 2), 0.0, float(bx - 1), float(cy + 3), 6.0, True, "The vault opens from the booth's console");
+            late +>:Fires:+> door;
+            blast_chain(build, late, [[float(lx) + 3.5, 3.5, 3.0], [float(self.long) - 3.5, float(side) - 5.5, 3.0]]);
+            key_ambush(build, self.key, 3.5, float(cy) + 0.5, -d, side, 0, closets_at, heavy);
+            build.touch(float(lx - 3), float(cy - 2), 0.0, float(lx), float(cy + 3), 6.0, True, "The vault under the water opens from the booth's console");
         } else {
-            key_ambush(build, self.key, float(self.long) - 2.5, float(cy) + 0.5, self.booth, side, 0, [2, bx - 6], [base3_foe(dice, self.danger, True), base3_foe(dice, self.danger)]);
-            spawn_in(build, dice, self.danger, console, [[3.5, 3.5], [3.5, float(side) - 3.5]], 0, 0.0);
+            key_ambush(build, self.key, 2.5, float(cy) + 0.5, self.booth, side, 0, closets_at, heavy);
+            spawn_in(build, dice, self.danger, console, [[3.0, 3.5], [3.0, float(side) - 3.5]], 0, 0.0);
         }
-        spawn_in(build, dice, self.danger, build.touch(float(bx - 3), float(cy - 1), float(self.booth), float(bx), float(cy + 2), float(self.booth + 6)), [[float(self.long) - 2.5, 2.5]], self.booth, 180.0);
-        build.foe(float(self.long) - 2.5, float(side) - 2.5, self.booth, base3_foe(dice, self.danger), 180.0);
-        build.foe(3.5, 3.0, 0, "monster_soldier", 0.0, patrol=[[3.5, 3.0], [float(bx) - 5.5, 3.0]]);
-        spark_timer(build, float(self.long) - 1.1, float(cy) - 2.5, float(self.booth) + 2.0, 2, 4.0);
+        spawn_in(build, dice, self.danger, build.touch(5.0, float(cy - 1), float(self.booth), 8.0, float(cy + 2), float(self.booth + 6)), [[2.5, 2.5]], self.booth, 0.0);
+        build.foe(2.5, float(side) - 2.5, self.booth, base3_foe(dice, self.danger), 0.0);
+        build.foe(3.0, 3.0, 0, "monster_soldier", 90.0, patrol=[[3.0, 3.0], [3.0, float(side) - 2.5]]);
+        build.foe(float(self.long) - 3.0, float(side) - 1.5, 0, "monster_soldier", 180.0, patrol=[[float(self.long) - 3.0, float(side) - 1.5], [float(lx) + 1.5, float(side) - 1.5]]);
+        if self.danger > 0.3 {
+            build.foe(float(self.long) - 4.5, float(cy) - 2.5, -d + 1, "monster_flipper", 0.0);
+        }
+        spark_timer(build, 1.1, float(cy) - 2.5, float(self.booth) + 2.0, 0, 4.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
-        crates(build, [[bx - 4, 1]], 0);
-        build.foe(float(self.long) - 3.0, 2.5, self.booth, "monster_soldier", 90.0, patrol=[[float(self.long) - 3.0, 2.5], [float(self.long) - 3.0, float(side) - 2.5]]);
+        build.supply(float(self.long) - 3.5, 3.5, -d, Q2_ARMOR, "q2");
+        crates(build, [[6, 1]], 0);
         build.touch(1.0, float(cy - 2), 0.0, 4.0, float(cy + 2), 6.0, True, "The key is held here");
     }
 }
