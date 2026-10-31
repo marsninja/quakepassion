@@ -179,7 +179,7 @@ node PumpStation(Prefab) {
     }
 }
 
-"""Shallow beds of water across a hall, planks over them, a walkway along
+"""Deep beds of water across a hall, planks over them, a walkway along
 the high wall over its walk."""
 node FilterBeds(Prefab) {
     has walk: int = 8,

@@ -1,8 +1,7 @@
 """Shapes the cities, the boss levels, the cooling facility and the waste
-dump share to break a hall into the rooms their originals have and to run
-water through them, drawn in a prefab's own cells through its `Raising`:
+dump share to break a hall into the rooms their originals have, drawn in a prefab's own cells through its `Raising`:
 partition walls whose openings stand on a sill, chambers walled off in a
-hall's corner, a step up to a way, flooded culverts between pools."""
+hall's corner, a step up to a way."""
 import from ..prefab { Prefab, Port, Raising }
 import from ..space { Space }
 
@@ -61,26 +60,6 @@ def step_way(build: Raising, prefab: Prefab, port: Port, depth: int = 3) {
     } else {
         build.solid(lo, 1, z - 1, hi, 1 + depth, z);
     }
-}
-
-"""Water in every cell of the box that has air: a culvert swum through, a
-well, the flooded part of an undercroft (`code` 2 water, 3 slime)."""
-def drown(build: Raising, x0: int, y0: int, z0: int, x1: int, y1: int, z1: int, code: int = 2) {
-    for z in range(z0, z1) {
-        for y in range(y0, y1) {
-            for x in range(x0, x1) {
-                build.liquid(x, y, z, code);
-            }
-        }
-    }
-}
-
-"""A culvert swum through from one pool to another: a tunnel of water over
-the box x0..x1, y0..y1, lifts z0 to z1, the air of its own room."""
-def culvert(build: Raising, x0: int, y0: int, z0: int, x1: int, y1: int, z1: int, code: int = 2) -> Space {
-    tunnel = build.room(x0, y0, z0, x1, y1, z1);
-    drown(build, x0, y0, z0, x1, y1, z1, code);
-    return tunnel;
 }
 
 """The steps up to the ways in and out of a prefab that stand on the lift
