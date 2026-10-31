@@ -10,16 +10,17 @@ at the end. Raised in e3m1's own palette.
   the far floor ridden up to by a lift. Walking by under the deck opens a
   wall on a stash (e3m1's secret doors opened by a touch).
 - `SlimeWorks`: a works over a sea of slime in ponds, walkways between
-  them in a cross or an H, a gallery along its south wall ridden up to by
+  them in a cross or an H, culverts under the walkways swum from pond to
+  pond (a biosuit in one), a gallery along its south wall ridden up to by
   a lift; each way on from the far landing behind its own door, opened by
   a button at the end of a walkway (e3m1's two switches); a teleporter off
   the gallery's end in some (a hub).
 - `CrusherHall`: a tunnel along a hall's side, doors across it that slam
-  open and shut, windows down into the pit of the hall beside it, a stair
+  open and shut, windows down into the pit of slime of the hall beside it, a stair
   or a lift down into the pit and a lift up out of it at its far end, a
   gallery over the pit's far side ridden up to by a lift;
   what keeps the pit wakes as the player passes the windows.
-- `TeleportRelay`: a river of slime across a hall, crossed by teleporters
+- `TeleportRelay`: a broad river of slime across a hall, crossed by teleporters
   (and in some by a bridge drawn out when a button is shot), a teleporter
   in the slime that takes whoever falls in back to the near bank; in some
   a ledge over the far bank ridden up to by a lift, running on as a
@@ -38,6 +39,7 @@ import from ..cast { origin_text }
 import from .roster { FoeMix }
 import from .common { stair, lift }
 import from .e2m4 { e2m4_bars, e2m4_key, e2m4_stash, e2m4_wall_opens }
+import from .e3_parts { flooded_way }
 
 glob E3M1: str = "q1:e3m1";
 
@@ -73,6 +75,7 @@ node TerminationEntry(Prefab) {
         stairs: bool = True,
         nook: bool = True,
         high_walk: bool = False,
+        slime: int = 7,
         tall: int = 19;
 
     can choose with Lay entry {
@@ -80,13 +83,14 @@ node TerminationEntry(Prefab) {
         self.title = "Termination entry";
         self.source = E3M1;
         self.district = level_district(E3M1);
-        self.long = dice.between(30, 34);
+        self.long = dice.between(36, 40);
         self.wide = dice.between(18, 22);
         self.cross = dice.below(3);
         self.stairs = dice.chance(0.5);
         self.nook = dice.chance(0.6);
         self.high_walk = dice.chance(0.7);
-        self.tall = 19;
+        self.slime = dice.between(6, 7);
+        self.tall = dice.between(25, 28);
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -123,9 +127,9 @@ node TerminationEntry(Prefab) {
         # a walkway over it, teleporters, or a bridge a shot button draws.
         px0 = 13;
         px1 = self.long - 10;
-        build.pool(px0, 1, -3, px1, self.wide - 1, 0, 3, False, True, True);
+        build.pool(px0, 1, -self.slime, px1, self.wide - 1, 0, 3, False, True, True);
         if self.cross == 0 {
-            build.solid(px0, middle - 1, -3, px1, middle + 2, 0);
+            build.solid(px0, middle - 1, -1, px1, middle + 2, 0);
         } elif self.cross == 1 {
             build.teleporter(float(px0) - 1.5, float(middle) + 0.5, 0, float(px1) + 3.5, float(middle) + 0.5, 0, 0.0);
             build.teleporter(float(px1) + 2.5, float(middle) - 3.5, 0, 3.5, float(middle) - 3.5, d, 180.0);
@@ -196,6 +200,7 @@ node SlimeWorks(Prefab) {
         layout: int = 0,
         tele: bool = True,
         stash: bool = True,
+        slime: int = 6,
         tall: int = 20;
 
     can choose with Lay entry {
@@ -203,12 +208,13 @@ node SlimeWorks(Prefab) {
         self.title = "Slime works";
         self.source = E3M1;
         self.district = level_district(E3M1);
-        self.long = dice.between(30, 34);
-        self.wide = dice.between(24, 28);
+        self.long = dice.between(32, 36);
+        self.wide = dice.between(25, 28);
         self.layout = dice.below(2);
         self.tele = dice.chance(0.5);
         self.stash = dice.chance(0.5);
-        self.tall = self.gallery + dice.between(10, 12);
+        self.slime = dice.between(5, 6);
+        self.tall = self.gallery + dice.between(15, 18);
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -227,27 +233,42 @@ node SlimeWorks(Prefab) {
         build.level(works, g);
         # The ponds between the walkways: one across the works and one
         # along it (a cross), or two along it (an H).
-        xs = [[6, mx], [mx + 3, self.long - 7]];
+        xs = [[5, mx], [mx + 3, self.long - 6]];
         ys = [[1, middle - 1], [middle + 2, self.wide - 1]] if self.layout == 0 else [[1, 7], [10, self.wide - 10], [self.wide - 7, self.wide - 1]];
         for span_x in xs {
             for span_y in ys {
-                build.pool(span_x[0], span_y[0], -3, span_x[1], span_y[1], 0, 3);
+                build.pool(span_x[0], span_y[0], -min(self.slime, span_y[1] - span_y[0]), span_x[1], span_y[1], 0, 3);
             }
+        }
+        # The stash's block stands by the north-west pond's steps: a stair up
+        # to the walkway instead.
+        if self.stash {
+            high_pond = ys[-1];
+            depth = min(self.slime, high_pond[1] - high_pond[0]);
+            stair(build, mx - depth, high_pond[1] - 3, -depth, 0, depth, 3);
+        }
+        # Culverts under the walkways join the ponds, swum in the slime (four
+        # lifts high, a body's height): one under the walkway across, one
+        # under each along; a biosuit lies in the first.
+        flooded_way(build, mx, 3, mx + 3, 6, -5, -1, 3);
+        build.supply(float(mx) + 1.5, 4.5, -5, "item_artifact_envirosuit");
+        for gap in range(len(ys) - 1) {
+            flooded_way(build, 10, ys[gap][1], 13, ys[gap + 1][0], -5, -1, 3);
         }
         # The galleries along the south and north walls over the ponds, a
         # walkway across between them over the walkway below, a lift up from
         # the near landing.
-        build.solid(1, 1, g - 1, self.long - 1, 6, g);
-        build.solid(1, self.wide - 6, g - 1, self.long - 1, self.wide - 1, g);
-        build.solid(mx, 6, g - 1, mx + 3, self.wide - 6, g);
+        build.solid(1, 1, g - 1, self.long - 1, 5, g);
+        build.solid(mx, self.wide - 6, g - 1, self.long - 1, self.wide - 1, g);
+        build.solid(mx, 5, g - 1, mx + 3, self.wide - 6, g);
         for x in range(mx, mx + 3) {
-            build.keep(works, x, 5, g);
+            build.keep(works, x, 4, g);
             build.keep(works, x, self.wide - 6, g);
         }
-        lift(build, 2, 7, 5, 10, 0, g);
+        lift(build, 2, 6, 5, 9, 0, g);
         for x in range(2, 5) {
-            build.keep(works, x, 6, g);
-            build.keep(works, x, 11, 0);
+            build.keep(works, x, 5, g);
+            build.keep(works, x, 10, 0);
         }
         if self.tele {
             build.teleporter(float(self.long) - 4.0, 3.0, g, 3.5, float(middle) + 3.5, 0, 0.0);
@@ -300,6 +321,7 @@ node SlimeWorks(Prefab) {
 windows down into the pit of the hall beside it."""
 node CrusherHall(Prefab) {
     has stairs: bool = True,
+        pit_top: int = 15,
         tall: int = 9;
 
     can choose with Lay entry {
@@ -308,10 +330,11 @@ node CrusherHall(Prefab) {
         self.source = E3M1;
         self.district = level_district(E3M1);
         self.long = dice.between(28, 32);
-        self.wide = dice.between(17, 19);
+        self.wide = dice.between(20, 22);
         self.stairs = dice.chance(0.5);
-        self.low = -10;
-        self.high = self.tall + 1;
+        self.pit_top = dice.between(15, 19);
+        self.low = -14;
+        self.high = self.pit_top + 1;
         self.enter = Port(face=2, along=3.5, floor=0);
         self.leaves = [Port(face=0, along=3.5, floor=0), Port(face=0, along=float(self.wide - 5), floor=-8), Port(face=1, along=float(self.long // 2), floor=0)];
         visitor.place(self);
@@ -321,8 +344,11 @@ node CrusherHall(Prefab) {
         build = visitor.build;
         dice = build.begin(self);
         tunnel = build.room(1, 1, 0, self.long - 1, 6, self.tall, variant=dice.below(3));
-        pit = build.room(1, 7, -8, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        pit = build.room(1, 7, -8, self.long - 1, self.wide - 1, self.pit_top, variant=dice.below(3));
         build.level(pit, -8);
+        # Slime across the pit's middle and under the gallery, its floor a
+        # walk along the windows and a landing at each end.
+        build.pool(13, 10, -13, self.long - 8, self.wide - 1, -8, 3);
         # Windows from the tunnel down into the pit.
         for x in range(6, self.long - 6, 6) {
             build.widen(pit, x, 6, 2, x + 2, 7, 5);
@@ -365,7 +391,7 @@ node CrusherHall(Prefab) {
         guard = build.waiting();
         passing +>:Fires:+> guard;
         for index in range(dice.between(2, 4)) {
-            build.foe(float(8 + index * 5) + 0.5, float(self.wide) - 3.5 - float(index % 2) * 3.0, -8, E3M1_FOES.pick(dice, self.danger, index == 0), 270.0, waits=guard);
+            build.foe(float(12 + index * 4) + 0.5, 8.5, -8, E3M1_FOES.pick(dice, self.danger, index == 0), 270.0, waits=guard);
         }
         build.foe(3.5, 3.5, 0, "monster_army", 0.0, patrol=[[3.5, 3.5], [float(self.long) - 3.5, 3.5]]);
         build.foe(7.5, 8.5, -8, "monster_dog", 0.0, patrol=[[7.5, 8.5], [float(self.long) - 7.5, 8.5]]);
@@ -381,6 +407,7 @@ node CrusherHall(Prefab) {
 the slime back to the near bank."""
 node TeleportRelay(Prefab) {
     has river: int = 7,
+        slime: int = 7,
         ledge: bool = True,
         bridged: bool = False,
         stash: bool = True,
@@ -391,13 +418,14 @@ node TeleportRelay(Prefab) {
         self.title = "Teleport relay";
         self.source = E3M1;
         self.district = level_district(E3M1);
-        self.long = dice.between(28, 30);
+        self.river = dice.between(15, 19);
+        self.long = dice.between(28, 30) + self.river - 9;
         self.wide = dice.between(16, 20);
-        self.river = dice.between(6, 8);
+        self.slime = dice.between(6, 7);
         self.ledge = dice.chance(0.8);
         self.bridged = dice.chance(0.4);
         self.stash = dice.chance(0.5);
-        self.tall = 16 if self.ledge else 13;
+        self.tall = dice.between(24, 27) if self.ledge else dice.between(20, 23);
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -417,10 +445,10 @@ node TeleportRelay(Prefab) {
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         # The river, steps up out of it onto the near bank, and a teleporter
         # in its slime that takes whoever falls in back to the near bank.
-        x0 = 9;
+        x0 = 7;
         x1 = x0 + self.river;
-        build.pool(x0, 1, -3, x1, self.wide - 1, 0, 3);
-        e3m1_rescue(build, float(x0 + 2), 1.0, -3.0, float(x1), float(self.wide - 1), -2.0, 3.5, float(middle) - 2.5, 0, 0.0);
+        build.pool(x0, 1, -self.slime, x1, self.wide - 1, 0, 3, False, True, True);
+        e3m1_rescue(build, float(x0 + 2), 1.0, float(-self.slime), float(x1), float(self.wide - 1), float(1 - self.slime), 3.5, float(middle) - 2.5, 0, 0.0);
         build.teleporter(5.5, float(middle) + 0.5, 0, float(x1) + 5.0, float(middle) + 0.5, 0, 0.0);
         build.teleporter(float(x1) + 3.0, 3.5, 0, 3.0, 3.0, 0, 180.0);
         if self.bridged {
@@ -461,12 +489,12 @@ node TeleportRelay(Prefab) {
             build.foe(float(self.long) - 3.5 - float(index % 2) * 3.0, 3.5 + float(index) * 3.0, 0, "monster_dog" if index > 0 else E3M1_FOES.pick(dice, self.danger, True), 180.0, waits=pack);
         }
         build.foe(float(x1) + 2.5, float(self.wide) - 2.5, 0, "monster_army", 0.0, patrol=[[float(x1) + 2.5, float(self.wide) - 2.5], [float(self.long) - 10.5, float(self.wide) - 2.5]]);
-        build.foe(4.5, float(self.wide) - 3.5, 0, E3M1_FOES.pick(dice, self.danger), 0.0);
+        build.foe(4.5, 3.5, 0, E3M1_FOES.pick(dice, self.danger), 0.0);
         if self.stash {
             build.solid(1, self.wide - 6, 0, 6, self.wide - 1, 8);
             e2m4_stash(build, 2, self.wide - 4, 4, self.wide - 1, 0, 3, "item_artifact_envirosuit");
         }
-        build.supply(2.5, float(middle) + 2.5, 0, "item_health");
+        build.supply(2.5, float(middle) - 2.5, 0, "item_health");
         build.supply(float(self.long) - 2.5, float(self.wide // 2) + 0.5, 0, "item_spikes");
     }
 }
@@ -477,6 +505,7 @@ node GoldTerminal(Prefab) {
     has key: str = "key_gold",
         hall_wide: int = 16,
         balcony: bool = True,
+        slime: int = 7,
         tall: int = 14;
 
     can choose with Lay entry {
@@ -484,11 +513,12 @@ node GoldTerminal(Prefab) {
         self.title = "Gold terminal (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = E3M1;
         self.district = level_district(E3M1);
-        self.long = dice.between(22, 24);
+        self.long = dice.between(26, 28);
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
         self.balcony = dice.chance(0.9);
-        self.tall = dice.between(15, 17);
+        self.slime = dice.between(6, 7);
+        self.tall = dice.between(22, 26);
         self.low = -9;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -505,15 +535,15 @@ node GoldTerminal(Prefab) {
         build.doorway(hall, self.enter);
         x0 = 6;
         x1 = self.long - 2;
-        build.pool(x0, 4, -3, x1, side - 3, 0, 3);
+        build.pool(x0, 4, -self.slime, x1, side - 3, 0, 3);
         cx = (x0 + x1) // 2 + 1;
-        build.solid(cx - 2, cy - 2, -3, cx + 2, cy + 2, 2);
+        build.solid(cx - 2, cy - 2, -self.slime, cx + 2, cy + 2, 2);
         build.teleporter(3.5, float(cy) + 0.5, 0, float(cx) - 1.0, float(cy), 2, 0.0);
         build.teleporter(float(cx) + 1.0, float(cy) + 1.0, 2, 2.5, 6.5, 0, 180.0);
         # The balcony along the south wall over the pool, a lift up to it.
         if self.balcony {
             build.level(hall, 8);
-            build.solid(5, 1, 7, self.long - 1, 8, 8);
+            build.solid(5, 1, 7, self.long - 1, 5, 8);
             lift(build, 2, 1, 5, 4, 0, 8);
             for y in range(1, 4) {
                 build.keep(hall, 5, y, 8);
@@ -554,10 +584,10 @@ node TerminationExit(Prefab) {
         self.title = "Termination exit" + (" (" + self.key[4:] + " door)" if self.key else "");
         self.source = E3M1;
         self.district = level_district(E3M1);
-        self.long = dice.between(26, 28);
-        self.wide = dice.between(18, 20);
+        self.long = dice.between(30, 32);
+        self.wide = dice.between(23, 25);
         self.gallery = dice.chance(0.9);
-        self.tall = dice.between(15, 17);
+        self.tall = dice.between(20, 24);
         self.low = -9;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -580,9 +610,9 @@ node TerminationExit(Prefab) {
         # The moat round the platform: a ring of slime, the walkway in.
         px0 = wall + 7;
         px1 = self.long - 4;
-        build.pool(wall + 4, 4, -3, self.long - 1, self.wide - 7, 0, 3, False, True, True);
-        build.solid(px0, middle - 3, -3, px1, middle + 3, 1);
-        build.solid(wall + 4, middle - 1, -3, px0, middle + 1, 0);
+        build.pool(wall + 4, 4, -5, self.long - 1, self.wide - 7, 0, 3, False, True, True);
+        build.solid(px0, middle - 3, -5, px1, middle + 3, 1);
+        build.solid(wall + 4, middle - 1, -5, px0, middle + 1, 0);
         for y in range(middle - 1, middle + 1) {
             build.keep(room, wall + 3, y, 0);
         }
