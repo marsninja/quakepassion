@@ -17,12 +17,14 @@ gallery or down in a pit. Raised in e2m2's own palette.
   wakes as the player passes its middle.
 - `CitadelCourt`: a courtyard round a keep, a stair (or a lift) up the keep
   and a bridge from its top to a way on high in the courtyard's wall, a
-  second bridge now and then; ways on below too (a hub). A platform rides
+  second bridge now and then; ways on below too (a hub). Pools either side
+  of the causeway in, the ground behind the keep two steps up. A platform rides
   up and down beside the keep (e2m2's train), a teleporter may send a body
   from the ground onto the keep (e2m2's), knights walk round it and its
   top, its guard wakes at the stair's top, a closet in its foot opens to a
   shot.
-- `SpikeGallery`: a long hall, a walkway along one side over its floor;
+- `SpikeGallery`: a long hall, a walkway along one side over its floor, the
+  floor's middle sunk three steps;
   spikes fly across the floor as the player walks it (e2m2's spike traps),
   the gate at its end sinks as the player comes to it or when the button
   at the walkway's end is pressed; ogres on the walkway.
@@ -31,17 +33,18 @@ gallery or down in a pit. Raised in e2m2's own palette.
   it or climbed out of it, by the dice.
 - `OgreGoldHall`: the key room. A hall, the key on a gallery across its
   far end ridden up to by a lift, or down in a pit with a lift back up and
-  a closet at its foot; taking the key opens the closets in the wall.
+  a closet at its foot, a drowned aisle along its south side; taking the
+  key opens the closets in the wall.
 - `CitadelSally`: the end. A hall, a gate out (a key's, as a gate) to a
-  yard, the slipgate on a dais up a stair or up on the wall-walk, ogres on
+  yard with a moat along its south side, the slipgate on a dais up a stair or up on the wall-walk, ogres on
   the wall over it, roused as the player comes through the gate."""
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from ..space { Space }
 import from .roster { FoeMix }
 import from .common { stair, pillars, key_ambush, ring_path, spiral, lift }
 import from .e1m1_parts { deck, stash, bars }
+import from .e1m2_parts { keep_box }
 
 glob E2M2: str = "q1:e2m2";
 
@@ -66,16 +69,6 @@ def merlons(build: Raising, line: int, start: int, finish: int, z: int, along_x:
             build.solid(at, line, z, at + 1, line + 1, z + 2);
         } else {
             build.solid(line, at, z, line + 1, at + 1, z + 2);
-        }
-    }
-}
-
-"""Every cell of the box kept clear of railings on lift `z`, so a body can
-step off the edge into the water."""
-def keep_box_e2m2(build: Raising, space: Space, x0: int, y0: int, x1: int, y1: int, z: int) {
-    for x in range(x0, x1) {
-        for y in range(y0, y1) {
-            build.keep(space, x, y, z);
         }
     }
 }
@@ -763,7 +756,7 @@ node OgreGoldHall(Prefab) {
         }
         # A drowned aisle along the south side, its columns standing over it.
         build.pool(8, 2, -8, gx - 3, cy - 1, 0, 2);
-        keep_box_e2m2(build, hall, 8, cy - 1, gx - 3, cy, 0);
+        keep_box(build, hall, 8, cy - 1, gx - 3, cy, 0);
         pillars(build, 4, 3, gx - 4, 4, 0, self.tall, 4, [[0, cy - 3, 5, cy + 3]]);
         pillars(build, 4, side - 3, gx - 4, side - 2, 0, self.tall, 4, [[0, cy - 3, 5, cy + 3]]);
         build.foe(float(gx) - 6.5, float(cy) + 0.5, 0, E2M2_FOES.pick(dice, self.danger), 180.0);

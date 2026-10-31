@@ -23,7 +23,8 @@ the walls. Raised in e2m5's own palette.
   over it, a channel of water across the floor below (bridged, or swum).
   What keeps the walkway wakes as the player comes to the channel, and a
   fiend is brought in behind; a stash in the landing's foot opens when shot.
-- `SanctumTerraces`: a sanctum climbing in two terraces, in some a gallery
+- `SanctumTerraces`: a sanctum climbing in two terraces, a basin at the
+  first's foot, in some a gallery
   round its west end and a catwalk on to the top terrace, a lift up to it
   (a hub). The altar's button on the top terrace opens the way on from it
   (as e2m5's buttons open its bars) and brings in what was waiting.

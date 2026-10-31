@@ -12,12 +12,14 @@ three switches are shot. Raised in e2m4's own palette.
   ramp and a bridge high over the moat) or shot on the wall's face. Scrags
   are brought in behind the player as the bars go down (e2m4's teleported
   scrags), ogres on the wall wake as the player lands on the far shore, a
-  knight walks the wall-walk, and the moat hides a flooded grotto (a
-  secret) and the yard a stash behind a wall that opens when shot.
+  knight walks the wall-walk, guardrooms stand in the wall's thickness off
+  the passage, and the moat hides a flooded grotto (a secret) and the yard
+  a stash behind a wall that opens when shot.
 - `CryptUndercroft`: a gallery round (or along) a well looking down into a
   crypt, a stair or a lift (or both) down; ways on from both floors (a
   hub as well). Walking into the crypt opens its walls on the dead behind
   them (e2m4's secret walls fired by a touch) and brings one in behind;
+  burial vaults stand a step up off its floor along both walls;
   a knight walks the gallery; a stash behind a wall on the gallery opens
   when shot.
 - `TrainChasm`: a chasm between two ledges, its floor far below (a pool,
@@ -27,14 +29,15 @@ three switches are shot. Raised in e2m4's own palette.
   platform riding back high over the chasm to a gallery over the way in.
   A lift climbs back out of the chasm; a niche under the near ledge opens
   when shot.
-- `KeepShaft`: a tall shaft, a lift (or a stair up the wall) to a ledge
+- `KeepShaft`: a tall shaft, a pool at its foot, cells under its first
+  ledge, a lift (or a stair up the wall) to a ledge
   along one wall, a lift on from it to a ledge high along the next, over
   the first; scrags wake as the player climbs, the high ledge's keeper as
   the player comes onto it, and a stretch of its edge is left open to
   drop back down from.
 - `EbonHall`: a hall of two galleries, the upper over the lower or along
-  the next wall, a stair or a lift to each (a hub), a pool sunk in the
-  floor in some. A door on the floor
+  the next wall, a stair or a lift to each (a hub), chambers under the lower
+  gallery, a wide pool sunk in the floor in most. A door on the floor
   will not open ("I don't think so...") until a button high on the wall
   is shot; scrags are brought in as the player crosses the floor; knights
   walk the floor and an ogre the gallery.

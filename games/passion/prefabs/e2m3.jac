@@ -5,10 +5,11 @@ dead a moment after its button is pressed, the gold key in a vault below.
 Raised in e2m3's own palette. Each stretch takes its shape from its dice
 as well as its sizes.
 
-- `CryptGate`: the start. A nave sunk between buttresses, a gallery over
-  the north bays up a stair, a way on from it; the dead in the bays wake
-  as the nave is crossed; the Well of Wishes at the near end, deep water
-  with a secret at its bottom ("Welcome to the Well of Wishes!").
+- `CryptGate`: the start. A nave drowned between buttresses, a causeway
+  down it, a gallery over the north bays up a stair, a way on from it; the
+  dead in the bays wake as the nave is crossed; the Well of Wishes at the
+  near end, deep water with a secret at its bottom, a drain swum from the
+  nave's water ("Welcome to the Well of Wishes!").
 - `Cistern`: a walkway over a deep cistern and a dry pit beyond its dam;
   the walkway's far span always there, or drawn up by a button on the near
   floor ("This door opens nearby...") or by a drop into the pit; the drop
@@ -18,12 +19,12 @@ as well as its sizes.
   galleries over the ledges; the side ways on opened by a button on the
   far ledge; foes sent in as the crossing is reached.
 - `DecayCrypt`: a crypt, a tomb raised in its middle with the button on
-  it, a channel of water across its near end, a gallery over its north
-  wall; the button opens the door on
+  it, a wide channel of water across its near end, swum under its causeway, a
+  gallery over its north wall; the button opens the door on
   at once and, a moment later, the secret doors of the alcoves in its
   walls on the dead behind them (e2m3's delayed walls of zombies).
 - `KnightVault`: the key room: a vault down a stair from a ledge, a
-  gallery over the stair, the key on a bier; taking it opens the closets
+  drowned aisle under the gallery over the stair, the key on a bier; taking it opens the closets
   and sends one more in behind.
 - `CryptExit`: the end: a hall, a door (a key's, as a gate, or one that
   opens as it is neared), a stair up to a gallery and the slipgate on it,
@@ -69,7 +70,7 @@ def secret_alcoves(build: Raising, cue: Cue, line: int, starts: list[int], z: in
     }
 }
 
-"""The start: a nave sunk between buttresses, a gallery over the north
+"""The start: a nave drowned between buttresses, a gallery over the north
 bays, the Well of Wishes."""
 node CryptGate(Prefab) {
     has tall: int = 16;

@@ -6,12 +6,13 @@ lava crossed stone by stone or on a platform a plate on the floor sets
 going, plates that loose a fan of spikes, the gold key caged on a
 balcony. Raised in e2m7's own palette.
 
-- `UnderearthCave`: the start. A cave, a pool in it and a shelf over its
-  north side up a stair; the way on through the far wall is barred ("Go
+- `UnderearthCave`: the start. A cave, a pool in it, a sill of rock across
+  it past the pool and a shelf over its north side up a stair; the way on through the far wall is barred ("Go
   for a swim first...") until a button under the water and one on the
   shelf are both pushed. Diving brings scrags in by teleporter; a low
   button by a rock opens a niche under the shelf (a secret).
-- `ShotMarks`: a hall of pillars, a gallery along its north side; marks
+- `ShotMarks`: a hall of pillars in three bays, the middle one up two steps,
+  a drowned aisle in the near one, a gallery along its north side; marks
   on the walls and pillars (e2m7's shootable triggers) must all be shot
   before the bars across its ways on below sink, counting down as each
   is hit.
@@ -24,7 +25,8 @@ balcony. Raised in e2m7's own palette.
   beyond whose way on is opened by a button near by ("This door is opened
   near by..."), plates before the shelf's stair loosing a fan of spikes
   from the wall (a hub).
-- `CagedKey`: the key room. A balcony across a hall's far end, the key
+- `CagedKey`: the key room. A balcony across a hall's far end, a pool off
+  the floor toward the closets, the key
   caged on it behind bars a button high on the near wall opens when shot,
   a lift or a stair up; plates before the balcony loose spikes; taking the
   key opens the closets below and brings scrags in.
