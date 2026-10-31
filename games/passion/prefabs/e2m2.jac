@@ -38,6 +38,7 @@ gallery or down in a pit. Raised in e2m2's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
+import from ..space { Space }
 import from .roster { FoeMix }
 import from .common { stair, pillars, key_ambush, ring_path, spiral, lift }
 import from .e1m1_parts { deck, stash, bars }
@@ -69,6 +70,16 @@ def merlons(build: Raising, line: int, start: int, finish: int, z: int, along_x:
     }
 }
 
+"""Every cell of the box kept clear of railings on lift `z`, so a body can
+step off the edge into the water."""
+def keep_box_e2m2(build: Raising, space: Space, x0: int, y0: int, x1: int, y1: int, z: int) {
+    for x in range(x0, x1) {
+        for y in range(y0, y1) {
+            build.keep(space, x, y, z);
+        }
+    }
+}
+
 """The start: open ground, a moat, the citadel's wall and gate."""
 node CitadelApproach(Prefab) {
     has wall: int = 10,
@@ -84,14 +95,14 @@ node CitadelApproach(Prefab) {
         self.source = E2M2;
         self.district = level_district(E2M2);
         self.long = dice.between(28, 32);
-        self.wide = dice.between(18, 22);
+        self.wide = dice.between(20, 24);
         self.tall = dice.between(18, 22);
         self.wall = dice.between(10, 12);
         self.drawbridge = dice.chance(0.5);
         self.spread = dice.between(4, 6);
         self.hidden = dice.chance(0.6);
         self.hide_low = dice.chance(0.5);
-        self.low = -8;
+        self.low = -10;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -106,13 +117,15 @@ node CitadelApproach(Prefab) {
         ground = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(ground, self.wall);
         # The moat across the ground, steps out of it on the near bank.
-        build.pool(10, 1, -6, 15, self.wide - 1, 0, 2);
+        wall_x = self.long - 6;
+        moat0 = 8;
+        moat1 = min(18, wall_x - 6);
+        build.pool(moat0, 1, -8, moat1, self.wide - 1, 0, 2);
         for y in range(middle - 2, middle + 2) {
-            build.keep(ground, 9, y, 0);
-            build.keep(ground, 15, y, 0);
+            build.keep(ground, moat0 - 1, y, 0);
+            build.keep(ground, moat1, y, 0);
         }
         # The citadel's wall, its gate through it, merlons along its top.
-        wall_x = self.long - 6;
         build.solid(wall_x, 1, 0, self.long - 1, self.wide - 1, self.wall);
         build.widen(ground, wall_x, middle - 2, 0, self.long - 1, middle + 2, 8);
         merlons(build, wall_x, 1, self.wide - 1, self.wall, False);
@@ -127,12 +140,12 @@ node CitadelApproach(Prefab) {
             build.cue([build.button(float(wall_x), float(middle + side) + 0.5, 5.0, 2, "", True)], "button") +>:Fires:+> both;
         }
         if self.drawbridge {
-            both +>:Fires:+> build.drawn(10.0, float(middle - 2), 15.0, float(middle + 2), 0, 7);
-            build.touch(7.0, 1.0, 0.0, 10.0, float(self.wide - 1), 8.0, True, "Shoot the buttons to lower the bridge");
+            both +>:Fires:+> build.drawn(float(moat0), float(middle - 2), float(moat1), float(middle + 2), 0, 9);
+            build.touch(float(moat0 - 3), 1.0, 0.0, float(moat0), float(self.wide - 1), 8.0, True, "Shoot the buttons to lower the bridge");
         } else {
-            build.solid(10, middle - 2, -1, 15, middle + 2, 0);
+            build.solid(moat0, middle - 2, -1, moat1, middle + 2, 0);
             both +>:Fires:+> build.sinking(float(wall_x), float(middle - 2), float(wall_x + 1), float(middle + 2), 8, 8);
-            build.touch(9.0, 1.0, 0.0, 10.0, float(self.wide - 1), 8.0, True, "Shoot the buttons to open the gate");
+            build.touch(float(moat0 - 1), 1.0, 0.0, float(moat0), float(self.wide - 1), 8.0, True, "Shoot the buttons to open the gate");
         }
         # Spikes across the passage through the wall while anyone is in it.
         inside = build.touch(float(wall_x + 1), float(middle - 2), 0.0, float(self.long - 2), float(middle + 2), 6.0, False);
@@ -151,7 +164,7 @@ node CitadelApproach(Prefab) {
             build.foe(float(wall_x) - 3.5, float(middle) + 3.5 - float(index) * 7.0, 0, E2M2_FOES.pick(dice, self.danger), 180.0);
         }
         # A knight walking the far bank.
-        build.foe(17.5, 2.5, 0, "monster_knight", 90.0, patrol=[[17.5, 2.5], [17.5, float(self.wide) - 2.5]]);
+        build.foe(float(moat1) + 2.5, 2.5, 0, "monster_knight", 90.0, patrol=[[float(moat1) + 2.5, 2.5], [float(moat1) + 2.5, float(self.wide) - 2.5]]);
         build.supply(float(wall_x) - 2.5, 2.5, 0, "item_health");
     }
 }
@@ -334,10 +347,10 @@ node CitadelCourt(Prefab) {
         self.keep_top = dice.between(8, 9);
         self.lifted = dice.chance(0.4);
         self.tele = dice.chance(0.5);
-        self.pools = dice.chance(0.6);
+        self.pools = True;
         self.called = dice.chance(0.5);
         self.hidden = dice.chance(0.6);
-        self.low = -7;
+        self.low = -8;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -400,9 +413,13 @@ node CitadelCourt(Prefab) {
         # Pools either side of the causeway from the way in to the keep.
         if self.pools {
             middle = self.wide // 2;
-            build.pool(3, 2, -6, kx0 - 2, middle - 3, 0, 2, False, True, True);
-            build.pool(3, middle + 3, -6, kx0 - 2, self.wide - 2, 0, 2, False, True, True);
+            build.pool(2, 2, -7, kx0 - 2, middle - 3, 0, 2, False, True, True);
+            build.pool(2, middle + 3, -7, kx0 - 2, self.wide - 2, 0, 2, False, True, True);
         }
+        # The ground behind the keep stands two steps up, under the bridge.
+        build.solid(kx0, ky1, 0, kx1, self.wide - 1, 2);
+        build.solid(kx0 - 1, ky1, 0, kx0, self.wide - 1, 1);
+        build.solid(kx1, ky1, 0, kx1 + 1, self.wide - 1, 1);
         for y in range(ky0 + 1, ky0 + 4) {
             build.keep(court, kx1 - 1, y, self.keep_top);
         }
@@ -496,10 +513,18 @@ node SpikeGallery(Prefab) {
         # stretch at a time.
         lane0 = float(y0 + 3) if self.walk_low else 1.0;
         lane1 = float(self.wide - 1) if self.walk_low else float(y0);
+        # The floor's middle sunk three steps, the spikes flying over it.
+        sunk0 = 11;
+        sunk1 = self.long - 11;
+        build.widen(hall, sunk0, int(lane0), -3, sunk1, int(lane1), 0);
+        for step in range(2) {
+            build.solid(sunk0 + step, int(lane0), -3, sunk0 + step + 1, int(lane1), -1 - step);
+            build.solid(sunk1 - step - 1, int(lane0), -3, sunk1 - step, int(lane1), -1 - step);
+        }
         shoot_out = 3 if self.walk_low else 1;
         wall_line = float(far_y) - (0.2 if self.walk_low else -0.2);
         for start in range(8, self.long - 6, 6) {
-            stretch = build.touch(float(start), lane0, 0.0, float(start + 4), lane1, 5.0, False);
+            stretch = build.touch(float(start), lane0, -3.0, float(start + 4), lane1, 5.0, False);
             stretch +>:Fires:+> build.spikes(float(start) + 2.0, wall_line, 2.0, shoot_out);
             if dice.chance(0.5) {
                 stretch +>:Fires:+> build.spikes(float(start) + 4.0, wall_line, 3.5, shoot_out);
@@ -556,7 +581,7 @@ node OgrePit(Prefab) {
         self.title = "Ogre pit";
         self.source = E2M2;
         self.district = level_district(E2M2);
-        self.long = dice.between(22, 26);
+        self.long = dice.between(24, 28);
         self.wide = dice.between(16, 18);
         self.top = dice.between(10, 12);
         self.tall = self.top + dice.between(9, 11);
@@ -564,9 +589,9 @@ node OgrePit(Prefab) {
         self.descend = dice.chance(0.55);
         self.catwalk = dice.chance(0.5);
         self.stair_low = dice.chance(0.5);
-        self.flooded = dice.chance(0.6);
+        self.flooded = True;
         self.hidden = dice.chance(0.6);
-        self.low = -7;
+        self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         far = float(self.long - 1 - self.ledge) + float(self.ledge) * 0.5;
@@ -644,7 +669,7 @@ node OgrePit(Prefab) {
         if self.flooded {
             px0 = 1 + self.ledge + 4 if self.descend else 6;
             px1 = self.long - 5 if self.descend else self.long - 5 - self.ledge;
-            build.pool(px0, 6, -6, px1, self.wide - 6, 0, 2, False, True, True);
+            build.pool(px0, 6, -7, px1, self.wide - 6, 0, 2, False, True, True);
         }
         # A closet in a side wall of the pit's floor.
         if self.hidden {
@@ -686,13 +711,13 @@ node OgreGoldHall(Prefab) {
         self.title = "Ogre hall (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = E2M2;
         self.district = level_district(E2M2);
-        self.long = dice.between(22, 24);
+        self.long = dice.between(26, 28);
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
         self.gallery = dice.between(7, 9);
         self.pit = dice.between(10, 13) if dice.chance(0.5) else 0;
         self.tall = self.gallery + 9;
-        self.low = -self.pit - 1;
+        self.low = min(-9, -self.pit - 1);
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
@@ -736,10 +761,13 @@ node OgreGoldHall(Prefab) {
             key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, self.gallery, side, 0, [4, 9], [E2M2_FOES.pick(dice, self.danger, True), E2M2_FOES.pick(dice, self.danger)]);
             build.foe(float(self.long) - 3.5, 3.5, self.gallery, E2M2_FOES.pick(dice, self.danger, True), 180.0);
         }
+        # A drowned aisle along the south side, its columns standing over it.
+        build.pool(8, 2, -8, gx - 3, cy - 1, 0, 2);
+        keep_box_e2m2(build, hall, 8, cy - 1, gx - 3, cy, 0);
         pillars(build, 4, 3, gx - 4, 4, 0, self.tall, 4, [[0, cy - 3, 5, cy + 3]]);
         pillars(build, 4, side - 3, gx - 4, side - 2, 0, self.tall, 4, [[0, cy - 3, 5, cy + 3]]);
         build.foe(float(gx) - 6.5, float(cy) + 0.5, 0, E2M2_FOES.pick(dice, self.danger), 180.0);
-        build.foe(3.5, float(cy) - 2.5, 0, "monster_knight", 0.0, patrol=[[3.5, float(cy) - 2.5], [float(gx) - 3.5, float(cy) - 2.5]]);
+        build.foe(3.5, float(cy) + 3.5, 0, "monster_knight", 0.0, patrol=[[3.5, float(cy) + 3.5], [float(gx) - 3.5, float(cy) + 3.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
     }
 }
@@ -760,7 +788,7 @@ node CitadelSally(Prefab) {
         self.wide = dice.between(16, 18);
         self.tall = dice.between(16, 20);
         self.on_wall = dice.chance(0.5);
-        self.low = -1;
+        self.low = -8;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
@@ -780,6 +808,9 @@ node CitadelSally(Prefab) {
         if self.key {
             build.rising_door(float(gate_x), float(middle - 2), 0.0, float(gate_x + 1), float(middle + 2), 9.0, {"key": self.key, "wait": "-1"});
         }
+        # The moat along the yard's south side, up to the dais's foot.
+        build.pool(gate_x + 3, 1, -7, self.long - 1, middle - 3, 0, 2, False, False);
+        stair(build, gate_x + 9, 1, -7, 2, 7, 2);
         # The dais at the yard's far end, a stair up its face.
         dais_x = self.long - 6;
         build.solid(dais_x, middle - 3, 0, self.long - 1, middle + 3, 4);
@@ -810,8 +841,8 @@ node CitadelSally(Prefab) {
         for index in range(dice.between(2, 3)) {
             build.foe(float(gate_x) - 3.5, 2.5 + float(index) * 4.0, 0, E2M2_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(dais_x) - 2.5, 2.5, 0, E2M2_FOES.pick(dice, self.danger, True), 180.0);
-        build.foe(float(gate_x) + 3.5, 2.5, 0, "monster_knight", 0.0, patrol=[[float(gate_x) + 3.5, 2.5], [float(dais_x) - 2.5, 2.5]]);
+        build.foe(float(gate_x) + 5.5, float(middle) + 0.5, 0, E2M2_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(float(gate_x) + 2.5, float(middle) - 1.5, 0, "monster_knight", 0.0, patrol=[[float(gate_x) + 2.5, float(middle) - 1.5], [float(gate_x) + 2.5, float(self.wide) - 8.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
     }
 }
