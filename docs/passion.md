@@ -113,7 +113,9 @@ way out, which tokens are wanted and who gives them).
    made level opened in a world of its own with its things spawned, its own
    graph read and proven. A candidate that does not prove is passed over
    with a line on why (and how its graph differs from the essence's:
-   `verify.jac`). The kept level is lit by the studio's light bake.
+   `verify.jac`). The kept level is lit by the studio's light bake, with the
+   world's `_falloff linear` so its lamps fall off as Quake's do (a lamp of
+   `light` L reaches L units), at a lightmap sample every 16 units.
 
 `scripts/passion_forge.jac` makes levels as the game makes them and says how
 each candidate went; `QP_PASSION_UNPROVEN=1` lets the game play the last

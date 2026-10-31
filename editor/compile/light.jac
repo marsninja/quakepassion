@@ -184,6 +184,19 @@ def scene_lamps(scene: Scene) -> list[Lamp] {
     return lamps;
 }
 
+"""Whether a scene's lamps fall off as Quake's did (the world's `_falloff`
+`linear`): a lamp of `light` L reaches L units and gives a sample (L - d) / 2 of
+255, which the renderer doubles, where the default reaches twice as far and
+falls off by the square."""
+def scene_linear(scene: Scene) -> bool {
+    for item in scene.items() {
+        if item.classname() == "worldspawn" {
+            return item.fields.get("_falloff", "") == "linear";
+        }
+    }
+    return False;
+}
+
 """The cone a lamp shines in, or None for one that shines every way: toward
 the entity its `target` names, when one of that name is somewhere, else the
 way its `mangle` points."""
@@ -1012,6 +1025,7 @@ def light_job_steps(scene: Scene, made: LiveLevel, luxel: float, budget: int, he
     lamps: list[Lamp] = [];
     styles: list[int] = [];
     switches = switch_styles(scene.items());
+    linear = scene_linear(scene);
     for item in scene.items() {
         at = item.origin();
         level = lamp_level(item);
@@ -1022,8 +1036,9 @@ def light_job_steps(scene: Scene, made: LiveLevel, luxel: float, budget: int, he
             Lamp(
                 origin=at,
                 color=lamp_color(item.fields.get("_color", item.fields.get("color", ""))),
-                radius=max(64.0, level * 2.0),
-                strength=1.7
+                radius=level if linear else max(64.0, level * 2.0),
+                strength=level / 255.0 if linear else 1.7,
+                linear=linear
             )
         );
         styles.append(lamp_style(item, switches));
@@ -1039,7 +1054,7 @@ def light_job_steps(scene: Scene, made: LiveLevel, luxel: float, budget: int, he
     job.cones = scene_cones(scene);
     job.spotted = len([cone for cone in job.cones if cone is not None]) > 0;
     job.dims = [
-        Lamp(origin=lamp.origin, color=lamp.color, radius=lamp.radius, strength=lamp.strength * 0.5) for lamp in lamps
+        Lamp(origin=lamp.origin, color=lamp.color, radius=lamp.radius, strength=lamp.strength * 0.5, linear=lamp.linear) for lamp in lamps
     ] if job.spotted else [];
     for item in scene.items() {
         if item.classname() == "worldspawn" {

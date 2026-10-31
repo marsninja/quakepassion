@@ -14,7 +14,7 @@ import from engine.world.pickups {
     item_view,
     drop_to_floor
 }
-import from engine.world.drops { ItemDrop, HasItemDrop, DropsAs, let_fall }
+import from engine.world.drops { ItemDrop, HasItemDrop, DropsAs, let_fall, ITEM_RADIUS }
 import from engine.world.powerups { powerup_rule }
 import from engine.world.models {
     ModelResource,
@@ -884,6 +884,11 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
                 pickup.remaining = first_delay;
             }
             pickup.visual = attach_model(pickup, resources[key]);
+            # A Q1 model's origin is on the floor (PlaceItem); Passion's rules
+            # hold every item's box, whoever's it is, a radius above it.
+            if level.bsp.game == "passion" and source == "q1" {
+                pickup.visual.offset = Vec3(z=-ITEM_RADIUS);
+            }
             if extra {
                 pickup.visual +>:UsesModel:+> resources[extra];
             }

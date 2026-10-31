@@ -144,7 +144,7 @@ def map_item_steps(mass: Massing, spaces: list[Space], dressing: Dressing, extra
         by_id[space.id] = space;
     }
     world = MapItem(
-        fields={"classname": "worldspawn", "message": message, "_minlight": "8", "_bounce": "1", "generator": "passion"}
+        fields={"classname": "worldspawn", "message": message, "_minlight": "8", "_bounce": "1", "_falloff": "linear", "generator": "passion"}
     );
     # What the level's sky is (games/passion/sky.jac).
     open_kit = sky_kit(spaces);

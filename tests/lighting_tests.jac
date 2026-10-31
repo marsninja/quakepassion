@@ -32,6 +32,21 @@ test "baked lighting respects blockers surface normals and light color" {
         == lit.directed.x;
 }
 
+test "a linear lamp falls off as Quake's did, half of it whatever the angle" {
+    lamp = Lamp(origin=Vec3(z=200.0), color=Vec3(x=1.0, y=1.0, z=1.0), radius=300.0, strength=300.0 / 255.0, linear=True);
+    collision = CollisionMap();
+    # 100 units under it, square on: (300 - 100) of 255, which doubles on screen.
+    near = irradiance(Vec3(z=100.0), Vec3(z=1.0), [lamp], collision, []).directed.x;
+    assert abs(near - 200.0 / 255.0) < 0.001;
+    # Half as far left to reach: half the light, and it reaches no farther.
+    far = irradiance(Vec3(z=0.0), Vec3(z=1.0), [lamp], collision, []).directed.x;
+    assert abs(far - 100.0 / 255.0) < 0.001;
+    assert irradiance(Vec3(z=-101.0), Vec3(z=1.0), [lamp], collision, []).directed.x == 0.0;
+    # Struck at 60 degrees, three quarters of it.
+    slant = irradiance(Vec3(z=100.0), Vec3(x=0.8660254, z=0.5), [lamp], collision, []).directed.x;
+    assert abs(slant - 150.0 / 255.0) < 0.001;
+}
+
 test "probe interpolation is continuous and ignores solid samples" {
     region = ProbeRegion(origin=Vec3());
     for i in range(64) {

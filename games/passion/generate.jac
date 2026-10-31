@@ -64,7 +64,7 @@ glob VERSION: str = "v4",
      HANDMADE_VERSION: str = "pfh",
      TRACE_PREFIX: str = "trace-",
      CANDIDATES: int = 4,
-     LUXEL: float = 32.0,
+     LUXEL: float = 16.0,
      # Faces lit between a bake's pauses.
      BAKE_SLICE: int = 8,
      DEPTH_LIMIT: int = 9999;
