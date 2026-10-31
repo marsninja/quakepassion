@@ -6,7 +6,7 @@ rises out of the floor, a freight platform that sinks a storey (ware2's
 great lowering door), the foreman's office over a storeroom, the freight
 bay out. Raised in ware2's own palette.
 
-- `TruckBay`: the start. A bay, trucks backed up to the loading floor
+- `TruckBay`: the start. A bay under the sky, trucks backed up to the loading floor
   along its far end (one or two), up a ramp or a lift called down; the
   help computer gives the objective. A trailer's back breaks open on a
   stash (a secret); explosive crates; guards appear on the loading floor
@@ -29,19 +29,22 @@ bay out. Raised in ware2's own palette.
 - `FreightDrop`: an upper room on a freight platform that sinks a storey
   into the hall below when its button is pressed, waking what waits
   there; a stair (or a lift) back up; ways out on both storeys.
-- `ForemanOffice`: the key room. A storeroom, the foreman's office over
-  its far end up a stair or a lift, a window looking down from it; the key
-  on his desk; taking it opens the closets below and brings guards to the
-  office's door.
-- `FreightBay`: the end. Big bay doors (a key's, as a gate), crates riding
-  a belt, the way out on a platform up a lift called down or a stair;
-  calling it sets off charges about the bay one after another."""
+- `ForemanOffice`: the key room. A loading floor and, through a wall, a low
+  store of racks; the foreman's office over the store, up a stair hall (or a
+  lift) walled off the loading floor, a window looking down from it; the key
+  on his desk; taking it opens the closets below and brings guards into the
+  store.
+- `FreightBay`: the end. Big bay doors (a key's, as a gate) out to a yard
+  under the sky, containers stood along its walls, crates riding a belt, the
+  way out on a platform in the yard's middle up a lift called down or a
+  stair; calling it sets off charges about the yard one after another."""
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, lift }
-import from .warejail_parts { shutter, auto_shutters, key_cue, belt_crates, sparking, guards, charges, stash, keep_row, called_lift, closets, gate_pair, post_button, crane }
+import from .warejail_parts { shutter, auto_shutters, key_cue, belt_crates, sparking, guards, charges, stash, keep_row, called_lift, closets, post_button, crane }
+import from .q2walls_parts { gate_yard }
 
 glob WARE2: str = "q2:ware2";
 
@@ -69,10 +72,10 @@ node TruckBay(Prefab) {
         self.title = "Truck bay";
         self.source = WARE2;
         self.district = level_district(WARE2);
-        self.long = dice.between(28, 31);
-        self.wide = dice.between(20, 22);
+        self.long = dice.between(32, 36);
+        self.wide = dice.between(23, 26);
         self.dock = dice.between(4, 5);
-        self.tall = dice.between(17, 19);
+        self.tall = dice.between(50, 54);
         self.trucks = dice.between(1, 2);
         self.by_lift = dice.chance(0.45);
         self.hidden = dice.chance(0.7);
@@ -88,7 +91,7 @@ node TruckBay(Prefab) {
         build = visitor.build;
         dice = build.begin(self);
         middle = self.wide // 2;
-        bay = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        bay = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(bay, self.dock);
         fx = self.long - 8;
         build.solid(fx, 1, 0, self.long - 1, self.wide - 1, self.dock);
@@ -114,7 +117,7 @@ node TruckBay(Prefab) {
         # A belt along the loading floor's near side, crates riding it.
         build.solid(fx + 1, 1, self.dock, self.long - 1, 4, self.dock + 1);
         belt_crates(build, dice, fx + 1, self.long - 1, 1, self.dock + 1, 2);
-        crane(build, fx - 6, 2, self.wide - 4, self.tall - 4);
+        crane(build, fx - 6, 2, self.wide - 4, 14);
         blast_crate(build, fx - 2, 1, 0);
         blast_crate(build, 3, self.wide - 3, 0);
         sparking(build, float(fx) - 0.1, float(middle) + 0.5, float(self.dock) - 2.0, 2, 4.0);
@@ -141,7 +144,7 @@ node TruckBay(Prefab) {
 """A corridor of offices, a second storey over it, a hall at its far end
 whose stair climbs to a gallery."""
 node OfficeRow(Prefab) {
-    has upper: int = 9,
+    has upper: int = 11,
         storeys: int = 2,
         from_office: bool = False,
         tall: int = 18;
@@ -151,15 +154,15 @@ node OfficeRow(Prefab) {
         self.title = "Office row";
         self.source = WARE2;
         self.district = level_district(WARE2);
-        self.long = dice.between(29, 32);
+        self.long = dice.between(31, 34);
         self.wide = dice.between(18, 20);
         self.storeys = 2 if dice.chance(0.65) else 1;
         self.from_office = self.storeys == 2 and dice.chance(0.6);
-        self.tall = self.upper + 8;
+        self.tall = self.upper + 12;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
-        hx = self.long - 13;
+        hx = self.long - 15;
         self.enter = Port(face=2, along=middle, floor=0);
         self.leaves = [
             Port(face=0, along=middle, floor=0),
@@ -176,8 +179,8 @@ node OfficeRow(Prefab) {
         build = visitor.build;
         dice = build.begin(self);
         middle = self.wide // 2;
-        hx = self.long - 13;
-        corridor = build.room(1, middle - 2, 0, hx, middle + 3, 8, variant=dice.below(3));
+        hx = self.long - 15;
+        corridor = build.room(1, middle - 2, 0, hx, middle + 3, 10, variant=dice.below(3));
         # The far hall, full height, and a stair up its side wall to a
         # gallery along its near wall, at the upper storey's floor.
         hall = build.room(hx, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
@@ -197,7 +200,7 @@ node OfficeRow(Prefab) {
                 if self.storeys == 2 and x == 2 and not south {
                     # The first office on the far side is a lift shaft between
                     # the storeys.
-                    shaft = build.room(x, y0, 0, x + 5, y1, self.upper + 7, variant=dice.below(3));
+                    shaft = build.room(x, y0, 0, x + 5, y1, self.upper + 9, variant=dice.below(3));
                     for floor in [0, self.upper] {
                         build.widen(shaft, x + 1, door_y, floor, x + 4, door_y + 1, floor + 6);
                     }
@@ -208,7 +211,7 @@ node OfficeRow(Prefab) {
                 }
                 storeys = [0, self.upper] if self.storeys == 2 else [0];
                 for floor in storeys {
-                    office = build.room(x, y0, floor, x + 5, y1, floor + 7, variant=dice.below(3));
+                    office = build.room(x, y0, floor, x + 5, y1, floor + 9, variant=dice.below(3));
                     # A desk against its back wall.
                     back = y0 if south else y1 - 1;
                     build.solid(x + 1, back, floor, x + 4, back + 1, floor + 2);
@@ -230,7 +233,7 @@ node OfficeRow(Prefab) {
             }
         }
         if self.storeys == 2 {
-            upstairs = build.room(1, middle - 2, self.upper, hx, middle + 3, self.upper + 7, variant=dice.below(3));
+            upstairs = build.room(1, middle - 2, self.upper, hx, middle + 3, self.upper + 10, variant=dice.below(3));
             build.level(upstairs, self.upper);
         }
         build.doorway(corridor, self.enter);
@@ -279,11 +282,11 @@ node CrateIncline(Prefab) {
         self.title = "Crate incline";
         self.source = WARE2;
         self.district = level_district(WARE2);
-        self.deck = dice.between(10, 12);
-        self.long = dice.between(30, 33);
+        self.deck = dice.between(14, 16);
+        self.long = dice.between(34, 37);
         self.wide = dice.between(19, 21);
         self.deck_x = self.long - dice.between(11, 13);
-        self.tall = self.deck + dice.between(7, 9);
+        self.tall = self.deck + dice.between(12, 14);
         self.by_lift = dice.chance(0.45);
         self.powered = dice.chance(0.65);
         self.low = -1;
@@ -386,7 +389,7 @@ node StorageRacks(Prefab) {
         self.long = dice.between(30, 33);
         self.wide = dice.between(24, 26);
         self.rack = dice.between(6, 8);
-        self.tall = self.rack + 11;
+        self.tall = self.rack + 22;
         self.rising = dice.chance(0.7);
         self.far_stair = not self.rising or dice.chance(0.5);
         self.low = -1;
@@ -470,12 +473,12 @@ node FreightDrop(Prefab) {
         self.title = "Freight drop";
         self.source = WARE2;
         self.district = level_district(WARE2);
-        self.drop = dice.between(15, 18);
+        self.drop = dice.between(17, 20);
         self.long = dice.between(self.drop + 10, self.drop + 12);
         self.wide = dice.between(18, 20);
         self.room_x = dice.between(14, 15);
         self.by_stair = dice.chance(0.55);
-        self.tall = 10;
+        self.tall = 14;
         self.low = -self.drop - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -495,7 +498,7 @@ node FreightDrop(Prefab) {
         bottom = -self.drop;
         # The upper room, and the hall a storey under it and beyond.
         upper = build.room(1, 1, 0, self.room_x, self.wide - 1, self.tall, variant=dice.below(3));
-        hall = build.room(1, 1, bottom, self.long - 1, self.wide - 1, bottom + 9, variant=dice.below(3));
+        hall = build.room(1, 1, bottom, self.long - 1, self.wide - 1, bottom + 15, variant=dice.below(3));
         build.level(hall, bottom);
         # The freight platform: a block six cells square filling its shaft
         # from the upper floor down to the hall's, sinking to the hall when
@@ -557,24 +560,24 @@ node FreightDrop(Prefab) {
     }
 }
 
-"""The key room: a storeroom, the foreman's office over its far end, the
-key on his desk."""
+"""The key room: a loading floor, a low store of racks through a wall, the
+foreman's office over the store up a stair hall, the key on his desk."""
 node ForemanOffice(Prefab) {
     has key: str = "key_silver",
-        office: int = 6,
+        office: int = 9,
         by_lift: bool = False,
         glass: bool = True,
-        tall: int = 15;
+        tall: int = 18;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Foreman office (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = WARE2;
         self.district = level_district(WARE2);
-        self.long = dice.between(22, 25);
+        self.long = dice.between(30, 33);
         self.wide = dice.between(22, 24);
-        self.office = dice.between(6, 7);
-        self.tall = self.office + 8;
+        self.office = dice.between(9, 10);
+        self.tall = self.office + 10;
         self.by_lift = dice.chance(0.4);
         self.glass = dice.chance(0.5);
         self.low = -1;
@@ -589,70 +592,88 @@ node ForemanOffice(Prefab) {
         dice = build.begin(self);
         side = 4;
         middle = (self.wide + 4) // 2;
-        store = build.room(1, side + 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
-        build.level(store, self.office);
-        build.doorway(store, self.enter);
-        # The office: a room on a floor over the storeroom's far end, its
-        # front wall with a window looking down and a door at the stair's
-        # head; the storeroom's floor runs on under it.
-        ox = self.long - 8;
-        build.solid(ox, side + 1, self.office - 1, self.long - 1, self.wide - 1, self.office);
-        build.solid(ox, side + 1, self.office, ox + 1, self.wide - 1, self.tall);
-        build.widen(store, ox, self.wide - 4, self.office, ox + 1, self.wide - 1, self.office + 6);
+        ox = self.long - 13;
+        # The loading floor; through the wall at `ox` the low store, stepped
+        # up into, and the office over it.
+        floor_room = build.room(1, side + 1, 0, ox, self.wide - 1, self.tall, variant=dice.below(3));
+        store = build.room(ox + 1, side + 1, 0, self.long - 1, self.wide - 1, self.office - 1, variant=dice.below(3));
+        upstairs = build.room(ox + 1, side + 1, self.office, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        build.level(upstairs, self.office);
+        build.doorway(floor_room, self.enter);
+        build.widen(store, ox, middle - 2, 1, ox + 1, middle + 2, 7);
+        # The office's window over the loading floor, and its door at the
+        # head of the way up.
+        build.widen(upstairs, ox, middle - 2, self.office + 2, ox + 1, middle + 2, self.office + 5);
         if self.glass {
-            build.widen(store, ox, middle - 2, self.office + 2, ox + 1, middle + 2, self.office + 5);
             build.breakable(float(ox), float(middle - 2), float(self.office + 2), float(ox + 1), float(middle + 2), float(self.office + 5), 10);
-        } else {
-            build.widen(store, ox, middle - 2, self.office + 2, ox + 1, middle + 2, self.office + 5);
         }
-        for x in range(ox, self.long - 1) {
-            build.keep(store, x, self.wide - 4, self.office);
+        build.widen(upstairs, ox, self.wide - 4, self.office, ox + 1, self.wide - 1, self.office + 6);
+        for y in range(self.wide - 4, self.wide - 1) {
+            build.keep(upstairs, ox, y, self.office);
+            build.keep(upstairs, ox + 1, y, self.office);
         }
-        # Up to it: a stair along the side wall to its door, or a lift
-        # called down.
+        # Up to it: a stair hall walled off the floor, or a lift called down
+        # in a bay of its own.
         if self.by_lift {
+            build.solid(ox - 5, self.wide - 5, 0, ox, self.wide - 4, self.tall);
             build.push(float(ox) - 4.5, float(self.wide - 1), 1.0, 3) +>:Fires:+> called_lift(build, ox - 3, self.wide - 4, ox, self.wide - 1, 0, self.office);
+            for y in range(self.wide - 4, self.wide - 1) {
+                build.keep(floor_room, ox - 1, y, self.office);
+            }
+            belt_end = ox - 6;
         } else {
+            build.solid(ox - self.office, self.wide - 5, 0, ox, self.wide - 4, self.tall);
             stair(build, ox - self.office, self.wide - 4, 0, 0, self.office, 3);
+            belt_end = ox - self.office - 1;
+        }
+        # The store's racks, floor to roof, a way round alternate ends.
+        for (index, x) in enumerate([ox + 4, ox + 8]) {
+            if index % 2 == 0 {
+                build.solid(x, side + 1, 0, x + 1, self.wide - 4, self.office - 1);
+            } else {
+                build.solid(x, side + 4, 0, x + 1, self.wide - 1, self.office - 1);
+            }
         }
         # The desk, the key beside it; taking it opens the closets in the
-        # storeroom's near wall and brings guards to the office door.
+        # floor's near wall and brings guards into the store.
         build.solid(self.long - 3, middle - 2, self.office, self.long - 2, middle + 2, self.office + 2);
         taken = key_cue(build, self.key, float(self.long) - 4.0, float(middle) + 0.5, self.office);
         closets(build, taken, [3, 8, 13] if dice.chance(0.5) else [4, 11], side, -1, 0, WARE2_FOES.squad(dice, self.danger, 3, True), 90.0);
-        guards(build, taken, [[float(ox) - 2.5, float(self.wide) - 6.5]], 0, WARE2_FOES.squad(dice, self.danger, 1), 0.0);
+        guards(build, taken, [[float(ox) + 2.5, float(side) + 2.5]], 0, WARE2_FOES.squad(dice, self.danger, 1), 0.0);
         taken +>:Fires:+> build.objective("Key taken: get it to its door");
-        # A belt along the storeroom's far wall, crates riding it.
-        build.solid(2, self.wide - 3, 0, ox - self.office - 1, self.wide - 1, 2);
-        belt_crates(build, dice, 2, ox - self.office - 1, self.wide - 3, 2, 2);
-        # Crates on the storeroom floor.
-        for spot in [[6, middle + 2], [11, side + 3], [ox - 5, middle - 1]] {
+        # A belt along the floor's far wall, crates riding it.
+        build.solid(2, self.wide - 3, 0, belt_end, self.wide - 1, 2);
+        belt_crates(build, dice, 2, belt_end, self.wide - 3, 2, 2);
+        # Crates on the floor.
+        for spot in [[6, middle + 2], [11, side + 3], [ox - 6, side + 2]] {
             build.solid(spot[0], spot[1], 0, spot[0] + 2, spot[1] + 2, dice.between(2, 3));
         }
         build.foe(float(self.long) - 4.0, float(side) + 2.5, self.office, WARE2_FOES.pick(dice, self.danger), 180.0);
         build.foe(4.5, float(middle) - 3.5, 0, "monster_infantry", 0.0, patrol=[[4.5, float(middle) - 3.5], [float(ox) - 2.5, float(middle) - 3.5]]);
+        build.foe(float(self.long) - 2.5, float(self.wide) - 3.5, 0, WARE2_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, float(side) + 2.5, 0, Q2_HEALTH, "q2");
+        build.supply(float(ox) + 6.5, float(self.wide) - 3.5, 0, Q2_AMMO[dice.below(len(Q2_AMMO))], "q2");
         sparking(build, float(self.long) - 1.2, float(middle) + 3.5, float(self.office) + 3.0, 2, 6.0);
     }
 }
 
-"""The end: big bay doors, crates riding a belt, the way out on a
-platform."""
+"""The end: big bay doors out to a yard under the sky, containers along its
+walls, the way out on a platform in its middle."""
 node FreightBay(Prefab) {
     has key: str = "",
         deck: int = 5,
         by_lift: bool = True,
-        tall: int = 16;
+        tall: int = 46;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Freight bay" + (" (" + self.key[4:] + " door)" if self.key else "");
         self.source = WARE2;
         self.district = level_district(WARE2);
-        self.long = dice.between(26, 28);
-        self.wide = dice.between(18, 20);
+        self.long = dice.between(32, 35);
+        self.wide = dice.between(23, 25);
         self.deck = dice.between(5, 6);
-        self.tall = self.deck + dice.between(10, 12);
+        self.tall = dice.between(50, 54);
         self.by_lift = dice.chance(0.6);
         self.low = -1;
         self.high = self.tall + 1;
@@ -666,36 +687,42 @@ node FreightBay(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         wall = 8;
-        bay = gate_pair(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key, 4);
+        bay = gate_yard(build, [dice.below(3), dice.below(3)], self.enter, self.long, self.wide, wall, 0, self.tall, self.key, 4);
         build.level(bay, self.deck);
-        # The platform at the far end, a belt with riding crates along the
-        # bay's side wall.
-        px = self.long - 8;
-        build.solid(px, 1, 0, self.long - 1, self.wide - 1, self.deck);
-        build.solid(wall + 3, self.wide - 3, 0, px, self.wide - 1, 2);
-        belt_crates(build, dice, wall + 3, px, self.wide - 3, 2, 2);
-        build.way_out(float(px) + 3.5, float(middle) + 0.5, self.deck);
-        crane(build, wall + 6, 2, self.wide - 6, self.tall - 4);
-        # Up to it: a lift called down by its button (which sets off charges
-        # about the bay one after another), or a stair.
-        if self.by_lift {
-            press = post_button(build, px - 4, 2, 0, 2);
-            press +>:Fires:+> called_lift(build, px - 3, 2, px, 5, 0, self.deck);
-            charges(build, press, [[float(wall) + 3.5, 3.5, 1.0], [float(wall) + 8.5, float(self.wide) - 5.5, 1.0], [float(px) - 4.5, float(middle) + 0.5, 1.0]], 1.2);
-        } else {
-            stair(build, px - self.deck, 2, 0, 0, self.deck, 3);
-            on_deck = build.touch(float(px), 1.0, float(self.deck), float(px + 2), float(self.wide - 1), float(self.deck + 6));
-            charges(build, on_deck, [[float(wall) + 3.5, 3.5, 1.0], [float(wall) + 8.5, float(self.wide) - 5.5, 1.0]], 0.6);
+        # The platform in the yard's middle.
+        px0 = wall + 9;
+        px1 = self.long - 6;
+        build.solid(px0, middle - 4, 0, px1, middle + 4, self.deck);
+        build.way_out(float(px0 + px1) * 0.5, float(middle) + 0.5, self.deck);
+        # Containers stood along the yard's -y wall; a belt with riding crates
+        # along its +y wall.
+        for x in range(wall + 4, self.long - 5, 7) {
+            build.solid(x, 1, 0, x + 5, 4, 6);
         }
-        keep_row(build, bay, px, 2, self.deck, 0, 3);
-        blast_crate(build, wall + 5, 3, 0);
+        build.solid(wall + 3, self.wide - 3, 0, self.long - 2, self.wide - 1, 2);
+        belt_crates(build, dice, wall + 3, self.long - 2, self.wide - 3, 2, 2);
+        crane(build, wall + 6, 2, self.wide - 6, 15);
+        # Up to it: a lift called down by its button (which sets off charges
+        # about the yard one after another), or a stair.
+        if self.by_lift {
+            press = post_button(build, px0 - 4, middle - 3, 0, 2);
+            press +>:Fires:+> called_lift(build, px0 - 3, middle - 2, px0, middle + 1, 0, self.deck);
+            charges(build, press, [[float(wall) + 3.5, 5.5, 1.0], [float(wall) + 8.5, float(self.wide) - 5.5, 1.0], [float(px1) + 2.5, float(middle) + 0.5, 1.0]], 1.2);
+            keep_row(build, bay, px0, middle - 2, self.deck, 0, 3);
+        } else {
+            stair(build, px0 - self.deck, middle - 2, 0, 0, self.deck, 3);
+            on_deck = build.touch(float(px0), float(middle - 4), float(self.deck), float(px0 + 2), float(middle + 4), float(self.deck + 6));
+            charges(build, on_deck, [[float(wall) + 3.5, 5.5, 1.0], [float(wall) + 8.5, float(self.wide) - 5.5, 1.0]], 0.6);
+            keep_row(build, bay, px0, middle - 2, self.deck, 0, 3);
+        }
+        blast_crate(build, wall + 5, self.wide - 6, 0);
         # Coming in, guards appear on the platform.
         come_in = build.touch(float(wall + 1), float(middle - 4), 0.0, float(wall + 3), float(middle + 4), 6.0);
-        guards(build, come_in, [[float(px) + 3.5, 3.5], [float(px) + 3.5, float(self.wide) - 5.5]], self.deck, WARE2_FOES.squad(dice, self.danger, 2, True), 180.0);
+        guards(build, come_in, [[float(px0) + 3.5, float(middle) + 2.5], [float(px1) - 2.5, float(middle) - 2.5]], self.deck, WARE2_FOES.squad(dice, self.danger, 2, True), 180.0);
         for index in range(dice.between(2, 3)) {
             build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, WARE2_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(wall) + 4.5, float(middle) + 0.5, 0, "monster_parasite", 0.0, patrol=[[float(wall) + 4.5, float(middle) + 0.5], [float(px) - 2.5, float(middle) + 0.5]]);
+        build.foe(float(wall) + 4.5, float(middle) + 5.5, 0, "monster_parasite", 0.0, patrol=[[float(wall) + 4.5, float(middle) + 5.5], [float(self.long) - 3.5, float(middle) + 5.5]]);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
     }
 }
