@@ -4,23 +4,26 @@ up to its catwalk, the pump room whose two valves drain the coolant, a
 cooling tower climbed round its walls or ridden up its middle, the valve
 tank, the drained outfall. Raised in cool1's own palette.
 
-- `CoolingIntake`: the start. A perch high over an intake basin, a stair
+- `CoolingIntake`: the start. A perch high over an intake basin that cuts
+  the floor in two, a raised walk past it, a stair
   (or only a lift) down to its floor, a catwalk along the far wall from
   the perch to a gantry over the far end; a barge riding across the basin
   (cool1's trains). The help computer gives the mission; hovers and
   technicians patrol; guards appear as the player comes down; a stash
   under the perch behind a panel.
-- `PistonHall`: a hall, a catwalk along one wall, great pistons rising and
+- `PistonHall`: a hall walled into three bays, coolant channels deep in two
+  of them, a catwalk along one wall, great pistons rising and
   falling beside it that carry the player up (cool1's train lifts), and a
   stair or a lift at the end. Guards appear on the catwalk as the player
   passes the hall's middle; technicians come in over the catwalk.
-- `PumpRoom`: a hub. The pump's great housing in the middle, a gantry
+- `PumpRoom`: a hub. The pump's great housing in the middle in a moat of
+  coolant, a gantry
   along two walls up a stair, a slime sump in a corner. Its two valves,
   one on the housing and one on the gantry (cool1's counter), drain the
   coolant: the objective moves on, the room shakes, guards teleport in
   and the ways on open.
-- `CoolingTower`: a tower climbed by a stair winding round its walls, or
-  ridden up its middle on a freight platform, entered at the foot or at
+- `CoolingTower`: a tower over a deep well, climbed by a stair winding round
+  its walls, or ridden up its middle on a freight platform, entered at the foot or at
   the top. What waits at the top wakes as the player passes halfway.
 - `ValveTank`: the key room. A tank in a hall, the key on its top up a
   lift (or a freight platform); taking it brings guards through
@@ -35,6 +38,7 @@ import from ..kits { level_district }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush, spiral, ring_path, ring_landing }
 import from .plant_parts { key_doors, open_ways, charges, sparking, stash, crate_pile, squad, keep_box, plat, port_door, hurting, quake }
+import from .q2d_parts { wall_x, step_ways }
 
 glob COOL1: str = "q2:cool1";
 
@@ -59,11 +63,11 @@ node CoolingIntake(Prefab) {
         self.long = dice.between(30, 34);
         self.wide = dice.between(22, 26);
         self.perch = dice.between(10, 12);
-        self.tall = self.perch + dice.between(9, 11);
+        self.tall = self.perch + dice.between(21, 25);
         self.stairs = dice.chance(0.6);
         self.barge = dice.chance(0.6);
         self.foul = not self.barge and dice.chance(0.6);
-        self.low = -5;
+        self.low = -7;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
         self.enter = Port(face=2, along=cy, floor=self.perch);
@@ -82,7 +86,7 @@ node CoolingIntake(Prefab) {
         # along the high wall: slabs over the floor below.
         build.solid(1, 1, p - 1, 8, self.wide - 1, p);
         build.solid(self.long - 8, 1, p - 1, self.long - 1, self.wide - 1, p);
-        build.solid(8, self.wide - 5, p - 1, self.long - 8, self.wide - 1, p);
+        build.solid(8, self.wide - 5, p, self.long - 8, self.wide - 1, p + 1);
         # Down from the perch: a lift always, a stair along the low wall.
         plat(build, hall, 8, 5, 11, 8, 0, p);
         if self.stairs {
@@ -91,9 +95,11 @@ node CoolingIntake(Prefab) {
         # The intake basin, a barge riding across it.
         x0 = 13;
         x1 = self.long - 10;
-        build.pool(x0, cy - 3, -4, x1, cy + 4, 0, 3 if self.foul else 2, False, True, True);
+        build.pool(x0, 8, -6, x1, self.wide - 1, 0, 3 if self.foul else 2, False, True, True);
+        # The only dry way past it, a walk a lift over the floor.
+        build.solid(x0, 1, 0, x1, 8, 1);
         if self.foul {
-            hurting(build, float(x0), float(cy - 3), -4.0, float(x1), float(cy + 4), -1.0, 8);
+            hurting(build, float(x0), 8.0, -6.0, float(x1), float(self.wide - 1), -1.0, 8);
         }
         if self.barge {
             build.train([3.0, 3.0, 1.0], [[float(x0 + 2), float(cy - 1), -1.0], [float(x1 - 3), float(cy - 1), -1.0]], 50.0, 3.0);
@@ -108,12 +114,12 @@ node CoolingIntake(Prefab) {
         mission +>:Fires:+> build.objective("Activate cooling pump to\nlower coolant around\nreactor.");
         # Guards appear on the floor as the player comes down.
         down = build.touch(12.0, 1.0, 0.0, 13.0, float(self.wide - 5), float(p));
-        squad(build, down, [[float(self.long) - 10.5, 3.5, 0.0], [float(self.long) - 10.5, float(self.wide) - 7.5, 0.0], [float(x1) - 2.0, float(cy) + 0.5, 6.0]], [COOL1_FOES.pick(dice, self.danger), COOL1_FOES.pick(dice, self.danger, True), "monster_floater"], 180.0);
+        squad(build, down, [[float(x1) + 2.0, 3.5, 0.0], [float(x1) + 1.5, float(self.wide) - 3.5, 0.0], [float(x1) - 2.0, float(cy) + 0.5, 6.0]], [COOL1_FOES.pick(dice, self.danger), COOL1_FOES.pick(dice, self.danger, True), "monster_floater"], 180.0);
         basin = build.touch(float(x0), 1.0, 0.0, float(x0 + 2), float(self.wide - 5), 6.0);
         squad(build, basin, [[float(x1) - 1.0, float(cy) - 1.0, 5.0], [float(x1) + 2.5, float(self.wide) - 7.5, 0.0]], ["monster_floater", COOL1_FOES.pick(dice, self.danger)], 180.0);
         build.foe(float(x0) + 1.5, float(cy) + 0.5, 4, "monster_hover", 0.0, patrol=[[float(x0) + 1.5, float(cy) + 0.5], [float(x1) - 1.5, float(cy) + 0.5]]);
         build.foe(float(self.long) - 4.0, 3.5, p, "monster_gunner", 90.0, patrol=[[float(self.long) - 4.0, 3.5], [float(self.long) - 4.0, float(self.wide) - 3.5]]);
-        build.foe(float(self.long // 2) + 0.5, float(self.wide) - 3.0, p, COOL1_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2) + 0.5, float(self.wide) - 3.0, p + 1, COOL1_FOES.pick(dice, self.danger), 180.0);
         for index in range(dice.between(1, 2)) {
             build.foe(float(x1) + 2.5, 3.5 + float(index) * 4.0, 0, COOL1_FOES.pick(dice, self.danger), 180.0);
         }
@@ -137,15 +143,15 @@ node PistonHall(Prefab) {
         self.source = COOL1;
         self.district = level_district(COOL1);
         self.long = dice.between(32, 36);
-        self.wide = dice.between(18, 21);
+        self.wide = dice.between(22, 25);
         self.walk = dice.between(9, 10);
-        self.tall = self.walk + dice.between(8, 10);
+        self.tall = self.walk + dice.between(13, 16);
         self.pistons = dice.between(2, 3);
         self.stairs = dice.chance(0.5);
-        self.low = -1;
+        self.low = -9;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
-        self.enter = Port(face=2, along=cy, floor=0);
+        self.enter = Port(face=2, along=cy, floor=1);
         self.leaves = [Port(face=0, along=cy, floor=0), Port(face=3, along=float(self.long // 2), floor=self.walk), Port(face=1, along=float(self.long // 2), floor=0)];
         if not self.stairs {
             self.leaves.append(Port(face=0, along=3.0, floor=self.walk));
@@ -180,12 +186,22 @@ node PistonHall(Prefab) {
             }
             x += 9;
         }
-        # Cooling pipes along the high wall, low enough to step over.
+        # Cooling pipes along the high wall, overhead.
         for px in range(6, self.long - 12, 8) {
             if abs(px + 2 - self.long // 2) > 5 {
-                build.solid(px, self.wide - 3, 0, px + 4, self.wide - 1, 2);
+                build.solid(px, self.wide - 2, 5, px + 4, self.wide - 1, 7);
             }
         }
+        # Walls across the hall make its three bays, arches on sills beside
+        # the pistons, under the catwalk and along the high wall; deep
+        # channels of coolant in the two nearer bays.
+        for line in [13, 22] {
+            wall_x(build, hall, line, 5, self.wide - 1, 0, self.tall, [[6, 9], [self.wide - 4, self.wide - 1]]);
+            wall_x(build, hall, line, 1, 5, 0, u - 1, [[2, 5]]);
+        }
+        build.pool(6, 9, -8, 13, self.wide - 4, 0, 2, False, True, True);
+        build.pool(16, 9, -8, 22, self.wide - 4, 0, 2, False, True, True);
+        step_ways(build, self);
         # A store at the far corner, its shutter rising on what waits in it
         # as the player comes to the hall's end.
         build.solid(self.long - 6, self.wide - 6, 0, self.long - 1, self.wide - 1, 7);
@@ -202,14 +218,14 @@ node PistonHall(Prefab) {
         squad(build, halfway, [[float(end_x) - 3.5, 3.0, float(u)], [float(mid) + 4.5, 3.0, float(u)]], ["monster_gunner", COOL1_FOES.pick(dice, self.danger)], 180.0);
         up = build.touch(6.0, 1.0, float(u), float(end_x), 5.0, float(u + 6));
         squad(build, up, [[float(mid), 8.0, float(u + 3)]], [COOL1_FOES.pick(dice, self.danger, False, True)], 180.0);
-        build.foe(4.5, float(cy) + 1.5, 0, "monster_berserk", 0.0, patrol=[[4.5, float(cy) + 1.5], [float(self.long) - 4.5, float(cy) + 1.5]]);
+        build.foe(7.5, 3.0, 0, "monster_berserk", 0.0, patrol=[[7.5, 3.0], [float(end_x) - 2.5, 3.0]]);
         build.foe(8.5, 3.0, u, "monster_gunner", 0.0, patrol=[[8.5, 3.0], [float(end_x) - 2.5, 3.0]]);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(mid + 3 + index * 4) + 0.5, float(cy) + 3.5, 0, COOL1_FOES.pick(dice, self.danger, index == 0), 180.0);
+            build.foe(float(mid + 3 + index * 4) + 0.5, float(self.wide) - 2.5, 0, COOL1_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         sparking(build, dice.uniform(3.0, 5.0), 8.0, 5.2, float(u) - 2.0, 1);
         sparking(build, dice.uniform(4.0, 6.0), float(self.long) - 1.2, float(cy) + 2.0, 3.0, 2);
-        crate_pile(build, mid - 7, self.wide - 6, 0, 0, 1);
+        crate_pile(build, 2, self.wide - 4, 0, 0, 1);
         build.supply(float(self.long) - 3.0, float(cy) - 2.0, 0, Q2_HEALTH, "q2");
         build.supply(float(mid) + 0.5, 3.0, u, "ammo_bullets", "q2");
     }
@@ -230,12 +246,12 @@ node PumpRoom(Prefab) {
         self.long = dice.between(30, 34);
         self.wide = dice.between(26, 30);
         self.gallery = dice.between(9, 10);
-        self.tall = self.gallery + dice.between(9, 11);
+        self.tall = self.gallery + dice.between(22, 26);
         self.sump = True;
-        self.low = -4;
+        self.low = -7;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
-        self.enter = Port(face=2, along=cy, floor=0);
+        self.enter = Port(face=2, along=cy, floor=1);
         self.leaves = [Port(face=0, along=cy - 4.0, floor=0), Port(face=1, along=float(self.long - 9), floor=self.gallery), Port(face=3, along=float(self.long // 2 - 6), floor=0), Port(face=0, along=float(self.wide - 8), floor=self.gallery)];
         visitor.place(self);
     }
@@ -251,8 +267,18 @@ node PumpRoom(Prefab) {
         # The pump's housing, floor to roof, its intakes round its foot.
         build.solid(cx - 4, cy - 4, 0, cx + 4, cy + 4, self.tall);
         for side in [-1, 1] {
-            build.solid(cx - 1, cy + side * 4 - (1 if side < 0 else 0), 0, cx + 1, cy + side * 4 + (1 if side > 0 else 0), 2);
+            build.solid(cx - 1, cy + side * 4 - (1 if side < 0 else 0), -6, cx + 1, cy + side * 4 + (1 if side > 0 else 0), 2);
         }
+        # The moat of coolant before and behind the housing, deep, a stair up
+        # out of each; causeways to its other faces.
+        build.pool(cx - 8, cy - 8, -6, cx + 8, cy - 4, 0, 2, False, False);
+        stair(build, cx - 8, cy - 8, -6, 0, 6, 2);
+        build.pool(cx - 8, cy + 4, -6, cx + 8, cy + 8, 0, 2, False, False);
+        stair(build, cx - 8, cy + 6, -6, 0, 6, 2);
+        # Walls from the moat to the side walls halve the floor.
+        wall_x(build, room, cx - 1, 1, cy - 8, 0, self.tall, [[2, 5]]);
+        wall_x(build, room, cx - 1, cy + 8, self.wide - 1, 0, g - 1, [[cy + 9, cy + 12]]);
+        step_ways(build, self);
         # The gantry along the far wall and the high wall, its stair up the
         # low wall.
         build.solid(self.long - 5, 1, g - 1, self.long - 1, self.wide - 1, g);
@@ -269,7 +295,7 @@ node PumpRoom(Prefab) {
         drained = build.tally(2, "Valve open");
         first_valve = build.push(float(cx - 4), float(cy) + 0.5, 1.5, 2);
         first_valve +>:Fires:+> drained;
-        squad(build, first_valve, [[float(self.long) - 3.0, float(cy) + 0.5, float(g)], [float(cx) + 6.5, 4.5, 0.0]], [COOL1_FOES.pick(dice, self.danger), "monster_gunner"], 180.0);
+        squad(build, first_valve, [[float(self.long) - 3.0, float(cy) + 0.5, float(g)], [float(self.long) - 3.0, float(cy) - 6.0, 0.0]], [COOL1_FOES.pick(dice, self.danger), "monster_gunner"], 180.0);
         build.push(float(self.long - 1), float(self.wide) - 3.5, float(g) + 1.2, 2) +>:Fires:+> drained;
         build.touch(1.0, float(cy - 3), 0.0, 4.0, float(cy + 3), 8.0, True, "Open both valves to drain the coolant");
         drained +>:Fires:+> build.objective("Coolant systems drained.\nReturn to the Reactor.");
@@ -285,10 +311,10 @@ node PumpRoom(Prefab) {
         late +>:Fires:+> build.summon(cx, cy, 1, COOL1_FOES.pick(dice, self.danger), float(self.long) - 3.0, float(self.wide) - 6.5, g, 180.0);
         sparking(build, dice.uniform(3.0, 5.0), float(cx) + 4.2, float(cy) - 2.0, 3.0, 0);
         build.foe(float(self.long) - 3.0, 4.5, g, "monster_gunner", 90.0, patrol=[[float(self.long) - 3.0, 4.5], [float(self.long) - 3.0, float(self.wide) - 3.0], [float(cx), float(self.wide) - 3.0]]);
-        build.foe(5.5, 4.5, 0, COOL1_FOES.pick(dice, self.danger), 0.0, patrol=[[5.5, 4.5], [float(cx) - 6.5, 4.5], [float(cx) - 6.5, float(cy) + 5.5]]);
+        build.foe(5.5, 3.5, 0, COOL1_FOES.pick(dice, self.danger), 0.0, patrol=[[5.5, 3.5], [float(cx) - 10.0, 3.5], [float(cx) - 10.0, float(cy) + 5.5]]);
         build.foe(float(cx) + 6.5, float(cy) + 0.5, 0, COOL1_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(float(cx) + 0.5, float(cy) + 7.5, 6, "monster_hover", 270.0);
-        build.supply(float(cx) - 6.0, float(cy) - 6.0, 0, Q2_HEALTH, "q2");
+        build.supply(float(cx) - 10.0, float(cy) - 6.0, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, g, "ammo_cells", "q2");
     }
 }
@@ -324,7 +350,7 @@ node CoolingTower(Prefab) {
         self.tall = self.steps + 10;
         self.upward = dice.chance(0.6);
         self.freight = dice.chance(0.6);
-        self.low = -1;
+        self.low = -5;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
         high_way = Port(face=self.face, along=self.along, floor=self.steps);
@@ -362,12 +388,11 @@ node CoolingTower(Prefab) {
             }
             build.train([3.0, 3.0, 1.0], [[float(box[0]), float(box[1]), 0.0], [float(box[0]), float(box[1]), float(self.steps - 1)]], 70.0, 3.0);
         }
+        # The well in the middle, all the floor inside the stair's ring:
+        # coolant, gone foul where no platform rides over it.
+        build.pool(4, 4, -4, self.long - 4, self.wide - 4, 0, 2 if self.freight else 3);
         if not self.freight {
-            # The fan well in the middle: coolant gone foul.
-            mx = self.long // 2;
-            my = self.wide // 2;
-            build.pool(mx - 2, my - 2, -3, mx + 2, my + 2, 0, 3);
-            hurting(build, float(mx - 2), float(my - 2), -3.0, float(mx + 2), float(my + 2), -1.0, 10);
+            hurting(build, 4.0, 4.0, -4.0, float(self.long - 4), float(self.wide - 4), -1.0, 10);
         }
         open_ways(build, tower, self);
         path = ring_path(1, 1, self.long - 1, self.wide - 1, 3);
@@ -376,7 +401,7 @@ node CoolingTower(Prefab) {
         roused = build.touch(float(half[0]), float(half[1]), float(self.steps // 2 + 1), float(half[2]), float(half[3]), float(self.steps // 2 + 7));
         squad(build, roused, [[float(mid[0] + mid[2]) * 0.5, float(mid[1] + mid[3]) * 0.5, float(self.steps)]], [COOL1_FOES.pick(dice, self.danger, True)], 180.0);
         foot = build.touch(1.0, float(cy - 2), 0.0, 4.0, float(cy + 2), 6.0);
-        squad(build, foot, [[float(self.long) - 5.5, float(cy) + 0.5, 0.0], [float(self.long // 2), float(cy) - 3.0, 6.0]], [COOL1_FOES.pick(dice, self.danger), "monster_floater"], 180.0);
+        squad(build, foot, [[float(self.long) - 2.5, float(cy) + 0.5, 0.0], [float(self.long // 2), float(cy) - 3.0, 6.0]], [COOL1_FOES.pick(dice, self.danger), "monster_floater"], 180.0);
         late = build.delay(2.0);
         roused +>:Fires:+> late;
         late +>:Fires:+> build.sparks(float(mid[0]) + 0.5, float(mid[1]) + 0.5, float(self.steps + 3), 3);
@@ -387,9 +412,9 @@ node CoolingTower(Prefab) {
         }
         middle_x = float(self.long // 2);
         build.foe(middle_x, float(cy), self.steps // 2, "monster_hover", 0.0, patrol=[[middle_x - 2.0, float(cy) - 2.0], [middle_x + 2.0, float(cy) - 2.0], [middle_x + 2.0, float(cy) + 2.0], [middle_x - 2.0, float(cy) + 2.0]]);
-        build.foe(float(self.long) - 5.5, 5.0, 0, COOL1_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 2.5, float(self.wide) - 3.5, 0, COOL1_FOES.pick(dice, self.danger), 180.0);
         sparking(build, dice.uniform(3.0, 5.0), 1.2, float(cy) + 3.0, 3.0, 0);
-        build.supply(5.0, float(self.wide) - 5.5, 0, Q2_HEALTH, "q2");
+        build.supply(5.5, float(self.wide) - 2.5, 0, Q2_HEALTH, "q2");
         top = landing[5];
         build.supply(float(top[0] + top[2]) * 0.5, float(top[1] + top[3]) * 0.5, self.steps, "ammo_rockets", "q2");
     }
@@ -412,7 +437,7 @@ node ValveTank(Prefab) {
         self.wide = self.hall_wide + 4;
         self.tank = dice.between(8, 9);
         self.freight = dice.chance(0.5);
-        self.low = -1;
+        self.low = -7;
         self.high = self.tank + 9;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
@@ -435,6 +460,9 @@ node ValveTank(Prefab) {
             build.train([3.0, 3.0, 1.0], [[float(self.long - 10), float(cy + 4), 0.0], [float(self.long - 10), float(cy + 4), float(t - 1)]], 60.0, 3.0);
             keep_box(build, room, self.long - 10, cy + 3, self.long - 7, cy + 4, t);
         }
+        # Coolant spilt deep beside the tank.
+        build.pool(tx0, 1, -6, self.long - 1, cy - 4, 0, 2, False, False);
+        stair(build, tx0 + 5, 1, -6, 2, 6, 2);
         # The tank's foot hides a stash behind a panel.
         stash(build, self.long - 4, cy - 1, 0, True, 1, Q2_ARMOR);
         key_ambush(build, self.key, float(self.long) - 8.0, float(cy) + 0.5, t, side, 0, [3, 9], [COOL1_FOES.pick(dice, self.danger, True), COOL1_FOES.pick(dice, self.danger)]);
@@ -446,7 +474,7 @@ node ValveTank(Prefab) {
         on_top +>:Fires:+> build.summon(tx0 + 1, cy + 1, 1, COOL1_FOES.pick(dice, self.danger, True), 4.0, float(side) - 3.5, 0, 0.0);
         on_top +>:Fires:+> build.explosion(float(tx0) - 1.0, float(cy) - 5.0, 4.0);
         sparking(build, dice.uniform(4.0, 6.0), float(tx0) - 0.2, float(cy) - 3.0, 3.0, 2);
-        build.foe(float(self.long) - 2.5, 3.5, 0, COOL1_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(tx0) - 4.5, float(cy) + 3.5, 0, COOL1_FOES.pick(dice, self.danger), 180.0);
         build.foe(5.5, float(cy) + 0.5, 0, "monster_berserk", 0.0, patrol=[[5.5, float(cy) + 0.5], [float(tx0) - 4.5, 3.5], [float(tx0) - 4.5, float(side) - 3.5]]);
         build.supply(2.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
     }
