@@ -20,15 +20,17 @@ the climb to the surface. Raised in hangar2's own palette.
   round three walls over a cooling pool; the updraft throws the player up to the gallery (or
   a lift rides up), where the button shuts the turbine down and opens the
   way on below ("This door is opened elsewhere").
-- `LowerWorks`: a long works hall split by a flooded trench (two pools,
-  a footbridge between), galleries along both walls joined by catwalks
+- `LowerWorks`: a long works hall split by a deep flooded trench (two pools
+  whose beds shelve up to opposite banks, a footbridge between, kerbs
+  setting the near floor and the far a step apart), galleries along both walls joined by catwalks
   over the water, crates riding a rail overhead (trains); charges go off
   along the trench as the player crosses, and a button raises the steps
   to the dock (hangar2's slow rising platform). An underwater nook is a
   secret. A hub.
 - `GiantLift`: a landing over a deep shaft, its floor sunk by a button
-  with the player on it (hangar2's giant lift); a gallery across the far
-  end of the hall at its foot, and a lift back up to a ledge at the top.
+  with the player on it (hangar2's giant lift); the great hall at its foot
+  open high over a shelving flood, a gallery across its far end, and a lift
+  back up to a ledge at the top.
 - `HangarBay`: the hangar round a dropship, galleries along both walls
   reached by lifts or a stair, a catwalk over the ship, a flooded service
   pit under a gallery; the button in the
@@ -44,6 +46,7 @@ import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush, gate_into, lift, spiral, ring_path }
+import from .q2_flood { shelving }
 import from .q2_works { deck, keep_box, sparking, blast_chain, stash, hidden_closet, squad, held_door, rounds, beamed }
 
 glob HANGAR2: str = "q2:hangar2";
@@ -187,7 +190,7 @@ node BlastPens(Prefab) {
         self.tall = self.mez + dice.between(9, 10);
         self.catwalk = dice.chance(0.6);
         self.walk_x = dice.between(self.mez + 9, self.long - 9);
-        self.low = -4;
+        self.low = -7;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.side // 2 + 2), floor=0);
         self.leaves = [
@@ -218,8 +221,7 @@ node BlastPens(Prefab) {
         blast = build.breakable(float(wall_x), 5.0, 0.0, float(wall_x + 3), 6.0, 4.0, 40);
         # A flooded culvert across the floor before the mezzanine, a stair
         # up out of its near end.
-        build.pool(8, 7, -3, self.long - 6, 10, 0, 2, steps=False);
-        stair(build, 8, 7, -3, 0, 3, 2);
+        shelving(build, 8, 7, self.long - 6, 10, 0, 6, 2);
         # The way on high: a catwalk over the hall from the mezzanine to the
         # far wall, or a ledge on the far wall a lift rides up to.
         wx = self.walk_x;
@@ -293,7 +295,7 @@ node TurbineShaft(Prefab) {
         self.long = dice.between(20, 22);
         self.wide = dice.between(20, 22);
         self.top = dice.between(11, 12);
-        self.tall = self.top + dice.between(9, 10);
+        self.tall = self.top + dice.between(38, 42);
         self.updraft = dice.chance(0.6);
         self.hub_x = dice.between(5, self.long - 15);
         self.low = -9;
@@ -325,8 +327,7 @@ node TurbineShaft(Prefab) {
         build.solid(hx + 1, middle - 1, 2, hx + 3, middle + 1, self.tall);
         keep_box(build, shaft, gx, middle - 2, gx + 1, middle + 2, self.top);
         # The cooling pool under the near gallery, a stair up out of it.
-        build.pool(7, 1, -4, gx - 1, 5, 0, 2, steps=False);
-        stair(build, gx - 2, 3, -4, 2, 4, 2);
+        shelving(build, 7, 1, gx - 1, 5, 0, 8, 0);
         if self.updraft {
             build.jump_pad(float(gx) - 3.0, float(middle), 0, float(gx) + 1.0, float(middle), self.top);
             build.touch(float(gx - 6), float(middle - 2), 0.0, float(gx - 4), float(middle + 2), 6.0, True, "The turbine's updraft carries you up");
@@ -381,9 +382,9 @@ node LowerWorks(Prefab) {
         self.source = HANGAR2;
         self.district = level_district(HANGAR2);
         self.long = dice.between(29, 32);
-        self.wide = dice.between(24, 26);
+        self.wide = dice.between(28, 30);
         self.walk = dice.between(6, 7);
-        self.deep = dice.between(6, 7);
+        self.deep = 11;
         self.tall = self.walk + 11;
         self.foot_x = dice.between(14, self.long - 15);
         # One catwalk over a pool, or one over each.
@@ -395,7 +396,7 @@ node LowerWorks(Prefab) {
             self.walks = [dice.between(self.foot_x + 5, self.long - 10)];
         }
         self.nook = dice.chance(0.7);
-        self.low = -9;
+        self.low = -12;
         self.high = self.tall + 1;
         middle = self.wide // 2;
         self.enter = Port(face=2, along=float(middle - 5), floor=0);
@@ -412,17 +413,20 @@ node LowerWorks(Prefab) {
         build = visitor.build;
         dice = build.begin(self);
         middle = self.wide // 2;
-        ty0 = middle - 4;
-        ty1 = middle + 4;
+        ty0 = middle - 6;
+        ty1 = middle + 6;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, self.walk);
-        # The trench: two pools, the footbridge between them, a stair up out
-        # of each to the floor beside it.
+        # The trench: two pools, the footbridge between them, the bed of each
+        # shelving up to the floor on one bank.
         fx = self.foot_x;
-        build.pool(6, ty0, -self.deep, fx, ty1, 0, 2, steps=False);
-        stair(build, 6, ty0, -self.deep, 0, self.deep, 2);
-        build.pool(fx + 3, ty0, -self.deep, self.long - 6, ty1, 0, 2, steps=False);
-        stair(build, self.long - 7, ty1 - 2, -self.deep, 2, self.deep, 2);
+        shelving(build, 6, ty0, fx, ty1, 0, self.deep, 3);
+        shelving(build, fx + 3, ty0, self.long - 6, ty1, 0, self.deep, 1);
+        # Kerbs across the footbridge and the floors at the trench's ends,
+        # the near floor and the far a step apart.
+        build.solid(fx, middle, 0, fx + 3, middle + 1, 1);
+        build.solid(1, middle, 0, 6, middle + 1, 1);
+        build.solid(self.long - 6, middle, 0, self.long - 1, middle + 1, 1);
         if self.nook {
             # An underwater nook under the near floor, a secret.
             nx = fx + 6;
@@ -478,12 +482,12 @@ node LowerWorks(Prefab) {
         rounds(build, "monster_gunner", [[10.5, 2.5], [float(self.long) - 3.5, 2.5]], self.walk);
         rounds(build, HANGAR2_FOES.pick(dice, self.danger), [[3.5, float(ty1) + 2.5], [float(dx) - 1.5, float(self.wide) - 2.5]], 0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(fx) + 1.5, float(ty0) - 2.5 + float(index % 2) * 9.0, 0, HANGAR2_FOES.pick(dice, self.danger, index == 0), 180.0);
+            build.foe(float(fx) + 1.5, float(ty0) - 2.5 + float(index % 2) * 10.0, 0, HANGAR2_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         sparking(build, float(self.long) - 1.2, 5.5, 2.0, 2, 3.5);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 2.5, float(self.wide) - 6.5, self.walk, "ammo_grenades", "q2");
-        build.supply(float(fx) + 1.5, float(middle), 0, Q2_HEALTH, "q2");
+        build.supply(float(fx) + 1.5, float(middle) + 2.5, 0, Q2_HEALTH, "q2");
     }
 }
 
@@ -505,7 +509,7 @@ node GiantLift(Prefab) {
         self.gallery = dice.chance(0.7);
         self.tall = 10;
         self.low = -2 * self.drop - 1;
-        self.high = self.tall + 1;
+        self.high = 36;
         middle = self.wide // 2;
         self.enter = Port(face=2, along=float(middle), floor=0);
         self.leaves = [Port(face=0, along=float(middle), floor=-self.drop)];
@@ -534,11 +538,12 @@ node GiantLift(Prefab) {
         build.touch(3.0, float(s0), 0.0, 6.0, float(s1), 6.0, True, "Step onto the lift and press its button");
         keep_box(build, landing, 5, s0, 6, s1, 0);
         # The hall at its foot, the gallery across its far end over it.
-        foot = build.room(12, 1, bottom, self.long - 1, self.wide - 1, 0, variant=dice.below(3));
+        foot = build.room(13, 1, bottom, self.long - 1, self.wide - 1, 34, variant=dice.below(3));
+        build.widen(foot, 12, 1, bottom, 13, self.wide - 1, 0);
         build.level(foot, bottom);
-        # A sump in the foot's floor, a stair up out of it.
-        build.pool(16, middle + 1, bottom - 4, self.long - 8, self.wide - 5, bottom, 2, steps=False);
-        stair(build, self.long - 9, middle + 1, bottom - 4, 2, 4, 2);
+        # A flood in the foot's floor, its bed shelving up to the floor by
+        # the shaft; the hall stands open high over it.
+        shelving(build, 16, middle + 3, self.long - 1, self.wide - 1, bottom, 8, 2);
         mid = bottom + 9;
         if self.gallery {
             build.level(foot, mid);
@@ -571,7 +576,7 @@ node GiantLift(Prefab) {
         build.foe(float(self.long) - 8.5, 3.5, bottom, HANGAR2_FOES.pick(dice, self.danger, True), 180.0);
         sparking(build, 6.2, float(s0) + 1.0, float(bottom) + 4.0, 0, 3.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
-        build.supply(float(self.long) - 5.5, float(self.wide) - 3.5, bottom, "ammo_shells", "q2");
+        build.supply(17.5, float(middle) - 3.5, bottom, "ammo_shells", "q2");
     }
 }
 
@@ -595,7 +600,7 @@ node HangarBay(Prefab) {
         self.wide = dice.between(26, 28);
         self.gallery = 10;
         self.roof = 5;
-        self.tall = self.gallery + dice.between(11, 13);
+        self.tall = self.gallery + dice.between(38, 42);
         self.lifts = dice.chance(0.5);
         self.ship_x = dice.between(11, 13);
         self.ship_y = self.wide // 2 - 4 + dice.between(-1, 1);
@@ -637,8 +642,7 @@ node HangarBay(Prefab) {
         stair(build, sx - self.roof, sy + 3, 0, 0, self.roof, 3);
         keep_box(build, bay, sx, sy + 3, sx + 1, sy + 6, self.roof);
         # A flooded service pit under the near gallery, a stair out of it.
-        build.pool(14, 1, -4, self.long - 6, 5, 0, 2, steps=False);
-        stair(build, self.long - 7, 3, -4, 2, 4, 2);
+        shelving(build, 14, 1, self.long - 6, 5, 0, 8, 2);
         if self.lifts {
             lift(build, 8, 5, 11, 8, 0, g);
             keep_box(build, bay, 8, 4, 11, 5, g);
@@ -761,7 +765,7 @@ node SurfaceExit(Prefab) {
         self.wide = dice.between(16, 18);
         self.climb = dice.between(11, 14);
         self.winding = dice.chance(0.6);
-        self.tall = self.climb + 12;
+        self.tall = self.climb + 34;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
