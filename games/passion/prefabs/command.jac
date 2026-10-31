@@ -16,13 +16,13 @@ Raised in command's own palette.
   foot) shuts the chamber down ("Chamber deactivated"), the floaters come
   and the coolant gate on the floor opens. A pump rides in the tank.
 - `TankHall`: a hall under a mezzanine over half its floor, up lifts (or a
-  stair), a bridge from it to a sniper's nest on a pillar; tanks on the
-  floor, crates; ways on from both floors (a hub).
+  stair), coolant under the mezzanine, a bridge from it to a sniper's nest on
+  a pillar; tanks on the floor, crates; ways on from both floors (a hub).
 - `PumpStation`: a pump room of two floors, the lower a flooded basin
   under the upper, the pumps rising and falling at the near end, a
   lift up, a partition with its door across the upper floor.
-- `CPUCore`: the core CPU in its coolant moat, a ledge round it, bridges
-  over the moat, a gallery round the walls up lifts; three valves (one
+- `CPUCore`: the core CPU in its deep coolant moat, a broad ledge round it,
+  bridges over the moat, a gallery round the walls up lifts; three valves (one
   on the core, one on the gallery, one down in the moat) count down to
   the coolant cut, the core burning out ("Core CPU is no longer
   functional") and the doors on opening ("Access now possible").
@@ -36,6 +36,7 @@ import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, gate_into, lift }
+import from .q2_flood { shelving }
 import from .q2_works { deck, keep_box, sparking, blast_chain, stash, squad, rounds, beamed, held_door, key_taken, closets, barrels, hurting }
 
 glob COMMAND: str = "q2:command";
@@ -146,7 +147,7 @@ node CoolantChamber(Prefab) {
         self.long = dice.between(22, 24);
         self.wide = dice.between(20, 22);
         self.gal = 6;
-        self.deep = dice.between(5, 6);
+        self.deep = dice.between(7, 8);
         self.sunk_valve = dice.chance(0.4);
         self.tall = 16;
         self.low = -9;
@@ -268,9 +269,11 @@ node TankHall(Prefab) {
             lift(build, self.long - 9, my - 3, self.long - 6, my, 0, m);
             keep_box(build, hall, self.long - 9, my, self.long - 6, my + 1, m);
         }
-        # A flooded sump in the near corner, a stair up out of it.
+        # A flooded sump in the near corner, a stair up out of it; coolant
+        # under the mezzanine, its bed shelving up to the floor.
         build.pool(3, 1, -6, 12, 7, 0, 2, steps=False);
         stair(build, 3, 5, -6, 0, 6, 2);
+        shelving(build, 3, my + 1, self.long - 3, self.wide - 1, 0, 8, 3);
         # The sniper's nest on a pillar over the near half, a bridge to it.
         nx = self.nest_x;
         build.solid(nx - 1, 4, 0, nx + 3, 8, m);
@@ -343,8 +346,8 @@ node PumpStation(Prefab) {
         keep_box(build, room, 8, middle + 3, 9, middle + 6, u);
         # The lower floor under the upper a flooded basin, a dry walk along
         # its far wall and by the way on, a stair up out of it.
-        build.pool(8, 1, -4, self.long - 4, self.wide - 3, 0, 2, steps=False);
-        stair(build, 11, middle - 1, -4, 2, 4, 3);
+        build.pool(8, 1, -7, self.long - 4, self.wide - 3, 0, 2, steps=False);
+        stair(build, 14, middle - 1, -7, 2, 7, 3);
         # The pumps at the near end, rising and falling.
         for (index, py) in enumerate([3, self.wide - 6]) {
             build.solid(2, py - 1, 0, 6, py + 3, 1);
@@ -394,7 +397,7 @@ node CPUCore(Prefab) {
         self.long = dice.between(28, 30);
         self.wide = dice.between(28, 30);
         self.gal = 9;
-        self.tall = 22;
+        self.tall = 30;
         self.slime = dice.chance(0.35);
         self.bridges = dice.between(1, 2);
         self.low = -9;
@@ -419,14 +422,20 @@ node CPUCore(Prefab) {
         build.level(room, g);
         # The moat, the ledge round the core, the core to the roof; a stair
         # up out of the moat, footbridges over it.
-        build.pool(cx - 6, cy - 6, -5, cx + 6, cy + 6, 0, 3 if self.slime else 2, steps=False);
-        build.solid(cx - 4, cy - 4, -5, cx + 4, cy + 4, 0);
+        build.pool(cx - 10, cy - 10, -8, cx + 10, cy + 10, 0, 3 if self.slime else 2, steps=False);
+        build.solid(cx - 6, cy - 6, -8, cx + 6, cy + 6, 0);
         build.solid(cx - 3, cy - 3, 0, cx + 3, cy + 3, self.tall);
-        stair(build, cx - 6, cy - 6, -5, 0, 5, 2);
-        deck(build, cx - 6, cy - 1, cx - 4, cy + 2, 0);
+        stair(build, cx - 8, cy - 10, -8, 0, 8, 3);
+        stair(build, cx + 7, cy + 7, -8, 2, 8, 3);
+        keep_box(build, room, cx - 3, cy - 11, cx, cy - 10, 0);
+        keep_box(build, room, cx, cy + 10, cx + 3, cy + 11, 0);
+        deck(build, cx - 10, cy - 1, cx - 6, cy + 2, 0);
         if self.bridges > 1 {
-            deck(build, cx + 4, cy - 1, cx + 6, cy + 2, 0);
+            deck(build, cx + 6, cy - 1, cx + 10, cy + 2, 0);
         }
+        # Piers under the lifts, where the moat's corners reach them.
+        build.solid(4, 4, -8, 8, 8, 0);
+        build.solid(self.long - 8, self.wide - 8, -8, self.long - 4, self.wide - 4, 0);
         # The gallery round the walls, up lifts at two corners.
         deck(build, 1, 1, self.long - 1, 5, g);
         deck(build, 1, self.wide - 5, self.long - 1, self.wide - 1, g);
@@ -442,7 +451,7 @@ node CPUCore(Prefab) {
         count = build.tally(3, "The coolant to the CPU is cut");
         build.push(float(cx - 3), float(cy) + 0.5, 1.5, 2) +>:Fires:+> count;
         build.push(float(cx) + 0.5, float(self.wide - 1), float(g) + 1.5, 3) +>:Fires:+> count;
-        build.push(float(cx + 4), float(cy) + 3.0, -3.5, 0) +>:Fires:+> count;
+        build.push(float(cx + 6), float(cy) + 3.0, -3.5, 0) +>:Fires:+> count;
         build.touch(1.0, float(cy - 2), 0.0, 4.0, float(cy + 2), 6.0, True, "Three valves feed the core its coolant");
         burn = build.delay(4.0);
         count +>:Fires:+> burn;
@@ -451,7 +460,7 @@ node CPUCore(Prefab) {
             last +>:Fires:+> build.sparks(float(at[0]) + 0.5, float(at[1]) + 0.5, 6.0 + float(index) * 2.0, index);
         }
         last +>:Fires:+> build.objective("Core CPU is no longer functional");
-        for corner in [[cx - 4, cy - 4], [cx + 3, cy - 4], [cx - 4, cy + 3], [cx + 3, cy + 3]] {
+        for corner in [[cx - 6, cy - 6], [cx + 5, cy - 6], [cx - 6, cy + 5], [cx + 5, cy + 5]] {
             burn +>:Fires:+> build.breakable(float(corner[0]), float(corner[1]), 0.0, float(corner[0] + 1), float(corner[1] + 1), 3.0, 30);
         }
         access = build.delay(2.0);
@@ -465,12 +474,12 @@ node CPUCore(Prefab) {
                 held_door(build, self, port, access, "The core CPU has locked this door");
             }
         }
-        beamed(build, count, 2, 2, -8, COMMAND_FOES.pick(dice, self.danger, True), float(cx) + 0.5, float(cy) - 9.5, 0, 90.0);
+        beamed(build, count, 2, 2, -8, COMMAND_FOES.pick(dice, self.danger, True), float(cx) + 0.5, float(cy) - 11.5, 0, 90.0);
         rounds(build, "monster_gunner", [[3.0, 3.0], [float(self.long) - 3.0, 3.0], [float(self.long) - 3.0, float(self.wide) - 3.0], [3.0, float(self.wide) - 3.0]], g);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx) - 9.5 + float(index) * 9.5, float(cy) + 10.0, 0, COMMAND_FOES.pick(dice, self.danger, index == 0), 270.0);
+            build.foe(float(cx) - 9.5 + float(index) * 9.5, float(cy) + 11.5, 0, COMMAND_FOES.pick(dice, self.danger, index == 0), 270.0);
         }
-        build.foe(float(cx) + 0.5, float(cy) - 8.0, 0, COMMAND_FOES.pick(dice, self.danger), 90.0);
+        build.foe(float(cx) + 3.5, float(cy) - 11.5, 0, COMMAND_FOES.pick(dice, self.danger), 90.0);
         sparking(build, float(cx) - 3.2, float(cy) - 2.0, 3.0, 2, 3.5);
         sparking(build, float(cx) + 3.2, float(cy) + 2.0, 5.0, 0, 4.5);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
