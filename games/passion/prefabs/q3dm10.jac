@@ -62,7 +62,7 @@ node NamelessHall(Prefab) {
         self.district = level_district(Q3DM10);
         self.long = dice.between(24, 28);
         self.wide = dice.between(20, 22);
-        self.tall = dice.between(18, 20);
+        self.tall = dice.between(26, 30);
         self.apse = dice.chance(0.5);
         self.sunk = dice.chance(0.6);
         self.bridged = dice.chance(0.5);
@@ -261,7 +261,7 @@ node NamelessWell(Prefab) {
         self.wide = dice.between(20, 22);
         self.deep = dice.between(6, 8);
         self.island = dice.chance(0.5);
-        self.tall = dice.between(17, 18);
+        self.tall = dice.between(28, 32);
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -331,7 +331,7 @@ node NamelessNave(Prefab) {
         self.district = level_district(Q3DM10);
         self.long = dice.between(30, 32);
         self.wide = dice.between(26, 28);
-        self.tall = dice.between(19, 21);
+        self.tall = dice.between(28, 32);
         self.spanned = dice.chance(0.5);
         self.low = -7;
         self.high = self.tall + 1;
@@ -422,7 +422,7 @@ node NamelessSpiral(Prefab) {
             }
         }
         self.steps = fits[dice.below(len(fits))];
-        self.tall = self.steps + 9;
+        self.tall = self.steps + 15;
         self.low = -1 if self.newel else -5;
         self.high = self.tall + 1;
         top = ring_landing(1, 1, self.long - 1, self.wide - 1, 3, self.steps, 4);
@@ -479,7 +479,7 @@ node NamelessReliquary(Prefab) {
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
         self.crypt = dice.chance(0.5);
-        self.tall = dice.between(17, 18);
+        self.tall = dice.between(26, 28);
         self.low = -8 if self.crypt else -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -551,7 +551,7 @@ node NamelessPortal(Prefab) {
         self.long = dice.between(26, 28);
         self.wide = dice.between(18, 20);
         self.upper = dice.chance(0.5);
-        self.tall = dice.between(18, 19);
+        self.tall = dice.between(26, 28);
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
