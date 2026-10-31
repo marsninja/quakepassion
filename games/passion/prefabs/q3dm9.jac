@@ -7,23 +7,26 @@ tower with a gallery bridged from its top, and jump pads up to every
 high place. Quake III's arenas hold no foes of their own; q3dm9's are
 knights and ogres, hell knights as a run goes deeper.
 
-- `KeepGatehouse`: the start. A hall under one or two galleries over
-  arcades, climbed by a stair or a jump pad; a bridge across between the
-  galleries when there are two. The gallery's guards wake as the player
-  comes up.
+- `KeepGatehouse`: the start. A hall open to the sky under one or two
+  galleries over arcades, its floor climbing in three bays from the gate,
+  the galleries climbed by a stair or a jump pad; a bridge across between
+  them when there are two. The gallery's guards wake as the player comes
+  up.
 - `KeepPit`: the abyss (a flow, or a hub). A rim round (or across) a deep
-  pit, crossed by a bridge or by jump pads to an island and on; the pit's
+  pit under the sky, its far side stood higher than its near, crossed by
+  a bridge or by jump pads to an island and on; the pit's
   floor hurts, its fall wakes what waits on the far rim, and a wind pad
   (or two, by a ledge in the pit wall, a way out leaving from that ledge)
   throws a body back up.
-- `KeepTrench`: a plaza, a trench cut down through it to a lower hall,
-  reached by a grand stair or by a narrow stair beside a lift; lava down
+- `KeepTrench`: a plaza under the sky, each bank of it at heights of its
+  own, a trench cut down through it to a lower hall, reached by a grand
+  stair or by a narrow stair beside a lift; lava down
   one side of its floor, bridges over it at the plaza's height, a pad back
   up out of it; ways on above and below.
-- `KeepCourt`: the hub. A court round a tower climbed by a stair or a jump
-  pad, a bridge from its top to a gallery along the far wall (a pad up to
-  that too), a hurting wind pit beside the tower; ways on from the court
-  and the gallery.
+- `KeepCourt`: the hub. A court under the sky going up round a tower in
+  terraces, the tower climbed by a stair or a jump pad, a bridge from its
+  top to a gallery along the far wall (a pad up to that too), a hurting
+  wind pit beside the tower; ways on from the court and the gallery.
 - `KeepReliquary`: the key room. The key on a spire, thrown up to by a pad
   from a gallery; or at the bottom of a crypt, a wind pad back out. Taking
   it brings foes in by teleporter and wakes the ones lying in wait.
@@ -38,6 +41,7 @@ import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pit_fall, pad_to }
+import from .q3open_parts { vista, rising_bays, bay_floor }
 
 glob Q3DM9: str = "q3:q3dm9",
      Q3DM9_LIGHT: list[str] = ["monster_knight", "monster_ogre"],
@@ -48,12 +52,14 @@ glob KEEP_FOES: FoeMix = FoeMix(light=Q3DM9_LIGHT, strong=Q3DM9_HEAVY, heavy_lig
 
 """The start: a hall under one or two galleries over arcades."""
 node KeepGatehouse(Prefab) {
-    has gallery: int = 6,
+    has gallery: int = 9,
         both: bool = False,
         padded: bool = False,
         well: bool = True,
         span_x: int = 12,
-        tall: int = 16;
+        bay1: int = 9,
+        bay2: int = 18,
+        tall: int = 46;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -62,21 +68,24 @@ node KeepGatehouse(Prefab) {
         self.district = level_district(Q3DM9);
         self.long = dice.between(24, 28);
         self.wide = dice.between(18, 21);
-        self.gallery = dice.between(6, 8);
+        self.gallery = dice.between(9, 10);
         self.both = dice.chance(0.6);
         self.padded = dice.chance(0.5);
         self.well = dice.chance(0.7);
-        self.span_x = dice.between(self.long // 2 - 2, self.long - 11);
-        self.tall = self.gallery + dice.between(9, 11);
+        # The bridge stands clear of the stair up to the gallery, off its top.
+        self.span_x = dice.between(self.long // 2 - 2, self.long - 11) if self.padded else 6 + self.gallery;
+        self.bay1 = dice.between(8, 10);
+        self.bay2 = self.long - dice.between(8, 10);
+        self.tall = self.gallery + dice.between(36, 40);
         self.low = -9 if self.well else -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
         self.leaves = [
-            Port(face=0, along=middle, floor=0),
+            Port(face=0, along=middle, floor=4),
             Port(face=0, along=3.0, floor=self.gallery),
             Port(face=3, along=float(self.long - 5), floor=self.gallery),
-            Port(face=1, along=float(self.long - 5), floor=self.gallery if self.both else 0)
+            Port(face=1, along=float(self.long - 5), floor=self.gallery if self.both else 4)
         ];
         visitor.place(self);
     }
@@ -86,8 +95,13 @@ node KeepGatehouse(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         gal = self.gallery;
-        hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(hall, gal);
+        build.level(hall, 2);
+        build.level(hall, 4);
+        # The hall's floor climbs in three bays from the gate, a step between
+        # each, as the keep's floors stand at heights of their own.
+        rising_bays(build, self.bay1, self.bay2, 1, self.long - 1, self.wide - 1);
         # The south gallery over its arcade (and the north one).
         deck(build, 1, 1, self.long - 1, 6, gal);
         for x in range(4, self.long - 3, 4) {
@@ -100,17 +114,19 @@ node KeepGatehouse(Prefab) {
                     build.solid(x, self.wide - 6, 0, x + 1, self.wide - 5, gal - 1);
                 }
             }
-            # The bridge across between them.
-            deck(build, self.span_x, 6, self.span_x + 3, self.wide - 6, gal);
+            # The bridge across between them, a step up from either.
+            deck(build, self.span_x, 6, self.span_x + 3, self.wide - 6, gal + 1);
+            keep_box(build, hall, self.span_x, 6, self.span_x + 3, 7, gal + 1);
+            keep_box(build, hall, self.span_x, self.wide - 7, self.span_x + 3, self.wide - 6, gal + 1);
             keep_box(build, hall, self.span_x, 5, self.span_x + 3, 6, gal);
             keep_box(build, hall, self.span_x, self.wide - 6, self.span_x + 3, self.wide - 5, gal);
         }
         # Up to the south gallery: a stair along its edge, or a jump pad.
         up_x = 6;
         if self.padded {
-            pad_to(build, 8.5, 9.0, 0, 8.5, 3.0, gal);
-            keep_box(build, hall, 7, 5, 11, 6, gal);
-            up_x = 7;
+            pad_to(build, 6.5, 9.0, bay_floor(6, self.bay1, self.bay2), 6.5, 3.0, gal);
+            keep_box(build, hall, 5, 5, 9, 6, gal);
+            up_x = 5;
         } else {
             stair(build, 6, 6, 0, 0, gal, 3);
             keep_box(build, hall, 3 + gal, 5, 7 + gal, 6, gal);
@@ -120,10 +136,10 @@ node KeepGatehouse(Prefab) {
         # throws a body up onto the south gallery.
         if self.well {
             wx = self.long - 7;
-            build.widen(hall, wx, middle - 1, -8, wx + 4, middle + 3, 0);
+            build.widen(hall, wx, middle - 1, -8, wx + 4, middle + 3, 4);
             pit_fall(build, wx, middle - 1, wx + 4, middle + 3, -8, "The well's floor burns", build.waiting());
             pad_to(build, float(wx + 2), float(middle) + 1.5, -8, float(wx + 2), 3.0, gal);
-            keep_box(build, hall, wx, middle - 2, wx + 4, middle - 1, 0);
+            keep_box(build, hall, wx, middle - 2, wx + 4, middle - 1, 4);
             keep_box(build, hall, wx, 5, wx + 4, 6, gal);
         }
         build.doorway(hall, self.enter);
@@ -139,17 +155,18 @@ node KeepGatehouse(Prefab) {
         build.foe(float(self.long) - 4.5, 3.5, gal, KEEP_FOES.pick(dice, self.danger), 180.0, waits=guards);
         if self.both {
             build.foe(float(self.long) - 4.5, float(self.wide) - 3.5, gal, KEEP_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
-            build.supply(float(self.span_x) + 1.5, float(middle) + 0.5, gal, Q3_ARMOR, "q3");
+            build.supply(float(self.span_x) + 1.5, float(middle) + 0.5, gal + 1, Q3_ARMOR, "q3");
         } else {
             build.supply(float(self.long) - 3.0, 2.5, gal, Q3_ARMOR, "q3");
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long // 2 + index * 3) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -1.5), 0, KEEP_FOES.pick(dice, self.danger), 180.0);
+            at = self.bay1 + 2 + index * 3;
+            build.foe(float(at) + 0.5, float(middle) + (2.5 if index % 2 == 0 else 1.5), bay_floor(at, self.bay1, self.bay2), KEEP_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(self.long) - 3.5, float(middle) - 2.5, 0, KEEP_FOES.pick(dice, self.danger, True), 180.0);
-        # A knight walks the hall's length.
-        build.foe(10.5, float(middle) + 4.0, 0, "monster_knight", 0.0, patrol=[[10.5, float(middle) + 4.0], [float(self.long) - 9.5, float(middle) + 4.0]]);
-        build.supply(float(self.long) - 3.0, float(middle) - 2.5, 0, Q3_HEALTH, "q3");
+        build.foe(float(self.long) - 3.5, float(middle) - 2.5, 4, KEEP_FOES.pick(dice, self.danger, True), 180.0);
+        # A knight walks the middle bay's length.
+        build.foe(float(self.bay1) + 2.5, float(middle) + 4.0, 2, "monster_knight", 0.0, patrol=[[float(self.bay1) + 2.5, float(middle) + 4.0], [float(self.bay2) - 1.5, float(middle) + 4.0]]);
+        build.supply(float(self.long) - 3.0, float(middle) - 2.5, 4, Q3_HEALTH, "q3");
     }
 }
 
@@ -160,7 +177,7 @@ node KeepPit(Prefab) {
         shelf: int = 0,
         crossing: int = 0,
         ring: bool = False,
-        tall: int = 14;
+        tall: int = 46;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -179,17 +196,17 @@ node KeepPit(Prefab) {
             self.ring = dice.chance(0.5);
         }
         self.crossing = dice.below(2);
-        self.tall = dice.between(17, 18);
+        self.tall = dice.between(46, 50);
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         px1 = self.long - 7;
-        self.enter = Port(face=2, along=middle, floor=0);
-        self.leaves = [Port(face=0, along=middle, floor=0), Port(face=1, along=float(self.long - 4), floor=0)];
+        self.enter = vista(2, middle, 0);
+        self.leaves = [vista(0, middle, 2), Port(face=1, along=float(self.long - 4), floor=2)];
         if self.shelf > 0 {
             self.leaves.append(Port(face=3, along=float(px1 - 3), floor=-self.shelf));
         } else {
-            self.leaves.append(Port(face=3, along=float(self.long - 4), floor=0));
+            self.leaves.append(Port(face=3, along=float(self.long - 4), floor=2));
         }
         visitor.place(self);
     }
@@ -204,10 +221,19 @@ node KeepPit(Prefab) {
         px1 = self.long - 7;
         y0 = 5 if self.ring else 1;
         y1 = self.wide - 5 if self.ring else self.wide - 1;
-        hall = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        far = 2;
+        hall = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(hall, 0);
+        build.level(hall, far);
         build.solid(1, 1, low, self.long - 1, self.wide - 1, 0);
         build.widen(hall, px0, y0, low, px1, y1, 0);
+        # The far rim stands two lifts over the near (the rim's sides between
+        # them a lift up, when it runs right round), so no floor runs on.
+        build.solid(px1, 1, 0, self.long - 1, self.wide - 1, far);
+        if self.ring {
+            build.solid(px0, 1, 0, px1, y0, 1);
+            build.solid(px0, y1, 0, px1, self.wide - 1, 1);
+        }
         # What waits on the far rim wakes when the pit is fallen into or
         # crossed.
         guards = build.waiting();
@@ -219,13 +245,13 @@ node KeepPit(Prefab) {
             build.solid(px1 - 6, 1, low, px1, 9, -self.shelf);
             pad_to(build, float(px1 - 9), 5.0, low, float(px1) - 2.0, 6.5, -self.shelf);
             keep_box(build, hall, px1 - 6, 2, px1 - 5, 9, -self.shelf);
-            pad_to(build, float(px1 - 3), 3.0, -self.shelf, float(px1) + 2.0, 3.0, 0);
-            keep_box(build, hall, px1, 1, px1 + 1, 6, 0);
+            pad_to(build, float(px1 - 3), 3.0, -self.shelf, float(px1) + 2.0, 3.0, far);
+            keep_box(build, hall, px1, 1, px1 + 1, 6, far);
             build.foe(float(px1) - 2.5, 7.5, -self.shelf, KEEP_FOES.pick(dice, self.danger), 180.0, waits=guards);
         } else {
             py = y0 + 2;
-            pad_to(build, float(px1 - 3), float(py), low, float(px1) + 2.0, float(py), 0);
-            keep_box(build, hall, px1, py - 2, px1 + 1, py + 2, 0);
+            pad_to(build, float(px1 - 3), float(py), low, float(px1) + 2.0, float(py), far);
+            keep_box(build, hall, px1, py - 2, px1 + 1, py + 2, far);
         }
         # Where a body may step off into the pit.
         keep_box(build, hall, px0 - 1, y1 - 4, px0, y1, 0);
@@ -239,23 +265,30 @@ node KeepPit(Prefab) {
         keep_box(build, hall, px1 - 1, self.wide - 4, px1, self.wide - 1, hl);
         build.supply(float(cx) + 0.5, float(self.wide) - 2.5, hl, Q3_HEALTH, "q3");
         build.foe(float(px1) - 3.5, float(self.wide) - 2.5, hl, KEEP_FOES.pick(dice, self.danger), 180.0, waits=guards);
-        # The crossing: a bridge, or pads to an island and on.
+        # The crossing: a bridge a lift up from the near rim and a lift down
+        # from the far, or pads to an island and on.
         if self.crossing == 0 {
-            deck(build, px0, mid - 1, px1, mid + 2, 0);
+            deck(build, px0, mid - 1, px1, mid + 2, 1);
             keep_box(build, hall, px0 - 1, mid - 1, px0, mid + 2, 0);
-            keep_box(build, hall, px1, mid - 1, px1 + 1, mid + 2, 0);
-            build.supply(float(cx) + 0.5, float(mid) + 0.5, 0, Q3_ARMOR, "q3");
+            keep_box(build, hall, px1, mid - 1, px1 + 1, mid + 2, far);
+            build.supply(float(cx) + 0.5, float(mid) + 0.5, 1, Q3_ARMOR, "q3");
         } else {
+            # Out along one lane and back along the other, so a body that went
+            # over can come back.
             ix0 = cx - 3;
             ix1 = cx + 4;
-            build.solid(ix0, mid - 2, low, ix1, mid + 2, 0);
-            pad_to(build, float(px0 - 3), float(mid), 0, float(ix0) + 1.5, float(mid), 0);
-            pad_to(build, float(ix1 - 3), float(mid), 0, float(px1) + 2.0, float(mid), 0);
-            keep_box(build, hall, px0 - 1, mid - 1, px0, mid + 1, 0);
-            keep_box(build, hall, ix0, mid - 2, ix0 + 1, mid + 2, 0);
-            keep_box(build, hall, ix1 - 1, mid - 2, ix1, mid + 2, 0);
-            keep_box(build, hall, px1, mid - 1, px1 + 1, mid + 1, 0);
-            build.supply(float(ix0) + 1.5, float(mid) - 1.0, 0, Q3_ARMOR, "q3");
+            out = float(mid) - 1.5;
+            back = float(mid) + 1.5;
+            build.solid(ix0, mid - 3, low, ix1, mid + 3, 0);
+            pad_to(build, float(px0 - 3), out, 0, float(ix0) + 1.5, out, 0);
+            pad_to(build, float(ix1 - 3), out, 0, float(px1) + 2.0, out, far);
+            pad_to(build, float(px1 + 3), back, far, float(ix1) - 1.5, back, 0);
+            pad_to(build, float(ix0 + 3), back, 0, float(px0) - 2.0, back, 0);
+            keep_box(build, hall, px0 - 1, mid - 3, px0, mid + 3, 0);
+            keep_box(build, hall, ix0, mid - 3, ix0 + 1, mid + 3, 0);
+            keep_box(build, hall, ix1 - 1, mid - 3, ix1, mid + 3, 0);
+            keep_box(build, hall, px1, mid - 3, px1 + 1, mid + 3, far);
+            build.supply(float(cx) - 2.5, float(mid), 0, Q3_ARMOR, "q3");
         }
         cross = build.touch(float(cx - 1), float(mid - 2), 0.0, float(cx + 1), float(mid + 2), 6.0);
         cross +>:Fires:+> guards;
@@ -264,14 +297,14 @@ node KeepPit(Prefab) {
             build.doorway(hall, port);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(px1) + 3.5, float(mid) + (3.5 if index == 0 else -3.5), 0, KEEP_FOES.pick(dice, self.danger, index == 1), 180.0, waits=guards);
+            build.foe(float(px1) + 3.5, float(mid) + (3.5 if index == 0 else -3.5), far, KEEP_FOES.pick(dice, self.danger, index == 1), 180.0, waits=guards);
         }
         build.foe(3.5, float(mid) + 4.5, 0, KEEP_FOES.pick(dice, self.danger), 0.0);
-        build.foe(float(self.long) - 2.5, float(mid) + 0.5, 0, KEEP_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 2.5, float(mid) + 0.5, far, KEEP_FOES.pick(dice, self.danger, True), 180.0);
         if self.ring {
-            build.foe(float(cx) + 0.5, 2.5, 0, "monster_knight", 0.0, patrol=[[float(px0) - 2.5, 2.5], [float(px1) + 2.5, 2.5]]);
+            build.foe(float(cx) + 0.5, 2.5, 1, "monster_knight", 0.0, patrol=[[float(px0) + 1.5, 2.5], [float(px1) - 1.5, 2.5]]);
         }
-        build.supply(float(self.long) - 3.0, 2.5, 0, Q3_HEALTH, "q3");
+        build.supply(float(self.long) - 3.0, 2.5, far, Q3_HEALTH, "q3");
     }
 }
 
@@ -282,7 +315,7 @@ node KeepTrench(Prefab) {
         grand: bool = True,
         lava: bool = True,
         bridges: int = 1,
-        tall: int = 14;
+        tall: int = 46;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -295,16 +328,16 @@ node KeepTrench(Prefab) {
         self.grand = dice.chance(0.5);
         self.lava = dice.chance(0.5);
         self.bridges = dice.between(1, 2);
-        self.tall = dice.between(13, 15);
+        self.tall = dice.between(46, 50);
         self.low = -self.trench - 3;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle, floor=0);
+        self.enter = vista(2, middle, 0);
         self.leaves = [
             Port(face=0, along=middle, floor=-self.trench),
-            Port(face=1, along=float(self.long - 4), floor=0),
-            Port(face=3, along=float(self.long - 4), floor=0),
-            Port(face=0, along=3.0, floor=0)
+            Port(face=1, along=float(self.long - 4), floor=3),
+            Port(face=3, along=float(self.long - 4), floor=2),
+            Port(face=0, along=3.0, floor=2)
         ];
         visitor.place(self);
     }
@@ -317,10 +350,22 @@ node KeepTrench(Prefab) {
         ty0 = mid - 3;
         ty1 = mid + 4;
         head = 9;
-        hall = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        hall = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(hall, 0);
+        build.level(hall, 2);
+        build.level(hall, 3);
         build.solid(1, 1, low, self.long - 1, self.wide - 1, 0);
         build.widen(hall, head, ty0, low, self.long - 1, ty1, 0);
+        # The plaza breaks as the trench cuts it: past the way in its head is
+        # a lift up; the south bank goes on and up another at a step halfway
+        # along it, the north bank a lift and two more, by steps of its own.
+        step_x = (head + self.long) // 2;
+        build.solid(5, 1, 0, head, self.wide - 1, 1);
+        build.solid(head, 1, 0, self.long - 1, ty0, 1);
+        build.solid(step_x, 1, 1, self.long - 1, ty0, 2);
+        build.solid(head, ty1, 0, self.long - 1, self.wide - 1, 1);
+        build.solid(head + 1, ty1, 1, self.long - 1, self.wide - 1, 2);
+        build.solid(step_x, ty1, 2, self.long - 1, self.wide - 1, 3);
         # Down into the trench: a grand stair its whole width, or a narrow
         # one beside a lift.
         if self.grand {
@@ -328,7 +373,7 @@ node KeepTrench(Prefab) {
         } else {
             stair(build, head + self.trench - 1, ty0, low, 2, self.trench, 3);
             lift(build, head, ty0 + 4, head + 3, ty1, low, 0);
-            keep_box(build, hall, head - 1, ty0 + 4, head, ty1, 0);
+            keep_box(build, hall, head - 1, ty0 + 4, head, ty1, 1);
         }
         foot = head + self.trench;
         pad_x = self.long - 7;
@@ -339,20 +384,25 @@ node KeepTrench(Prefab) {
             build.pool(foot + 1, ty0, low - 2, pad_x - 1, ty0 + 2, low, 4, False, False);
             hurt(build, float(foot + 1), float(ty0), float(low - 2), float(pad_x - 1), float(ty0 + 2), float(low));
         }
-        # Bridges over it at the plaza's height.
+        # Bridges over it, level with the south bank where they meet it and a
+        # step under the north; each as high as the banks it joins allow.
         spots = [foot + 1, pad_x + 2];
         for index in range(self.bridges) {
             bx = spots[index];
-            deck(build, bx, ty0, bx + 3, ty1, 0);
-            keep_box(build, hall, bx, ty0 - 1, bx + 3, ty0, 0);
-            keep_box(build, hall, bx, ty1, bx + 3, ty1 + 1, 0);
+            south = 2 if bx + 3 > step_x else 1;
+            deck(build, bx, ty0, bx + 3, ty1, south);
+            for z in [south - 1, south, south + 1] {
+                keep_box(build, hall, bx, ty0 - 1, bx + 3, ty0, z);
+                keep_box(build, hall, bx, ty1, bx + 3, ty1 + 1, z);
+            }
         }
         # A pad near the trench's far end throws a body back up onto the
         # south bank; a stretch of that bank's lip may be stepped off.
-        pad_to(build, float(pad_x), float(ty0 + 3), low, float(pad_x), float(ty0) - 2.0, 0);
-        keep_box(build, hall, pad_x - 1, ty0 - 1, pad_x + 2, ty0, 0);
+        pad_to(build, float(pad_x), float(ty0 + 3), low, float(pad_x), float(ty0) - 2.0, 2);
+        keep_box(build, hall, pad_x - 1, ty0 - 1, pad_x + 2, ty0, 2);
         if foot + 7 < pad_x - 1 {
-            keep_box(build, hall, foot + 5, ty0 - 1, foot + 7, ty0, 0);
+            keep_box(build, hall, foot + 5, ty0 - 1, foot + 7, ty0, 1);
+            keep_box(build, hall, foot + 5, ty0 - 1, foot + 7, ty0, 2);
         }
         build.doorway(hall, self.enter);
         for port in self.taken {
@@ -362,13 +412,14 @@ node KeepTrench(Prefab) {
         below = build.touch(float(foot), float(ty0), float(low), float(foot + 2), float(ty1), float(low + 6));
         banks = build.waiting();
         below +>:Fires:+> banks;
-        build.foe(float(self.long) - 4.5, float(ty0) - 2.5, 0, KEEP_FOES.pick(dice, self.danger), 180.0, waits=banks);
-        build.foe(float(self.long) - 6.5, float(ty1) + 2.5, 0, KEEP_FOES.pick(dice, self.danger, True), 180.0, waits=banks);
+        build.foe(float(self.long) - 4.5, float(ty0) - 2.5, 2, KEEP_FOES.pick(dice, self.danger), 180.0, waits=banks);
+        build.foe(float(self.long) - 6.5, float(ty1) + 2.5, 3, KEEP_FOES.pick(dice, self.danger, True), 180.0, waits=banks);
         build.foe(float(foot) + 2.5, float(mid) + 0.5, low, "monster_knight", 0.0, patrol=[[float(foot) + 2.5, float(mid) + 0.5], [float(pad_x) - 2.0, float(mid) + 0.5]]);
-        build.foe(5.5, float(mid) + 4.5, 0, KEEP_FOES.pick(dice, self.danger), 0.0);
+        build.foe(6.5, float(mid) + 4.5, 1, KEEP_FOES.pick(dice, self.danger), 0.0);
         build.foe(float(self.long) - 3.5, float(ty0) + 2.5, low, KEEP_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(self.long) - 3.0, float(ty0) + 1.0, low, Q3_HEALTH, "q3");
-        build.supply(float(spots[0]) + 1.5, float(mid) + 0.5, 0, Q3_ARMOR, "q3");
+        first = spots[0];
+        build.supply(float(first) + 1.5, float(mid) + 0.5, 2 if first + 3 > step_x else 1, Q3_ARMOR, "q3");
     }
 }
 
@@ -378,7 +429,7 @@ node KeepCourt(Prefab) {
     has tower: int = 10,
         padded: bool = False,
         pit: bool = True,
-        tall: int = 22;
+        tall: int = 48;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -390,15 +441,15 @@ node KeepCourt(Prefab) {
         self.tower = dice.between(10, 12);
         self.padded = dice.chance(0.5);
         self.pit = dice.chance(0.85);
-        self.tall = self.tower + dice.between(10, 12);
+        self.tall = self.tower + dice.between(36, 40);
         self.low = -10;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
-        self.enter = Port(face=2, along=cy, floor=0);
+        self.enter = vista(2, cy, 0);
         self.leaves = [
             Port(face=0, along=cy, floor=self.tower),
-            Port(face=1, along=6.0, floor=0),
-            Port(face=3, along=float(self.long // 2), floor=0),
+            Port(face=1, along=3.0, floor=0),
+            Port(face=3, along=float(self.long // 2 + 6), floor=2),
             Port(face=1, along=float(self.long - 3), floor=self.tower)
         ];
         visitor.place(self);
@@ -411,8 +462,18 @@ node KeepCourt(Prefab) {
         cy = self.wide // 2;
         tw = self.tower;
         gx = self.long - 5;
-        court = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        near = cx - 10;
+        court = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(court, tw);
+        build.level(court, 2);
+        # The court goes up round its tower in terraces, each a step over the
+        # last: from the gate a lift, each side of the tower two, behind it
+        # three.
+        build.solid(near, 1, 0, self.long - 1, self.wide - 1, 1);
+        build.solid(cx - 4, 1, 1, self.long - 1, cy - 4, 2);
+        build.solid(cx - 4, cy + 4, 1, self.long - 1, self.wide - 1, 2);
+        build.solid(cx + 4, 1, 1, self.long - 1, self.wide - 1, 2);
+        build.solid(cx + 4, cy - 4, 2, self.long - 1, cy + 4, 3);
         # The tower, and the gallery along the far wall over its arcade.
         build.solid(cx - 4, cy - 4, 0, cx + 4, cy + 4, tw);
         deck(build, gx, 1, self.long - 1, self.wide - 1, tw);
@@ -427,7 +488,7 @@ node KeepCourt(Prefab) {
         keep_box(build, court, gx, cy - 1, gx + 1, cy + 2, tw);
         # Up the tower: a stair along its south face, or a pad.
         if self.padded {
-            pad_to(build, float(cx - 7), float(cy), 0, float(cx) - 2.0, float(cy), tw);
+            pad_to(build, float(cx - 7), float(cy), 1, float(cx) - 2.0, float(cy), tw);
             keep_box(build, court, cx - 4, cy - 2, cx - 3, cy + 2, tw);
         } else {
             stair(build, cx + 4 - tw, cy - 7, 0, 0, tw, 3);
@@ -435,26 +496,26 @@ node KeepCourt(Prefab) {
         }
         # A pad up to the gallery from the court's floor; a stretch of the
         # gallery's lip to drop from.
-        pad_to(build, float(gx - 3), 5.0, 0, float(gx) + 2.0, 5.0, tw);
+        pad_to(build, float(gx - 3), 5.0, 2, float(gx) + 2.0, 5.0, tw);
         keep_box(build, court, gx, 3, gx + 1, 8, tw);
         keep_box(build, court, gx, self.wide - 6, gx + 1, self.wide - 3, tw);
         # The wind pit north of the tower.
         if self.pit {
-            build.widen(court, cx - 3, cy + 6, -9, cx + 3, self.wide - 2, 0);
+            build.widen(court, cx - 3, cy + 6, -9, cx + 3, self.wide - 2, 2);
             guards = build.waiting();
             pit_fall(build, cx - 3, cy + 6, cx + 3, self.wide - 2, -9, "The pit's floor burns", guards);
-            pad_to(build, float(cx), float(self.wide - 4), -9, float(cx) + 5.0, float(self.wide - 4), 0);
-            keep_box(build, court, cx + 3, cy + 6, cx + 4, self.wide - 2, 0);
+            pad_to(build, float(cx), float(self.wide - 4), -9, float(cx) + 5.0, float(self.wide - 4), 2);
+            keep_box(build, court, cx + 3, cy + 6, cx + 4, self.wide - 2, 2);
             build.foe(float(gx) + 2.5, float(self.wide) - 4.5, tw, KEEP_FOES.pick(dice, self.danger), 180.0, waits=guards);
         }
         # With the tower padded, its south side is clear for a second pit.
         if self.padded {
-            build.widen(court, cx - 9, 2, -9, cx - 4, cy - 6, 0);
+            build.widen(court, cx - 3, 2, -9, cx + 3, cy - 6, 2);
             south = build.waiting();
-            pit_fall(build, cx - 9, 2, cx - 4, cy - 6, -9, "The pit's floor burns", south);
-            pad_to(build, float(cx - 7), 4.5, -9, float(cx) - 2.0, 4.5, 0);
-            keep_box(build, court, cx - 4, 2, cx - 3, cy - 6, 0);
-            build.foe(float(cx) + 2.5, 3.5, 0, KEEP_FOES.pick(dice, self.danger), 180.0, waits=south);
+            pit_fall(build, cx - 3, 2, cx + 3, cy - 6, -9, "The pit's floor burns", south);
+            pad_to(build, float(cx), 4.5, -9, float(cx) + 5.0, 4.5, 2);
+            keep_box(build, court, cx + 3, 2, cx + 4, cy - 6, 2);
+            build.foe(float(cx) + 6.5, 7.5, 2, KEEP_FOES.pick(dice, self.danger), 180.0, waits=south);
         }
         build.doorway(court, self.enter);
         for port in self.taken {
@@ -467,9 +528,9 @@ node KeepCourt(Prefab) {
         build.foe(float(gx) + 2.5, 3.5, tw, KEEP_FOES.pick(dice, self.danger), 180.0, waits=gallery);
         build.foe(float(gx) + 2.5, float(cy) + 0.5, tw, KEEP_FOES.pick(dice, self.danger, True), 180.0, waits=gallery);
         build.foe(float(cx) + 1.5, float(cy) + 1.5, tw, KEEP_FOES.pick(dice, self.danger, True), 180.0);
-        build.foe(4.5, float(cy + 5) + 0.5, 0, "monster_knight", 0.0, patrol=[[4.5, float(cy + 5) + 0.5], [float(cx - 6) + 0.5, float(cy + 5) + 0.5]]);
+        build.foe(float(near) + 1.5, float(cy + 5) + 0.5, 1, "monster_knight", 0.0, patrol=[[float(near) + 1.5, float(cy + 5) + 0.5], [float(near) + 1.5, float(self.wide) - 3.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(4.5 + float(index) * 3.0, float(self.wide) - 3.5, 0, KEEP_FOES.pick(dice, self.danger), 270.0);
+            build.foe(3.5, float(self.wide) - 3.5 - float(index) * 3.0, 0, KEEP_FOES.pick(dice, self.danger), 270.0);
         }
         build.supply(float(cx) - 1.5, float(cy) - 1.5, tw, Q3_ARMOR, "q3");
         build.supply(float(self.long) - 2.5, float(self.wide) - 3.0, tw, Q3_HEALTH, "q3");
@@ -496,7 +557,7 @@ node KeepReliquary(Prefab) {
         self.wide = self.hall_wide + 4;
         self.crypt = dice.chance(0.5);
         self.spire = dice.between(11, 13);
-        self.tall = self.spire + 10;
+        self.tall = self.spire + 22;
         self.low = -11 if self.crypt else -3;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -509,7 +570,7 @@ node KeepReliquary(Prefab) {
         dice = build.begin(self);
         side = self.hall_wide - 1;
         cy = side // 2;
-        hall = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
+        hall = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3), sky=True);
         build.doorway(hall, self.enter);
         ambush = build.waiting();
         if self.crypt {
@@ -579,7 +640,7 @@ node KeepBattlements(Prefab) {
         self.wide = dice.between(18, 20);
         self.wall_high = dice.between(9, 11);
         self.padded = dice.chance(0.5);
-        self.tall = self.wall_high + dice.between(9, 11);
+        self.tall = self.wall_high + dice.between(34, 38);
         self.low = -8;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -602,7 +663,7 @@ node KeepBattlements(Prefab) {
             build.solid(bx, y, 0, bx + 1, y + 1, bh - 1);
         }
         if self.padded {
-            pad_to(build, float(bx - 3), float(middle), 0, float(bx) + 2.5, 3.0, bh);
+            pad_to(build, float(bx - 3), float(middle), 1, float(bx) + 2.5, 3.0, bh);
             keep_box(build, room, bx, middle - 2, bx + 1, middle + 2, bh);
         } else {
             # Stairs up both side walls to the battlements' ends.
@@ -612,9 +673,11 @@ node KeepBattlements(Prefab) {
             keep_box(build, room, bx, self.wide - 4, bx + 1, self.wide - 1, bh);
         }
         build.way_out(float(self.long) - 3.0, float(middle), bh);
-        # The moat across the court: its floor burns, its wind throws a body
-        # up onto the battlements' north end.
+        # The moat across the court, the ground a step higher past it: the
+        # moat's floor burns, its wind throws a body up onto the battlements'
+        # north end.
         mx = wall + 3;
+        build.solid(mx + 4, 1, 0, self.long - 1, self.wide - 1, 1);
         build.widen(room, mx, 4, -7, mx + 4, self.wide - 4, 0);
         pit_fall(build, mx, 4, mx + 4, self.wide - 4, -7, "The moat's floor burns", guards);
         pad_to(build, float(mx + 2), float(middle), -7, float(bx) + 2.5, float(self.wide) - 3.0, bh);
@@ -627,7 +690,7 @@ node KeepBattlements(Prefab) {
         for index in range(dice.between(2, 3)) {
             build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, KEEP_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(bx) - 4.5, float(middle) + 3.5, 0, KEEP_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(bx) - 1.5, float(middle) + 3.5, 1, KEEP_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(bx) + 2.0, float(middle) + 3.5, bh, Q3_ARMOR, "q3");
     }
