@@ -9,8 +9,8 @@ from its dice as well as its sizes.
 - `GrottoMouth`: the start. A shelf high at the back of a cave (rock at
   its back, an overhang on pillars over the floor at its front), a ramp of
   rock or a lift down, a gallery on from the shelf along one wall to a
-  drop, a plunge pool under the shelf's edge or not, a stream across the
-  floor under a rock footbridge. Shooting the two buttons (one beside the
+  drop, a plunge pool under the shelf's edge or not, a broad stream across
+  the floor under a rock causeway. Shooting the two buttons (one beside the
   shelf, one high on the far wall) counts to a rock that sinks from the
   mouth of a niche under the shelf: a secret (e1m4's two shot buttons and
   their counter). What is below wakes as the player steps to the edge.
@@ -19,7 +19,8 @@ from its dice as well as its sizes.
   lake, a way on from its far end); the lake crossed by rocks, or swum
   under a curtain of rock, or both. Scrags come in by a teleporter as the
   swimmer passes the middle; the far shore's guards wake as he climbs out.
-- `TeleportGrotto`: a tall cavern, a deep pool, ledges high on three walls
+- `TeleportGrotto`: a tall cavern, a deep pool and a shallower one in each
+  far corner of its floor, ledges high on three walls
   reached by teleporters on its floor (sometimes a bridge of rock across
   between two of them), low rocks about the floor; ways on from the
   ledges and the floor (a hub); the ledges' guards wake as the pool is
@@ -35,7 +36,7 @@ from its dice as well as its sizes.
   ways on at the middle and the top, and the top landing reaching out
   over the basin to drop into it.
 - `SecretCave`: a cave walled off at its far end, a gallery along one
-  wall, a pool in its middle. Two buttons (one on the wall under the
+  wall, a broad pool in its middle. Two buttons (one on the wall under the
   gallery, one up on a ledge or out on a rock in the pool) count to the
   wall's opening ("A secret cave has opened..."), scrags sent in as it
   opens, the cave beyond with its ways on and a shelf two lifts up.
@@ -78,11 +79,11 @@ node GrottoMouth(Prefab) {
         self.top = dice.between(8, 10);
         self.shelf = dice.between(8, 9);
         self.wide = dice.between(16, 20);
-        self.tall = self.top + dice.between(10, 12);
+        self.tall = self.top + dice.between(18, 22);
         self.lifted = dice.chance(0.4);
-        self.plunge = dice.chance(0.5);
+        self.plunge = dice.chance(0.8);
         edge_x = 1 + self.shelf;
-        self.long = edge_x + self.top + dice.between(14, 16);
+        self.long = edge_x + self.top + dice.between(18, 20);
         self.low = -15;
         self.high = self.tall + 1;
         mid = self.wide // 2;
@@ -117,7 +118,7 @@ node GrottoMouth(Prefab) {
         }
         # A plunge pool under the shelf's edge, the edge open over it.
         if self.plunge {
-            build.pool(edge_x, 6, -8, edge_x + 6, self.wide - 2, 0, 2);
+            build.pool(edge_x, 6, -8, edge_x + 8, self.wide - 2, 0, 2);
             sump(build, edge_x + 3, 9, -14, -8, 3);
             keep_box(build, cave, edge_x - 1, 7, edge_x, self.wide - 6, self.top);
         }
@@ -129,9 +130,9 @@ node GrottoMouth(Prefab) {
         keep_box(build, cave, gallery_end - 1, self.wide - 5, gallery_end, self.wide - 1, self.top);
         # The stream across the floor, a footbridge of rock over it.
         stream_x = edge_x + self.top + 2;
-        build.pool(stream_x, 1, -4, stream_x + 3, self.wide - 1, 0, 2, False, True, True);
-        build.solid(stream_x, mid - 2, -4, stream_x + 3, mid + 2, 0);
-        keep_box(build, cave, stream_x - 1, mid - 2, stream_x + 4, mid + 2, 0);
+        build.pool(stream_x, 1, -4, stream_x + 7, self.wide - 1, 0, 2, False, True, True);
+        build.solid(stream_x, mid - 2, -4, stream_x + 7, mid + 2, 0);
+        keep_box(build, cave, stream_x - 1, mid - 2, stream_x + 8, mid + 2, 0);
         # The secret: a niche in the rock under the shelf, its mouth shut by
         # a rock that sinks when both buttons have been shot.
         build.room(2, mid + 2, 0, 4, mid + 5, 4);
@@ -146,9 +147,9 @@ node GrottoMouth(Prefab) {
         for port in self.taken {
             build.doorway(cave, port);
         }
-        clear = [[0, 0, edge_x + self.top, 5], [0, 0, edge_x + 1, self.wide], [stream_x - 1, 0, stream_x + 4, self.wide], [self.long - 5, mid - 3, self.long, mid + 3], [self.long - 9, self.wide - 5, self.long - 3, self.wide]];
+        clear = [[0, 0, edge_x + self.top, 5], [0, 0, edge_x + 1, self.wide], [stream_x - 1, 0, stream_x + 8, self.wide], [self.long - 5, mid - 3, self.long, mid + 3], [self.long - 9, self.wide - 5, self.long - 3, self.wide]];
         if self.plunge {
-            clear.append([edge_x - 1, 5, edge_x + 7, self.wide]);
+            clear.append([edge_x - 1, 5, edge_x + 9, self.wide]);
         }
         boulders(build, dice, edge_x, 1, self.long - 1, self.wide - 1, 0, dice.between(3, 5), clear);
         low_rocks(build, dice, edge_x, 1, self.long - 1, self.wide - 1, 0, dice.between(4, 6), 2, clear);
@@ -160,9 +161,9 @@ node GrottoMouth(Prefab) {
         below = build.waiting();
         rim +>:Fires:+> below;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(stream_x) + 4.5 + float(index) * 2.0, 3.5 + float(index) * 3.0, 0, E1M4_FOES.pick(dice, self.danger, index == 0), 180.0, waits=below);
+            build.foe(float(stream_x) + 8.5 + float(index) * 2.0, 3.5 + float(index) * 3.0, 0, E1M4_FOES.pick(dice, self.danger, index == 0), 180.0, waits=below);
         }
-        build.foe(float(stream_x) + 5.5, float(self.wide) - 3.5, 0, "monster_knight", 0.0, patrol=[[float(stream_x) + 5.5, float(self.wide) - 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]]);
+        build.foe(float(stream_x) + 8.5, float(self.wide) - 3.5, 0, "monster_knight", 0.0, patrol=[[float(stream_x) + 8.5, float(self.wide) - 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]]);
         build.foe(float(stream_x) + 1.5, float(mid) + 0.5, 6, E1M4_FOES.pick(dice, self.danger, False, True), 180.0);
         build.supply(float(edge_x) + 1.5, float(self.wide) - 2.5, 0, "item_health");
     }
@@ -182,7 +183,7 @@ node FloodedCaverns(Prefab) {
         self.district = level_district(E1M4);
         self.long = dice.between(28, 32);
         self.wide = dice.between(18, 22);
-        self.tall = dice.between(16, 19);
+        self.tall = dice.between(24, 28);
         self.mode = dice.below(3);
         self.low = -15;
         self.high = self.tall + 1;
@@ -201,10 +202,10 @@ node FloodedCaverns(Prefab) {
         lake_x0 = 1 + self.shore;
         lake_x1 = self.long - 1 - self.shore;
         cx = (lake_x0 + lake_x1) // 2;
-        build.pool(lake_x0, 1, -8, lake_x1, self.wide - 1, 0, 2);
-        sump(build, lake_x0 + 3, 1, -14, -8, 3);
+        build.pool(lake_x0, 1, -12, lake_x1, self.wide - 1, 0, 2);
+        sump(build, lake_x0 + 3, 13, -14, -12, 3);
         # Steps up out of it onto the far shore too.
-        stair(build, lake_x1 - 8, 1, -8, 0, 8, 2);
+        stair(build, lake_x1 - 12, 1, -12, 0, 12, 2);
         # Rocks across the lake, two cells apart, zigzagging about the middle
         # (unless the curtain alone stands in the water).
         x = lake_x0 + 2;
@@ -212,7 +213,7 @@ node FloodedCaverns(Prefab) {
         while x + 3 <= lake_x1 - 2 and self.mode != 1 {
             y = middle - 1 + (dice.between(-3, 3) if index > 0 else 0);
             y = max(4, min(self.wide - 8, y));
-            build.solid(x, y, -8, x + 3, y + 3, 0);
+            build.solid(x, y, -12, x + 3, y + 3, 0);
             keep_ring(build, cave, x, y, x + 3, y + 3, 0);
             x += 5;
             index += 1;
@@ -250,7 +251,7 @@ node FloodedCaverns(Prefab) {
         }
         # Halfway over the water, scrags are sent in behind the swimmer; the
         # far shore's guards wake as he climbs out.
-        halfway = build.touch(float(cx - 1), 1.0, -8.0, float(cx + 2), float(self.wide - 1), 6.0);
+        halfway = build.touch(float(cx - 1), 1.0, -12.0, float(cx + 2), float(self.wide - 1), 6.0);
         halfway +>:Fires:+> build.summon(2, 2, -8, E1M4_FOES.pick(dice, self.danger, False, True), float(lake_x0) + 1.5, float(middle) + 0.5, 5, 0.0);
         out = build.touch(float(lake_x1 - 1), 1.0, -2.0, float(lake_x1 + 2), float(self.wide - 1), 6.0);
         guards = build.waiting();
@@ -278,7 +279,7 @@ node TeleportGrotto(Prefab) {
         self.district = level_district(E1M4);
         self.long = dice.between(22, 26);
         self.wide = dice.between(22, 26);
-        self.tall = dice.between(22, 26);
+        self.tall = dice.between(28, 32);
         self.ledge = dice.between(10, 12);
         self.bridge = dice.chance(0.5);
         self.low = -15;
@@ -303,9 +304,13 @@ node TeleportGrotto(Prefab) {
         cave = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(cave, self.ledge);
         # The pool, deep, reaching west from the middle (clear of the
-        # teleporters).
-        build.pool(cx - 7, cy - 2, -8, cx + 2, cy + 2, 0, 2);
-        sump(build, cx - 1, cy, -14, -8, 2);
+        # teleporters), and a shallower one in each far corner of the floor.
+        pool_x = max(4, cx - 8);
+        build.pool(pool_x, cy - 4, -10, cx + 2, cy + 4, 0, 2, False, False);
+        stair(build, pool_x, cy - 4, -4, 1, 4, 2);
+        sump(build, cx - 2, cy - 1, -14, -10, 2);
+        build.pool(cx + 3, 2, -5, self.long - 5, cy - 3, 0, 2);
+        build.pool(cx + 3, cy + 3, -5, self.long - 5, self.wide - 2, 0, 2);
         under = self.ledge - 1;
         # The ledges, slabs a lift thick high on the north, east and south.
         build.solid(6, self.wide - 5, under, self.long - 6, self.wide - 1, self.ledge);
@@ -325,16 +330,16 @@ node TeleportGrotto(Prefab) {
             keep_box(build, cave, cx - 2, 4, cx + 3, 6, self.ledge);
             keep_box(build, cave, cx - 2, self.wide - 6, cx + 3, self.wide - 4, self.ledge);
         }
-        build.teleporter(float(cx) + 0.5, float(self.wide) - 7.5, 0, float(cx) + 0.5, float(self.wide) - 3.0, self.ledge, 90.0);
+        build.teleporter(float(cx) + 0.5, float(self.wide) - 5.5, 0, float(cx) + 0.5, float(self.wide) - 3.0, self.ledge, 90.0);
         build.teleporter(float(self.long) - 7.5, float(cy) + 0.5, 0, float(self.long) - 3.0, float(cy) + 0.5, self.ledge, 0.0);
-        build.teleporter(float(cx) + 0.5, 7.5, 0, float(cx) + 0.5, 3.0, self.ledge, 270.0);
+        build.teleporter(float(cx) + 0.5, 5.5, 0, float(cx) + 0.5, 3.0, self.ledge, 270.0);
         build.doorway(cave, self.enter);
         for port in self.taken {
             build.doorway(cave, port);
         }
         stalactites(build, dice, 6, 6, self.long - 6, self.wide - 6, self.tall, dice.between(6, 10));
         # Boulders against the floor's walls, clear of the ways through.
-        clear = [[0, cy - 3, 5, cy + 3], [cx - 11, cy - 5, cx + 3, cy + 6], [cx - 2, self.wide - 10, cx + 3, self.wide], [cx - 2, 0, cx + 3, 10], [self.long - 10, cy - 9, self.long, cy + 3], [2, 2, 5, self.wide - 2]];
+        clear = [[0, cy - 3, 5, cy + 3], [cx - 11, cy - 6, cx + 3, cy + 6], [cx - 2, self.wide - 10, self.long, self.wide], [cx - 2, 0, self.long, 10], [self.long - 10, cy - 9, self.long, cy + 3], [2, 2, 5, self.wide - 2]];
         low_rocks(build, dice, 2, 2, self.long - 2, self.wide - 2, 0, dice.between(5, 8), 2, clear);
         for index in range(dice.between(2, 3)) {
             build.foe(4.5 + float(index) * 3.0, float(cy) + 4.5, 0, E1M4_FOES.pick(dice, self.danger), 0.0);
@@ -371,7 +376,7 @@ node SilverGrotto(Prefab) {
         self.long = dice.between(24, 28);
         self.hall_wide = dice.between(18, 20);
         self.wide = self.hall_wide + 4;
-        self.tall = dice.between(22, 24);
+        self.tall = dice.between(26, 30);
         self.raised = dice.chance(0.5);
         self.low = -15;
         self.high = self.tall + 1;
@@ -387,12 +392,12 @@ node SilverGrotto(Prefab) {
         cave = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
         build.doorway(cave, self.enter);
         lake_x = 8;
-        build.pool(lake_x, 2, -8, self.long - 2, side - 1, 0, 2);
-        sump(build, self.long - 6, 2, -14, -8, 3);
+        build.pool(lake_x, 2, -12, self.long - 2, side - 1, 0, 2);
+        sump(build, self.long - 6, 2, -14, -12, 3);
         ix = (lake_x + self.long - 2) // 2 + 1;
         iy = side // 2;
         top = 8 if self.raised else 0;
-        build.solid(ix - 3, iy - 3, -8, ix + 3, iy + 3, top);
+        build.solid(ix - 3, iy - 3, -12, ix + 3, iy + 3, top);
         # A ledge of rock along the far wall over the water, before the
         # closets high in it, a ramp up to it from the near shore.
         build.level(cave, 8);
@@ -462,12 +467,13 @@ node WaterfallClimb(Prefab) {
         a = 4;
         land = a + n;
         # The basin, and a niche under its water in the far corner.
-        build.pool(5, 7, -6, self.long - 2, self.wide - 3, 0, 2);
-        sump(build, 9, 9, -12, -6, 2);
-        build.room(self.long - 5, self.wide - 3, -6, self.long - 3, self.wide - 1, -3);
-        flood(build, self.long - 5, self.wide - 3, -6, self.long - 3, self.wide - 1, -3);
-        build.secret(float(self.long - 5), float(self.wide - 3), -6.0, float(self.long - 3), float(self.wide - 1), -3.0);
-        build.supply(float(self.long) - 4.0, float(self.wide) - 2.0, -6, "item_armor1");
+        build.pool(5, 7, -10, self.long - 1, self.wide - 3, 0, 2, False, False);
+        stair(build, 5, 7, -4, 0, 4, 2);
+        sump(build, 9, 9, -12, -10, 2);
+        build.room(self.long - 5, self.wide - 3, -10, self.long - 3, self.wide - 1, -7);
+        flood(build, self.long - 5, self.wide - 3, -10, self.long - 3, self.wide - 1, -7);
+        build.secret(float(self.long - 5), float(self.wide - 3), -10.0, float(self.long - 3), float(self.wide - 1), -7.0);
+        build.supply(float(self.long) - 4.0, float(self.wide) - 2.0, -10, "item_armor1");
         # The first flight, along the near wall climbing +x, to a landing.
         ramp(build, a, 1, 0, 0, n, 3);
         build.solid(land, 1, max(0, n - 3), self.long - 1, 7, n);
@@ -528,7 +534,7 @@ node SecretCave(Prefab) {
         self.district = level_district(E1M4);
         self.long = dice.between(28, 32);
         self.wide = dice.between(16, 20);
-        self.tall = dice.between(14, 16);
+        self.tall = dice.between(22, 25);
         self.island = dice.chance(0.5);
         self.wall_x = self.long - 9;
         self.low = -15;
@@ -562,11 +568,11 @@ node SecretCave(Prefab) {
         bx = dice.between(10, w - 6);
         build.push(float(bx) + 0.5, 1.0, 1.2, 1) +>:Fires:+> count;
         kept: list[list[int]] = [[0, mid - 3, 5, mid + 3], [0, 0, w, 6], [w - 4, mid - 4, w + 1, mid + 4]];
-        # A pool in the cave's middle.
-        px = dice.between(7, w - 12);
-        build.pool(px, mid - 3, -6, px + 8, mid + 3, 0, 2);
-        sump(build, px + 6, mid - 3, -12, -6, 2);
-        kept.append([px - 1, mid - 4, px + 9, mid + 4]);
+        # A broad pool in the cave's middle.
+        px = 10;
+        build.pool(px, mid - 4, -6, w - 4, mid + 4, 0, 2);
+        sump(build, w - 7, mid - 3, -12, -6, 2);
+        kept.append([px - 1, mid - 5, w - 3, mid + 5]);
         if self.island {
             # The second button out on a rock in the pool.
             build.solid(px + 3, mid - 1, -6, px + 6, mid + 2, 0);
@@ -584,7 +590,7 @@ node SecretCave(Prefab) {
         }
         # Scrags are sent in as the wall opens.
         for index in range(2) {
-            count +>:Fires:+> build.summon(3 + index * 5, 2, -8, E1M4_FOES.pick(dice, self.danger, False, True), float(w) - 3.5 - float(index) * 3.0, float(mid) + 0.5, 4, 180.0);
+            count +>:Fires:+> build.summon(3 + index * 5, 2, -14, E1M4_FOES.pick(dice, self.danger, False, True), float(w) - 3.5 - float(index) * 3.0, float(mid) + 0.5, 4, 180.0);
         }
         # Beyond: a shelf of rock two lifts up along one side, the ways on.
         build.solid(w + 1, 1, 0, self.long - 1, 5, 2);
@@ -630,7 +636,7 @@ node SunkenTunnel(Prefab) {
         self.rock = dice.between(6, 8);
         self.cave_b = dice.between(13, 15);
         self.wide = dice.between(15, 18);
-        self.tall = dice.between(13, 15);
+        self.tall = dice.between(20, 23);
         # The pools and the tunnel lie along the far side wall, under the
         # galleries.
         self.lane = self.wide - 6;
@@ -658,8 +664,11 @@ node SunkenTunnel(Prefab) {
         # A pool at the near end of each cave, the tunnel from the first's
         # bottom on under the first cave's floor and the rock to the
         # second's: all of it water.
-        build.pool(3, self.lane - 1, -7, 11, self.lane + 4, 0, 2);
-        build.pool(far_x, self.lane - 1, -7, far_x + 8, self.lane + 4, 0, 2);
+        pool_y = self.lane - 3;
+        build.pool(3, pool_y, -7, 11, self.lane + 4, 0, 2, False, False);
+        build.pool(far_x, pool_y, -7, far_x + 8, self.lane + 4, 0, 2, False, False);
+        stair(build, 3, pool_y, -7, 0, 7, 2);
+        stair(build, far_x, pool_y, -7, 0, 7, 2);
         sump(build, 6, self.lane + 1, -13, -7, 3);
         sump(build, far_x + 3, self.lane + 1, -13, -7, 3);
         build.room(11, self.lane - 1, -7, far_x, self.lane + 4, -3);
@@ -740,8 +749,8 @@ node GrottoExit(Prefab) {
         self.district = level_district(E1M4);
         self.long = dice.between(28, 31);
         self.wide = dice.between(15, 17);
-        self.tall = dice.between(20, 22);
-        self.causeway = dice.chance(0.5);
+        self.tall = dice.between(26, 30);
+        self.causeway = dice.chance(0.85);
         self.ledge_x = self.long - 1 - 6;
         self.low = -15;
         self.high = self.tall + 1;
@@ -778,11 +787,11 @@ node GrottoExit(Prefab) {
         clear = [[0, middle - 3, 5, middle + 3], [wall - 5, middle - 3, wall + 1, middle + 3], [0, 0, wall, 6]];
         if self.causeway {
             px = 10;
-            build.pool(px, 1, -5, px + 5, self.wide - 1, 0, 2, False, True, True);
-            sump(build, px + 2, 2, -10, -5, 3);
-            build.solid(px, middle - 1, -5, px + 5, middle + 2, 0);
-            keep_box(build, cave, px - 1, middle - 1, px + 6, middle + 2, 0);
-            clear.append([px - 1, 0, px + 6, self.wide]);
+            build.pool(px, 1, -5, px + 7, self.wide - 1, 0, 2, False, True, True);
+            sump(build, px + 3, 2, -10, -5, 3);
+            build.solid(px, middle - 1, -5, px + 7, middle + 2, 0);
+            keep_box(build, cave, px - 1, middle - 1, px + 8, middle + 2, 0);
+            clear.append([px - 1, 0, px + 8, self.wide]);
         }
         boulders(build, dice, 1, 6, wall, self.wide - 1, 0, dice.between(2, 3), clear);
         low_rocks(build, dice, 1, 6, wall, self.wide - 1, 0, dice.between(3, 5), 2, clear);
