@@ -1,4 +1,4 @@
-"""Prefabs drawn from e1m1, the Slipgate Complex: five stretches of it,
+"""Prefabs drawn from e1m1, the Slipgate Complex: seven stretches of it,
 each made again at its scale with its flow, and varied by a seed.
 
 - `Gatehouse`: the start. The run begins on a platform over a hall (a
@@ -6,14 +6,19 @@ each made again at its scale with its flow, and varied by a seed.
   far floor is a lift's top, which a button on its wall lowers into a well
   (e1m1's elevator), waking what waits in the hall; the way on leaves from
   the well's foot. A closet behind a wall that opens when shot is a secret.
-- `ComputerHall`: a hall of two floors: a raised balcony along one wall
-  with stairs up to it, a ledge over an arcade along the other, a catwalk
-  across between them, crates on the floor; ways out on both floors (a hub
-  a key's branch can leave). A grunt walks a round among the crates; the
-  balcony's guard wakes as the player reaches the stairs' top.
-- `SlimeWalkways`: a slime pit crossed by islands. Walking up to the edge
-  of each shore and island draws the walkway up out of the slime to the
-  next (e1m1's bridges, fired by the trigger before each); a button on each
+- `ServiceWays`: narrow ways: a corridor climbing by steps past closets, a
+  stair hall up to a gallery over a slime pit, a way down into the pit and
+  a footbridge over its channel to the button that opens the ways on.
+- `ComputerHall`: the hub: a hall of many levels: a raised balcony along one
+  wall with stairs up to it and a control booth at its end, a lower ledge
+  over an arcade along the other, a catwalk across between them, raised
+  aisles under both, crates on the floor; ways out on all of them. A grunt
+  walks a round among the crates; the balcony's guard wakes as the player
+  reaches the stairs' top.
+- `SlimeWalkways`: a slime pit crossed by islands, each a step higher than
+  the last, the pit's bed stepping with them. Walking up to the edge of
+  each shore and island draws the walkway up out of the slime to the next
+  (e1m1's bridges, fired by the trigger before each); a button on each
   landing counts, and all of them together open the door out (e1m1's door
   fired by a counter of its three buttons).
 - `Slipgate`: the end. A channel across the room, a bridge drawn across it
@@ -29,7 +34,8 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires, PORT_WIDE, PORT_HIGH }
 import from ..kits { kit_of }
 import from .common { stair, key_ambush, lift, apart }
-import from .e1m1_parts { deck, stash }
+import from .e1m1_parts { deck, stash, bars }
+import from .e1m2_parts { keep_box }
 
 glob E1M1: str = "q1:e1m1";
 
@@ -74,9 +80,9 @@ node Gatehouse(Prefab) {
         self.deck_top = dice.between(6, 8);
         self.deck_long = dice.between(4, 5);
         foot = 1 + self.deck_long + self.deck_top;
-        self.moat = dice.chance(0.5);
+        self.moat = dice.chance(0.7);
         if self.moat {
-            self.moat_long = dice.between(5, 6);
+            self.moat_long = dice.between(5, 7);
             self.moat_x = foot + 3;
             self.hall_long = self.moat_x + self.moat_long + dice.between(5, 7) - 1;
         } else {
@@ -188,12 +194,13 @@ node Gatehouse(Prefab) {
     }
 }
 
-"""A hall of two floors: a raised balcony along its far side, a ledge over
-an arcade along its near side, a catwalk (or two) across between them,
-crates on its floor; ways out on both floors. By the dice the balcony
-stands on solid or runs over a lower aisle of computer banks, it is
-climbed by a stair or ridden up to on a lift, and a closet at the
-ledge's end opens to a shot (a secret)."""
+"""A hall of many levels: a raised balcony along its far side, a control
+booth a step up behind a partition at the balcony's end, a ledge a step
+lower over an arcade along its near side, a catwalk (or two) across between
+them, aisles a step up under both, crates on its floor; ways out on all of
+them, each over a sill. By the dice the balcony stands on solid or runs
+over an aisle of computer banks, it is climbed by a stair or ridden up to
+on a lift, and a closet at the ledge's end opens to a shot (a secret)."""
 node ComputerHall(Prefab) {
     has deep: int = 5,
         ledge: int = 4,
@@ -210,29 +217,29 @@ node ComputerHall(Prefab) {
         dice = visitor.dice_for(self);
         self.title = "Computer hall";
         self.source = E1M1;
-        self.long = dice.between(24, 30);
+        self.long = dice.between(28, 32);
         self.wide = dice.between(18, 22);
         self.tall = dice.between(18, 22);
         self.deep = dice.between(5, 6);
         self.ledge = dice.between(4, 5);
         self.balcony = dice.between(7, 9);
-        self.stairs_x = dice.between(4, 6);
+        self.stairs_x = dice.between(4, 5);
         self.lifted = dice.chance(0.4);
         self.hollow = dice.chance(0.55);
         low_walk = self.stairs_x + self.balcony + 3;
-        self.walk_x = dice.between(low_walk, max(low_walk, self.long - 9));
-        self.second_x = self.walk_x + 6 if dice.chance(0.45) and self.walk_x + 9 <= self.long - 2 else 0;
+        self.walk_x = dice.between(low_walk, max(low_walk, self.long - 11));
+        self.second_x = self.walk_x + 6 if dice.chance(0.45) and self.walk_x + 9 <= self.long - 8 else 0;
         self.stash_end = dice.chance(0.6) and self.walk_x + 3 <= self.long - 6 and (self.second_x == 0 or self.second_x + 3 <= self.long - 6);
         self.low = -1;
         self.high = self.tall + 1;
         shelf = self.wide - 1 - self.deep;
         ground = [self.ledge + 3, shelf - 6];
-        self.enter = Port(face=2, along=float(dice.between(ground[0], max(ground[0], ground[1]))), floor=0);
+        self.enter = Port(face=2, along=float(dice.between(ground[0], max(ground[0], ground[1]))), floor=1);
         self.leaves = [
-            Port(face=0, along=float(shelf + self.deep // 2), floor=self.balcony),
-            Port(face=1, along=float(dice.between(self.long - 8, self.long - 4)), floor=self.balcony),
-            Port(face=3, along=float(dice.between(4, self.walk_x - 3)), floor=self.balcony),
-            Port(face=0, along=float(dice.between(ground[0], max(ground[0], ground[1]))), floor=0)
+            Port(face=0, along=float(shelf + self.deep // 2), floor=self.balcony + 1),
+            Port(face=1, along=float(dice.between(self.long - 5, self.long - 3)), floor=self.balcony + 1),
+            Port(face=3, along=float(dice.between(4, self.walk_x - 3)), floor=self.balcony - 1),
+            Port(face=0, along=float(dice.between(ground[0], max(ground[0], ground[1]))), floor=1)
         ];
         visitor.place(self);
     }
@@ -243,18 +250,20 @@ node ComputerHall(Prefab) {
         shelf = self.wide - 1 - self.deep;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(4));
         build.level(hall, self.balcony);
+        build.level(hall, self.balcony - 1);
         top = self.stairs_x + self.balcony - 1;
         # The balcony along the far side: on solid, or a deck over a lower
         # aisle, pillars under its edge, computer banks along the wall.
         if self.hollow {
             deck(build, 1, shelf, self.long - 1, self.wide - 1, self.balcony);
+            build.solid(1, shelf, 0, self.long - 1, self.wide - 1, 1);
             for x in range(4, self.long - 3, 5) {
                 if x < top - 3 or x > top + 2 {
                     build.solid(x, shelf, 0, x + 1, shelf + 1, self.balcony - 1);
                 }
             }
             for x in range(3, self.long - 4, 4) {
-                build.solid(x, self.wide - 2, 0, x + 2, self.wide - 1, 2);
+                build.solid(x, self.wide - 2, 1, x + 2, self.wide - 1, 3);
             }
         } else {
             build.solid(1, shelf, 0, self.long - 1, self.wide - 1, self.balcony);
@@ -269,18 +278,28 @@ node ComputerHall(Prefab) {
         for x in [top - 2, top - 1, top, top + 1] {
             build.keep(hall, x, shelf, self.balcony);
         }
-        # The ledge along the near side: a slab over an arcade of pillars.
+        # The control booth at the balcony's end: a partition across it, a
+        # gap in that, and the booth's floor a step up.
+        booth = self.long - 8;
+        build.solid(booth, shelf, self.balcony + 7, booth + 1, self.wide - 1, self.tall);
+        build.solid(booth, shelf, self.balcony, booth + 1, shelf + 1, self.balcony + 7);
+        build.solid(booth, shelf + 4, self.balcony, booth + 1, self.wide - 1, self.balcony + 7);
+        build.solid(booth + 1, shelf, self.balcony, self.long - 1, self.wide - 1, self.balcony + 1);
+        # The ledge along the near side, a step lower: a slab over an arcade
+        # of pillars, an aisle a step up under it.
         edge_y = 1 + self.ledge;
-        build.solid(1, 1, self.balcony - 1, self.long - 1, edge_y, self.balcony);
+        ledge_z = self.balcony - 1;
+        build.solid(1, 1, ledge_z - 1, self.long - 1, edge_y, ledge_z);
+        build.solid(1, 1, 0, self.long - 1, edge_y, 1);
         for x in range(5, self.long - 3, 5) {
-            build.solid(x, edge_y - 1, 0, x + 1, edge_y, self.balcony - 1);
+            build.solid(x, edge_y - 1, 1, x + 1, edge_y, ledge_z - 1);
         }
         # The catwalks across, three cells wide, from the ledge to the balcony.
         walks = [self.walk_x] if self.second_x == 0 else [self.walk_x, self.second_x];
         for walk in walks {
             deck(build, walk, edge_y, walk + 3, shelf, self.balcony);
             for x in range(walk, walk + 3) {
-                build.keep(hall, x, edge_y - 1, self.balcony);
+                build.keep(hall, x, edge_y - 1, ledge_z);
                 build.keep(hall, x, shelf, self.balcony);
             }
         }
@@ -294,20 +313,20 @@ node ComputerHall(Prefab) {
         guard = build.waiting();
         wake +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 3.5 - float(index) * 5.0, balcony_y, self.balcony, e1m1_foe(dice, self.danger), 270.0, waits=guard);
+            build.foe(float(self.long) - 10.5 - float(index) * 4.0, balcony_y, self.balcony, e1m1_foe(dice, self.danger), 270.0, waits=guard);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.walk_x) - 2.5 - float(index) * 4.0, float(edge_y) - 1.5, self.balcony, e1m1_foe(dice, self.danger), 90.0);
+            build.foe(float(self.walk_x) - 2.5 - float(index) * 4.0, float(edge_y) - 1.5, ledge_z, e1m1_foe(dice, self.danger), 90.0);
         }
         # The closet at the ledge's far end, behind a wall that opens when
         # shot.
         if self.stash_end {
-            stash(build, self.long - 5, 1, self.balcony, 2, e1m1_reward(dice));
+            stash(build, self.long - 5, 1, ledge_z, 2, e1m1_reward(dice));
         }
         # Under a hollow balcony, a grunt among the banks.
         if self.hollow {
-            build.foe(float(self.long) - 4.5, float(self.wide) - 3.5, 0, e1m1_foe(dice, self.danger), 180.0);
-            build.supply(3.5, float(self.wide) - 3.5, 0, "item_shells");
+            build.foe(float(self.long) - 4.5, float(self.wide) - 3.5, 1, e1m1_foe(dice, self.danger), 180.0);
+            build.supply(3.5, float(self.wide) - 3.5, 1, "item_shells");
         }
         # What stands on the floor, then crates clear of it, of the way in,
         # the stairs and their foot, the catwalks' shadows and each other.
@@ -318,7 +337,7 @@ node ComputerHall(Prefab) {
         }
         # Nor before a way out on the floor.
         for port in self.taken {
-            if port.floor == 0 and port.face == 0 {
+            if port.floor <= 1 and port.face == 0 {
                 kept.append([self.long - 6, int(port.along) - 3, self.long, int(port.along) + 3]);
             }
         }
@@ -334,7 +353,7 @@ node ComputerHall(Prefab) {
         build.supply(float(self.long) - 2.5, float(edge_y) + 1.5, 0, "item_health");
         kept.append([self.long - 3, edge_y + 1, self.long - 2, edge_y + 2]);
         build.supply(2.5, float(shelf) - 1.5, 0, "item_shells");
-        build.supply(float(self.walk_x) - 1.5, 2.5, self.balcony, "item_health");
+        build.supply(float(self.walk_x) - 1.5, 2.5, ledge_z, "item_health");
         crates = dice.between(4, 7);
         tries = 0;
         while crates > 0 and tries < 50 {
@@ -350,12 +369,112 @@ node ComputerHall(Prefab) {
             crates -= 1;
         }
         if dice.chance(0.5) {
-            build.supply(float(self.stairs_x) - 1.5, balcony_y, self.balcony, "weapon_supershotgun");
+            build.supply(float(self.long) - 3.5, balcony_y, self.balcony + 1, "weapon_supershotgun");
         }
     }
 }
 
-"""A slime pit crossed by islands; walking to each landing's edge draws up
+"""Narrow ways: a corridor climbing by steps past closets, a stair hall up to
+a gallery over a slime pit; a stair down into the pit and a footbridge (or a
+long stone a leap from each bank) over its channel to the button that opens
+the ways on from the gallery."""
+node ServiceWays(Prefab) {
+    has rise_to: int = 6,
+        stones: bool = False;
+
+    can choose with Lay entry {
+        dice = visitor.dice_for(self);
+        self.title = "Service ways";
+        self.source = E1M1;
+        self.long = dice.between(28, 32);
+        self.wide = dice.between(26, 28);
+        self.rise_to = dice.between(7, 8);
+        self.stones = dice.chance(0.5);
+        self.low = -6;
+        self.high = self.rise_to + 13;
+        self.enter = Port(face=2, along=7.0, floor=1);
+        self.leaves = [
+            Port(face=1, along=float(dice.between(9, self.long - 12)), floor=self.rise_to + 1),
+            Port(face=0, along=float(self.wide - 3), floor=self.rise_to + 1)
+        ];
+        visitor.place(self);
+    }
+
+    can rise with Raise entry {
+        build = visitor.build;
+        dice = build.begin(self);
+        top = self.rise_to;
+        # The corridor along the near side, a step up every few cells, its
+        # closets off it each a step up again.
+        corridor = build.room(1, 5, 0, self.long - 1, 9, 10, variant=dice.below(3));
+        steps_at = [7, 14, 21];
+        for (index, x) in enumerate(steps_at) {
+            build.solid(x, 5, index, self.long - 1, 9, index + 1);
+        }
+        end_z = len(steps_at);
+        build.doorway(corridor, self.enter);
+        for (index, x) in enumerate([2, 9, 16]) {
+            closet = build.room(x, 1, index + 1, x + 4, 4, index + 9);
+            build.widen(closet, x, 4, index + 1, x + 3, 5, index + 8);
+        }
+        build.supply(4.0, 2.5, 1, "item_shells");
+        build.foe(11.0, 2.5, 2, e1m1_foe(dice, self.danger), 90.0);
+        build.supply(18.0, 2.5, 3, "item_health");
+        # The stair hall at the corridor's end, up to the gallery.
+        hall_x = self.long - 6;
+        stair_hall = build.room(hall_x, 9, end_z, self.long - 2, self.wide - 6, top + 12, variant=dice.below(3));
+        climb = top - end_z;
+        stair(build, hall_x, 10, end_z, 1, climb, 4);
+        # The gallery along the far side, the pit open under its edge.
+        gallery = build.room(4, self.wide - 6, top, self.long - 1, self.wide - 1, top + 11, variant=dice.below(3));
+        build.level(gallery, top);
+        build.widen(gallery, hall_x, self.wide - 7, top, self.long - 2, self.wide - 6, top + 8);
+        build.solid(hall_x, 10 + climb, end_z, self.long - 2, self.wide - 6, top);
+        for port in self.taken {
+            build.doorway(gallery, port);
+        }
+        # The pit under the gallery: a floor of stone, a channel of slime
+        # across it, a stair down from the gallery along its near end.
+        pit = build.room(5, 10, 0, self.long - 7, self.wide - 6, top + 11, variant=dice.below(3));
+        build.level(pit, 0);
+        channel_x0 = 11;
+        channel_x1 = self.long - 12;
+        build.pool(channel_x0, 10, -4, channel_x1, self.wide - 6, 0, 3, False, True);
+        down_y = self.wide - 6 - top;
+        stair(build, 5, down_y, 0, 1, top, 3);
+        for x in range(5, 8) {
+            build.keep(gallery, x, self.wide - 6, top);
+            build.keep(pit, x, self.wide - 7, top);
+        }
+        lane = (10 + self.wide - 6) // 2 - 1;
+        if self.stones {
+            build.solid(channel_x0 + 1, lane, -4, channel_x1 - 1, lane + 3, 0);
+            keep_box(build, pit, channel_x0 + 1, lane, channel_x1 - 1, lane + 3, 0);
+        } else {
+            build.solid(channel_x0, lane, -1, channel_x1, lane + 3, 0);
+        }
+        for across in range(3) {
+            build.keep(pit, channel_x0 - 1, lane + across, 0);
+            build.keep(pit, channel_x1, lane + across, 0);
+        }
+        # The button on the pit's far wall opens the ways on from the gallery.
+        press = build.push(float(self.long - 7), float(lane) + 1.5, 1.2, 2);
+        bars(build, press, self.taken, self.long, self.wide);
+        build.touch(float(self.long - 4), float(self.wide - 5), float(top), float(self.long - 2), float(self.wide - 2), float(top + 6), True, "This door is opened from below");
+        # What keeps the far bank wakes as the button is pressed; a grunt walks
+        # the corridor and another the gallery.
+        far_bank = build.waiting();
+        press +>:Fires:+> far_bank;
+        build.foe(float(hall_x) - 2.5, float(self.wide) - 3.5, top, e1m1_foe(dice, self.danger, True), 270.0, waits=far_bank);
+        build.foe(3.5, 7.0, 0, "monster_army", 0.0, patrol=[[3.5, 7.0], [float(self.long) - 3.5, 7.0]]);
+        build.foe(float(self.long) - 9.5, float(self.wide) - 3.5, top, e1m1_foe(dice, self.danger), 180.0);
+        build.foe(float(channel_x1) + 2.5, float(self.wide) - 9.5, 0, e1m1_foe(dice, self.danger), 180.0);
+        build.supply(8.5, 12.5, 0, "item_spikes");
+        build.supply(float(channel_x1) + 2.5, 12.5, 0, "item_health");
+    }
+}
+
+"""A slime pit crossed by islands, each a step higher; walking to each landing's edge draws up
 the bridge to the next, a button on each counts, and the buttons together
 open the door out. By the dice the way out is on the far shore, or high
 on a gallery over it, up a stair from the far shore."""
@@ -387,7 +506,7 @@ node SlimeWalkways(Prefab) {
         self.headroom = dice.between(16, 18) if self.gallery else dice.between(14, 16);
         self.long = 1 + self.shore + self.islands * (self.span + self.island_long) + self.span + self.far_shore + 1;
         self.low = -1;
-        self.high = self.walk + self.headroom + 1;
+        self.high = self.walk + self.headroom + self.islands + 2;
         # Each island lies where its bridges meet the last landing three
         # cells wide at least; each lane is a bridge's three cells.
         self.island_y = [];
@@ -413,14 +532,14 @@ node SlimeWalkways(Prefab) {
         # bridge's landing, never on it.
         self.climb_y = 2 if self.lanes[-1] >= 9 else self.wide - 8;
         self.enter = Port(face=2, along=dice.between(3, self.wide - 3), floor=self.walk);
-        self.leaves = [Port(face=0, along=dice.between(3, self.wide - 3), floor=self.walk + (6 if self.gallery else 0))];
+        self.leaves = [Port(face=0, along=dice.between(3, self.wide - 3), floor=self.walk + self.islands + 1 + (6 if self.gallery else 0))];
         visitor.place(self);
     }
 
     can rise with Raise entry {
         build = visitor.build;
         dice = build.begin(self);
-        upper = build.room(1, 1, self.walk, self.long - 1, self.wide - 1, self.walk + self.headroom, variant=dice.below(4));
+        upper = build.room(1, 1, self.walk, self.long - 1, self.wide - 1, self.walk + self.headroom + self.islands + 1, variant=dice.below(4));
         build.room(1 + self.shore, 1, 0, self.long - 1 - self.far_shore, self.wide - 1, self.walk, flood=6, deadly=True);
         build.doorway(upper, self.enter);
         # Steps up out of the slime to the near shore, along the side wall
@@ -432,14 +551,21 @@ node SlimeWalkways(Prefab) {
             build.solid(1 + self.shore + step, y0, 0, 2 + self.shore + step, y0 + 2, self.walk - step);
         }
         # The landings in order: the near shore, the islands, the far shore,
-        # each [x0, x1, y0, y1].
+        # each [x0, x1, y0, y1], each a step higher than the last; the pit's
+        # bed steps too, every other reach two lifts up.
         landings: list[list[int]] = [[1, 1 + self.shore, 1, self.wide - 1]];
         for index in range(self.islands) {
             x = 1 + self.shore + self.span + index * (self.span + self.island_long);
             y = self.island_y[index];
-            build.solid(x, y, 0, x + self.island_long, y + self.island, self.walk);
+            build.solid(x, y, 0, x + self.island_long, y + self.island, self.walk + index + 1);
             landings.append([x, x + self.island_long, y, y + self.island]);
+            if index % 2 == 0 {
+                build.solid(x - self.span, 1, 0, x, self.wide - 1, 2);
+            }
         }
+        far_top = self.walk + self.islands + 1;
+        build.solid(self.long - 1 - self.far_shore, 1, self.walk, self.long - 1, self.wide - 1, far_top);
+        build.level(upper, far_top);
         landings.append([self.long - 1 - self.far_shore, self.long - 1, 1, self.wide - 1]);
         buttons = len(landings) - 1;
         count = build.tally(buttons, "The way on is open");
@@ -448,22 +574,23 @@ node SlimeWalkways(Prefab) {
             landing = landings[index];
             onward = landings[index + 1];
             lane = self.lanes[index];
+            here_z = self.walk + index;
             # The walkway on rises out of the slime as the player walks up to
-            # the landing's edge.
-            near = build.touch(float(landing[1] - 2), float(lane), float(self.walk), float(landing[1]), float(lane + 3), float(self.walk + 6));
-            near +>:Fires:+> build.drawn(float(landing[1]), float(lane), float(onward[0]), float(lane + 3), self.walk, self.walk + 1);
+            # the landing's edge, a step short of the next landing's top.
+            near = build.touch(float(landing[1] - 2), float(lane), float(here_z), float(landing[1]), float(lane + 3), float(here_z + 6));
+            near +>:Fires:+> build.drawn(float(landing[1]), float(lane), float(onward[0]), float(lane + 3), here_z, here_z + 1);
             for across in range(3) {
-                build.keep(upper, landing[1] - 1, lane + across, self.walk);
-                build.keep(upper, onward[0], lane + across, self.walk);
+                build.keep(upper, landing[1] - 1, lane + across, here_z);
+                build.keep(upper, onward[0], lane + across, here_z + 1);
             }
             # A column beside the lane on this landing, its button facing
             # back the way the player came: each counts toward the door.
             column_x = landing[1] - 2;
             column_y = lane - 1 if lane - 1 >= landing[2] else lane + 3;
-            build.solid(column_x, column_y, self.walk, column_x + 1, column_y + 1, self.walk + 4);
-            build.push(float(column_x), float(column_y) + 0.5, float(self.walk) + 1.2, 2) +>:Fires:+> count;
+            build.solid(column_x, column_y, here_z, column_x + 1, column_y + 1, here_z + 4);
+            build.push(float(column_x), float(column_y) + 0.5, float(here_z) + 1.2, 2) +>:Fires:+> count;
             if index > 0 {
-                build.foe(float(landing[0]) + 1.5, float(lane) + 1.5, self.walk, e1m1_foe(dice, self.danger), 180.0);
+                build.foe(float(landing[0]) + 1.5, float(lane) + 1.5, here_z, e1m1_foe(dice, self.danger), 180.0);
             }
         }
         for port in self.taken {
@@ -483,11 +610,11 @@ node SlimeWalkways(Prefab) {
         far = landings[-1];
         if self.gallery {
             # The gallery over the far shore, and its stair up the shore.
-            raised = self.walk + 6;
+            raised = far_top + 6;
             build.level(upper, raised);
             deck(build, self.long - 4, 1, self.long - 1, self.wide - 1, raised);
             for step in range(6) {
-                build.solid(self.long - 7, self.climb_y + step, self.walk, self.long - 4, self.climb_y + step + 1, self.walk + step + 1);
+                build.solid(self.long - 7, self.climb_y + step, far_top, self.long - 4, self.climb_y + step + 1, far_top + step + 1);
             }
             for y in range(self.climb_y + 3, self.climb_y + 6) {
                 build.keep(upper, self.long - 4, y, raised);
@@ -498,12 +625,18 @@ node SlimeWalkways(Prefab) {
         }
         for index in range(dice.between(1, 2)) {
             far_x = float(self.long) - 2.5 if self.gallery else float(far[0]) + 1.5;
-            build.foe(far_x, float(far[2]) + 2.5 + float(index) * 4.0, self.walk, e1m1_foe(dice, self.danger, True), 180.0);
+            build.foe(far_x, float(far[2]) + 2.5 + float(index) * 4.0, far_top, e1m1_foe(dice, self.danger, True), 180.0);
         }
-        build.supply(float(landings[1][0]) + 0.5, float(self.lanes[1]) + 1.5, self.walk, "item_health");
+        build.supply(float(landings[1][0]) + 0.5, float(self.lanes[1]) + 1.5, self.walk + 1, "item_health");
         build.supply(2.5, float(self.wide) - 2.5, self.walk, "item_spikes");
+        # Something lies on the far shore and its gallery whatever foes are
+        # thinned: the flood of places starts from there too.
+        build.supply(float(far[0]) + 1.5, float(far[2]) + 1.5, far_top, "item_shells");
+        if self.gallery {
+            build.supply(float(self.long) - 2.5, float(self.wide // 2) + 0.5, far_top + 6, "item_health");
+        }
         if dice.chance(0.4) {
-            build.supply(float(landings[-2][0]) + 0.5, float(self.lanes[-1]) + 1.5, self.walk, "weapon_nailgun");
+            build.supply(float(landings[-2][0]) + 0.5, float(self.lanes[-1]) + 1.5, self.walk + self.islands, "weapon_nailgun");
         }
     }
 }
@@ -540,7 +673,7 @@ node Slipgate(Prefab) {
         self.long = 1 + self.near + self.channel + self.dais + 1;
         self.low = -6;
         self.high = self.tall + 1;
-        self.enter = Port(face=2, along=self.wide // 2, floor=0);
+        self.enter = Port(face=2, along=self.wide // 2, floor=1);
         self.leaves = [];
         visitor.place(self);
     }
@@ -658,9 +791,9 @@ node DropShaft(Prefab) {
         far_side = self.long - 9 if self.stash_low else self.long - 4;
         self.enter = Port(face=2, along=float(dice.between(3, self.wide - 3)), floor=self.top);
         self.leaves = [
-            Port(face=0, along=float(dice.between(8 if self.stash_low else 3, self.wide - 3)), floor=0),
-            Port(face=1, along=float(dice.between(self.ledge + 5, self.long - 4)), floor=0),
-            Port(face=3, along=float(dice.between(self.ledge + 5, max(self.ledge + 5, far_side))), floor=0)
+            Port(face=0, along=float(dice.between(8 if self.stash_low else 3, self.wide - 3)), floor=1),
+            Port(face=1, along=float(dice.between(self.ledge + 5, self.long - 4)), floor=1),
+            Port(face=3, along=float(dice.between(self.ledge + 5, max(self.ledge + 5, far_side))), floor=1)
         ];
         if self.catwalk {
             self.leaves.append(Port(face=0, along=float(self.walk_y) + 1.5, floor=self.top));
@@ -719,7 +852,7 @@ node DropShaft(Prefab) {
             clear.append([self.long - 7, 1, self.long - 1, 7]);
         }
         for port in self.taken {
-            if port.floor == 0 {
+            if port.floor <= 1 {
                 at = int(port.along);
                 if port.face == 0 {
                     clear.append([self.long - 5, at - 3, self.long, at + 3]);
@@ -784,7 +917,7 @@ node StorageVault(Prefab) {
         self.tall = self.shelf + dice.between(10, 12);
         self.low = -1;
         self.high = self.tall + 1;
-        self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
+        self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=1);
         self.leaves = [];
         visitor.place(self);
     }
@@ -834,12 +967,15 @@ node StorageVault(Prefab) {
 }
 
 """e1m1's stretches: [name, role] (start, flow, hub, keyroom, end, gate)."""
-glob E1M1_STRETCHES: list[list[str]] = [["gatehouse", "start"], ["hall", "flow"], ["hall", "hub"], ["walkways", "flow"], ["drop", "flow"], ["vault", "keyroom"], ["slipgate", "end"]];
+glob E1M1_STRETCHES: list[list[str]] = [["gatehouse", "start"], ["ways", "flow"], ["hall", "hub"], ["walkways", "flow"], ["drop", "flow"], ["vault", "keyroom"], ["slipgate", "end"]];
 
 """One of e1m1's stretches by its name."""
 def make_e1m1(name: str, key: str) -> Prefab {
     if name == "gatehouse" {
         return Gatehouse();
+    }
+    if name == "ways" {
+        return ServiceWays();
     }
     if name == "hall" {
         return ComputerHall();
