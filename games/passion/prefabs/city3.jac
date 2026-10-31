@@ -5,7 +5,8 @@ a rotunda round a sunken pool under its galleries, the security hall
 held by its force field, the royal chamber where the pass lies, and the
 summit balcony over the city. Raised in city3's own palette.
 
-- `UpperGate`: the start. A hall, the gate's gallery high at its far end;
+- `UpperGate`: the start. A hall, the gate's gallery high at its far end,
+  aisles behind the walls of the stair hall;
   the button at the stair's foot raises its steps one after another
   (city3's rising stair); a stash behind a panel; "Find the security
   pass".
@@ -34,6 +35,7 @@ import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, gate_into, lift, pillars }
 import from .q2_works { deck, keep_box, sparking, blast_chain, stash, hidden_closet, squad, rounds, beamed, held_door, key_taken, closets, barrels, pad_to, hurting }
 import from .city2 { double_doors, laser_fence, random_sparks }
+import from .q2d_parts { wall_x, wall_y, step_ways }
 
 glob CITY3: str = "q2:city3";
 
@@ -118,6 +120,13 @@ node UpperGate(Prefab) {
         stair_in_turn(build, raise_it, gx - g, middle - 2, 0, 0, g, 4, 0.2);
         keep_box(build, hall, gx, middle - 2, gx + 1, middle + 2, g);
         build.touch(float(gx - g - 4), float(middle - 3), 0.0, float(gx - g - 2), float(middle + 3), 6.0, True, "The stair rises at the button by its foot");
+        # The stair stands in a hall of its own, walled from the aisles either
+        # side of it; a wall with an arch on a sill shuts each aisle off.
+        sx = gx - g;
+        wall_y(build, hall, middle - 3, sx, gx, 0, self.tall);
+        wall_y(build, hall, middle + 2, sx, gx, 0, self.tall);
+        wall_x(build, hall, sx, 1, middle - 3, 0, self.tall, [[2, 6]]);
+        wall_x(build, hall, sx, middle + 3, self.wide - 1, 0, self.tall, [[middle + 4, middle + 7]]);
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
@@ -159,7 +168,7 @@ node PalaceStairs(Prefab) {
         self.low = -9;
         self.high = self.tall + 1;
         f = self.flight;
-        self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
+        self.enter = Port(face=2, along=float(self.wide // 2), floor=1);
         self.leaves = [
             Port(face=1, along=8.0, floor=0),
             Port(face=1, along=4.0, floor=2 * f),
@@ -198,6 +207,10 @@ node PalaceStairs(Prefab) {
         for corner in [[1, 1], [1, w - 9]] {
             build.breakable(float(corner[0]), float(corner[1]), float(2 * f), float(corner[0] + 2), float(corner[1] + 2), float(2 * f + 2), 10);
         }
+        # A wall across the floor under the flights, an arch on a sill.
+        line = self.long // 2 + 3;
+        wall_x(build, hall, line, 4, self.wide - 1, 0, f - 1, [[self.wide // 2 - 2, self.wide // 2 + 2]], 1, 4);
+        step_ways(build, self);
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
@@ -217,7 +230,7 @@ node PalaceStairs(Prefab) {
         rounds(build, "monster_soldier", [[3.5, float(self.wide // 2)], [float(self.long) - 8.5, float(self.wide // 2)]], 0);
         build.foe(float(self.long) - 3.0, float(self.wide) - 3.0, f, CITY3_FOES.pick(dice, self.danger), 180.0);
         random_sparks(build, [[1.2, float(self.wide // 2), 4.0, 0.0], [float(self.long) - 1.2, float(self.wide // 2), float(f) + 3.0, 2.0], [1.2, 3.0, float(3 * f) + 2.0, 0.0]], 3.0);
-        build.supply(2.5, float(self.wide // 2) - 2.0, 0, Q2_HEALTH, "q2");
+        build.supply(2.5, float(self.wide // 2) - 4.0, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.0, 3.0, 3 * f, "ammo_bullets", "q2");
     }
 }
@@ -239,7 +252,7 @@ node GunGallery(Prefab) {
         self.tall = self.bal + 9;
         self.low = -9;
         self.high = 22;
-        self.enter = Port(face=2, along=float(self.wide // 2 + 1), floor=0);
+        self.enter = Port(face=2, along=float(self.wide // 2 + 1), floor=1);
         self.leaves = [
             Port(face=0, along=float(self.wide // 2 + 1), floor=0),
             Port(face=3, along=float(self.long // 2), floor=self.bal)
@@ -258,10 +271,16 @@ node GunGallery(Prefab) {
         deck(build, 4 + b, 1, self.long - 1, 5, b);
         stair(build, 4, 1, 0, 0, b, 3);
         keep_box(build, hall, 4 + b, 1, 5 + b, 4, b);
+        # Walls across the gallery, arches on sills in line down its middle.
+        for line in [12, 20] {
+            wall_x(build, hall, line, 5, self.wide - 1, 0, self.tall, [[middle - 2, middle + 2]]);
+            wall_x(build, hall, line, 1, 5, 0, b - 1, [[2, 5]]);
+        }
+        step_ways(build, self);
         # The gun ports along the far wall: walking the gallery sets them off
         # one after another.
         walking = build.touch(5.0, 5.0, 0.0, float(self.long - 6), float(self.wide - 1), 6.0, False);
-        gun_ports(build, walking, [[float(x) + 0.5, float(self.wide) - 1.2, 2.0] for x in range(8, self.long - 4, 4)], 3, 0.2);
+        gun_ports(build, walking, [[float(x) + 0.5, float(self.wide) - 1.2, 2.0] for x in range(9, self.long - 4, 4)], 3, 0.2);
         # The blast shield over the way on, lifted by a shot button.
         shield = build.opened(float(self.long - 2), float(middle - 2), 0.0, float(self.long - 1), float(middle + 2), 8.0);
         build.widen(hall, self.long - 2, middle - 2, 0, self.long - 1, middle + 2, 8);
@@ -310,7 +329,7 @@ node Rotunda(Prefab) {
         self.low = -9;
         self.high = 27;
         middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle, floor=0);
+        self.enter = Port(face=2, along=middle, floor=1);
         self.leaves = [
             Port(face=0, along=middle, floor=0),
             Port(face=1, along=float(self.long // 2), floor=self.gal),
@@ -353,6 +372,10 @@ node Rotunda(Prefab) {
         lift(build, self.long - 8, cy, self.long - 5, cy + 3, g, u);
         keep_box(build, hall, self.long - 5, cy, self.long - 4, cy + 3, u);
         keep_box(build, hall, self.long - 5, cy, self.long - 4, cy + 3, g);
+        # Walls with arches on sills under the gallery, behind the stairs.
+        wall_x(build, hall, cx - 1, 1, 5, 0, g - 1, [[2, 5]]);
+        wall_x(build, hall, cx - 1, self.wide - 5, self.wide - 1, 0, g - 1, [[self.wide - 4, self.wide - 1]]);
+        step_ways(build, self);
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
@@ -361,7 +384,7 @@ node Rotunda(Prefab) {
         keep_box(build, hall, cx + 3, 4, cx + 7, 5, g);
         # The five soldiers come on as the player crosses the floor.
         crossing = build.touch(float(cx - 7), 5.0, 0.0, float(cx - 5), float(self.wide - 5), 6.0);
-        squad(build, crossing, [[float(cx) + 7.0, 6.5, 0.0], [float(cx) + 7.0, float(self.wide) - 6.5, 0.0], [float(cx), 3.0, float(g)], [float(cx), float(self.wide) - 3.0, float(g)], [float(self.long) - 3.0, float(cy) + 3.0, float(u)]], ["monster_soldier", "monster_soldier", "monster_soldier_ss", "monster_soldier", CITY3_FOES.pick(dice, self.danger, True)], 180.0);
+        squad(build, crossing, [[float(cx) + 7.0, 6.5, 0.0], [float(self.long) - 2.5, float(cy) + 3.5, 0.0], [float(cx), 3.0, float(g)], [float(cx), float(self.wide) - 3.0, float(g)], [float(self.long) - 3.0, float(cy) + 3.0, float(u)]], ["monster_soldier", "monster_soldier", "monster_soldier_ss", "monster_soldier", CITY3_FOES.pick(dice, self.danger, True)], 180.0);
         beamed(build, crossing, 2, cy - 2, -8, CITY3_FOES.pick(dice, self.danger), float(cx) - 7.0, float(cy) + 0.5, 0, 0.0);
         hidden_closet(build, self.long - 9, self.wide - 9, 0, 3, Q2_ARMOR, 6);
         vault = build.room(2, 2, 0, 4, 4, 5);
@@ -374,10 +397,10 @@ node Rotunda(Prefab) {
             build.breakable(float(at[0]), float(at[1]), 0.0, float(at[0] + 2), float(at[1] + 2), 2.0, 10);
         }
         rounds(build, "monster_chick", [[6.5, 3.0], [float(self.long) - 6.5, 3.0], [float(self.long) - 3.0, float(cy) - 3.0]], g);
-        build.foe(float(cx) + 0.5, float(cy) + 7.5, 0, CITY3_FOES.pick(dice, self.danger), 270.0);
+        build.foe(float(cx) + 2.5, float(self.wide) - 3.0, 0, CITY3_FOES.pick(dice, self.danger), 270.0);
         build.foe(float(cx) + 0.5, float(cy) + 0.5, 8, "monster_floater", 0.0);
         random_sparks(build, [[1.2, float(cy) + 6.0, 3.0, 0.0], [float(self.long) - 1.2, float(cy) - 6.0, float(g) + 2.0, 2.0], [float(cx) + 1.2, float(cy), 2.0, 0.0]], 3.0);
-        build.supply(2.5, float(cy) + 3.0, 0, Q2_HEALTH, "q2");
+        build.supply(2.5, float(cy) + 4.5, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.0, float(self.wide) - 6.0, u, "ammo_rockets", "q2");
     }
 }
@@ -402,7 +425,7 @@ node SecurityHall(Prefab) {
         self.low = -2 * self.sunk - 1;
         self.high = 22;
         middle = self.wide // 2;
-        self.enter = Port(face=2, along=float(middle), floor=0);
+        self.enter = Port(face=2, along=float(middle), floor=1);
         self.leaves = [
             Port(face=0, along=float(middle), floor=0),
             Port(face=1, along=float(self.long - 5), floor=-self.sunk)
@@ -420,8 +443,8 @@ node SecurityHall(Prefab) {
         build.level(hall, g);
         # The force field across the hall, held until the lever is thrown.
         build.solid(fx, 1, 0, fx + 1, self.wide - 1, self.tall);
-        build.widen(hall, fx, middle - 2, 0, fx + 1, middle + 2, 8);
-        field = build.opened(float(fx), float(middle - 2), 0.0, float(fx + 1), float(middle + 2), 8.0);
+        build.widen(hall, fx, middle - 2, 1, fx + 1, middle + 2, 9);
+        field = build.opened(float(fx), float(middle - 2), 1.0, float(fx + 1), float(middle + 2), 9.0);
         build.touch(float(fx - 2), float(middle - 2), 0.0, float(fx), float(middle + 2), 6.0, False, "Security pass required to deactivate the force field");
         # The gallery along the near wall up a stair, the lever at its end
         # behind a laser fence.
@@ -441,6 +464,7 @@ node SecurityHall(Prefab) {
         lift(build, fx + 4, middle - 1, fx + 7, middle + 2, -self.sunk, 0);
         build.widen(pit, fx + 4, middle - 1, -self.sunk, fx + 7, middle + 2, 0);
         keep_box(build, hall, fx + 4, middle + 1, self.long - 1, middle + 2, 0);
+        step_ways(build, self);
         build.doorway(hall, self.enter);
         for port in self.taken {
             if port.floor < 0 {
@@ -506,6 +530,7 @@ node RoyalChamber(Prefab) {
         stair_in_turn(build, raise_it, px - self.dais, cy - 1, 0, 0, self.dais, 3, 0.25);
         keep_box(build, room, px, cy - 1, px + 1, cy + 2, self.dais);
         deck(build, 1, 1, 8, side, 9);
+        wall_x(build, room, 7, 1, side, 0, 8, [[cy - 2, cy + 2]], 1, 6);
         lift(build, 8, 1, 11, 4, 0, 9);
         keep_box(build, room, 7, 1, 8, 4, 9);
         taken = key_taken(build, self.key, float(self.long) - 3.5, float(cy), self.dais);
