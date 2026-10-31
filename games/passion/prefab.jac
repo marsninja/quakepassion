@@ -30,6 +30,7 @@ import from .kits { kit_of }
 import from .dress { plain_box }
 import from .cast { Casting, origin_text, TELEPORT_MATERIAL, BUTTON_MATERIAL }
 import from engine.level.budget { foe_stats }
+import from .measures { original_measures }
 
 glob Q2_FOES: list[str] = [
          "monster_soldier_light", "monster_soldier", "monster_soldier_ss", "monster_infantry", "monster_gunner",
@@ -1650,7 +1651,11 @@ obj Raising {
         }
         # The door on the first landing (halfway along a level passage).
         door_at = float(near_at) + float(step[0] + step[1]) * (1.0 if rise != 0 else float(a1 - a0) * 0.5);
-        self.passage_door(gate, along_x, door_at, float(lo), float(hi), floor, high);
+        # A plain way on is as often an open arch as a door (the arenas'
+        # always: their spaces run into one another).
+        if gate or (not after.source.startswith("q3:") and self.dice.child("door", after.number).chance(0.45)) {
+            self.passage_door(gate, along_x, door_at, float(lo), float(hi), floor, high);
+        }
     }
 
     """A way back (`Loop`) from `later`: its passage a leg at a time, each
@@ -1834,7 +1839,8 @@ into nothing; never over a mover's or a thing's reach."""
         }
         box = prefab_box(prefab);
         mass = self.mass;
-        tall = 1.5 if prefab.source.startswith("q3:") else 1.0;
+        # No higher than the original's own halls stand.
+        tall = int(original_measures(prefab.source)[0]);
         by_id = {space.id: space for space in self.spaces};
         for z in range(prefab.oz + prefab.low, prefab.oz + prefab.high + 1) {
             under: dict[int, bool] = {};
@@ -1887,14 +1893,24 @@ into nothing; never over a mover's or a thing's reach."""
         return most;
     }
 
-    def:priv vault_patch(patch: list[int], z: int, boxes: list[list[float]], dice: Stream, tall: float) {
+    def:priv vault_patch(patch: list[int], z: int, boxes: list[list[float]], dice: Stream, tall: int) {
         mass = self.mass;
         xs = [cell % mass.nx for cell in patch];
         ys = [cell // mass.nx for cell in patch];
         if max(xs) - min(xs) < 5 or max(ys) - min(ys) < 5 {
             return;
         }
-        wanted = min(30, int(float(dice.between(6, 20)) * tall));
+        # How much headroom the middle of the room has now.
+        middle = patch[len(patch) // 2];
+        floor = z;
+        while floor > 0 and mass.at(middle % mass.nx, middle // mass.nx, floor - 1) > 0 {
+            floor -= 1;
+        }
+        spare = tall - (z + 1 - floor);
+        if spare < 5 {
+            return;
+        }
+        wanted = min(VAULT_ROOM - 4, dice.between(max(5, spare // 2), spare));
         room: dict[int, int] = {};
         for cell in patch {
             x = cell % mass.nx;
@@ -2404,12 +2420,16 @@ walker Pace {
             } elif self.last == "fight" {
                 here.pace = "rest" if roll.chance(0.65) else "steady";
             } else {
-                here.pace = ["rest", "steady", "fight"][roll.weighted([0.25, 0.3, 0.45])];
+                here.pace = ["rest", "steady", "fight"][roll.weighted([0.35, 0.3, 0.35])];
             }
         }
         self.last = here.pace;
         early = min(1.0, 0.75 + 0.05 * float(self.depth - 1));
-        share = {"rest": 0.1, "steady": 0.5 * early, "fight": early}[here.pace];
+        # A crowded original keeps more of its foes, an empty one fewer (the
+        # arenas, fought with bots, as a middling one).
+        crowd = original_measures(here.source)[1];
+        crowd = crowd if crowd > 0.0 else 0.6;
+        share = {"rest": 0.0, "steady": 0.35 * early, "fight": early}[here.pace] * min(1.3, max(0.3, crowd / 0.7));
         self.build.thin(here, share, roll);
         visit [here->:Next:->];
     }

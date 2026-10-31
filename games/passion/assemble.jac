@@ -57,7 +57,7 @@ def pick_stretch(dice: Stream, role: str, focus: list[str], used: list[str]) -> 
     rows = [row for row in library_stretches() if row[2] == role];
     mine = [row for row in rows if row[0] in focus];
     pure = os.getenv("QP_PREFAB_PURE", "") == "1";
-    taken = pure or dice.chance(0.92);
+    taken = pure or dice.chance(0.94) or role == "start";
     pool = mine if mine and taken else rows;
     fresh = [row for row in pool if (row[0] + ":" + row[1]) not in used];
     if not fresh and not pure {
