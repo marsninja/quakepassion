@@ -29,6 +29,7 @@ import from .space { Space }
 import from .kits { kit_of }
 import from .dress { plain_box }
 import from .cast { Casting, origin_text, TELEPORT_MATERIAL, BUTTON_MATERIAL }
+import from engine.level.budget { foe_stats }
 
 glob Q2_FOES: list[str] = [
          "monster_soldier_light", "monster_soldier", "monster_soldier_ss", "monster_infantry", "monster_gunner",
@@ -38,7 +39,11 @@ glob Q2_FOES: list[str] = [
      ],
      PORT_WIDE: int = 4,
      PORT_HIGH: int = 8,
-     PREFAB_MARGIN: int = 3;
+     PREFAB_MARGIN: int = 3,
+     # Lifts of rock left over a level for its ceilings to rise into.
+     VAULT_ROOM: int = 34,
+     # Foes this much alive (bosses) stay wherever the pace falls.
+     PACE_BOSS: float = 1500.0;
 
 """A way into or out of a prefab: the face of its box it opens in (0 +x,
 1 +y, 2 -x, 3 -y, in the prefab's own cells), the middle of the opening
@@ -115,7 +120,10 @@ node Prefab {
         route_door: list[float] = [],
         route_x: bool = True,
         # The ways back it leads to stretches it was reached through.
-        loops: list[Loop] = [];
+        loops: list[Loop] = [],
+        # Its part in the level's rhythm of fights (`Pace`): "rest", "steady"
+        # or "fight".
+        pace: str = "steady";
 }
 
 edge Next: Prefab --> Prefab {}
@@ -893,7 +901,10 @@ obj Raising {
         notes: list[str] = [],
         # Every cue laid down, wired once all are (`wire_cues`).
         cues: list[Cue] = [],
-        cue_count: int = 0;
+        cue_count: int = 0,
+        # The foes each stretch stood about in the open (no cue wakes them,
+        # none fires on their death), by its number: what `thin` may take.
+        loose_foes: dict[int, list[dict[str, str]]] = {};
 
     """Raise `prefab` next: its cells are read from now on."""
     def begin(prefab: Prefab) -> Stream {
@@ -1136,6 +1147,25 @@ obj Raising {
         }
         self.put_at(fields, x, y, z);
         self.casting.monsters += 1;
+        prefab = self.here;
+        if prefab is not None and not target and waits is None {
+            self.loose_foes.setdefault(prefab.number, []).append(fields);
+        }
+    }
+
+    """Take foes out of a stretch's loose ones, all but `share` of them (at
+    random, rounded up when any are left at all), bosses staying whatever the
+    share. Foes that a cue wakes stay: an ambush is a fight of its own."""
+    def thin(prefab: Prefab, share: float, dice: Stream) {
+        loose = self.loose_foes.get(prefab.number, []);
+        common = [fields for fields in loose if foe_stats(fields.get("asset_game", "q1"), fields.get("classname", ""))[0] < PACE_BOSS];
+        kept = int(math.ceil(float(len(common)) * share));
+        order = dice.order(len(common));
+        for index in order[kept:] {
+            common[index]["thinned"] = "1";
+            self.casting.monsters -= 1;
+        }
+        self.casting.items = [item for item in self.casting.items if "thinned" not in item.fields];
     }
 
     """A chain of path_corners through `points` (the prefab's cells) on lift
@@ -1785,6 +1815,149 @@ obj Raising {
         self.notes.append("woven: " + str(hatches) + " hatches, " + str(windows) + " windows, " + str(shortcuts) + " shortcuts");
     }
 
+    """Ceilings of the stretches' big rooms risen into the rock over them, as
+the originals' great halls stand far taller than their floors are wide: each
+room's air under a flat ceiling of its own, raised flat, in steps inward or
+round a lantern in its middle (by the stretch's dice, some left as they
+were). Only where rock stands all the way up and on every side, so it opens
+into nothing; never over a mover's or a thing's reach."""
+    def vault(chain: list[Prefab], dice: Stream) {
+        boxes = self.entity_boxes();
+        for prefab in chain {
+            self.vault_stretch(prefab, boxes, dice.child("stretch", prefab.number));
+        }
+    }
+
+    def:priv vault_stretch(prefab: Prefab, boxes: list[list[float]], dice: Stream) {
+        if dice.chance(0.2) {
+            return;
+        }
+        box = prefab_box(prefab);
+        mass = self.mass;
+        tall = 1.5 if prefab.source.startswith("q3:") else 1.0;
+        by_id = {space.id: space for space in self.spaces};
+        for z in range(prefab.oz + prefab.low, prefab.oz + prefab.high + 1) {
+            under: dict[int, bool] = {};
+            for y in range(box[1], box[3]) {
+                for x in range(box[0], box[2]) {
+                    owner = mass.at(x, y, z);
+                    if owner > 0 and mass.at(x, y, z + 1) == 0 {
+                        space = by_id.get(owner - 1, None);
+                        if space is not None and not space.sky and space.role not in ["corridor", "window"] {
+                            under[y * mass.nx + x] = True;
+                        }
+                    }
+                }
+            }
+            while under {
+                first = next(iter(under));
+                del under[first];
+                patch = [first];
+                reached = 0;
+                while reached < len(patch) {
+                    cell = patch[reached];
+                    reached += 1;
+                    for step in [1, -1, mass.nx, -mass.nx] {
+                        if under.get(cell + step, False) {
+                            del under[cell + step];
+                            patch.append(cell + step);
+                        }
+                    }
+                }
+                if len(patch) >= 40 {
+                    self.vault_patch(patch, z, boxes, dice.child("patch", z * 4096 + patch[0]), tall);
+                }
+            }
+        }
+    }
+
+    """How many lifts of rock stand over a cell at (x, y) above lift z, it and
+    its eight neighbours, up to `most`."""
+    def:priv rock_over(x: int, y: int, z: int, most: int) -> int {
+        mass = self.mass;
+        for up in range(1, most + 1) {
+            for dy in [-1, 0, 1] {
+                for dx in [-1, 0, 1] {
+                    if not mass.inside(x + dx, y + dy, z + up) or mass.at(x + dx, y + dy, z + up) != 0 {
+                        return up - 1;
+                    }
+                }
+            }
+        }
+        return most;
+    }
+
+    def:priv vault_patch(patch: list[int], z: int, boxes: list[list[float]], dice: Stream, tall: float) {
+        mass = self.mass;
+        xs = [cell % mass.nx for cell in patch];
+        ys = [cell // mass.nx for cell in patch];
+        if max(xs) - min(xs) < 5 or max(ys) - min(ys) < 5 {
+            return;
+        }
+        wanted = min(30, int(float(dice.between(6, 20)) * tall));
+        room: dict[int, int] = {};
+        for cell in patch {
+            x = cell % mass.nx;
+            y = cell // mass.nx;
+            blocked = False;
+            for box in boxes {
+                if box[0] <= float(x) + 1.0 and float(x) <= box[3] and box[1] <= float(y) + 1.0 and float(y) <= box[4] and box[5] >= float(z) and box[2] <= float(z + wanted + 2) {
+                    blocked = True;
+                    break;
+                }
+            }
+            room[cell] = 0 if blocked else self.rock_over(x, y, z, wanted + 2) - 2;
+        }
+        # As high as half the room may rise, the columns too low left out.
+        rise = wanted;
+        while rise >= 5 and len([cell for cell in patch if room[cell] >= rise]) * 2 < len(patch) {
+            rise -= 3;
+        }
+        if rise < 5 {
+            return;
+        }
+        open_cells = {cell: True for cell in patch if room[cell] >= rise};
+        # How far in from the risen part's edge each column stands.
+        inset: dict[int, int] = {};
+        layer = list(open_cells.keys());
+        depth = 0;
+        while layer {
+            edge_cells = [cell for cell in layer if not all([cell + a * mass.nx + b in open_cells and cell + a * mass.nx + b not in inset for a in [-1, 0, 1] for b in [-1, 0, 1]])];
+            if not edge_cells {
+                edge_cells = layer;
+            }
+            for cell in edge_cells {
+                inset[cell] = depth;
+            }
+            layer = [cell for cell in layer if cell not in inset];
+            depth += 1;
+        }
+        shape = dice.below(3);
+        third = max(2, rise // 3);
+        tops: dict[int, int] = {};
+        for cell in inset {
+            reach = inset[cell];
+            if shape == 0 {
+                tops[cell] = rise;
+            } elif shape == 1 {
+                tops[cell] = min(rise, third * (reach // 2 + 1));
+            } else {
+                tops[cell] = rise if reach >= 3 else third;
+            }
+        }
+        by_id = {space.id: space for space in self.spaces};
+        for cell in tops {
+            x = cell % mass.nx;
+            y = cell // mass.nx;
+            owner = mass.at(x, y, z);
+            mass.carve(x, y, z + 1, x + 1, y + 1, z + 1 + tops[cell], owner - 1);
+            space = by_id.get(owner - 1, None);
+            if space is not None {
+                space.h = max(space.h, z + 1 + tops[cell] - space.z);
+            }
+        }
+    }
+
     """The boxes the entities take, in the world's cells (z in lifts):
     [x0, y0, z0, x1, y1, z1] each, a point entity a cell round its origin."""
     def entity_boxes -> list[list[float]] {
@@ -2206,6 +2379,39 @@ obj Raising {
                 self.notes.append("rock at " + origin_text(want.low.x, want.low.y, want.low.z) + " meets air");
             }
         }
+    }
+}
+
+"""The rhythm of a level's fights, as the originals have it: long quiet ways
+with a stray or two, and foes bunched where it matters. Walks the level from
+its start and gives each stretch its part, a rest after a fight more often
+than not, a fight where a key lies or the way out does, and takes the stray
+foes out of it to suit (fewer in the first levels of a run)."""
+walker Pace {
+    has build: Raising,
+        dice: Stream,
+        depth: int = 1,
+        last: str = "rest";
+
+    can go with Prefab entry {
+        ahead = [here->:Next:->][?:Prefab];
+        roll = self.dice.child("pace", here.number);
+        before = [here<-:Next:<-][?:Prefab];
+        here.pace = "rest";
+        if before {
+            if not ahead {
+                here.pace = "fight" if roll.chance(0.7) else "steady";
+            } elif self.last == "fight" {
+                here.pace = "rest" if roll.chance(0.65) else "steady";
+            } else {
+                here.pace = ["rest", "steady", "fight"][roll.weighted([0.25, 0.3, 0.45])];
+            }
+        }
+        self.last = here.pace;
+        early = min(1.0, 0.75 + 0.05 * float(self.depth - 1));
+        share = {"rest": 0.1, "steady": 0.5 * early, "fight": early}[here.pace];
+        self.build.thin(here, share, roll);
+        visit [here->:Next:->];
     }
 }
 

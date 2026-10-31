@@ -108,6 +108,27 @@ import from .q3tourney4 { Q3TOURNEY4_STRETCHES, make_q3tourney4 }
 import from .q3tourney5 { Q3TOURNEY5_STRETCHES, make_q3tourney5 }
 import from .q3tourney6 { Q3TOURNEY6_STRETCHES, make_q3tourney6 }
 
+"""The families of originals a level is made of, each a set that belongs
+together (an episode, a unit, a run of arenas of one kind), so that one level
+holds together and the next differs from it."""
+glob FAMILIES: list[list[str]] = [
+         ["e1m1", "e1m2", "e1m3", "e1m4", "e1m5", "e1m6", "e1m7", "e1m8"],
+         ["e2m1", "e2m2", "e2m3", "e2m4", "e2m5", "e2m6", "e2m7"],
+         ["e3m1", "e3m2", "e3m3", "e3m4", "e3m5", "e3m6", "e3m7"],
+         ["e4m1", "e4m2", "e4m3", "e4m4", "e4m5", "e4m6", "e4m7", "e4m8", "end"],
+         ["base1", "base2", "base3"],
+         ["bunk1", "ware1", "ware2"],
+         ["jail1", "jail2", "jail3", "jail4", "jail5", "security"],
+         ["mintro", "mine1", "mine2", "mine3", "mine4"],
+         ["fact1", "fact2", "fact3", "power1", "power2", "biggun"],
+         ["hangar1", "hangar2", "lab", "command", "strike", "space"],
+         ["city1", "city2", "city3", "boss1", "boss2"],
+         ["cool1", "waste1", "waste2", "waste3"],
+         ["q3dm1", "q3dm2", "q3dm3", "q3dm4", "q3dm5", "q3dm6", "q3dm7", "q3dm8"],
+         ["q3dm0", "q3dm9", "q3dm10", "q3dm11", "q3dm12", "q3dm13", "q3dm14", "q3dm15", "q3dm16"],
+         ["q3dm17", "q3dm18", "q3dm19", "q3tourney1", "q3tourney2", "q3tourney3", "q3tourney4", "q3tourney5", "q3tourney6"]
+     ];
+
 """The library's stretches, [original, name, role] each."""
 def library_stretches -> list[list[str]] {
     found: list[list[str]] = [];

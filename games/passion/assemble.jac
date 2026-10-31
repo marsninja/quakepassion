@@ -24,11 +24,11 @@ import from .space { Space }
 import from .dress { Dressing, dress }
 import from .kits { kit_of }
 import from .cast { Casting }
-import from .prefab { Prefab, Next, Lay, Raise, Raising, prefab_box, passage_box, prefab_direction, prefab_point, port_middle, loop_boxes, PREFAB_MARGIN, PORT_HIGH }
+import from .prefab { Prefab, Next, Lay, Raise, Pace, Raising, prefab_box, passage_box, prefab_direction, prefab_point, port_middle, loop_boxes, PREFAB_MARGIN, PORT_HIGH, VAULT_ROOM }
 import os;
 import from editor.formats.map { MapItem }
 import from engine.level.budget { foe_stats, BUDGET_EXPOSURE }
-import from .prefabs.library { library_stretches, make_stretch }
+import from .prefabs.library { library_stretches, make_stretch, FAMILIES }
 import from .prefabs.testbed { TestStart, TestKey, TestEnd }
 import from .derive { Piece, Derived, derived_library }
 
@@ -48,20 +48,26 @@ obj Assembly {
         notes: list[str] = [];
 }
 
-"""A stretch of the library for a role, [original, name]: one of the
-focus original's when it has one (most of the time; always under
-QP_PREFAB_PURE=1), and not one of `avoid` (`original:name` each) when
-another will do."""
-def pick_stretch(dice: Stream, role: str, focus: str, avoid: list[str]) -> list[str] {
+"""A stretch of the library for a role, [original, name]: most of the time
+one of `focus`'s (always under QP_PREFAB_PURE=1), now and then a guest from
+the rest of the library, and not one the level already holds (`used`, each
+`original:name`, which it joins) while another will do: the rest of the
+library before a stretch comes round again."""
+def pick_stretch(dice: Stream, role: str, focus: list[str], used: list[str]) -> list[str] {
     rows = [row for row in library_stretches() if row[2] == role];
-    mine = [row for row in rows if row[0] in focus.split(",")];
-    taken = dice.chance(0.85) or os.getenv("QP_PREFAB_PURE", "") == "1";
+    mine = [row for row in rows if row[0] in focus];
+    pure = os.getenv("QP_PREFAB_PURE", "") == "1";
+    taken = pure or dice.chance(0.92);
     pool = mine if mine and taken else rows;
-    fresh = [row for row in pool if (row[0] + ":" + row[1]) not in avoid];
+    fresh = [row for row in pool if (row[0] + ":" + row[1]) not in used];
+    if not fresh and not pure {
+        fresh = [row for row in rows if (row[0] + ":" + row[1]) not in used];
+    }
     if fresh {
         pool = fresh;
     }
     row = pool[dice.below(len(pool))];
+    used.append(row[0] + ":" + row[1]);
     return [row[0], row[1]];
 }
 
@@ -124,14 +130,16 @@ def prefab_chain(dice: Stream, depth: int, grand: bool = True) -> list[Prefab] {
         return solo_chain(solo);
     }
     danger = min(1.0, float(depth - 1) / 5.0);
-    focus = os.getenv("QP_PREFAB_FOCUS", "");
+    named = os.getenv("QP_PREFAB_FOCUS", "");
+    focus = named.split(",") if named else FAMILIES[dice.below(len(FAMILIES))];
+    used: list[str] = [];
     nodes: list[Prefab] = [];
     gold = grand and (depth >= 2 or dice.chance(0.35));
-    last: list[str] = pick_stretch(dice, "start", focus, []);
+    last: list[str] = pick_stretch(dice, "start", focus, used);
     previous = make_stretch(last[0], last[1]);
     nodes.append(previous);
     for index in range(dice.between(1, 2) if grand else 1) {
-        last = pick_stretch(dice, "flow", focus, [last[0] + ":" + last[1]]);
+        last = pick_stretch(dice, "flow", focus, used);
         made = make_stretch(last[0], last[1]);
         nodes.append(made);
         previous +>:Next:+> made;
@@ -139,29 +147,27 @@ def prefab_chain(dice: Stream, depth: int, grand: bool = True) -> list[Prefab] {
     }
     keys = ["key_silver", "key_gold"] if gold else ["key_silver"];
     for key in keys {
-        row = pick_stretch(dice, "hub", focus, [last[0] + ":" + last[1]]);
+        row = pick_stretch(dice, "hub", focus, used);
         hub = make_stretch(row[0], row[1]);
         nodes.append(hub);
         previous +>:Next:+> hub;
         # The branch to the key, ending at its room.
         tip = hub;
-        step = row;
         for index in range(dice.between(1, 2)) {
-            step = pick_stretch(dice, "flow", focus, [step[0] + ":" + step[1]]);
+            step = pick_stretch(dice, "flow", focus, used);
             made = make_stretch(step[0], step[1]);
             nodes.append(made);
             tip +>:Next:+> made;
             tip = made;
         }
-        room = pick_stretch(dice, "keyroom", focus, []);
+        room = pick_stretch(dice, "keyroom", focus, used);
         made = make_stretch(room[0], room[1], key);
         nodes.append(made);
         tip +>:Next:+> made;
         # The way on from the hub, locked by the key.
         previous = hub;
-        last = row;
         for index in range(dice.between(1, 2)) {
-            last = pick_stretch(dice, "flow", focus, [last[0] + ":" + last[1]]);
+            last = pick_stretch(dice, "flow", focus, used);
             made = make_stretch(last[0], last[1]);
             if index == 0 {
                 made.locked = key;
@@ -172,7 +178,7 @@ def prefab_chain(dice: Stream, depth: int, grand: bool = True) -> list[Prefab] {
         }
     }
     gated = gold or dice.chance(0.5);
-    ending = pick_stretch(dice, "gate" if gated else "end", focus, []);
+    ending = pick_stretch(dice, "gate" if gated else "end", focus, used);
     made = make_stretch(ending[0], ending[1], keys[-1] if gated else "");
     nodes.append(made);
     previous +>:Next:+> made;
@@ -347,7 +353,7 @@ def settle_chain(chain: list[Prefab]) -> list[int] {
             ];
         }
     }
-    return [highs[0] - lows[0] + 2 * PREFAB_MARGIN, highs[1] - lows[1] + 2 * PREFAB_MARGIN, highs[2] - lows[2] + 2 * PREFAB_MARGIN];
+    return [highs[0] - lows[0] + 2 * PREFAB_MARGIN, highs[1] - lows[1] + 2 * PREFAB_MARGIN, highs[2] - lows[2] + 2 * PREFAB_MARGIN + VAULT_ROOM];
 }
 
 """Assemble a level from prefabs for a seed and a depth: a chain laid out
@@ -384,9 +390,15 @@ def assemble_prefabs(seed: int, depth: int, notes: list[str], library: str = "de
                 build.loop_passage(prefab, loop);
             }
         }
+        if library != "derived" {
+            chain[0] spawn Pace(build=build, dice=trial.derive("pace"), depth=depth);
+        }
         build.wire_cues();
         if woven {
             build.weave(chain, weaving > 1);
+        }
+        if library != "derived" and os.getenv("QP_PREFAB_NOVAULT", "") != "1" {
+            build.vault(chain, trial.derive("vault"));
         }
         build.settle_liquids();
         build.settle_rocks();
