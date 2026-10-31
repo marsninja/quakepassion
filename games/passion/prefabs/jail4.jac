@@ -14,24 +14,26 @@ jail4's own palette.
 - `ElevatorShaft`: jail4's great elevator: a platform filling a deep shaft,
   stepping onto it at the top sends it down; a stair winds round the
   shaft's walls for the way back. Guards wake at the bottom as it goes.
-- `CellTiers`: a cell block of three tiers round an atrium, walkways on
-  both sides at each tier, stairs and bridges between; barred cells below
+- `CellTiers`: a cell block of three tiers round an atrium, a flooded drain
+  down its floor, walkways on both sides at each tier, stairs and bridges between; barred cells below
   opened by buttons, cells on the second tier that open as the player
   crosses its bridge. Ways on at all three tiers (a hub).
-- `Grinder`: a pit where pistons pound beside a catwalk across it, steps
-  out of it for whoever falls, an operator's booth over the far end whose
+- `Grinder`: a flooded pit where pistons pound beside a catwalk across it,
+  steps out of it for whoever falls, an operator's booth over the far end whose
   switch opens the ways on (or they open as a body nears).
 - `RackChamber`: the key room. The data CD on a rack on a gallery up a
   stair; taking it opens the cells along the near wall and switches on
   lasers across the chamber.
 - `TortureExit`: the end. A door (a key's, as a gate), a stair down into a
-  pit, the way out at its foot; guards appear on the ledge above."""
+  drowned cellar, a causeway over the water past pounding pistons to the way
+  out on an island at the far end; guards appear on the island."""
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, spiral, ring_path, ring_landing }
 import from .warejail_parts { shutter, auto_shutters, key_cue, sparking, guards, charges, stash, keep_row, called_lift, closets, gate_pair, post_button, laser, bars, drip }
+import from .e4m6 { flood }
 
 glob JAIL4: str = "q2:jail4";
 
@@ -71,12 +73,12 @@ node TortureEntry(Prefab) {
         self.title = "Torture entry";
         self.source = JAIL4;
         self.district = level_district(JAIL4);
-        self.long = dice.between(27, 30);
+        self.long = dice.between(31, 34);
         self.wide = dice.between(20, 22);
-        self.gallery = dice.between(6, 7);
+        self.gallery = dice.between(8, 9);
         self.rim = dice.between(11, 12);
         self.two_stairs = dice.chance(0.45);
-        self.tall = self.gallery + 9;
+        self.tall = self.gallery + 12;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -122,7 +124,7 @@ node TortureEntry(Prefab) {
         guards(build, head, [[float(self.long) - 4.5, float(middle) + 3.5], [float(self.long) - 6.5, float(middle) - 3.5]], 0, JAIL4_FOES.squad(dice, self.danger, 2, True), 180.0);
         build.foe(float(g + u) + 3.5, float(middle) + 0.5, 0, "monster_soldier", 0.0, patrol=[[float(g + u) + 3.5, float(middle) + 0.5], [float(self.long) - 3.5, float(middle) + 0.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(g + u + 5 + index * 3) + 0.5, 4.5 + float(index % 2) * float(self.wide - 9), 0, JAIL4_FOES.pick(dice, self.danger), 180.0);
+            build.foe(float(self.long - 8 + index * 2) + 0.5, 4.5 + float(index % 2) * float(self.wide - 9), 0, JAIL4_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(float(self.long) - 2.5, 4.5, 0, Q2_HEALTH, "q2");
         for x in [float(g) + 3.5, float(self.long) - 6.5] {
@@ -302,8 +304,8 @@ node ElevatorShaft(Prefab) {
 """A cell block of three tiers round an atrium, walkways at each tier,
 stairs and bridges between."""
 node CellTiers(Prefab) {
-    has tier: int = 8,
-        tall: int = 24;
+    has tier: int = 11,
+        tall: int = 34;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -312,8 +314,8 @@ node CellTiers(Prefab) {
         self.district = level_district(JAIL4);
         self.long = dice.between(30, 33);
         self.wide = dice.between(22, 24);
-        self.tall = 2 * self.tier + 8;
-        self.low = -1;
+        self.tall = 2 * self.tier + 12;
+        self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -342,8 +344,8 @@ node CellTiers(Prefab) {
         walls: list[int] = [];
         for x in range(4, self.long - 6, 4) {
             for floor in [0, t, 2 * t] {
-                build.solid(x, 1, floor, x + 1, 4, floor + 6);
-                build.solid(x, self.wide - 4, floor, x + 1, self.wide - 1, floor + 6);
+                build.solid(x, 1, floor, x + 1, 4, floor + 8);
+                build.solid(x, self.wide - 4, floor, x + 1, self.wide - 1, floor + 8);
             }
             walls.append(x);
         }
@@ -364,6 +366,9 @@ node CellTiers(Prefab) {
             keep_row(build, atrium, b[0], 6, b[1], 1, 3);
             keep_row(build, atrium, b[0], self.wide - 7, b[1], 1, 3);
         }
+        # The drain down the atrium's floor, deep and flooded, past the stair.
+        build.pool(t + 6, 9, -8, self.long - 3, self.wide - 9, 0, 2);
+        build.supply(float(self.long) - 4.5, float(middle) + 0.5, -8, Q2_AMMO[dice.below(len(Q2_AMMO))], "q2");
         # Barred cells on the floor, opened by buttons on their walls.
         if len(walls) >= 3 {
             for (index, x) in enumerate([walls[1], walls[-1]]) {
@@ -400,11 +405,11 @@ node CellTiers(Prefab) {
             crossing +>:Fires:+> door;
             build.foe(float(x) - 1.5, 2.5, t, JAIL4_FOES.pick(dice, self.danger, index == 0), 90.0);
         }
-        guards(build, crossing, [[float(b2) + 1.5, float(self.wide) - 3.5], [float(b2) - 4.5, 4.5]], 2 * t, JAIL4_FOES.squad(dice, self.danger, 2, True), 180.0);
-        build.foe(5.5, float(middle) + 0.5, 0, "monster_soldier", 0.0, patrol=[[5.5, float(middle) + 0.5], [float(self.long) - 4.5, float(middle) + 0.5]]);
+        guards(build, crossing, [[float(b2) + 1.5, float(self.wide) - 5.5], [float(b2) - 4.5, 5.5]], 2 * t, JAIL4_FOES.squad(dice, self.danger, 2, True), 180.0);
+        build.foe(float(t) + 6.5, 7.5, 0, "monster_soldier", 0.0, patrol=[[float(t) + 6.5, 7.5], [float(self.long) - 4.5, 7.5]]);
         build.foe(float(self.long) - 4.5, 5.5, t, "monster_soldier_light", 180.0, patrol=[[float(self.long) - 4.5, 5.5], [13.5, 5.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(12 + index * 5) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, JAIL4_FOES.pick(dice, self.danger, index == 0), 180.0);
+            build.foe(float(t + 5 + index * 5) + 0.5, float(self.wide) - 7.5 if index % 2 == 0 else 7.5, 0, JAIL4_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.supply(float(self.long) - 3.5, float(self.wide) - 4.5, 2 * t, Q2_HEALTH, "q2");
         for x in [9.5, float(b1) + 1.5, float(b2) - 2.5] {
@@ -428,7 +433,7 @@ node Grinder(Prefab) {
         self.district = level_district(JAIL4);
         self.long = dice.between(27, 30);
         self.wide = dice.between(20, 22);
-        self.deep = dice.between(6, 7);
+        self.deep = dice.between(7, 8);
         self.from_booth = dice.chance(0.6);
         self.tall = self.booth + 7;
         self.low = -self.deep - 1;
@@ -467,6 +472,8 @@ node Grinder(Prefab) {
             y = middle - 4 if index % 2 == 0 else middle + 3;
             build.train([2.0, 2.0, 4.0], [[float(x), float(y), float(-d)], [float(x), float(y), -2.0]], float(dice.between(90, 140)), 0.5);
         }
+        # The pit's sump, flooded up to two lifts under the floor.
+        flood(build, x0, 1, -d, x1, self.wide - 1, -2);
         # The operator's booth over the far end's north half, up a stair
         # along the far wall; its switch opens the ways on below.
         bx = self.long - 6;
@@ -491,7 +498,7 @@ node Grinder(Prefab) {
         # Halfway over, guards appear in the booth.
         over = build.touch(float((x0 + x1) // 2 - 1), float(middle - 1), 0.0, float((x0 + x1) // 2 + 1), float(middle + 2), 6.0);
         guards(build, over, [[float(self.long) - 3.5, float(middle) + 1.5], [float(self.long) - 3.5, float(self.wide) - 3.5]], self.booth, JAIL4_FOES.squad(dice, self.danger, 2, True), 180.0);
-        build.foe(float(x0) + 2.5, float(self.wide) - 4.5, -d, JAIL4_FOES.pick(dice, self.danger), 90.0);
+        build.foe(float(x0) - 2.5, float(self.wide) - 3.5, 0, JAIL4_FOES.pick(dice, self.danger), 0.0);
         build.foe(3.5, 3.5, 0, "monster_soldier", 90.0, patrol=[[3.5, 3.5], [3.5, float(self.wide) - 3.5]]);
         build.foe(float(x1) + 1.5, float(middle) + 4.5, 0, JAIL4_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(x0) + 4.5, float(self.wide) - 3.5, -d, "ammo_grenades", "q2");
@@ -560,21 +567,22 @@ node RackChamber(Prefab) {
     }
 }
 
-"""The end: a door, a stair down into a pit, the way out at its foot."""
+"""The end: a door, a stair down into a drowned cellar, a causeway over the
+water to the way out on an island at the far end."""
 node TortureExit(Prefab) {
     has key: str = "",
-        deep: int = 5,
-        tall: int = 12;
+        deep: int = 8,
+        tall: int = 14;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Torture exit" + (" (" + self.key[4:] + " door)" if self.key else "");
         self.source = JAIL4;
         self.district = level_district(JAIL4);
-        self.long = dice.between(24, 26);
-        self.wide = dice.between(16, 18);
-        self.deep = dice.between(4, 6);
-        self.tall = dice.between(11, 13);
+        self.long = dice.between(30, 33);
+        self.wide = dice.between(19, 21);
+        self.deep = dice.between(8, 9);
+        self.tall = dice.between(13, 15);
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -587,23 +595,41 @@ node TortureExit(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         low = -self.deep;
+        walk = -3;
         wall = 8;
-        gate_pair(build, dice, self.enter, self.long, self.wide, wall, low, self.tall, self.key);
-        # A ledge inside the door, a stair down from it into the pit.
+        cellar = gate_pair(build, dice, self.enter, self.long, self.wide, wall, low, self.tall, self.key);
+        # A ledge inside the door, a stair down from it to the causeway's
+        # height; the rest of the cellar water, up to the causeway's underside.
         build.solid(wall + 1, 1, low, wall + 3, self.wide - 1, 0);
-        stair(build, wall + 2 + self.deep, middle - 2, low, 2, self.deep, 4);
-        build.way_out(float(self.long) - 3.5, float(middle), low);
-        # On the ledge, guards appear in the pit; pistons pound by the way
-        # out.
+        for step in range(0 - walk) {
+            build.solid(wall + 3 + step, middle - 2, low, wall + 4 + step, middle + 2, -step - 1);
+        }
+        wx = wall + 6;
+        ix = self.long - 7;
+        # The island, the causeway from the stair's foot to it, and steps up
+        # out of the water onto the causeway's near end for whoever falls.
+        build.solid(ix, middle - 4, low, self.long - 1, middle + 4, walk);
+        build.solid(wx, middle - 2, walk - 1, ix, middle + 2, walk);
+        flood(build, wall + 3, 1, low, self.long - 1, self.wide - 1, walk - 1);
+        rise_out = walk - low;
+        stair(build, wx + rise_out - 1, middle + 2, low, 2, rise_out, 2);
+        build.way_out(float(ix) + 3.0, float(middle), walk);
+        keep_row(build, cellar, wx, middle + 2, walk, 0, 3);
+        # The pistons pounding beside the causeway.
+        for (index, x) in enumerate(range(wx + 3, ix - 1, 5)) {
+            y = middle - 4 if index % 2 == 0 else middle + 2;
+            build.train([2.0, 2.0, 3.0], [[float(x), float(y), float(low)], [float(x), float(y), float(walk + 1)]], 100.0, 0.5);
+        }
+        # On the ledge, guards appear on the island.
         ledge = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
-        guards(build, ledge, [[float(self.long) - 5.5, 3.5], [float(self.long) - 5.5, float(self.wide) - 3.5]], low, JAIL4_FOES.squad(dice, self.danger, 2, True), 180.0);
-        build.train([2.0, 2.0, 3.0], [[float(self.long - 6), 2.0, float(low)], [float(self.long - 6), 2.0, float(low + 3)]], 100.0, 0.5);
+        guards(build, ledge, [[float(ix) + 2.5, float(middle) + 2.5], [float(ix) + 2.5, float(middle) - 2.5]], walk, JAIL4_FOES.squad(dice, self.danger, 2, True), 180.0);
         for index in range(dice.between(2, 3)) {
             build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, JAIL4_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(wall) + 7.5, float(middle) + 0.5, low, "monster_soldier", 0.0, patrol=[[float(wall) + 7.5, float(middle) + 0.5], [float(self.long) - 6.5, float(middle) + 0.5]]);
+        build.foe(float(wx) + 1.5, float(middle) + 0.5, walk, "monster_soldier", 0.0, patrol=[[float(wx) + 1.5, float(middle) + 0.5], [float(ix) - 1.5, float(middle) + 0.5]]);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
-        drip(build, float(wall) + 6.5, float(middle) + 3.5, float(self.tall) - 0.5, 2.5);
+        build.supply(float(ix) - 3.5, 3.5, low, Q2_ARMOR, "q2");
+        drip(build, float(wall) + 8.5, float(middle) + 3.5, float(self.tall) - 0.5, 2.5);
     }
 }
 
