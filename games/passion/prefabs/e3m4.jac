@@ -44,6 +44,7 @@ glob E3M4_FOES: FoeMix = FoeMix(light=["monster_ogre", "monster_zombie", "monste
 a dais at the far end up steps a shot button raises."""
 node DarkPier(Prefab) {
     has deep: int = 7,
+        walk: int = 12,
         tall: int = 19;
 
     can choose with Lay entry {
@@ -53,12 +54,14 @@ node DarkPier(Prefab) {
         self.district = level_district(E3M4);
         self.long = dice.between(32, 36);
         self.wide = dice.between(20, 24);
-        self.deep = dice.between(5, 6);
+        self.deep = dice.between(7, 8);
+        self.walk = dice.between(11, 13);
+        self.tall = self.walk + dice.between(15, 18);
         self.low = -10;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
-        self.leaves = [Port(face=0, along=middle, floor=4), Port(face=0, along=3.0, floor=9), Port(face=3, along=float(self.long - 4), floor=0), Port(face=1, along=float(self.long - 4), floor=0)];
+        self.leaves = [Port(face=0, along=middle, floor=4), Port(face=0, along=3.0, floor=self.walk), Port(face=3, along=float(self.long - 4), floor=0), Port(face=1, along=float(self.long - 4), floor=0)];
         visitor.place(self);
     }
 
@@ -68,8 +71,9 @@ node DarkPier(Prefab) {
         middle = self.wide // 2;
         d = self.deep;
         fx = self.long - 9;
+        w = self.walk;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
-        build.level(hall, 9);
+        build.level(hall, w);
         e2m4_moat(build, 6, fx, 1, self.wide - 1, d, 0, True);
         build.solid(6, middle - 1, -1, fx, middle + 2, 0);
         for y in range(middle - 1, middle + 2) {
@@ -78,12 +82,12 @@ node DarkPier(Prefab) {
         }
         # The galleries over the water along both long walls, joined across
         # the far landing; a lift up from the near landing.
-        build.solid(1, 1, 8, self.long - 1, 5, 9);
-        build.solid(1, self.wide - 5, 8, self.long - 1, self.wide - 1, 9);
-        build.solid(fx, 5, 8, fx + 3, self.wide - 5, 9);
-        lift(build, 2, 6, 5, 9, 0, 9);
+        build.solid(1, 1, w - 1, self.long - 1, 5, w);
+        build.solid(1, self.wide - 5, w - 1, self.long - 1, self.wide - 1, w);
+        build.solid(fx, 5, w - 1, fx + 3, self.wide - 5, w);
+        lift(build, 2, 6, 5, 9, 0, w);
         for x in range(2, 5) {
-            build.keep(hall, x, 5, 9);
+            build.keep(hall, x, 5, w);
             build.keep(hall, x, 10, 0);
         }
         # The dais at the far end, climbed only by steps that rise out of
@@ -121,13 +125,13 @@ node DarkPier(Prefab) {
         for index in range(dice.between(2, 3)) {
             build.foe(float(fx) + 2.5, float(middle) - 5.5 + float(index) * 5.5, 0, E3M4_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
-        build.foe(7.5, 3.0, 9, "monster_ogre", 0.0, patrol=[[7.5, 3.0], [float(self.long) - 3.5, 3.0]]);
+        build.foe(7.5, 3.0, w, "monster_ogre", 0.0, patrol=[[7.5, 3.0], [float(self.long) - 3.5, 3.0]]);
         build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, 5, "monster_wizard", 180.0);
         build.foe(12.5, float(middle) - 4.5, -d + 1, "monster_fish", 0.0);
         build.start(2.5, float(middle) + 0.5, 0, 0.0);
         build.supply(2.5, float(middle) - 1.5, 0, "item_shells");
         build.supply(float(self.long) - 2.5, float(middle) + 0.5, 4, "item_health");
-        build.supply(float(self.long) - 2.5, 3.0, 9, "item_rockets");
+        build.supply(float(self.long) - 2.5, 3.0, w, "item_rockets");
     }
 }
 
@@ -214,6 +218,7 @@ node ElevatorTower(Prefab) {
 from its top to ways on high."""
 node DelightAltar(Prefab) {
     has altar: int = 9,
+        deep: int = 7,
         tele: bool = True,
         tall: int = 20;
 
@@ -225,7 +230,10 @@ node DelightAltar(Prefab) {
         self.long = dice.between(30, 34);
         self.wide = dice.between(26, 30);
         self.tele = dice.chance(0.5);
-        self.low = -9;
+        self.altar = dice.between(12, 14);
+        self.deep = dice.between(5, 6);
+        self.tall = self.altar + dice.between(15, 18);
+        self.low = -17;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [Port(face=0, along=float(self.wide // 2), floor=self.altar), Port(face=1, along=float(self.long // 2), floor=self.altar), Port(face=3, along=float(self.long - 5), floor=0), Port(face=0, along=3.0, floor=0)];
@@ -242,8 +250,8 @@ node DelightAltar(Prefab) {
         build.level(hall, a);
         # The moat, a walk round it, the altar standing in it, a causeway
         # out to it from the south walk and a lift up its face.
-        e2m4_moat(build, 4, self.long - 4, 4, self.wide - 4, 5, 0, True);
-        build.solid(cx - 4, cy - 4, -5, cx + 4, cy + 4, a);
+        e2m4_moat(build, 4, self.long - 4, 4, self.wide - 4, self.deep, 0, True);
+        build.solid(cx - 4, cy - 4, -self.deep, cx + 4, cy + 4, a);
         build.solid(cx - 1, 4, -1, cx + 2, cy - 4, 0);
         lift(build, cx - 1, cy - 7, cx + 2, cy - 4, 0, a);
         for x in range(cx - 1, cx + 2) {
@@ -290,7 +298,7 @@ node DelightAltar(Prefab) {
         late = build.delay(1.0);
         onto +>:Fires:+> late;
         for index in range(2) {
-            late +>:Fires:+> build.summon(1, 6 + index * 5, -8, "monster_wizard" if index == 0 else E3M4_FOES.pick(dice, self.danger, True), float(cx) - 6.5 + float(index) * 13.0, float(cy) - 6.5, 3 if index == 0 else 0, 0.0);
+            late +>:Fires:+> build.summon(1, 6 + index * 5, -16, "monster_wizard" if index == 0 else E3M4_FOES.pick(dice, self.danger, True), float(cx) - 6.5 + float(index) * 13.0, float(cy) - 6.5, 3 if index == 0 else 0, 0.0);
         }
         for index in range(dice.between(2, 3)) {
             build.foe(float(cx) - 2.5 + float(index) * 2.0, float(cy) + 1.5, a, E3M4_FOES.pick(dice, self.danger, index == 0), 270.0, waits=guard);
@@ -299,7 +307,7 @@ node DelightAltar(Prefab) {
         for index in range(dice.between(1, 2)) {
             build.foe(float(cx) - 8.5 + float(index) * 16.0, float(cy) + 0.5, 5, "monster_wizard", 180.0);
         }
-        build.foe(8.5, 8.5, -4, "monster_fish", 0.0);
+        build.foe(8.5, 8.5, 1 - self.deep, "monster_fish", 0.0);
         build.supply(float(cx) + 2.5, float(cy) - 2.5, a, "item_health");
         # What keeps the gallery wakes as the player comes off a bridge.
         off = build.touch(float(self.long - 6), float(cy - 2), float(a), float(self.long - 4), float(cy + 2), float(a + 6));
@@ -315,6 +323,7 @@ node DelightAltar(Prefab) {
 a walkway back high along the wall."""
 node BlackCrossing(Prefab) {
     has deep: int = 7,
+        walk: int = 12,
         tall: int = 19;
 
     can choose with Lay entry {
@@ -324,12 +333,14 @@ node BlackCrossing(Prefab) {
         self.district = level_district(E3M4);
         self.long = dice.between(30, 34);
         self.wide = dice.between(17, 20);
-        self.deep = min(dice.between(5, 6), self.wide - 9);
+        self.deep = min(dice.between(6, 7), self.wide - 9);
+        self.walk = dice.between(11, 13);
+        self.tall = self.walk + dice.between(14, 17);
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
-        self.leaves = [Port(face=0, along=middle - 1.0, floor=0), Port(face=3, along=float(self.long - 4), floor=0), Port(face=1, along=float(self.long - 4), floor=9)];
+        self.leaves = [Port(face=0, along=middle - 1.0, floor=0), Port(face=3, along=float(self.long - 4), floor=0), Port(face=1, along=float(self.long - 4), floor=self.walk)];
         visitor.place(self);
     }
 
@@ -338,8 +349,9 @@ node BlackCrossing(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         fx = self.long - 7;
+        w = self.walk;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
-        build.level(hall, 9);
+        build.level(hall, w);
         e2m4_moat(build, 6, fx, 1, self.wide - 1, self.deep);
         # The platform waiting at the near dock, set riding over the water
         # as the player steps to its edge.
@@ -352,19 +364,19 @@ node BlackCrossing(Prefab) {
         }
         # The walkway high along the north wall from the far landing back
         # over the water, a stair up to it, its near end open to drop from.
-        build.solid(4, self.wide - 6, 8, self.long - 1, self.wide - 1, 9);
-        lift(build, self.long - 4, self.wide - 9, self.long - 1, self.wide - 6, 0, 9);
+        build.solid(4, self.wide - 6, w - 1, self.long - 1, self.wide - 1, w);
+        lift(build, self.long - 4, self.wide - 9, self.long - 1, self.wide - 6, 0, w);
         for x in range(self.long - 4, self.long - 1) {
-            build.keep(hall, x, self.wide - 6, 9);
+            build.keep(hall, x, self.wide - 6, w);
             build.keep(hall, x, self.wide - 10, 0);
         }
         for x in range(4, 7) {
-            build.keep(hall, x, self.wide - 7, 9);
+            build.keep(hall, x, self.wide - 7, w);
         }
         far_touch = build.touch(float(fx), 1.0, 0.0, float(fx + 2), float(self.wide - 1), 6.0);
         far_wake = build.waiting();
         far_touch +>:Fires:+> far_wake;
-        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, 9, E3M4_FOES.pick(dice, self.danger, True), 180.0, waits=far_wake);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, w, E3M4_FOES.pick(dice, self.danger, True), 180.0, waits=far_wake);
         # The far landing's way on opened by a button on its south wall.
         press = build.push(float(fx) + 0.6, 1.0, 1.2, 1);
         build.doorway(hall, self.enter);
@@ -387,7 +399,7 @@ node BlackCrossing(Prefab) {
         for index in range(dice.between(2, 3)) {
             build.foe(float(fx) + 2.5, 3.5 + float(index) * 3.0, 0, E3M4_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
-        build.foe(10.5, float(self.wide) - 2.5, 9, "monster_ogre", 0.0, patrol=[[10.5, float(self.wide) - 2.5], [float(self.long) - 6.5, float(self.wide) - 2.5]]);
+        build.foe(10.5, float(self.wide) - 2.5, w, "monster_ogre", 0.0, patrol=[[10.5, float(self.wide) - 2.5], [float(self.long) - 6.5, float(self.wide) - 2.5]]);
         build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, 5, "monster_wizard", 180.0);
         build.foe(10.5, 3.5, -self.deep + 1, "monster_fish", 0.0);
         build.supply(2.5, 2.5, 0, "item_health");
@@ -411,8 +423,8 @@ node DivedVault(Prefab) {
         self.long = dice.between(24, 26);
         self.hall_wide = dice.between(15, 17);
         self.wide = self.hall_wide + 4;
-        self.deep = dice.between(5, 6);
-        self.tall = dice.between(13, 15);
+        self.deep = dice.between(7, 8);
+        self.tall = dice.between(21, 24);
         self.low = -9;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -427,7 +439,7 @@ node DivedVault(Prefab) {
         cy = side // 2;
         d = self.deep;
         vault = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
-        build.level(vault, 7);
+        build.level(vault, 10);
         build.doorway(vault, self.enter);
         x0 = 7;
         x1 = self.long - 6;
@@ -437,15 +449,15 @@ node DivedVault(Prefab) {
         # The key's dais beyond the wall.
         build.solid(self.long - 4, cy - 2, 0, self.long - 1, cy + 2, 1);
         # A gallery over the near half of the pool, a lift up to it.
-        build.solid(x0, side - 4, 6, wall, side, 7);
-        lift(build, 2, side - 4, 5, side - 1, 0, 7);
+        build.solid(x0, side - 4, 9, wall, side, 10);
+        lift(build, 2, side - 4, 5, side - 1, 0, 10);
         for y in range(side - 4, side - 1) {
-            build.keep(vault, 5, y, 7);
+            build.keep(vault, 5, y, 10);
         }
         lift_gap = [5, x0];
-        build.solid(lift_gap[0], side - 4, 6, lift_gap[1], side, 7);
-        build.foe(float(wall) - 2.5, float(side) - 2.0, 7, E3M4_FOES.pick(dice, self.danger), 180.0);
-        build.supply(float(x0) + 1.5, float(side) - 2.0, 7, "item_artifact_super_damage");
+        build.solid(lift_gap[0], side - 4, 9, lift_gap[1], side, 10);
+        build.foe(float(wall) - 2.5, float(side) - 2.0, 10, E3M4_FOES.pick(dice, self.danger), 180.0);
+        build.supply(float(x0) + 1.5, float(side) - 2.0, 10, "item_artifact_super_damage");
         # The key; taking it opens the closets on the near side and brings a
         # fiend in.
         taken = e2m4_key(build, self.key, float(self.long) - 2.5, float(cy) + 0.5, 1);
@@ -475,7 +487,7 @@ node DelightExit(Prefab) {
         self.district = level_district(E3M4);
         self.long = dice.between(28, 32);
         self.wide = dice.between(18, 20);
-        self.tall = dice.between(15, 17);
+        self.tall = dice.between(22, 26);
         self.low = -9;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -498,9 +510,9 @@ node DelightExit(Prefab) {
         }
         # The water with pillars standing in it, the causeway across.
         dx = self.long - 7;
-        e2m4_moat(build, wall + 4, dx - 4, 1, self.wide - 1, 5, 0, True);
+        e2m4_moat(build, wall + 4, dx - 4, 1, self.wide - 1, 7, 0, True);
         build.solid(wall + 4, middle - 1, -1, dx - 4, middle + 2, 0);
-        pillars(build, wall + 7, 4, dx - 6, self.wide - 4, -5, self.tall, 4, [[wall + 4, middle - 2, dx, middle + 3]]);
+        pillars(build, wall + 7, 4, dx - 6, self.wide - 4, -7, self.tall, 4, [[wall + 4, middle - 2, dx, middle + 3]]);
         # The dais, climbed only by steps rising out of the floor when the
         # button over it is shot.
         build.solid(dx, 1, 0, self.long - 1, self.wide - 1, 4);
