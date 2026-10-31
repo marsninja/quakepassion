@@ -60,7 +60,7 @@ node HateAntechamber(Prefab) {
         self.long = dice.between(24, 26);
         self.wide = dice.between(23, 25);
         self.balcony = dice.between(6, 7);
-        self.tall = self.balcony + 10;
+        self.tall = self.balcony + 15;
         self.low = -7;
         self.high = self.tall + 1;
         side = self.wide - 4;
@@ -149,7 +149,7 @@ node FishGallery(Prefab) {
         self.wide = dice.between(14, 16);
         self.deep = dice.between(7, 9);
         self.walk = dice.between(7, 8);
-        self.tall = self.walk + dice.between(8, 9);
+        self.tall = self.walk + dice.between(11, 13);
         self.raft = dice.chance(0.6);
         self.low = -self.deep - 2;
         self.high = self.tall + 1;
@@ -231,7 +231,7 @@ node HateThrone(Prefab) {
         self.wide = dice.between(24, 26);
         self.dais = dice.between(5, 6);
         self.gallery = dice.between(8, 9);
-        self.tall = self.gallery + 11;
+        self.tall = self.gallery + dice.between(15, 17);
         self.low = -8;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -324,7 +324,7 @@ node SinkingAlcoves(Prefab) {
         self.long = 12 + self.pairs * 5 + dice.between(9, 11);
         self.wide = dice.between(17, 19);
         self.gallery = dice.between(9, 10);
-        self.tall = self.gallery + dice.between(9, 10);
+        self.tall = self.gallery + dice.between(13, 15);
         self.low = -7;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -406,7 +406,7 @@ node PalaceVault(Prefab) {
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
         self.shelf = dice.between(7, 9);
-        self.tall = self.shelf + 9;
+        self.tall = self.shelf + 13;
         self.low = -8;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -464,7 +464,7 @@ node PalaceExit(Prefab) {
         self.district = level_district(E4M4);
         self.long = dice.between(24, 26);
         self.wide = dice.between(19, 21);
-        self.tall = dice.between(14, 16);
+        self.tall = dice.between(18, 21);
         self.low = -5;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float((self.wide - 5) // 2), floor=0);
