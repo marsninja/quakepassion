@@ -47,7 +47,7 @@ def kit_material(game: str, map: str, name: str) -> str {
 trigger, caulk and the like)."""
 def kit_skipped(name: str) -> bool {
     lowered = name.lower();
-    for word in ["sky", "clip", "trigger", "caulk", "nodraw", "hint", "skip", "origin", "common/", "black", "nolight"] {
+    for word in ["sky", "skies/", "sfx/", "fog", "beam", "dust_", "clip", "trigger", "caulk", "nodraw", "hint", "skip", "origin", "common/", "black", "nolight"] {
         if word in lowered {
             return True;
         }

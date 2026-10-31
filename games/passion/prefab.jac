@@ -1910,7 +1910,7 @@ into nothing; never over a mover's or a thing's reach."""
         if spare < 5 {
             return;
         }
-        wanted = min(VAULT_ROOM - 4, dice.between(max(5, spare // 2), spare));
+        wanted = min(VAULT_ROOM - 4, dice.between(max(5, spare * 7 // 10), max(5, spare * 13 // 10)));
         room: dict[int, int] = {};
         for cell in patch {
             x = cell % mass.nx;
@@ -1932,7 +1932,18 @@ into nothing; never over a mover's or a thing's reach."""
         if rise < 5 {
             return;
         }
-        open_cells = {cell: True for cell in patch if room[cell] >= rise};
+        fits = {cell: True for cell in patch if room[cell] >= rise};
+        # Whole bays only, no spurs a cell wide along what was left out.
+        open_cells: dict[int, bool] = {};
+        for cell in fits {
+            if all([cell + a * mass.nx + b in fits for a in [-1, 0, 1] for b in [-1, 0, 1]]) {
+                for a in [-1, 0, 1] {
+                    for b in [-1, 0, 1] {
+                        open_cells[cell + a * mass.nx + b] = True;
+                    }
+                }
+            }
+        }
         # How far in from the risen part's edge each column stands.
         inset: dict[int, int] = {};
         layer = list(open_cells.keys());
