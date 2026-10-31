@@ -6,7 +6,7 @@ ways opened by a shot target, a pit far below reached by a lift where
 fiends and spawn wait, the key on an island of lava. Raised in e4m5's own
 palette.
 
-- `AtriumCourt`: the start. A court under the sky, a fountain (or a dry
+- `AtriumCourt`: the start. A court under the sky, a deep fountain (or a dry
   basin round a statue) in its middle, a ring of columns round it, two
   corner blocks whose doors fly open on hell knights as a body reaches the
   fountain; ways on from three sides.
@@ -14,12 +14,13 @@ palette.
   along one side to a landing, the second back along the other to a floor
   high over the way in; a closet in that floor's foot behind a wall that
   opens when shot; ways on from the landing and the top.
-- `AtriumHall`: a hall ringed by a gallery, a broad stair up to it,
+- `AtriumHall`: a hall ringed by a gallery, a deep tank in its floor, a
+  broad stair up to it,
   teleporters from the floor up to the gallery and back down; a target on
   the gallery's wall, shot, opens the floor's ways on; ways on from the
   gallery and the floor (a hub).
-- `AtriumPit`: a ledge round a deep pit, a lift down into it, the way on
-  from its floor; fiends and spawn below wake as the lift comes down; a
+- `AtriumPit`: a ledge round a deep pit, a lift down into it, flooded tanks
+  in its floor either side of the way on; fiends and spawn below wake as the lift comes down; a
   teleporter on the pit's floor back up to the ledge.
 - `LavaIsle`: the key room. The key on an island in lava, a drawbridge to
   it let down by shooting a button (or a teleporter out to it and back);
@@ -71,8 +72,8 @@ node AtriumCourt(Prefab) {
         self.long = dice.between(28, 30);
         self.wide = dice.between(26, 28);
         self.tall = dice.between(18, 22);
-        self.fountain = dice.chance(0.6);
-        self.low = -4;
+        self.fountain = dice.chance(0.8);
+        self.low = -6;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -89,8 +90,8 @@ node AtriumCourt(Prefab) {
         cy = wide // 2;
         court = build.room(1, 1, 0, long - 1, wide - 1, self.tall, variant=dice.below(3), sky=True);
         if self.fountain {
-            build.pool(cx - 3, cy - 3, -3, cx + 3, cy + 3, 0, 2);
-            build.solid(cx - 1, cy, -3, cx, cy + 1, 5);
+            build.pool(cx - 5, cy - 5, -5, cx + 5, cy + 5, 0, 2, False, True, True);
+            build.solid(cx - 1, cy, -5, cx, cy + 1, 5);
         } else {
             # A dry basin a lift down round a statue on a plinth.
             build.widen(court, cx - 3, cy - 3, -1, cx + 3, cy + 3, 0);
@@ -99,20 +100,20 @@ node AtriumCourt(Prefab) {
         for x in range(cx - 7, cx + 8, 2) {
             for y in [cy - 7, cy + 7] {
                 if abs(x - cx) > 2 {
-                    build.solid(x, y, 0, x + 1, y + 1, 10);
+                    build.solid(x, y, 0, x + 1, y + 1, 12);
                 }
             }
         }
         for y in range(cy - 5, cy + 6, 2) {
             for x in [cx - 7, cx + 7] {
                 if abs(y - cy) > 2 {
-                    build.solid(x, y, 0, x + 1, y + 1, 10);
+                    build.solid(x, y, 0, x + 1, y + 1, 12);
                 }
             }
         }
         # Corner blocks whose doors fly open on hell knights as a body comes
         # to the fountain.
-        near = build.touch(float(cx - 5), float(cy - 5), 0.0, float(cx + 5), float(cy + 5), 6.0);
+        near = build.touch(float(cx - 6), float(cy - 6), 0.0, float(cx + 6), float(cy + 6), 6.0);
         burst = relayed(build, near, 0.5);
         loose = build.waiting();
         burst +>:Fires:+> loose;
@@ -132,7 +133,7 @@ node AtriumCourt(Prefab) {
         rounds(build, "monster_zombie", float(cx - 9) + 0.5, float(cy - 9) + 0.5, float(cx + 4) + 0.5, float(cy - 9) + 0.5, 0);
         rounds(build, E4M5_FOES.pick(dice, self.danger), float(cx + 4) + 0.5, float(cy + 9) + 0.5, float(cx - 9) + 0.5, float(cy + 9) + 0.5, 0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(cx) + 4.5, float(cy) + 4.5 - float(index) * 9.0, 0, E4M5_FOES.pick(dice, self.danger), 180.0, waits=loose);
+            build.foe(float(cx) + 5.5, float(cy) + 5.5 - float(index) * 11.0, 0, E4M5_FOES.pick(dice, self.danger), 180.0, waits=loose);
         }
         build.supply(float(long) - 2.5, float(cy) + 0.5, 0, "item_health");
     }
@@ -224,11 +225,11 @@ node AtriumHall(Prefab) {
         self.title = "Atrium hall";
         self.source = E4M5;
         self.district = level_district(E4M5);
-        self.long = dice.between(28, 30);
+        self.long = dice.between(34, 36);
         self.wide = dice.between(24, 26);
         self.gallery = dice.between(9, 10);
         self.tall = self.gallery + 12;
-        self.low = -1;
+        self.low = -7;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -251,6 +252,7 @@ node AtriumHall(Prefab) {
         hall = build.room(1, 1, 0, long - 1, wide - 1, self.tall, variant=dice.below(4));
         build.level(hall, g);
         under = g - 1;
+        tx1 = long - 7 - g;
         build.solid(1, 1, under, long - 1, 4, g);
         build.solid(1, wide - 4, under, long - 1, wide - 1, g);
         build.solid(1, 4, under, 4, wide - 4, g);
@@ -258,12 +260,14 @@ node AtriumHall(Prefab) {
         stair(build, long - 4 - g, middle - 3, 0, 0, g, 6);
         keep_run(build, hall, long - 4, middle - 3, long - 3, middle + 3, g);
         keep_run(build, hall, 8, 3, 12, 4, g);
-        clear = [[0, middle - 3, 7, middle + 3], [long - 6 - g, middle - 4, long, middle + 4], [2, wide - 6, 9, wide], [6, 5, 12, 10]];
+        clear = [[0, middle - 3, 7, middle + 3], [long - 6 - g, middle - 4, long, middle + 4], [2, wide - 6, 9, wide], [6, 5, 12, 10], [8, 6, tx1 + 1, wide - 6]];
         pillars(build, 6, 6, long - 5, wide - 5, 0, under, 5, clear);
+        # A deep tank in the floor's near half, steps out at both ends.
+        build.pool(9, 7, -6, tx1, wide - 7, 0, 2, False, True, True);
         # Teleporters: from the floor up onto the gallery's far corner, and
         # from the gallery's near corner back down.
         if dice.chance(0.6) {
-            build.teleporter(8.5, 7.5, 0, float(long) - 2.5, float(wide) - 2.5, g, 180.0);
+            build.teleporter(6.5, 7.5, 0, float(long) - 2.5, float(wide) - 2.5, g, 180.0);
             build.teleporter(2.5, float(wide) - 2.5, g, 6.5, float(middle) + 0.5, 0, 0.0);
         } else {
             # A lift up to the gallery's south-west corner instead.
@@ -288,12 +292,12 @@ node AtriumHall(Prefab) {
         dead = build.waiting();
         come +>:Fires:+> dead;
         for index in range(dice.between(3, 4)) {
-            build.foe(float(8 + index * 4) + 0.5, float(middle) + (4.5 if index % 2 == 0 else -4.5), 0, E4M5_FOES.pick(dice, self.danger), 0.0, waits=dead);
+            build.foe(float(8 + index * 4) + 0.5, float(middle) + (6.5 if index % 2 == 0 else -6.5), 0, E4M5_FOES.pick(dice, self.danger), 0.0, waits=dead);
         }
         rounds(build, "monster_hell_knight", 6.5, 2.5, float(long) - 3.5, 2.5, g);
         rounds(build, E4M5_FOES.pick(dice, self.danger), float(long) - 3.5, float(wide) - 2.5, 6.5, float(wide) - 2.5, g);
         build.supply(2.5, 2.5, g, "item_health");
-        build.supply(float(long) - 6.5, float(middle) - 5.5, 0, "item_rockets");
+        build.supply(float(long) - 6.5, 5.5, 0, "item_rockets");
     }
 }
 
@@ -309,12 +313,12 @@ node AtriumPit(Prefab) {
         self.title = "Atrium pit";
         self.source = E4M5;
         self.district = level_district(E4M5);
-        self.long = dice.between(24, 28);
-        self.wide = dice.between(20, 22);
+        self.long = dice.between(28, 32);
+        self.wide = dice.between(24, 26);
         self.deep = dice.between(10, 14);
         self.tall = dice.between(8, 10);
         self.stair_down = dice.chance(0.4);
-        self.low = -self.deep - 1;
+        self.low = -self.deep - 7;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -348,6 +352,13 @@ node AtriumPit(Prefab) {
             keep_run(build, pit, 6, middle - 1, 7, middle + 2, 0);
             mark = [7, middle - 1, 10, middle + 2];
         }
+        # Deep tanks in the pit's floor either side of its middle, each with
+        # its own steps.
+        build.pool(10, 5, low - 6, long - 8, middle - 2, low, 2, False, False);
+        build.pool(10, middle + 3, low - 6, long - 8, wide - 5, low, 2, False, False);
+        stair(build, long - 14, 5, low - 6, 0, 6, 2);
+        stair(build, long - 14, wide - 7, low - 6, 0, 6, 2);
+        build.foe(float(long) - 10.5, float(middle) - 4.5, low - 5, "monster_fish", 0.0);
         # A teleporter on the pit's floor back up to the ledge.
         build.teleporter(float(long) - 4.5, float(middle) + 0.5, low, 3.5, float(middle) + 0.5, 0, 0.0);
         floor_press = build.push(float(long) - 8.5, float(wide - 1), float(low) + 1.2, 3);
@@ -369,9 +380,9 @@ node AtriumPit(Prefab) {
         below = build.waiting();
         down +>:Fires:+> below;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(16 + index * 3) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), low, "monster_demon1" if index == 0 and self.danger > 0.3 else E4M5_FOES.pick(dice, self.danger), 180.0, waits=below);
+            build.foe(float(16 + index * 3) + 0.5, 3.0 if index % 2 == 0 else float(wide) - 3.0, low, "monster_demon1" if index == 0 and self.danger > 0.3 else E4M5_FOES.pick(dice, self.danger), 180.0, waits=below);
         }
-        rounds(build, "monster_tarbaby", float(long) - 6.5, 6.5, float(long) - 6.5, float(wide) - 6.5, low);
+        rounds(build, "monster_tarbaby", float(long) - 5.5, 6.5, float(long) - 5.5, float(wide) - 6.5, low);
         rounds(build, "monster_zombie", 9.5, 2.5, float(long) - 9.5, 2.5, 0);
         build.supply(float(long) - 2.5, 2.5, low, "item_health");
         build.supply(3.5, 2.5, 0, "item_rockets");
