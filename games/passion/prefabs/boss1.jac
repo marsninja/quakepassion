@@ -14,11 +14,12 @@ palette.
 - `LavaPlinths`: a hall over lava crossed on plinths a jump apart (or by
   the walk round the wall), energy fields across the walk shut off by a
   lever at each end.
-- `InnerChamber`: a chamber round a pit of lava, a tier up stairs on two
-  sides, an updraft from the pit's ledge to the tier, a teleporter from
+- `InnerChamber`: a chamber round a pit of lava, walled into rooms under its
+  tiers, a tier up stairs on two sides, an updraft from the pit's ledge to the tier, a teleporter from
   the far tier back to the floor. A hub.
-- `Reliquary`: the key on a raised shelf up steps a button raises in a
-  reliquary under its gallery; taking it opens the closets.
+- `Reliquary`: the key on an island in a moat of lava beyond a low
+  antechamber, the bridge drawn by the lever at the far end of the gallery
+  over the moat; taking the key opens the closets.
 - `MakronArena`: the end. A door (a key's, as a gate), the arena round
   the Makron's dais; the levers on its two sides open the doors to the
   way out, the flyers come down, the Makron's laughter rings."""
@@ -29,6 +30,7 @@ import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, pillars, gate_into, lift }
 import from .q2_works { deck, keep_box, sparking, blast_chain, stash, hidden_closet, squad, rounds, beamed, held_door, key_taken, closets, pad_to, hurting, laser_burst, barrels }
 import from .city2 { random_sparks }
+import from .q2d_parts { wall_x, step_ways }
 
 glob BOSS1: str = "q2:boss1";
 
@@ -131,7 +133,7 @@ node GearHall(Prefab) {
         self.wide = dice.between(22, 24);
         self.bal = 9;
         self.top = dice.between(15, 17);
-        self.tall = self.top + 10;
+        self.tall = self.top + dice.between(16, 20);
         self.low = -9;
         self.high = self.tall + 1;
         middle = self.wide // 2;
@@ -210,7 +212,7 @@ node LavaPlinths(Prefab) {
         self.hops = dice.between(3, 5);
         self.long = 3 * self.hops + 13;
         self.wide = dice.between(16, 18);
-        self.tall = dice.between(15, 17);
+        self.tall = dice.between(30, 34);
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -270,16 +272,16 @@ node InnerChamber(Prefab) {
         self.long = dice.between(28, 30);
         self.wide = dice.between(26, 28);
         self.tier = 9;
-        self.tall = self.tier + 13;
+        self.tall = self.tier + dice.between(16, 19);
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle, floor=0);
+        self.enter = Port(face=2, along=middle, floor=1);
         self.leaves = [
-            Port(face=0, along=middle, floor=0),
+            Port(face=0, along=middle, floor=1),
             Port(face=1, along=float(self.long - 6), floor=self.tier),
             Port(face=3, along=float(self.long - 6), floor=self.tier),
-            Port(face=1, along=float(self.long // 2), floor=0)
+            Port(face=1, along=float(self.long // 2), floor=1)
         ];
         visitor.place(self);
     }
@@ -307,6 +309,12 @@ node InnerChamber(Prefab) {
         pad_to(build, float(cx) + 0.5, 8.5, 0, float(cx) + 0.5, 3.5, t);
         keep_box(build, hall, cx - 1, 5, cx + 2, 6, t);
         build.teleporter(float(self.long) - 3.0, float(self.wide) - 3.0, t, 3.0, float(cy) + 0.5, 0, 0.0);
+        # Walls under the tiers cut the floor in three: arches on sills on
+        # either side of the pit, the far rooms beyond a wall of their own.
+        wall_x(build, hall, cx - 3, 1, cy - 4, 0, t - 1, [[cy - 9, cy - 5]]);
+        wall_x(build, hall, cx - 3, cy + 4, self.wide - 1, 0, t - 1, [[cy + 5, cy + 9]]);
+        wall_x(build, hall, self.long - 6, 1, self.wide - 1, 0, t - 1, [[cy - 3, cy + 3], [self.wide - 5, self.wide - 2]]);
+        step_ways(build, self);
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
@@ -328,23 +336,22 @@ node InnerChamber(Prefab) {
     }
 }
 
-"""The key on a raised shelf up steps a button raises in a reliquary under
-its gallery; taking it opens the closets."""
+"""The key on an island in a moat of lava in the reliquary, a low
+antechamber before it; the bridge is drawn from the lever at the far end of
+the gallery over the moat; taking the key opens the closets."""
 node Reliquary(Prefab) {
     has key: str = "key_silver",
-        hall_wide: int = 16,
-        shelf: int = 5,
-        tall: int = 15;
+        hall_wide: int = 20,
+        tall: int = 17;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Reliquary (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = BOSS1;
         self.district = level_district(BOSS1);
-        self.long = dice.between(22, 24);
-        self.hall_wide = dice.between(16, 18);
+        self.long = dice.between(26, 29);
+        self.hall_wide = dice.between(21, 23);
         self.wide = self.hall_wide + 4;
-        self.shelf = dice.between(4, 6);
         self.tall = 17;
         self.low = -9;
         self.high = 18;
@@ -358,28 +365,42 @@ node Reliquary(Prefab) {
         dice = build.begin(self);
         side = self.hall_wide - 1;
         cy = side // 2;
-        room = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
-        build.level(room, self.shelf);
+        wall = 7;
+        ante = build.room(1, 1, 0, wall, side, 10, variant=dice.below(3));
+        room = build.room(wall + 1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
         build.level(room, 10);
-        build.doorway(room, self.enter);
-        px = self.long - 7;
-        build.solid(px, cy - 3, 0, self.long - 1, cy + 3, self.shelf);
-        steps = build.rising_steps(px - self.shelf, cy - 1, 0, 0, self.shelf, 3);
-        build.push(float(px - self.shelf) - 1.0, float(side), 1.5, 3) +>:Fires:+> steps;
-        keep_box(build, room, px, cy - 1, px + 1, cy + 2, self.shelf);
-        deck(build, 1, 1, 8, side, 10);
-        lift(build, 8, 1, 11, 4, 0, 10);
-        keep_box(build, room, 7, 1, 8, 4, 10);
-        build.breakable(12.0, float(side) - 4.0, 0.0, 14.0, float(side) - 2.0, 2.0, 10);
-        taken = key_taken(build, self.key, float(self.long) - 3.5, float(cy), self.shelf);
-        closets(build, taken, side, 0, [3, self.long - 9], [BOSS1_FOES.pick(dice, self.danger, True), BOSS1_FOES.pick(dice, self.danger)]);
-        squad(build, taken, [[4.5, 3.0, 10.0], [4.5, float(side) - 3.0, 10.0]], ["monster_chick", "monster_flyer"], 0.0);
-        beamed(build, taken, 2, 2, -8, BOSS1_FOES.pick(dice, self.danger, True), 12.5, float(cy) + 0.5, 0, 0.0);
-        build.touch(float(px - self.shelf - 3), 1.0, 0.0, float(px - self.shelf - 1), float(side), 6.0, True, "The shelf's steps are raised from the wall");
-        build.foe(float(self.long) - 3.5, float(cy) + 2.0, self.shelf, BOSS1_FOES.pick(dice, self.danger), 180.0);
-        rounds(build, "monster_chick", [[11.5, 2.5], [float(px) - 2.5, 2.5]], 0);
-        random_sparks(build, [[float(self.long) - 1.2, float(cy) - 2.0, float(self.shelf) + 2.0, 2.0], [1.2, float(cy), 3.0, 0.0]], 3.0);
-        build.supply(10.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
+        build.doorway(ante, self.enter);
+        build.widen(room, wall, cy - 2, 1, wall + 1, cy + 2, 9);
+        # The moat round the island, three cells wide, a lane along each
+        # side wall, the bridge drawn out from the near floor to the island.
+        ix0 = self.long - 10;
+        ix1 = self.long - 4;
+        iy0 = cy - 3;
+        iy1 = cy + 3;
+        build.pool(ix0 - 3, iy0 - 3, -3, self.long - 1, iy1 + 3, 0, 4, False, False);
+        build.solid(ix0, iy0, -3, ix1, iy1, 0);
+        build.solid(ix1 - 4, cy - 1, 0, ix1 - 1, cy + 2, 1);
+        bridge = build.drawn(float(ix0 - 3), float(cy - 1), float(ix0), float(cy + 2), 0, 4);
+        keep_box(build, room, ix0 - 4, cy - 1, ix0 - 3, cy + 2, 0);
+        keep_box(build, room, ix0, cy - 1, ix0 + 1, cy + 2, 0);
+        # The gallery along the high wall over the lane, up a lift from the
+        # near floor, the bridge's lever at its far end.
+        deck(build, wall + 1, side - 4, self.long - 1, side, 10);
+        lift(build, wall + 1, side - 7, wall + 4, side - 4, 0, 10);
+        keep_box(build, room, wall + 1, side - 5, wall + 4, side - 4, 10);
+        lever = build.push(float(self.long - 1), float(side) - 2.0, 11.5, 2);
+        lever +>:Fires:+> bridge;
+        lever +>:Fires:+> build.sparks(float(ix0) - 1.5, float(cy) + 0.5, 1.0, 0);
+        build.touch(float(wall + 1), float(cy - 3), 0.0, float(wall + 3), float(cy + 3), 6.0, True, "The bridge is drawn from the far end of the gallery");
+        taken = key_taken(build, self.key, float(ix1 - 3) + 0.5, float(cy) + 0.5, 1);
+        closets(build, taken, side, 0, [wall + 5, self.long - 9], [BOSS1_FOES.pick(dice, self.danger, True), BOSS1_FOES.pick(dice, self.danger)]);
+        squad(build, taken, [[float(wall) + 6.5, float(side) - 2.0, 10.0], [float(self.long) - 4.5, float(side) - 2.0, 10.0]], ["monster_chick", "monster_flyer"], 180.0);
+        beamed(build, taken, 2, 2, -8, BOSS1_FOES.pick(dice, self.danger, True), float(wall) + 3.5, float(cy) + 0.5, 0, 0.0);
+        build.foe(float(ix0) + 1.5, float(iy1) - 1.5, 0, BOSS1_FOES.pick(dice, self.danger), 180.0);
+        rounds(build, "monster_chick", [[float(wall) + 3.5, 2.5], [float(self.long) - 3.5, 2.5]], 0);
+        build.breakable(2.0, float(side) - 4.0, 0.0, 4.0, float(side) - 2.0, 2.0, 10);
+        random_sparks(build, [[float(self.long) - 1.2, float(cy) - 6.0, 3.0, 2.0], [1.2, float(cy), 3.0, 0.0]], 3.0);
+        build.supply(float(wall) + 3.5, 2.5, 0, Q2_HEALTH, "q2");
     }
 }
 
