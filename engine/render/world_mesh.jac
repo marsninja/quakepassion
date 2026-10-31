@@ -755,6 +755,15 @@ glob SKY_VS: str = WORLD_INPUTS
      SKY_FS: str = "#version 330\nin vec2 backUV; in vec2 frontUV; out vec4 finalColor; uniform sampler2D skyBack; uniform sampler2D skyFront;\n"
     + "void main(){ vec4 back=texture(skyBack,backUV); vec4 front=texture(skyFront,frontUV); finalColor=vec4(mix(back.rgb,front.rgb,front.a),1.0); }\n";
 
+# The same two layers on a made level's sky faces, worked out per pixel: its
+# faces are as large as its rooms, where the original's small ones let a vertex
+# do (a large face's corners would bend the layers along its diagonals).
+glob OPEN_SKY_VS: str = WORLD_INPUTS
+    + "uniform vec3 eye; out vec3 toSky;\n"
+    + "void main(){ vec4 w=model*vec4(inPosition,1.0); toSky=w.xyz-eye; gl_Position=viewProjection*w; }\n",
+     OPEN_SKY_FS: str = "#version 330\nin vec3 toSky; out vec4 finalColor; uniform float skyTime; uniform sampler2D skyBack; uniform sampler2D skyFront;\n"
+    + "void main(){ vec3 d=toSky; d.z*=3.0; vec2 at=d.xy*6.0*63.0/max(0.001,length(d)); vec4 back=texture(skyBack,(vec2(skyTime*8.0)+at)/128.0); vec4 front=texture(skyFront,(vec2(skyTime*16.0)+at)/128.0); finalColor=vec4(mix(back.rgb,front.rgb,front.a),1.0); }\n";
+
 # The Q2/Q3 sky box: one side's image over its quad (sky_box_vertices), the
 # box placed on the eye and turned by `model`.
 glob SKY_BOX_VS: str = WORLD_INPUTS

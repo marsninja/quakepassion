@@ -20,7 +20,7 @@ import from vendor.raylib {
             height: i32,
             mipmaps: i32,
             format: i32;
-    }  def rlDisableDepthMask -> None;  def rlEnableDepthMask -> None;  def rlDisableBackfaceCulling -> None;  def rlEnableBackfaceCulling -> None;  def LoadImageFromMemory(
+    }  def rlDisableDepthMask -> None;  def rlEnableDepthMask -> None;  def rlColorMask(r: bool, g: bool, b: bool, a: bool) -> None;  def rlDisableBackfaceCulling -> None;  def rlEnableBackfaceCulling -> None;  def LoadImageFromMemory(
         fileType: str, fileData: bytes, dataSize: i32
     ) -> Image;  def LoadTextureFromImage(image: Image) -> Texture2D;  def UnloadImage(
         image: Image
@@ -88,6 +88,8 @@ import from .world_mesh {
     WARP_FS,
     SKY_VS,
     SKY_FS,
+    OPEN_SKY_VS,
+    OPEN_SKY_FS,
     SKY_BOX_VS,
     SKY_BOX_FS,
     SKY_BOX_STRIDE,
@@ -168,6 +170,8 @@ obj QuakeRenderer {
         rects: list[LightRect] = [],
         stage_images: dict[int, list[list[int]]] = {},
         sky_layers: dict[int, list[int]] = {},
+        # A made level's two scrolling layers, shared by its sky materials.
+        open_sky_layers: list[int] = [],
         anim_frames: dict[int, list[int]] = {},
         anim_alternates: dict[int, list[int]] = {},
         world_faces: int = 0,
@@ -554,6 +558,13 @@ obj QuakeRenderer {
             self.fog_program.begin();
             self.fog_program.set_int("fogMap", 0);
             self.fog_program.end();
+            if self.sky_layers {
+                self.sky_program.load(OPEN_SKY_VS, OPEN_SKY_FS);
+                self.sky_program.begin();
+                self.sky_program.set_int("skyBack", 0);
+                self.sky_program.set_int("skyFront", 1);
+                self.sky_program.end();
+            }
             return;
         }
         self.lit_program.load(LIT_VS, LIT_FS);
@@ -591,6 +602,10 @@ obj QuakeRenderer {
             } else {
                 keys.append(batch_key(PASS_LIT, t, 0));
             }
+            return keys;
+        }
+        if t in self.sky_layers {
+            keys.append(batch_key(PASS_SKY, t, 0));
             return keys;
         }
         if not face.fog_only {
@@ -1245,6 +1260,11 @@ obj QuakeRenderer {
     beside a solid back layer (right half); each becomes its own texture."""
     def upload_sky_layers(level: Level) {
         self.sky_layers = {};
+        self.open_sky_layers = [];
+        if level.sky_textures {
+            self.upload_open_sky(level);
+            return;
+        }
         if level.bsp.game != "q1" {
             return;
         }
@@ -1281,17 +1301,64 @@ obj QuakeRenderer {
                     }
                 }
             }
-            ids: list[int] = [];
-            for layer in [back, front] {
-                id = int(rlLoadTexture(bytes(layer), i32(size), i32(size), i32(7), i32(1)));
-                rlTextureParameters(u32(id), i32(10241), i32(9729));
-                rlTextureParameters(u32(id), i32(10240), i32(9729));
-                rlTextureParameters(u32(id), i32(10242), i32(10497));
-                rlTextureParameters(u32(id), i32(10243), i32(10497));
-                ids.append(id);
-            }
-            self.sky_layers[t] = ids;
+            self.sky_layers[t] = self.upload_layer_pair(back, front, size);
         }
+    }
+
+    """A sky's back and front layers as textures."""
+    def upload_layer_pair(back: bytearray, front: bytearray, size: int) -> list[int] {
+        ids: list[int] = [];
+        for layer in [back, front] {
+            id = int(rlLoadTexture(bytes(layer), i32(size), i32(size), i32(7), i32(1)));
+            rlTextureParameters(u32(id), i32(10241), i32(9729));
+            rlTextureParameters(u32(id), i32(10240), i32(9729));
+            rlTextureParameters(u32(id), i32(10242), i32(10497));
+            rlTextureParameters(u32(id), i32(10243), i32(10497));
+            ids.append(id);
+        }
+        return ids;
+    }
+
+    """A made level's sky faces, whatever their material, all take the sky
+    pass. When its sky is Quake's, the two layers come from the one material
+    the level chose, split as above out of its colours (the palette's black,
+    index 0, is what the front layer leaves clear)."""
+    def upload_open_sky(level: Level) {
+        for t in level.sky_textures {
+            self.sky_layers[t] = [];
+        }
+        if level.sky_layer_texture < 0 {
+            return;
+        }
+        texture = level.bsp.textures[level.sky_layer_texture];
+        size = texture.height;
+        colours = texture.rgba;
+        back = bytearray();
+        totals = [0, 0, 0];
+        for y in range(size) {
+            for x in range(size) {
+                at = (y * texture.width + x + size) * 4;
+                back.extend(colours[at:at + 3]);
+                back.append(255);
+                for c in range(3) {
+                    totals[c] += int(colours[at + c]);
+                }
+            }
+        }
+        average = [totals[c] // (size * size) for c in range(3)];
+        front = bytearray();
+        for y in range(size) {
+            for x in range(size) {
+                at = (y * texture.width + x) * 4;
+                if int(colours[at]) + int(colours[at + 1]) + int(colours[at + 2]) == 0 {
+                    front.extend([average[0], average[1], average[2], 0]);
+                } else {
+                    front.extend(colours[at:at + 3]);
+                    front.append(255);
+                }
+            }
+        }
+        self.open_sky_layers = self.upload_layer_pair(back, front, size);
     }
 
     """Upload every image of every layered Q3 surface shader stage. A lightmap
@@ -1624,6 +1691,7 @@ obj QuakeRenderer {
         self.shown_flares = view.flares;
         self.update_brushes(level);
         if self.single_pass {
+            self.draw_open_sky(level, view, eye);
             self.draw_single_pass(level, view, eye);
             self.draw_layered(level, view, eye);
             self.draw_fog(level, view, eye);
@@ -1677,6 +1745,40 @@ obj QuakeRenderer {
             rlActiveTextureSlot(i32(0));
             rlEnableTexture(u32(layers[0]));
             self.draw_batch(program, level, batch, view, False);
+        }
+        self.end_batches(program);
+    }
+
+    """A made level's sky faces, ahead of the world: Quake's two layers when
+    its sky is Quake's, else only their depth, over the box and clouds already
+    drawn behind them. What lies beyond a sky in a made level (rooms the sky is
+    no wall of, which no original's visibility would have let through) stays
+    behind it."""
+    def draw_open_sky(level: Level, view: VisibleIndices, eye: Vec3) {
+        if PASS_SKY not in self.pass_batches {
+            return;
+        }
+        program = self.sky_program;
+        self.begin_batches(program);
+        program.set_matrix("viewProjection", view_projection());
+        program.set_vec3("eye", eye);
+        program.set_float("skyTime", self.time);
+        layers = self.open_sky_layers;
+        if layers {
+            rlActiveTextureSlot(i32(1));
+            rlEnableTexture(u32(layers[1]));
+            rlActiveTextureSlot(i32(0));
+            rlEnableTexture(u32(layers[0]));
+        } else {
+            rlColorMask(False, False, False, False);
+        }
+        for batch in self.pass_batches[PASS_SKY] {
+            if self.batch_shown(batch, view) {
+                self.draw_batch(program, level, batch, view, False);
+            }
+        }
+        if not layers {
+            rlColorMask(True, True, True, True);
         }
         self.end_batches(program);
     }
@@ -2220,6 +2322,10 @@ obj QuakeRenderer {
             }
         }
         self.sky_layers = {};
+        for id in self.open_sky_layers {
+            rlUnloadTexture(u32(id));
+        }
+        self.open_sky_layers = [];
         for ids in self.cloud_images {
             for id in ids {
                 rlUnloadTexture(u32(id));

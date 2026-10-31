@@ -6,6 +6,8 @@ import from engine.world.signals { HasSignal }
 import from engine.formats.bsp { Bsp }
 import from .passion.generate { generate, Forge }
 import from .passion.essence { essence_path }
+import from .passion.sky { raise_sky }
+import from engine.assets.catalog { AssetCatalog }
 import from engine.level.graph { read_graph }
 import from engine.level.guide { guide_level }
 
@@ -44,6 +46,23 @@ def open_built(world: World, name: str, built: Bsp, skill: int = 1) -> Level {
     return level;
 }
 
+"""A made level's sky, read through the archives its forge has open, else ones
+opened for it. A level whose archives lack its sky is drawn without one."""
+def made_sky(level: Level, directory: str, forged: Forge | None) -> Level {
+    materials = forged.materials if forged is not None else None;
+    held = materials.archives() if materials is not None else None;
+    catalog = held if held is not None else AssetCatalog(game="passion", directory=directory);
+    try {
+        raise_sky(level, catalog);
+    } except Exception as error {
+        print("No sky for", level.name + ":", str(error));
+    }
+    if held is None {
+        catalog.close();
+    }
+    return level;
+}
+
 """Open a level. Its entities are the map's own unless edits were saved for
 it (the studio's overrides) or `entities` supplies them; `entities=""` asks
 for the map as shipped. `built` is the level's data when it was made rather
@@ -61,10 +80,11 @@ def open_level(
 ) -> Level {
     if built is not None {
         guide_level(world, None);
-        return open_built(world, name, built, skill);
+        level = open_built(world, name, built, skill);
+        return made_sky(level, directory, None) if built.game == "passion" else level;
     }
     if game == "passion" {
-        return generate(world, name, directory, forged);
+        return made_sky(generate(world, name, directory, forged), directory, forged);
     }
     lump = saved_entities(game, name) if entities is None else entities;
     level = load_level(world, directory, name, game, skill, subdivisions, lump);
