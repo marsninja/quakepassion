@@ -53,7 +53,7 @@ node AbbeyGate(Prefab) {
         self.long = dice.between(28, 30);
         self.wide = dice.between(19, 21);
         self.access = dice.below(3);
-        self.tall = 22;
+        self.tall = 26;
         self.low = -3;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -75,7 +75,7 @@ node AbbeyGate(Prefab) {
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, g);
         # The vestibule's wall and the great doors in it.
-        build.solid(6, 1, 0, 7, self.wide - 1, self.tall);
+        build.solid(6, 1, 0, 7, self.wide - 1, 20);
         build.widen(hall, 6, middle - 3, 0, 7, middle + 3, g);
         sliding_pair(build, 6, middle - 3, middle + 3, 0, g);
         # The flooded channel down the hall's middle.
@@ -133,7 +133,7 @@ node AbbeyNave(Prefab) {
         self.wide = dice.between(20, 22);
         self.nave = 2;
         self.pads = dice.below(3);
-        self.tall = 22;
+        self.tall = 26;
         self.low = -5;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -225,7 +225,7 @@ node AbbeyCrossing(Prefab) {
         self.wide = dice.between(28, 30);
         self.both = dice.chance(0.5);
         self.climbed = dice.chance(0.4);
-        self.tall = 28;
+        self.tall = 56;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -310,7 +310,7 @@ node AbbeyCrypt(Prefab) {
         self.wide = dice.between(19, 21);
         self.deep = dice.between(12, 14);
         self.down = dice.below(2);
-        self.tall = 12;
+        self.tall = 21;
         self.low = -self.deep - 3;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -393,7 +393,7 @@ node AbbeyBelfry(Prefab) {
             }
         }
         self.steps = fits[dice.below(len(fits))];
-        self.tall = self.steps + 9;
+        self.tall = self.steps + 20;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -453,7 +453,7 @@ node AbbeyChoir(Prefab) {
         self.long = dice.between(30, 32);
         self.wide = dice.between(19, 21);
         self.climb = dice.below(2);
-        self.tall = 22;
+        self.tall = 28;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -472,8 +472,8 @@ node AbbeyChoir(Prefab) {
         room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key);
         build.level(room, p);
         build.level(room, 14);
-        # The great doors into the choir.
-        build.solid(dw, 1, 0, dw + 1, self.wide - 1, self.tall);
+        # The great doors into the choir, in a screen open over its top.
+        build.solid(dw, 1, 0, dw + 1, self.wide - 1, 20);
         build.widen(room, dw, middle - 3, 0, dw + 1, middle + 3, 12);
         sliding_pair(build, dw, middle - 3, middle + 3, 0, 12);
         # The presbytery, raised at the far end, the way out on it.
