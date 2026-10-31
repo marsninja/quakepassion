@@ -1,7 +1,7 @@
 """Prefabs drawn from Quake III's q3dm1, Arena Gate: a small gothic arena
 on two floors, its halls and courts high and its lower court and crypt
-sunk under them, a great arched gate between. Quake III's arenas hold no
-foes of their own; q3dm1's are knight, hell_knight, ogre. Raised in
+sunk under them, a great arched gate between, its courts open to a sky far
+overhead. Quake III's arenas hold no foes of their own; q3dm1's are knight, hell_knight, ogre. Raised in
 q3dm1's own palette.
 
 - `GateCourt`: the start. A terrace the run begins on, stairs down (in
@@ -58,7 +58,7 @@ node GateCourt(Prefab) {
         self.terrace = dice.between(5, 6);
         self.side_stair = dice.chance(0.5);
         self.ledge = dice.chance(0.5);
-        self.tall = self.terrace + 11;
+        self.tall = self.terrace + 38;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -79,7 +79,7 @@ node GateCourt(Prefab) {
         t = self.terrace;
         gx = 8 + t + 3;
         far = self.long - 8;
-        court = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        court = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(court, t);
         # The terraces at either end.
         build.solid(1, 1, 0, 8, self.wide - 1, t);
@@ -93,8 +93,9 @@ node GateCourt(Prefab) {
             stair(build, 8 + t - 1, middle - 2, 0, 2, t, 4);
             keep_box(build, court, 7, middle - 2, 8, middle + 2, t);
         }
-        # The great gate: a wall across the court, a high arch through it.
-        build.solid(gx, 1, 0, gx + 2, self.wide - 1, self.tall);
+        # The great gate: a wall across the court, free-standing under the
+        # sky, a high arch through it.
+        build.solid(gx, 1, 0, gx + 2, self.wide - 1, t + 10);
         build.widen(court, gx, middle - 3, 0, gx + 2, middle + 3, 10);
         # A ledge high along the +y wall from terrace to terrace, through a
         # door in the gate's pier; else a jump pad up to the far terrace.
@@ -149,7 +150,7 @@ node GatePit(Prefab) {
         self.wide = dice.between(16, 18);
         self.deep = dice.between(6, 7);
         self.cross = dice.below(3);
-        self.tall = dice.between(14, 16);
+        self.tall = dice.between(18, 22);
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -224,7 +225,7 @@ node GateNave(Prefab) {
         self.apse = 4;
         self.up = dice.below(3);
         self.broad = dice.chance(0.5);
-        self.tall = self.gallery + 9;
+        self.tall = self.gallery + 15;
         self.low = -self.apse - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -323,7 +324,7 @@ node GateCloister(Prefab) {
         self.wide = dice.between(24, 26);
         self.upper = 9;
         self.east = dice.chance(0.5);
-        self.tall = self.upper + 9;
+        self.tall = self.upper + 38;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -416,7 +417,7 @@ node GateCrypt(Prefab) {
         self.wide = self.hall_wide + 4;
         self.crypt = 6;
         self.form = dice.below(3);
-        self.tall = dice.between(13, 15);
+        self.tall = dice.between(18, 20);
         self.low = -self.crypt - 1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -487,7 +488,7 @@ node GateDais(Prefab) {
         self.wide = dice.between(18, 20);
         self.dais = 7;
         self.access = dice.below(3);
-        self.tall = self.dais + 10;
+        self.tall = self.dais + 20;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -503,7 +504,7 @@ node GateDais(Prefab) {
         d = self.dais;
         dx = self.long - 8;
         gs = wall + 2 + d;
-        room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key);
+        room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key, True);
         build.level(room, d);
         build.solid(dx, 1, 0, self.long - 1, self.wide - 1, d);
         slab(build, gs, 1, dx, 5, d);
