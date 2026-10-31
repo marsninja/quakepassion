@@ -28,9 +28,10 @@ cell block of two tiers. Raised in jail1's own palette.
   channel crossed by bridges, a guard post over the far end up a stair or
   a lift; a grate under the water breaks on a stash (a secret); guards
   appear on the post as the player crosses.
-- `WardenOffice`: the key room. A hall, the warden's office on a balcony
-  over it up a stair or a lift, the key on his desk; taking it opens the
-  cells along the near wall and switches on lasers across the hall.
+- `WardenOffice`: the key room. A flooded hall, a causeway along its near
+  wall to the warden's block standing out of the water, his office on a
+  balcony up a stair or a lift, the key on his desk; taking it opens the cells
+  along the causeway and switches on lasers across it.
 - `CellBlock`: the end. A door (a key's, as a gate), a cell block of two
   tiers, galleries along both walls joined by a bridge, the way out at the
   far end on the floor or the far gallery; reaching the bridge opens the
@@ -39,7 +40,8 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
-import from .common { stair, lift, boulders, apart }
+import from .common { stair, lift, apart }
+import from .q2walls_parts { spaced_boulders }
 import from .warejail_parts { shutter, auto_shutters, key_cue, sparking, guards, charges, stash, keep_row, called_lift, closets, gate_pair, post_button, laser, laser_grid }
 
 glob JAIL1: str = "q2:jail1";
@@ -71,7 +73,7 @@ node PrisonApproach(Prefab) {
         self.wall = dice.between(10, 12);
         self.drawbridge = dice.chance(0.45);
         self.long = 1 + 2 * self.blocks + 7 + 9 + 5 + 1;
-        self.tall = self.plateau + self.wall + 8;
+        self.tall = self.plateau + self.wall + 20;
         self.low = self.plateau - 31;
         self.high = self.tall + 1;
         # The ground's heights, a block two cells along by a row three
@@ -385,7 +387,7 @@ node GuardTowerYard(Prefab) {
         self.by_lift = dice.chance(0.4);
         self.drawn_bridge = dice.chance(0.4);
         self.winch = dice.chance(0.65);
-        self.tall = self.tower + 12;
+        self.tall = self.tower + 24;
         self.low = -8;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -438,15 +440,18 @@ node GuardTowerYard(Prefab) {
         # A cistern sunk in the yard's far corner, steps out at both ends.
         build.pool(cx + 5, 2, -6, self.long - 6, cy - 4, 0, 2, False, True, True);
         clear = [[cx + 4, 1, self.long - 5, cy - 3], [0, cy - 4, 5, cy + 4], [cx - 7 - self.tower, cy - 6, cx + 4, cy + 4], [cx - 4, 0, cx + 4, 5], [self.long - 6, cy - 6, self.long, cy], [cx - 4, walk_y - 3, cx + 4, walk_y], [0, walk_y - 2, self.long, walk_y]];
-        boulders(build, dice, 1, 1, self.long - 4, walk_y, 0, dice.between(4, 6), clear);
-        # A field of rubble heaped on the yard's floor, one to three lifts.
+        # A field of rubble heaped on the yard's floor, one to three lifts,
+        # two cells between heaps so no pocket is left to fall into; boulders
+        # against the walls, clear of the heaps too.
         for index in range(dice.between(10, 16)) {
             x = dice.between(2, self.long - 7);
             y = dice.between(2, walk_y - 4);
             if apart([x, y, x + 2, y + 2], clear) {
                 build.solid(x, y, 0, x + 2, y + 2, dice.between(1, 3));
+                clear.append([x - 1, y - 1, x + 3, y + 3]);
             }
         }
+        spaced_boulders(build, dice, 1, 1, self.long - 4, walk_y, 0, dice.between(4, 6), clear);
         build.doorway(yard, self.enter);
         for port in self.taken {
             build.doorway(yard, port);
@@ -584,11 +589,13 @@ node MoatTunnels(Prefab) {
     }
 }
 
-"""The key room: a hall, the warden's office on a balcony over it, the
-key on his desk; taking it opens the cells and switches on lasers."""
+"""The key room: a flooded hall, a causeway along its near wall to the
+warden's block, his office on a balcony over it, the key on his desk; taking
+it opens the cells along the causeway and switches on lasers across it."""
 node WardenOffice(Prefab) {
     has key: str = "key_silver",
         office: int = 7,
+        deep: int = 10,
         by_lift: bool = False,
         tall: int = 15;
 
@@ -597,14 +604,15 @@ node WardenOffice(Prefab) {
         self.title = "Warden office (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = JAIL1;
         self.district = level_district(JAIL1);
-        self.long = dice.between(22, 25);
-        self.wide = dice.between(22, 24);
-        self.office = dice.between(6, 7);
+        self.long = dice.between(26, 29);
+        self.wide = dice.between(24, 26);
+        self.office = dice.between(7, 8);
+        self.deep = dice.between(10, 12);
         self.by_lift = dice.chance(0.4);
-        self.tall = self.office + 8;
-        self.low = -1;
+        self.tall = self.office + 12;
+        self.low = -self.deep - 1;
         self.high = self.tall + 1;
-        self.enter = Port(face=2, along=float((self.wide + 4) // 2 - 1), floor=0);
+        self.enter = Port(face=2, along=7.0, floor=0);
         self.leaves = [];
         visitor.place(self);
     }
@@ -613,35 +621,47 @@ node WardenOffice(Prefab) {
         build = visitor.build;
         dice = build.begin(self);
         side = 4;
-        middle = (self.wide + 4) // 2 - 1;
+        lane = 7.0;
         hall = build.room(1, side + 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, self.office);
         build.doorway(hall, self.enter);
-        # The office: a balcony along the north wall over the hall, up a
-        # stair at its near end or a lift called down.
-        oy = self.wide - 6;
-        build.solid(5 + self.office, oy, self.office - 1, self.long - 1, self.wide - 1, self.office);
+        # The water from the landing at the near end to the warden's block at
+        # the far end, the causeway along its near side; steps up out of it
+        # at the landing.
+        bx = self.long - 10;
+        wy = side + 5;
+        d = self.deep;
+        build.pool(7, wy, -d, bx, self.wide - 1, 0, 2);
+        # The office: a balcony across the block's far end, up a stair along
+        # the far wall or a lift called down.
+        oy = side + 3 + self.office;
+        build.solid(bx, oy, self.office - 1, self.long - 1, self.wide - 1, self.office);
         if self.by_lift {
-            post_button(build, 1 + self.office, oy - 2, 0, 3) +>:Fires:+> called_lift(build, 2 + self.office, oy, 5 + self.office, oy + 3, 0, self.office);
+            post_button(build, bx + 4, oy - 4, 0, 1) +>:Fires:+> called_lift(build, bx + 1, oy - 3, bx + 4, oy, 0, self.office);
+            keep_row(build, hall, bx + 1, oy, self.office, 1, 3);
         } else {
-            stair(build, 5, self.wide - 4, 0, 0, self.office, 3);
+            stair(build, self.long - 4, side + 3, 0, 1, self.office, 3);
+            keep_row(build, hall, self.long - 4, oy, self.office, 1, 3);
         }
-        keep_row(build, hall, 5 + self.office, oy, self.office, 0, 3);
-        # The desk at the balcony's far end, the key before it; taking it
-        # opens the cells along the near wall, switches on lasers across the
-        # hall and brings guards in.
-        build.solid(self.long - 3, oy + 1, self.office, self.long - 2, self.wide - 2, self.office + 2);
-        taken = key_cue(build, self.key, float(self.long) - 4.5, float(oy) + 2.5, self.office);
-        closets(build, taken, [3, 8, 13] if dice.chance(0.5) else [4, 11], side, -1, 0, JAIL1_FOES.squad(dice, self.danger, 3, True), 90.0);
+        # The desk at the balcony's back, the key before it; taking it opens
+        # the cells along the near wall, switches on lasers across the
+        # causeway and brings guards in.
+        build.solid(bx + 2, self.wide - 3, self.office, self.long - 3, self.wide - 2, self.office + 2);
+        taken = key_cue(build, self.key, float(bx) + 4.5, float(self.wide) - 4.5, self.office);
+        closets(build, taken, [3, 9, 15] if dice.chance(0.5) else [4, 12], side, -1, 0, JAIL1_FOES.squad(dice, self.danger, 3, True), 90.0);
         for x in [8.5, 14.5] {
             taken +>:Fires:+> laser(build, x, float(side) + 1.2, 2.0, 1, False);
         }
         taken +>:Fires:+> build.objective("The warden's key. The alarm is up");
-        guards(build, taken, [[2.5, float(self.wide) - 6.5]], 0, JAIL1_FOES.squad(dice, self.danger, 1), 0.0);
-        build.foe(float(self.long) - 6.5, float(self.wide) - 2.5, self.office, JAIL1_FOES.pick(dice, self.danger, True), 180.0);
-        build.foe(4.5, float(middle) - 1.5, 0, "monster_infantry", 0.0, patrol=[[4.5, float(middle) - 1.5], [float(self.long) - 3.5, float(middle) - 1.5]]);
+        guards(build, taken, [[float(bx) + 2.5, float(side) + 2.5]], 0, JAIL1_FOES.squad(dice, self.danger, 1), 180.0);
+        build.foe(float(bx) + 2.5, float(self.wide) - 4.5, self.office, JAIL1_FOES.pick(dice, self.danger, True), 0.0);
+        build.foe(4.5, lane, 0, "monster_infantry", 0.0, patrol=[[4.5, lane], [float(bx) + 2.5, lane]]);
+        if self.danger > 0.3 {
+            build.foe(float(bx) - 4.5, float(wy) + 4.5, 1 - d, "monster_flipper", 0.0);
+        }
         build.supply(2.5, float(side) + 2.5, 0, Q2_HEALTH, "q2");
-        sparking(build, float(self.long) - 1.2, float(middle) - 2.5, 3.0, 2, 5.0);
+        build.supply(float(bx) - 2.5, float(self.wide) - 3.5, -d, Q2_ARMOR, "q2");
+        sparking(build, float(self.long) - 1.2, lane, 3.0, 2, 5.0);
     }
 }
 
