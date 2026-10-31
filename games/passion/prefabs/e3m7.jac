@@ -10,13 +10,15 @@ from its crypts. Raised in e3m7's own palette.
   the way on from the floor is a door opened from the gallery ("This door
   is opened elsewhere"), whose button brings in an ogre; a closet under
   the gallery behind a wall that opens when shot.
-- `DrawbridgeHall`: a hall across a pit, the dead in it; a button on the
-  far wall, shot, draws out a bridge over the pit (or, pressed down in the
-  pit, raises a stair out of its floor up to the far side); a lift up out
-  of the pit and a teleporter back; a secret closet in the pit's wall.
+- `DrawbridgeHall`: a pit down the length of a hall between two long ledges,
+  the dead in it, the way in on one ledge and the ways on from the other; a
+  button on the far wall, shot, draws out a bridge across the pit (or, pressed
+  down in the pit, raises a stair along the far ledge's foot); a lift up out
+  of the pit and a teleporter back; a basin of slime at its near end; a secret
+  closet in the pit's wall.
 - `SlimeLifts`: a hall over a deep cistern trench, a lift (or a stair) up
   to a walkway across it and a stair down the far side, stepping stones
-  across for whoever would jump; a teleporter back.
+  across for whoever would jump; a teleporter back (a hub too).
 - `StairOfDoors`: a hall, a ledge high across its far end over a crypt;
   a button shot high on the wall raises a stair of doors up to the ledge
   (or a lift held up on the ledge comes down when a button is pressed); a
@@ -25,9 +27,10 @@ from its crypts. Raised in e3m7's own palette.
   two volleys a second apart while anyone is in it (e3m7's timed trap);
   a stair (or a lift) up to the walkway at its end, a button there opening
   the corridor's far door, a teleporter back to the corridor's head.
-- `PadGallery`: a hall of teleporters, each up to a balcony at its own
-  height; a lift to the lowest; guards woken on each; a secret closet on
-  the highest; ways on from the floor and every balcony (a hub).
+- `PadGallery`: a hall of teleporters in three bays through arches, each pad
+  up to a balcony at its own height; a lift to the lowest; guards woken on
+  each; a secret closet on the highest; ways on from the floor and every
+  balcony (a hub).
 - `HauntedCrypt`: the key room. A crypt below a landing, the key on a
   tomb; taking it opens the closets and teleports the dead in; up again by
   a lift (or a stair a button raises); a secret alcove.
@@ -41,6 +44,7 @@ import from .roster { FoeMix }
 import from .common { stair, pillars, key_ambush, lift, key_item, apart }
 import from .e3m5 { keep_run, sealed_way, bursting }
 import from .e3m6 { rounds }
+import from .e3_parts { long_wall, sunken, ridged_bed }
 
 glob E3M7: str = "q1:e3m7";
 
@@ -156,8 +160,11 @@ node HauntedFoyer(Prefab) {
         keep_run(build, foyer, 6, wide - 5, long - 5, wide - 4, g);
         keep_run(build, foyer, long // 2, 4, long - 5, 5, g);
         keep_run(build, foyer, long - 6, 5, long - 5, wide - 4, g);
-        # Tombs on the floor's west half.
-        raised_blocks(build, dice, 6, 5, long - 7, wide - 8, 0, dice.between(4, 6), [[0, middle - 3, long, middle + 3], [long // 2 - 1, 1, long // 2 + 7, 6]]);
+        # The floor's west half sunk two steps, tombs on the lower floor
+        # either side of the way across it.
+        pit_x1 = long - 6 - g;
+        sunken(build, foyer, 6, 5, pit_x1, wide - 5, 0, 2);
+        raised_blocks(build, dice, 7, 6, pit_x1 - 1, wide - 6, -2, dice.between(2, 4), [[0, middle - 3, long, middle + 3]]);
         # A teleporter in the south-west corner up to the east gallery.
         build.teleporter(3.5, 3.5, 0, float(long) - 3.0, 6.5, g, 90.0);
         # A closet under the south gallery behind a wall that opens when
@@ -199,8 +206,10 @@ node HauntedFoyer(Prefab) {
     }
 }
 
-"""A hall across a pit: a bridge drawn out over it by a shot button (or a
-stair raised out of its floor by a button in it), a lift up out of it."""
+"""A pit down a hall's length between two long ledges, the way in on one and
+the ways on from the other: a bridge drawn across by a shot button (or a stair
+raised along the far ledge by a button down in the pit), a lift up out of it, a
+basin of slime at its near end."""
 node DrawbridgeHall(Prefab) {
     has deep: int = 9,
         tall: int = 14,
@@ -212,15 +221,14 @@ node DrawbridgeHall(Prefab) {
         self.source = E3M7;
         self.district = level_district(E3M7);
         self.long = dice.between(28, 32);
-        self.wide = dice.between(15, 17);
+        self.wide = dice.between(19, 21);
         self.deep = dice.between(8, 10);
         self.tall = dice.between(13, 15);
         self.form = dice.below(2);
         self.low = -2 * self.deep - 4;
         self.high = self.tall + 1;
-        middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle, floor=0);
-        self.leaves = [Port(face=0, along=middle, floor=0), Port(face=1, along=float(self.long - 4), floor=0), Port(face=3, along=float(self.long - 4), floor=0)];
+        self.enter = Port(face=2, along=3.5, floor=0);
+        self.leaves = [Port(face=0, along=float(self.wide - 4), floor=0), Port(face=1, along=float(self.long - 6), floor=0), Port(face=1, along=9.0, floor=0)];
         visitor.place(self);
     }
 
@@ -229,69 +237,72 @@ node DrawbridgeHall(Prefab) {
         dice = build.begin(self);
         long = self.long;
         wide = self.wide;
-        middle = wide // 2;
         low = -self.deep;
+        near = 6;
+        far = wide - 6;
+        mx = long // 2 - 1;
         hall = build.room(1, 1, low, long - 1, wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, 0);
-        x0 = 8;
-        x1 = long - 9;
-        build.solid(1, 1, low, x0, wide - 1, 0);
-        build.solid(x1, 1, low, long - 1, wide - 1, 0);
-        lane = middle - 1;
+        # The two long ledges, the pit the whole length between them.
+        build.solid(1, 1, low, long - 1, near, 0);
+        build.solid(1, far, low, long - 1, wide - 1, 0);
+        keep_run(build, hall, 4, near - 1, 11, near, 0);
+        # A basin of slime across the pit's near half, steps out both ways.
+        build.pool(6, near, low - 3, mx - 1, far, low, 3);
+        stair(build, mx - 4, far - 3, low - 3, 0, 3, 3);
+        sx = long - 5 - self.deep;
         if self.form == 0 {
-            # The bridge over the pit, drawn out when the button on the far
+            # The bridge across the pit, drawn out when the button on the far
             # wall is shot.
-            shot = build.cue([build.button(float(long - 1), float(wide) - 3.5, 5.0, 2, "", True)], "button");
-            relayed(build, shot, 0.5) +>:Fires:+> build.drawn(float(x0), float(lane), float(x1), float(lane + 3), 0, self.deep + 1);
-            keep_run(build, hall, x0 - 1, 1, x0, wide - 1, 0);
-            keep_run(build, hall, x0 - 1, lane, x0, lane + 3, 0);
-            keep_run(build, hall, x1, lane, x1 + 1, lane + 3, 0);
-            build.touch(1.0, 1.0, 0.0, 4.0, float(wide - 1), 6.0, True, "Shoot the button across the pit");
+            shot = build.cue([build.button(float(mx) + 1.5, float(wide - 1), 5.0, 3, "", True)], "button");
+            relayed(build, shot, 0.5) +>:Fires:+> build.drawn(float(mx), float(near), float(mx + 3), float(far), 0, self.deep + 1);
+            keep_run(build, hall, mx, near - 1, mx + 3, near, 0);
+            keep_run(build, hall, mx, far, mx + 3, far + 1, 0);
+            build.touch(1.0, 1.0, 0.0, 4.0, float(near), 6.0, True, "Shoot the button across the pit");
             dead_by = shot;
         } else {
-            # A stair raised out of the pit's floor up to the far side by
-            # the button down in the pit.
-            steps = build.rising_steps(x1 - self.deep, lane, low, 0, self.deep, 3);
-            press = build.push(float(x1 - self.deep - 3) + 0.5, float(wide - 1), float(low) + 1.2, 3);
+            # A stair raised along the far ledge's foot by the button down in
+            # the pit.
+            steps = build.rising_steps(sx, far - 3, low, 0, self.deep, 3);
+            press = build.push(float(sx) - 1.5, float(near), float(low) + 1.2, 1);
             relayed(build, press, 0.5) +>:Fires:+> steps;
-            keep_run(build, hall, x1, lane, x1 + 1, lane + 3, 0);
-            keep_run(build, hall, x0 - 1, 2, x0, wide - 2, 0);
+            keep_run(build, hall, long - 8, far, long - 5, far + 1, 0);
             dead_by = press;
         }
-        # A lift up out of the pit onto the far side, a teleporter on its
-        # floor back to the near side.
-        lift(build, x1 - 3, 1, x1, 4, low, 0);
-        keep_run(build, hall, x1, 1, x1 + 1, 4, 0);
-        keep_run(build, hall, x1 - 4, 1, x1, 5, low);
-        build.teleporter(float(x0) + 2.5, 2.5, low, 3.5, 3.5, 0, 0.0);
-        keep_run(build, hall, x1, 4, x1 + 1, wide - 5, 0);
-        raised_blocks(build, dice, x0 + 2, lane + 4, x1 - 5, wide - 4, low, 4, [[x1 - self.deep - 5, wide - 3, x1 - self.deep, wide - 1]]);
-        # A closet in the far side's foot, behind a wall that opens when
+        # A lift up out of the pit onto the far ledge, a teleporter on its
+        # floor back to the near one.
+        lift(build, long - 5, far - 3, long - 2, far, low, 0);
+        keep_run(build, hall, long - 5, far, long - 2, far + 1, 0);
+        keep_run(build, hall, long - 6, far - 4, long - 1, far - 3, low);
+        build.teleporter(3.5, float(near) + 3.5, low, 3.0, 3.5, 0, 0.0);
+        raised_blocks(build, dice, mx + 5, near + 2, long - 8, far - 2, low, 2, [[mx - 1, near, mx + 4, far], [sx - 2, far - 4, long, far], [mx + 4, near, mx + 11, near + 6]]);
+        # A closet in the near ledge's foot, behind a wall that opens when
         # shot (a secret).
-        build.room(x1 + 1, wide - 5, low, x1 + 3, wide - 2, low + 4);
-        build.secret_door(float(x1), float(wide - 5), float(low), float(x1 + 1), float(wide - 2), float(low + 4), 0);
-        build.secret(float(x1 + 1), float(wide - 5), float(low), float(x1 + 3), float(wide - 2), float(low + 3));
-        build.supply(float(x1) + 2.0, float(wide) - 3.5, low, "item_artifact_super_damage" if dice.chance(0.4) else "item_health");
+        cx = long - 12;
+        build.room(cx, near - 3, low, cx + 3, near - 1, low + 4);
+        build.secret_door(float(cx), float(near - 1), float(low), float(cx + 3), float(near), float(low + 4), 3);
+        build.secret(float(cx), float(near - 3), float(low), float(cx + 3), float(near - 1), float(low + 3));
+        build.supply(float(cx) + 1.5, float(near) - 2.0, low, "item_artifact_super_damage" if dice.chance(0.4) else "item_health");
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
         }
-        # The dead in the pit stir as the bridge (or the stair) moves; the
-        # far side's guard wakes as a body drops in.
+        # The dead in the pit stir as the bridge (or the stair) moves; the far
+        # ledge's guard wakes with them, or as a body drops in.
         stirred = build.waiting();
         dead_by +>:Fires:+> stirred;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(x0 + 4 + index * 4) + 0.5, float(wide) - 3.5, low, "monster_zombie", 270.0, waits=stirred);
+            build.foe(float(mx + 5 + index * 3) + 0.5, float(near) + 1.5, low, "monster_zombie", 270.0, waits=stirred);
         }
-        fell = build.touch(float(x0), 1.0, float(low), float(x1), float(wide - 1), float(low + 4));
+        fell = build.touch(1.0, float(near), float(low), float(long - 1), float(far), float(low + 4));
         guard = build.waiting();
         fell +>:Fires:+> guard;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(x1) + 3.5, 4.5 + float(index) * 5.0, 0, E3M7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(float(long - 4 - index * 8) + 0.5, float(far) + 2.5, 0, E3M7_FOES.pick(dice, self.danger, index == 0), 270.0, waits=guard);
         }
-        rounds(build, E3M7_FOES.pick(dice, self.danger), float(x0) + 2.5, float(middle) + 0.5, float(x1) - 5.5, float(middle) + 0.5, low);
-        build.supply(2.5, float(wide) - 2.5, 0, "item_health");
-        build.supply(float(long) - 2.5, 2.5, 0, "item_spikes");
+        rounds(build, E3M7_FOES.pick(dice, self.danger), float(mx) + 5.5, float(near) + 3.5, float(long) - 7.5, float(near) + 3.5, low);
+        build.supply(2.5, 2.5, 0, "item_health");
+        build.supply(float(long) - 2.5, float(wide) - 2.5, 0, "item_spikes");
     }
 }
 
@@ -313,7 +324,7 @@ node SlimeLifts(Prefab) {
         self.long = dice.between(28, 32);
         self.wide = dice.between(15, 17);
         self.walk = dice.between(6, 7);
-        self.deep = dice.between(7, 9);
+        self.deep = dice.between(6, 7);
         self.tall = self.walk + 10;
         self.stair_up = dice.chance(0.5);
         self.stones = dice.chance(0.6);
@@ -338,6 +349,7 @@ node SlimeLifts(Prefab) {
         tx0 = 9;
         tx1 = long - 9;
         build.pool(tx0, 1, -self.deep, tx1, wide - 1, 0, 2, False, True, True);
+        ridged_bed(build, tx0, 1, tx1, wide - 1, -self.deep, 3);
         stair(build, tx1 - self.deep, wide - 3, -self.deep, 0, self.deep, 2);
         if self.stones {
             # Stepping stones across, a cell of water between each.
@@ -443,7 +455,19 @@ node StairOfDoors(Prefab) {
         }
         # Drops from the ledge's edge back to the floor.
         keep_run(build, hall, lx, 1, lx + 1, wide - 1, h);
-        raised_blocks(build, dice, 3, 5, lx - 2, wide - 7, 0, 4, [[0, middle - 2, long, middle + 2], [7, 1, 14, 5]]);
+        # A wall across under the ledge's edge, an arch into the crypt under
+        # it; the hall's floor before it sunk a step.
+        for y in [1, wide - 5] {
+            build.solid(lx, y, 0, lx + 1, y + 4, h - 1);
+        }
+        build.solid(lx, 5, 0, lx + 1, middle - 2, h - 1);
+        build.solid(lx, middle + 2, 0, lx + 1, wide - 5, h - 1);
+        build.solid(lx, middle - 2, 0, lx + 1, middle + 2, 1);
+        if h - 1 > 7 {
+            build.solid(lx, middle - 2, 7, lx + 1, middle + 2, h - 1);
+        }
+        build.widen(hall, 4, 4, -1, lx, wide - 5, 0);
+        raised_blocks(build, dice, 4, 5, lx - 2, wide - 6, -1, 4, [[0, middle - 2, long, middle + 2], [7, 1, 14, 5]]);
         # A secret door in the south wall that, opened, opens a niche on
         # the ledge with the quad damage in it.
         build.solid(8, 1, 0, 13, 4, 6);
@@ -629,6 +653,10 @@ node PadGallery(Prefab) {
         keep_run(build, hall, 8, wide - 4, long - 7, wide - 3, self.north);
         keep_run(build, hall, 8, 3, long - 7, 4, self.south);
         keep_run(build, hall, long - 4, 7, long - 3, wide - 7, self.east);
+        # Walls across the floor make three bays of it, under the balconies
+        # to south and north and the pads' between, an arch to each.
+        long_wall(build, cy - 3, 1, long - 1, 0, self.north, cx - 2);
+        long_wall(build, wide - 6, 1, long - 1, 0, self.north - 1, cx - 8);
         # The pads, in a row across the floor's middle.
         build.teleporter(float(cx) - 4.0, float(cy) + 0.5, 0, float(cx) + 0.5, float(wide) - 2.5, self.north, 90.0);
         build.teleporter(float(cx), float(cy) + 0.5, 0, float(long) - 2.5, float(cy) + 0.5, self.east, 0.0);
@@ -662,7 +690,7 @@ node PadGallery(Prefab) {
                 build.doorway(hall, port);
             }
         }
-        raised_blocks(build, dice, 3, 3, long - 5, wide - 7, 0, 5, [[0, cy - 3, 4, cy + 3], [3, 3, 7, wide - 6], [3, cy + 3, 12, cy + 6], [cx - 6, cy - 2, cx + 6, cy + 3], [long - 9, 1, long, wide], [0, 0, 5, 7]]);
+        raised_blocks(build, dice, 3, 3, long - 5, wide - 7, 0, 3, [[0, cy - 4, long, cy - 1], [0, cy - 3, 4, cy + 3], [3, 3, 7, wide - 6], [3, cy + 3, 12, cy + 6], [cx - 6, cy - 2, cx + 6, cy + 3], [long - 9, 1, long, wide], [0, 0, 5, 7], [cx - 3, 0, cx + 3, cy - 2], [0, wide - 8, long, wide]]);
         # Each balcony's guard wakes as a body is set down there.
         landings = [[float(cx) + 0.5, float(wide) - 2.5, float(self.north)], [float(long) - 2.5, float(cy) + 0.5, float(self.east)], [float(cx) + 0.5, 2.5, float(self.south)]];
         for (index, spot) in enumerate(landings) {
@@ -680,7 +708,7 @@ node PadGallery(Prefab) {
         for index in range(dice.between(2, 3)) {
             build.foe(4.5 + float(index) * 3.0, float(cy) + 4.5, 0, E3M7_FOES.pick(dice, self.danger), 0.0);
         }
-        rounds(build, "monster_zombie", 4.5, 4.5, 4.5, float(wide) - 6.5, 0);
+        rounds(build, "monster_zombie", 4.5, float(cy) - 1.5, 4.5, float(wide) - 7.5, 0);
         build.foe(float(cx) + 0.5, float(cy) + 0.5, 8, "monster_wizard", 0.0);
         build.supply(float(cx) - 4.5, 2.5, self.south, "item_health");
         build.supply(3.0, 3.0, 0, "item_rockets");
@@ -852,6 +880,7 @@ glob E3M7_STRETCHES: list[list[str]] = [
          ["foyer", "start"],
          ["drawbridge", "flow"],
          ["slime", "flow"],
+         ["slime", "hub"],
          ["stair", "flow"],
          ["stair", "hub"],
          ["spikes", "flow"],
