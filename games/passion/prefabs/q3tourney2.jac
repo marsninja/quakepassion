@@ -68,7 +68,7 @@ node ProvingGate(Prefab) {
         self.gallery = dice.between(10, 11);
         self.side = dice.below(2);
         self.sunk = dice.chance(0.6);
-        self.tall = self.gallery + 8;
+        self.tall = self.gallery + 20;
         self.low = -5 if self.sunk else -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -143,7 +143,7 @@ node ProvingRing(Prefab) {
         self.balcony = 10;
         self.two_pads = dice.chance(0.5);
         self.tele = dice.chance(0.5);
-        self.tall = self.balcony + 10;
+        self.tall = self.balcony + 26;
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -219,7 +219,7 @@ node SwitchbackHall(Prefab) {
         self.wide = dice.between(16, 18);
         self.side = dice.below(2);
         self.tele = dice.chance(0.4);
-        self.tall = 25;
+        self.tall = 36;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -290,7 +290,7 @@ node ProvingCourt(Prefab) {
         self.wide = dice.between(26, 28);
         self.gallery = 10;
         self.balcony = 18;
-        self.tall = 27;
+        self.tall = 42;
         self.low = -7;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -376,7 +376,7 @@ node TrialShrine(Prefab) {
         self.wide = self.hall_wide + 4;
         self.tele = dice.chance(0.5);
         self.two_pads = dice.chance(0.5);
-        self.tall = 20;
+        self.tall = 38;
         self.low = -9;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -436,7 +436,7 @@ node ProvingEnd(Prefab) {
         self.wide = dice.between(18, 20);
         self.dais = dice.between(7, 8);
         self.steps = dice.chance(0.5);
-        self.tall = self.dais + 10;
+        self.tall = self.dais + 24;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
