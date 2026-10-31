@@ -14,9 +14,10 @@ silver key on a ledge teleported up to. Raised in e3m3's own palette.
   fro over it (and in some stones a jump apart), a gate beyond held open
   a while by a plate on either side of it (e3m3's doors a plate opens for
   some seconds); a walkway high along the wall back over the lava.
-- `SpikeHall`: a hall whose floor shoots spikes up a moment after the
-  player steps by, a gallery along its side ridden up to by a lift, a
-  hell knight brought in as the player passes its middle.
+- `SpikeHall`: a causeway down a flooded hall, shooting spikes up a moment
+  after the player steps by, ribs off it over the water to crypts of the
+  dead, a gallery over the water ridden up to by a lift, a hell knight
+  brought in as the player passes its middle.
 - `TombNave`: a nave, a channel of water down its middle, galleries along
   both sides up stairs at the far end and bridged at the near; a plate on
   the floor brings the dead in, and a way on is opened by a button on a
@@ -37,6 +38,7 @@ import from .roster { FoeMix }
 import from .common { stair, pillars, lift }
 import from .e2m4 { e2m4_bars, e2m4_key, e2m4_stash, e2m4_closets }
 import from .e2m7 { e2m7_plate }
+import from .e3_parts { ridged_bed }
 
 glob E3M3: str = "q1:e3m3";
 
@@ -193,7 +195,7 @@ node TimedGate(Prefab) {
         # The trench of lava, seven cells wide; the platform riding over it
         # on its south half, stones a jump apart on its north in some.
         rx = 9;
-        build.pool(rx, 1, -3, rx + 7, inner, 0, 4, False, False);
+        build.pool(rx, 1, -6, rx + 7, inner, 0, 4, False, False);
         build.train([3.0, 4.0, 1.0], [[float(rx), 2.0, -1.0], [float(rx + 4), 2.0, -1.0]], 90.0, 2.0);
         for y in range(2, 6) {
             build.keep(hall, rx - 1, y, 0);
@@ -201,7 +203,7 @@ node TimedGate(Prefab) {
         }
         if self.stones {
             for at in [rx + 1, rx + 3, rx + 5] {
-                build.solid(at, inner - 6, -3, at + 1, inner - 4, 0);
+                build.solid(at, inner - 6, -6, at + 1, inner - 4, 0);
             }
         }
         # The gate: a wall across the hall with the gate in its middle, a
@@ -212,7 +214,9 @@ node TimedGate(Prefab) {
         build.solid(gx, middle - 2, 8, gx + 1, middle + 2, self.tall);
         gate = e3m3_timed(build, float(gx), float(middle - 2), float(gx + 1), float(middle + 2), 0, 8, 7);
         e2m7_plate(build, float(gx - 4), float(middle - 1), float(gx - 2), float(middle + 1), 0) +>:Fires:+> gate;
-        e2m7_plate(build, float(gx + 2), float(middle - 1), float(gx + 4), float(middle + 1), 0) +>:Fires:+> gate;
+        # Beyond the gate the floor stands a step lower.
+        build.widen(hall, gx + 1, 3, -1, self.long - 3, inner, 0);
+        e2m7_plate(build, float(gx + 2), float(middle - 1), float(gx + 4), float(middle + 1), -1) +>:Fires:+> gate;
         # The walkway high along the north wall from beyond the gate back
         # over the lava, a stair up to it, its near end open to drop from.
         if self.walk {
@@ -250,10 +254,12 @@ node TimedGate(Prefab) {
     }
 }
 
-"""A hall whose floor shoots spikes up as the player passes, a gallery
-along its side."""
+"""A causeway down a flooded hall, ribs off it over the water to crypts in
+the south wall, spikes shot up out of the causeway behind the player, a
+gallery over the water to the north."""
 node SpikeHall(Prefab) {
     has gallery: int = 12,
+        deep: int = 7,
         tall: int = 21;
 
     can choose with Lay entry {
@@ -261,50 +267,79 @@ node SpikeHall(Prefab) {
         self.title = "Spike hall";
         self.source = E3M3;
         self.district = level_district(E3M3);
-        self.long = dice.between(26, 30);
-        self.wide = dice.between(17, 19);
+        self.long = dice.between(28, 32);
+        self.wide = dice.between(21, 23);
+        self.deep = dice.between(6, 7);
+        self.tall = dice.between(21, 25);
         self.low = -9;
         self.high = self.tall + 1;
-        self.enter = Port(face=2, along=7.0, floor=0);
-        self.leaves = [Port(face=0, along=7.0, floor=0), Port(face=0, along=float(self.wide - 3), floor=self.gallery)];
+        self.enter = Port(face=2, along=10.0, floor=0);
+        self.leaves = [Port(face=0, along=10.0, floor=0), Port(face=0, along=float(self.wide - 3), floor=self.gallery), Port(face=1, along=float(self.long - 4), floor=0)];
         visitor.place(self);
     }
 
     can rise with Raise entry {
         build = visitor.build;
         dice = build.begin(self);
+        long = self.long;
+        wide = self.wide;
         g = self.gallery;
-        hall = build.room(1, 4, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        d = self.deep;
+        # The apron and the far landing across the hall's ends, a causeway
+        # between them, water to both sides of it.
+        x0 = 6;
+        x1 = long - 6;
+        south = 8;
+        north = 13;
+        hall = build.room(1, 4, 0, long - 1, wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, g);
-        # The gallery along the north wall, a lift up at its near end.
-        build.solid(5, self.wide - 6, g - 1, self.long - 1, self.wide - 1, g);
-        lift(build, 2, self.wide - 6, 5, self.wide - 3, 0, g);
-        for y in range(self.wide - 6, self.wide - 3) {
+        build.pool(x0, 4, -d, x1, south, 0, 2, False, False);
+        build.pool(x0, north, -d, x1, wide - 1, 0, 2, False, False);
+        ridged_bed(build, x0, 4, x1, south, -d, 5);
+        ridged_bed(build, x0, north, x1, wide - 1, -d, 4);
+        # Steps up out of the water onto the causeway, at both ends of the
+        # north side and at the far end of the south.
+        stair(build, x1 - d, 6, -d, 0, d, 2);
+        stair(build, x1 - d, north, -d, 0, d, 2);
+        stair(build, x0 + d - 1, north, -d, 2, d, 2);
+        # Off the causeway's edges into the water.
+        for x in range(x0 + d + 1, x0 + d + 5) {
+            build.keep(hall, x, north - 1, 0);
+        }
+        for y in range(north + 3, north + 7) {
+            build.keep(hall, x0 - 1, y, 0);
+        }
+        # The gallery over the north water, a lift up at its near end from
+        # the apron.
+        build.solid(5, wide - 6, g - 1, long - 1, wide - 1, g);
+        lift(build, 2, wide - 6, 5, wide - 3, 0, g);
+        for y in range(wide - 6, wide - 3) {
             build.keep(hall, 5, y, g);
             build.keep(hall, 1, y, 0);
         }
-        # Spikes shot up out of the floor along the hall a moment after the
-        # player steps by each stretch.
-        for x0 in range(6, self.long - 6, 6) {
-            stepping = build.touch(float(x0), 4.0, 0.0, float(x0 + 2), float(self.wide - 6), 6.0, False);
+        # Spikes shot up out of the causeway a moment after the player steps
+        # by each stretch.
+        for at in range(8, long - 8, 6) {
+            stepping = build.touch(float(at), float(south), 0.0, float(at + 2), float(north), 6.0, False);
             late = build.delay(0.8);
             stepping +>:Fires:+> late;
-            late +>:Fires:+> e3m3_floor_spikes(build, [[float(x0 + 3) + 0.5, 5.5], [float(x0 + 3) + 0.5, 8.5], [float(x0 + 4) + 0.5, 7.0]], 0);
+            late +>:Fires:+> e3m3_floor_spikes(build, [[float(at + 3) + 0.5, float(south) + 1.5], [float(at + 3) + 0.5, float(south) + 3.5], [float(at + 4) + 0.5, float(south) + 2.5]], 0);
         }
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
         }
-        # A hell knight brought in behind the player at the hall's middle;
-        # the dead wake.
-        half = build.touch(float(self.long // 2), 4.0, 0.0, float(self.long // 2 + 2), float(self.wide - 6), 6.0);
+        # A hell knight brought in behind the player at the causeway's
+        # middle; the crypts open on the dead, a rib over the water from each
+        # to the causeway.
+        half = build.touch(float(long // 2), float(south), 0.0, float(long // 2 + 2), float(north), 6.0);
         late_knight = build.delay(1.0);
         half +>:Fires:+> late_knight;
-        late_knight +>:Fires:+> build.summon(1, 6, -8, "monster_hell_knight" if self.danger > 0.3 else "monster_ogre", float(self.long // 2) - 5.5, 7.5, 0, 0.0);
+        late_knight +>:Fires:+> build.summon(1, 6, -8, "monster_hell_knight" if self.danger > 0.3 else "monster_ogre", float(long // 2) - 5.5, float(south) + 2.5, 0, 0.0);
         dead = build.waiting();
         half +>:Fires:+> dead;
-        # Crypts in the south wall open on the dead at the hall's middle.
-        for (index, at) in enumerate([x for x in [7, 13, 19] if x + 3 < self.long - 2]) {
+        for (index, at) in enumerate([x for x in [9, 15, 21] if x + 3 < x1 - d]) {
+            build.solid(at, 4, -1, at + 3, south, 0);
             crypt = build.room(at, 1, 0, at + 3, 3, 7);
             build.widen(crypt, at, 3, 0, at + 3, 4, 6);
             fields = {"wait": "-1"};
@@ -313,11 +348,13 @@ node SpikeHall(Prefab) {
             build.foe(float(at) + 1.5, 2.0, 0, "monster_zombie" if index % 2 == 0 else E3M3_FOES.pick(dice, self.danger), 90.0, waits=dead);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 4.5 - float(index) * 3.0, 6.5 + float(index % 2) * 3.0, 0, "monster_zombie" if index > 0 else E3M3_FOES.pick(dice, self.danger), 180.0, waits=dead);
+            build.foe(float(long) - 3.5, 6.5 + float(index) * 4.0, 0, "monster_zombie" if index > 0 else E3M3_FOES.pick(dice, self.danger), 180.0, waits=dead);
         }
-        build.foe(float(self.long) - 3.5, float(self.wide) - 3.0, g, E3M3_FOES.pick(dice, self.danger, True), 180.0, patrol=[[float(self.long) - 3.5, float(self.wide) - 3.0], [8.5, float(self.wide) - 3.0]]);
+        build.foe(float(long) - 3.5, float(wide) - 3.0, g, E3M3_FOES.pick(dice, self.danger, True), 180.0, patrol=[[float(long) - 3.5, float(wide) - 3.0], [8.5, float(wide) - 3.0]]);
+        # Rockets on the bed of the north water.
+        build.supply(float(long // 2) + 0.5, float(wide) - 4.5, 1 - d, "item_rockets");
         build.supply(2.5, 5.5, 0, "item_health");
-        build.supply(float(self.long) - 2.5, float(self.wide) - 3.0, g, "item_rockets");
+        build.supply(float(long) - 2.5, float(wide) - 3.0, g, "item_health");
     }
 }
 
@@ -358,12 +395,15 @@ node TombNave(Prefab) {
         # The channel down the middle, one footbridge over it, steps out.
         cx0 = 8;
         cx1 = self.long - 8;
-        build.pool(cx0, middle - 2, -3, cx1, middle + 2, 0, 2);
+        build.pool(cx0, middle - 2, -6, cx1, middle + 2, 0, 2);
+        ridged_bed(build, cx0, middle - 2, cx1, middle + 2, -6, 6);
         fx = self.long // 2 - 1;
-        build.solid(fx, middle - 2, -3, fx + 3, middle + 2, 0);
-        stair(build, fx - 3, middle - 2, -3, 0, 3, 2);
-        stair(build, fx + 5, middle - 2, -3, 2, 3, 2);
-        stair(build, cx1 - 3, middle - 2, -3, 0, 3, 2);
+        build.solid(fx, middle - 2, -1, fx + 3, middle + 2, 0);
+        stair(build, cx1 - 6, middle, -6, 0, 6, 2);
+        # The aisles a step down from the nave's ends, either side of the
+        # water.
+        build.widen(nave, 8, 1, -1, self.long - 4 - g, middle - 2, 0);
+        build.widen(nave, 8, middle + 2, -1, self.long - 4 - g, self.wide - 1, 0);
         # The galleries, a stair up to each at the far end, a bridge between
         # them at the near end.
         under = g - 1;
@@ -392,7 +432,7 @@ node TombNave(Prefab) {
         }
         # A plate before the footbridge brings the dead in behind; a hell
         # knight with them.
-        plate = e2m7_plate(build, float(fx - 6), float(middle + 3), float(fx - 4), float(middle + 5), 0);
+        plate = e2m7_plate(build, float(fx - 6), float(middle + 3), float(fx - 4), float(middle + 5), -1);
         late = build.delay(0.5);
         plate +>:Fires:+> late;
         for index in range(3) {
@@ -429,7 +469,7 @@ node TeleportMaze(Prefab) {
         self.wide = dice.between(16, 18);
         self.tall = dice.between(13, 14);
         self.lava = dice.chance(0.6);
-        self.low = -9;
+        self.low = -11;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -451,7 +491,7 @@ node TeleportMaze(Prefab) {
         # A pool of lava in the middle chamber's floor, a walk round it, a
         # platform riding to and fro over it.
         if self.lava {
-            build.pool(a1 + 4, 4, -7, b1 - 3, self.wide - 4, -4, 4, False, False);
+            build.pool(a1 + 4, 4, -10, b1 - 3, self.wide - 4, -4, 4, False, False);
             build.train([3.0, 3.0, 1.0], [[float(a1 + 4), float(middle - 1), -5.0], [float(b1 - 6), float(middle - 1), -5.0]], 60.0, 2.0);
         }
         build.teleporter(float(a1) - 2.0, float(middle) + 3.0, 0, float(a1) + 2.5, float(middle) + 0.5, -4, 0.0);
@@ -534,7 +574,9 @@ node SilverSepulchre(Prefab) {
         for y in range(2, side - 1) {
             build.keep(hall, lx, y, k);
         }
-        build.teleporter(float(self.long // 2) - 2.0, float(cy) + 0.5, 0, float(self.long) - 3.0, 3.0, k, 90.0);
+        # The floor before the ledge a step down.
+        build.widen(hall, 8, 3, -1, lx, side - 1, 0);
+        build.teleporter(float(self.long // 2) - 2.0, float(cy) + 0.5, -1, float(self.long) - 3.0, 3.0, k, 90.0);
         for y in [3, side - 4] {
             build.solid(5, y, 0, 8, y + 2, 2);
         }

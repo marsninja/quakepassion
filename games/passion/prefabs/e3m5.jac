@@ -111,7 +111,7 @@ node TubeFoot(Prefab) {
         self.long = dice.between(22, 26);
         self.wide = dice.between(16, 18);
         self.gallery = dice.between(14, 18);
-        self.tall = self.gallery + dice.between(9, 11);
+        self.tall = self.gallery + dice.between(16, 20);
         self.secret_in = dice.chance(0.7);
         self.low = -7;
         self.high = self.tall + 1;
@@ -228,7 +228,7 @@ node FloodedTube(Prefab) {
         self.wide = self.deep + dice.between(3, 5);
         self.secret_in = self.dive and self.wide >= 14 and dice.chance(0.7);
         self.walk = dice.between(9, 11);
-        self.tall = self.walk + dice.between(8, 10);
+        self.tall = self.walk + dice.between(22, 28);
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         far = self.long - 6;
@@ -261,16 +261,16 @@ node FloodedTube(Prefab) {
         # Walkways high along both walls, the whole length of the tunnel,
         # and bridges across between them over the water.
         build.solid(x0, wy, u - 1, long - 1, wide - 1, u);
-        build.solid(x0, 1, u - 1, long - 1, 5, u);
+        build.solid(x0, 1, u - 1, long - 1, 4, u);
         xm = x0 + 3 + (x1 - deep - x0 - 3) // 2;
         for bx in [x0 + 1 + dice.below(2), x1 - 4 - dice.below(3)] {
-            build.solid(bx, 5, u - 1, bx + 3, wy, u);
+            build.solid(bx, 4, u - 1, bx + 3, wy, u);
         }
         if self.dive {
             # The wall down into the water across the tunnel: under it is
             # the way on; over it the walkways run on.
             build.solid(xm, 1, -1, xm + 2, wide - 1, u - 1);
-            build.solid(xm, 5, u - 1, xm + 2, wy, self.tall);
+            build.solid(xm, 4, u - 1, xm + 2, wy, self.tall);
             if self.secret_in {
                 # A closet in the wall off the walkway, behind a stretch of
                 # it that opens when shot.
@@ -287,7 +287,7 @@ node FloodedTube(Prefab) {
         }
         # Drops from the walkways back into the water.
         keep_run(build, tube, x0 + 5, wy, x0 + 8, wy + 1, u);
-        keep_run(build, tube, xm + 3, 4, xm + 6, 5, u);
+        keep_run(build, tube, xm + 3, 3, xm + 6, 4, u);
         # Up from the far shore to the walkway: the wind, or a lift.
         if self.climb == 0 {
             build.jump_pad(float(x1) + 1.5, float(wy) - 3.0, 0, float(x1) + 1.5, float(wy) + 1.0, u);
@@ -344,8 +344,8 @@ node WindChamber(Prefab) {
         self.wide = dice.between(24, 28);
         self.low_ledge = dice.between(8, 10);
         self.top_ledge = self.low_ledge + dice.between(8, 10);
-        self.deep = dice.between(9, 11);
-        self.tall = self.top_ledge + 10;
+        self.deep = dice.between(10, 13);
+        self.tall = self.top_ledge + dice.between(20, 26);
         self.catwalk = dice.chance(0.55);
         self.span = dice.chance(0.6);
         self.bars = dice.chance(0.7);
@@ -538,6 +538,7 @@ node QuadPillar(Prefab) {
     has key: str = "key_silver",
         top: int = 9,
         deep: int = 6,
+        tall: int = 19,
         form: int = 0;
 
     can choose with Lay entry {
@@ -550,8 +551,9 @@ node QuadPillar(Prefab) {
         self.wide = dice.between(18, 20);
         self.top = dice.between(8, 10);
         self.deep = dice.between(8, 10);
+        self.tall = self.top + dice.between(18, 24);
         self.low = -self.deep - 2;
-        self.high = self.top + 11;
+        self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -565,7 +567,7 @@ node QuadPillar(Prefab) {
         p = self.top;
         deep = self.deep;
         cy = wide // 2;
-        hall = build.room(1, 1, 0, long - 1, wide - 1, p + 10, variant=dice.below(3));
+        hall = build.room(1, 1, 0, long - 1, wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, p);
         build.doorway(hall, self.enter);
         px1 = long - 6;
@@ -683,7 +685,7 @@ node WindTower(Prefab) {
         self.wide = 14 + 2 * dice.below(2);
         self.ledge = (self.wide - 4) // 2;
         self.deep = dice.between(8, 10);
-        self.tall = self.stages * self.step_up + 10;
+        self.tall = self.stages * self.step_up + dice.between(13, 17);
         self.bars = dice.chance(0.5);
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
@@ -817,7 +819,7 @@ node WindExit(Prefab) {
         self.deep = dice.between(14, 18);
         self.secret_in = dice.chance(0.5);
         self.low = -self.deep - 9;
-        self.high = 13;
+        self.high = 21;
         self.enter = Port(face=2, along=float((self.wide - 5) // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -833,7 +835,7 @@ node WindExit(Prefab) {
         mid = side // 2;
         wall = 9;
         hall = build.room(1, 1, 0, wall, side, 10, variant=dice.below(3));
-        shaft = build.room(wall + 1, 1, -d, long - 1, side, 12, variant=dice.below(3));
+        shaft = build.room(wall + 1, 1, -d, long - 1, side, 20, variant=dice.below(3));
         build.level(shaft, 0);
         build.doorway(hall, self.enter);
         build.widen(shaft, wall, mid - 2, 0, wall + 1, mid + 2, 8);
