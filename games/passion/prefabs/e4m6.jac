@@ -32,10 +32,10 @@ own palette.
   in, or wakes what lies under the ledge.
 - `UnholyAltar`: a chapel, galleries over its aisles, the unholy altar on a
   dais at its far end. Shot again and again it breaks ("The altar has been
-  defiled"), opening the way on (as a flow), or the wall before the
-  slipgate (as the end: "Are you sure you want to exit?" and a hell knight
-  behind); a key's door before the chapel as a gate. Shalraths wake on the
-  galleries as it breaks; a secret door opens with it."""
+  defiled"), opening the wall before the slipgate ("Are you sure you want
+  to exit?" and a hell knight behind); a key's door before the chapel as a
+  gate. Shalraths wake on the galleries as it breaks; a secret door opens
+  with it."""
 import math;
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires, Next }
@@ -299,7 +299,7 @@ node PainGate(Prefab) {
         self.stair_side = dice.below(2);
         self.secret_here = dice.chance(0.75);
         self.wide = dice.between(18, 22);
-        self.tall = self.perch + dice.between(10, 12);
+        self.tall = self.perch + dice.between(14, 17);
         self.long = 1 + self.balcony + self.perch + 3 + self.cistern + self.far + 1;
         self.low = -11;
         self.high = self.tall + 8;
@@ -432,7 +432,7 @@ node FloodedMaze(Prefab) {
         self.cols = self.cols + dice.below(2);
         self.long = 4 * self.cols + 1;
         self.wide = 4 * self.rows + 1;
-        self.tall = dice.between(8, 10);
+        self.tall = dice.between(10, 12);
         self.split = self.cols // 2 + dice.below(2) if dice.chance(0.45) else 0;
         self.wells = dice.between(3, 5);
         self.cellar = dice.chance(0.6);
@@ -630,12 +630,12 @@ node ButtonCourt(Prefab) {
         self.far_ledge = 6;
         self.gallery = 4;
         self.both_galleries = dice.chance(0.6);
-        self.pool_here = dice.chance(0.65);
+        self.pool_here = dice.chance(0.85);
         self.buttons = dice.below(3);
         self.lift_back = dice.chance(0.6);
         self.wide = dice.between(20, 24);
         self.lane = dice.between(self.gallery + 3, self.wide - self.gallery - 7);
-        self.tall = self.top + dice.between(9, 11);
+        self.tall = self.top + dice.between(12, 15);
         self.long = 1 + 5 + self.court + self.far_ledge + 1;
         self.low = -9;
         self.high = self.tall + 8;
@@ -793,7 +793,7 @@ node SpawnPit(Prefab) {
         self.near = dice.between(6, 8);
         self.pit = self.deep + dice.between(3, 5);
         self.drawn_bridge = dice.chance(0.4);
-        self.flooded = dice.chance(0.35);
+        self.flooded = dice.chance(0.55);
         self.gallery_here = dice.chance(0.7);
         self.teleport_out = dice.chance(0.4);
         self.hi = dice.between(9, 10);
@@ -801,7 +801,7 @@ node SpawnPit(Prefab) {
         self.far = self.hi + dice.between(2, 3) if self.gallery_here else dice.between(7, 9);
         self.wide = dice.between(17, 20);
         self.lane = dice.between(5, self.wide - 9);
-        self.tall = self.hi + dice.between(9, 11);
+        self.tall = self.hi + dice.between(13, 16);
         self.long = 1 + self.near + self.pit + self.far + 1;
         self.low = -self.deep - 2;
         self.high = self.tall + 1;
@@ -990,10 +990,9 @@ node SilverCistern(Prefab) {
 }
 
 """A chapel, galleries over its aisles, the unholy altar on its dais; shot
-till it breaks, it opens the way on (or, as the end, the slipgate)."""
+till it breaks, it opens the wall before the slipgate."""
 node UnholyAltar(Prefab) {
     has key: str = "",
-        ending: bool = False,
         gh: int = 9,
         gallery: int = 4,
         both_galleries: bool = True,
@@ -1017,18 +1016,11 @@ node UnholyAltar(Prefab) {
         self.nave = dice.between(26, 30);
         self.wide = dice.between(18, 22);
         self.tall = self.gh + dice.between(10, 12);
-        self.long = self.hall + self.nave + (8 if self.ending else 0);
+        self.long = self.hall + self.nave + 8;
         self.low = -9;
         self.high = self.tall + 8;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
-        if not self.ending {
-            self.leaves = [
-                Port(face=0, along=float(self.wide // 2), floor=2),
-                Port(face=1, along=float(self.long - 5), floor=self.gh),
-                Port(face=3, along=float(self.long - 5), floor=self.gh if self.both_galleries else 2)
-            ];
-        }
         visitor.place(self);
     }
 
@@ -1041,7 +1033,7 @@ node UnholyAltar(Prefab) {
             hallway = build.room(1, middle - 4, 0, self.hall, middle + 4, 10, variant=dice.below(3));
             build.doorway(hallway, self.enter);
         }
-        chapel_x1 = self.long - 1 - (8 if self.ending else 0);
+        chapel_x1 = self.long - 9;
         chapel = build.room(n0, 1, 0, chapel_x1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(chapel, self.gh);
         if self.key {
@@ -1129,23 +1121,14 @@ node UnholyAltar(Prefab) {
             build.secret(float(n0), 1.0, 0.0, float(n0 + 2), 3.0, 3.0);
             build.supply(float(n0) + 1.0, 2.0, 0, "item_artifact_super_damage");
         }
-        for port in self.taken {
-            build.doorway(chapel, port);
-        }
-        # As a flow, the ways on open when the altar breaks.
-        for port in onward_ports(self) {
-            defiled +>:Fires:+> port_door(build, self, port);
-        }
-        if self.ending {
-            # The sanctum behind the dais's back wall, opened as the altar
-            # breaks; the slipgate in it.
-            sanctum = build.room(chapel_x1 + 1, middle - 4, 2, self.long - 1, middle + 4, 12, variant=dice.below(3));
-            build.widen(sanctum, chapel_x1, middle - 2, 2, chapel_x1 + 1, middle + 2, 10);
-            defiled +>:Fires:+> build.opened(float(chapel_x1), float(middle - 2), 2.0, float(chapel_x1 + 1), float(middle + 2), 10.0);
-            build.way_out(float(self.long) - 3.5, float(middle), 2);
-            warned = build.touch(float(chapel_x1 + 1), float(middle - 4), 2.0, float(chapel_x1 + 3), float(middle + 4), 8.0, True, "Are you sure you want to exit?");
-            warned +>:Fires:+> build.summon(chapel_x1 + 2, middle - 4, 13, "monster_hell_knight", float(dais_x) + 2.5, float(middle) + 0.5, 2, 0.0);
-        }
+        # The sanctum behind the dais's back wall, opened as the altar
+        # breaks; the slipgate in it.
+        sanctum = build.room(chapel_x1 + 1, middle - 4, 2, self.long - 1, middle + 4, 12, variant=dice.below(3));
+        build.widen(sanctum, chapel_x1, middle - 2, 2, chapel_x1 + 1, middle + 2, 10);
+        defiled +>:Fires:+> build.opened(float(chapel_x1), float(middle - 2), 2.0, float(chapel_x1 + 1), float(middle + 2), 10.0);
+        build.way_out(float(self.long) - 3.5, float(middle), 2);
+        warned = build.touch(float(chapel_x1 + 1), float(middle - 4), 2.0, float(chapel_x1 + 3), float(middle + 4), 8.0, True, "Are you sure you want to exit?");
+        warned +>:Fires:+> build.summon(chapel_x1 + 2, middle - 4, 13, "monster_hell_knight", float(dais_x) + 2.5, float(middle) + 0.5, 2, 0.0);
         build.foe(float(n0) + 3.5, float(middle) + 3.5, 0, "monster_hell_knight" if self.danger > 0.3 else "monster_demon1", 0.0, patrol=[[float(n0) + 3.5, float(middle) + 3.5], [float(dais_x) - 2.5, float(middle) + 3.5]]);
         build.supply(float(n0) + 1.5, float(middle) - 3.5, 0, "item_health");
         build.supply(float(chapel_x1) - 2.5, float(middle) + 3.5, 2, "item_rockets");
@@ -1163,10 +1146,9 @@ glob E4M6_STRETCHES: list[list[str]] = [
          ["court", "flow"],
          ["court", "hub"],
          ["pit", "flow"],
-         ["altar", "flow"],
          ["cistern", "keyroom"],
-         ["altar_end", "end"],
-         ["altar_end", "gate"]
+         ["altar", "end"],
+         ["altar", "gate"]
      ];
 
 """One of e4m6's stretches by its name."""
@@ -1186,11 +1168,8 @@ def make_e4m6(name: str, key: str) -> Prefab {
     if name == "pit" {
         return SpawnPit();
     }
-    if name == "altar" {
-        return UnholyAltar();
-    }
     if name == "cistern" {
         return SilverCistern(key=key if key else "key_silver");
     }
-    return UnholyAltar(key=key, ending=True);
+    return UnholyAltar(key=key);
 }
