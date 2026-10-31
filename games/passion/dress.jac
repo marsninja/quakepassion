@@ -31,6 +31,10 @@ glob OPEN_HIGH: int = 6,
      GLOW_VALUE: int = 300,
      WAINSCOT_HIGH: float = 64.0;
 
+"""How much of a lamp's level must be left at a floor for it to count as lit
+(light falls a level a unit from the lamp)."""
+glob DARK_FLOOR_SHINE: float = 90.0;
+
 """A lamp: where it is, how bright (a light entity's `light`) and its colour."""
 obj Lamp3 {
     has x: float,
@@ -557,6 +561,88 @@ def court_lamps(by_id: dict[int, Space], made: Dressing) {
             );
         }
     }
+}
+
+"""Lamps over the floors nothing lights: walking the floors on a grid three
+cells apart, one with no lamp shining on it from close enough (`sources`, more
+lamps already placed, each [x, y, z, level], with the dressing's own) gets a
+lamp of no fitting hung over it, so a room stays lit whatever its steps and
+sunken floors and however far off its ceiling stands. Floors under liquid
+(`wet`, by cell index) stay as dark as they are."""
+def dark_floor_lamps(mass: Massing, spaces: list[Space], made: Dressing, sources: list[list[float]], wet: dict[int, int]) {
+    by_id = {space.id: space for space in spaces};
+    # What shines, by the block of 16 cells it hangs in.
+    shining: dict[int, list[list[float]]] = {};
+    for lamp in [[lamp.x, lamp.y, lamp.z, float(lamp.level)] for lamp in made.lamps] + sources {
+        shining.setdefault(int(lamp[0] / CELL) // 16 * 65536 + int(lamp[1] / CELL) // 16, []).append(lamp);
+    }
+    for cz in range(1, mass.nz - 1) {
+        for cy in range(1, mass.ny - 1, 3) {
+            for cx in range(1, mass.nx - 1, 3) {
+                owner = mass.at(cx, cy, cz);
+                if owner <= 0 or mass.air(cx, cy, cz - 1) or not mass.air(cx, cy, cz + 2) or not mass.air(cx, cy, cz + 3) {
+                    continue;
+                }
+                if (cz * mass.ny + cy) * mass.nx + cx in wet {
+                    continue;
+                }
+                space = by_id.get(owner - 1, None);
+                if space is None or space.role == "window" {
+                    continue;
+                }
+                x = (float(cx) + 0.5) * CELL;
+                y = (float(cy) + 0.5) * CELL;
+                z = float(cz) * LIFT + 32.0;
+                lit = False;
+                block_x = cx // 16;
+                block_y = cy // 16;
+                for bx in [block_x - 1, block_x, block_x + 1] {
+                    for by_y in [block_y - 1, block_y, block_y + 1] {
+                        for lamp in shining.get(bx * 65536 + by_y, []) {
+                            reach = lamp[3] - DARK_FLOOR_SHINE;
+                            near = (lamp[0] - x) * (lamp[0] - x) + (lamp[1] - y) * (lamp[1] - y) + (lamp[2] - z) * (lamp[2] - z);
+                            if near <= reach * reach and clear_line(mass, lamp, x, y, z) {
+                                lit = True;
+                                break;
+                            }
+                        }
+                        if lit {
+                            break;
+                        }
+                    }
+                    if lit {
+                        break;
+                    }
+                }
+                if lit {
+                    continue;
+                }
+                top = cz + 3;
+                while top < cz + 9 and mass.air(cx, cy, top + 1) {
+                    top += 1;
+                }
+                kit = kit_of(space.district);
+                level = max(lamp_strength(kit, space), 280);
+                hung = float(top) * LIFT + 4.0;
+                made.add_lamp(space, Lamp3(x=x, y=y, z=hung, level=level, color=kit.lamp_color));
+                shining.setdefault(block_x * 65536 + block_y, []).append([x, y, hung, float(level)]);
+            }
+        }
+    }
+}
+
+"""Whether nothing solid stands between a lamp and a point (a walk along the
+line a half cell at a time)."""
+def clear_line(mass: Massing, lamp: list[float], x: float, y: float, z: float) -> bool {
+    span = max(abs(lamp[0] - x) / CELL, abs(lamp[1] - y) / CELL, abs(lamp[2] - z) / LIFT);
+    steps = int(span * 2.0) + 1;
+    for step in range(1, steps) {
+        part = float(step) / float(steps);
+        if not mass.air(int((x + (lamp[0] - x) * part) / CELL), int((y + (lamp[1] - y) * part) / CELL), int((z + (lamp[2] - z) * part) / LIFT)) {
+            return False;
+        }
+    }
+    return True;
 }
 
 """Lamps hung over the open floor of big rooms, at each of their levels, a

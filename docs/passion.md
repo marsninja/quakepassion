@@ -153,7 +153,30 @@ what stands on its floors.
   start, a flow or two, a hub; from the hub a branch to a key room, and
   the hub's way on locked by that key, so the key is fetched and the
   branch walked back; from level 2 a second hub and the gold key; then
-  the end. Any original's stretch may follow any other's.
+  the end.
+- A level holds together: it draws on one family of originals (`FAMILIES`
+  in `prefabs/library.jac`: an episode, a Quake II unit, a run of arenas
+  of one kind), with now and then a guest from the rest of the library, and
+  takes no stretch twice while another will do.
+- Levels keep their originals' scale, measured off the originals' own level
+  graphs (`measures.jac`: the headroom nine tenths of the floor lies under,
+  and foes per hundred cells). `Raising.vault` lifts the big rooms the
+  stretches left low into the rock over them (flat, in steps, or round a
+  lantern), only where rock stands on every side, never over a mover's reach.
+  A plain way between stretches is an arch as often as a door, and always
+  in the arenas, whose spaces run into one another.
+- `Pace`, a walker over the level, gives each stretch a part in the rhythm of
+  fights: a `rest` (usually after a fight), `steady` or `fight` (usually where
+  a key or the way out lies), and takes stray foes out to suit, more of them
+  from an original that was sparsely held, fewer deep into a run. Foes a cue
+  wakes stay, and so do bosses: an ambush in a quiet room is the point.
+- `dark_floor_lamps` hangs a lamp of no fitting over any dry floor no lamp
+  reaches, after the dressing's own (steps and sunken floors are not among
+  the levels those are hung by).
+- A room open to the sky shows a real sky of its game (`sky.jac`): one to a
+  level, taken from the kit over the most open floor, by that original's own
+  `sky` on Quake II, its shader's far box and clouds on Quake III, and
+  Quake's two layers.
 - Quake III's arenas hold no foes of their own, so each arena's stretches
   take Quake's and Quake II's; every arena has stretches of its own for
   each part, drawn after its own architecture (`prefabs/q3arena.jac`
@@ -190,6 +213,8 @@ what stands on its floors.
   `QP_PREFAB_NOWEAVE=1` leaves the weaving out. The forge's
   `QP_FORGE_ENTITIES=<folder>` writes each level's entities and
   `QP_FORGE_BUDGET=1` prints the budget's ledger along the route.
+  `QP_PREFAB_NOVAULT=1` leaves the ceilings as raised, and
+  `scripts/passion_look.jac` takes views of a level from given places.
 - Jump pads sit three cells back from the edge they throw a body over and
   `keep` that edge, since the dressing rails any drop of four lifts.
 

@@ -21,7 +21,7 @@ Two libraries:
 import from .random { Stream, stream_for }
 import from .massing { Massing }
 import from .space { Space }
-import from .dress { Dressing, dress }
+import from .dress { Dressing, dress, dark_floor_lamps }
 import from .kits { kit_of }
 import from .cast { Casting }
 import from .prefab { Prefab, Next, Lay, Raise, Pace, Raising, prefab_box, passage_box, prefab_direction, prefab_point, port_middle, loop_boxes, PREFAB_MARGIN, PORT_HIGH, VAULT_ROOM }
@@ -410,6 +410,16 @@ def assemble_prefabs(seed: int, depth: int, notes: list[str], library: str = "de
             continue;
         }
         dressing = dress(mass, build.spaces, trial.derive("dress")) if library != "derived" else Dressing();
+        if library != "derived" {
+            placed: list[list[float]] = [];
+            for item in build.casting.items {
+                if item.fields.get("classname", "") == "light" {
+                    words = item.fields.get("origin", "").split();
+                    placed.append([float(words[0]), float(words[1]), float(words[2]), float(item.fields.get("light", "200"))]);
+                }
+            }
+            dark_floor_lamps(mass, build.spaces, dressing, placed, build.wet);
+        }
         if library != "derived" {
             provision(build.casting, trial.derive("provision"));
         }
