@@ -19,9 +19,11 @@ knight, zombie, hell_knight. Raised in q3dm2's own palette.
 - `PainHalls`: two halls one over the other, the upper's floor slotted to
   look down, stairs between at both ends (or a stair and a lift); ways on
   from both.
-- `PainCells`: the key room. A block of cells sunk under a catwalk, the
-  key on a platform across it reached over the catwalk (spikes fire across
-  it), up a stair or by a jump pad; taking it opens the cells.
+- `PainCells`: the key room. A cell block open to the sky: an aisle between
+  two rows of cells, galleries on the rows' roofs joined by a catwalk across
+  the aisle (spikes fire along it), climbed by a stair, a lift or a jump pad,
+  the key on the warden's platform across the aisle's far end; taking it
+  lets out what the shut cells hold.
 - `PainAltar`: the end (or a gate). A ledge over a sanctum, balconies down
   its walls, a stair, a drop or a lift down to the altar the way out
   stands on; touching the sanctum's floor brings a foe in behind and wakes
@@ -30,13 +32,16 @@ import from ..random { Stream }
 import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
-import from .common { stair, pillars, key_ambush, gate_into, lift }
+import from .common { stair, pillars, key_item, gate_into, lift }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
-import from .q3low_parts { slab, keep_box, hint, wake_later, pad, flying_stair, sliding_pair }
+import from .q3low_parts { slab, keep_box, hint, wake_later, pad_to, flying_stair, sliding_pair }
 
 glob Q3DM2: str = "q3:q3dm2",
      Q3DM2_LIGHT: list[str] = ["monster_knight", "monster_zombie"],
-     Q3DM2_HEAVY: list[str] = ["monster_hell_knight"];
+     Q3DM2_HEAVY: list[str] = ["monster_hell_knight"],
+     # The height of the cell block's roofs, its galleries' floor: over the
+     # cell doors risen into the rock above them.
+     Q3DM2_ROOFS: int = 11;
 
 """A foe for q3dm2's stretches."""
 glob Q3DM2_FOES: FoeMix = FoeMix(light=Q3DM2_LIGHT, strong=Q3DM2_HEAVY, heavy_light=Q3DM2_HEAVY, scale=0.5);
@@ -65,7 +70,7 @@ node PainGate(Prefab) {
         } else {
             self.walk = dice.below(3);
         }
-        self.tall = 10;
+        self.tall = 30;
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -87,13 +92,13 @@ node PainGate(Prefab) {
         build = visitor.build;
         dice = build.begin(self);
         middle = self.wide // 2;
-        hall = build.room(1, 1, -8, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        hall = build.room(1, 1, -8, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(hall, 0);
         # The ledge, and the vestibule's wall with the great doors in it.
         build.solid(1, 1, -8, 10, self.wide - 1, 0);
-        build.solid(5, 1, 0, 6, self.wide - 1, self.tall);
-        build.widen(hall, 5, middle - 3, 0, 6, middle + 3, self.tall);
-        sliding_pair(build, 5, middle - 3, middle + 3, 0, self.tall);
+        build.solid(5, 1, 0, 6, self.wide - 1, 16);
+        build.widen(hall, 5, middle - 3, 0, 6, middle + 3, 12);
+        sliding_pair(build, 5, middle - 3, middle + 3, 0, 12);
         # Down from the ledge.
         if self.down == 0 {
             stair(build, 17, 1, -8, 2, 8, 3);
@@ -155,7 +160,7 @@ node PainLifts(Prefab) {
         self.wide = dice.between(16, 18);
         self.balcony = 9;
         self.form = dice.below(3);
-        self.tall = self.balcony + 8;
+        self.tall = self.balcony + 18;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -234,7 +239,7 @@ node PainPit(Prefab) {
         self.wide = dice.between(26, 28);
         self.down = dice.below(3);
         self.bridge = dice.chance(0.6);
-        self.tall = 10;
+        self.tall = 34;
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -255,7 +260,7 @@ node PainPit(Prefab) {
         wide = self.wide;
         middle = wide // 2;
         north = wide - 6;
-        pit = build.room(1, 1, -8, long - 1, wide - 1, self.tall, variant=dice.below(3));
+        pit = build.room(1, 1, -8, long - 1, wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(pit, 0);
         # The near floor, and the walks along both sides over the pit.
         build.solid(1, 1, -8, 7, wide - 1, 0);
@@ -324,7 +329,7 @@ node PainHalls(Prefab) {
         self.long = dice.between(26, 30);
         self.wide = dice.between(14, 16);
         self.lift_far = dice.chance(0.4);
-        self.tall = 10;
+        self.tall = 18;
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -389,25 +394,27 @@ node PainHalls(Prefab) {
     }
 }
 
-"""The key room: a block of cells sunk under a catwalk, the key on a
-platform across it reached over the catwalk, up a stair or by a jump pad."""
+"""The key room: a cell block open to the sky, an aisle between two rows of
+cells, galleries on the rows' roofs joined by a catwalk spikes fire along,
+the key on the warden's platform across the aisle's far end; taking it lets
+out what the shut cells hold."""
 node PainCells(Prefab) {
     has key: str = "key_silver",
-        hall_wide: int = 16,
+        hall_wide: int = 23,
         form: int = 0,
-        tall: int = 9;
+        tall: int = 31;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Pain cells (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = Q3DM2;
         self.district = level_district(Q3DM2);
-        self.long = dice.between(24, 26);
-        self.hall_wide = dice.between(16, 18);
-        self.wide = self.hall_wide + 4;
+        self.long = dice.between(30, 33);
+        self.hall_wide = dice.between(23, 25);
+        self.wide = self.hall_wide;
         self.form = dice.below(3);
-        self.tall = 9;
-        self.low = -7;
+        self.tall = Q3DM2_ROOFS + 20;
+        self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
@@ -417,41 +424,91 @@ node PainCells(Prefab) {
     can rise with Raise entry {
         build = visitor.build;
         dice = build.begin(self);
+        long = self.long;
         side = self.hall_wide - 1;
         cy = side // 2;
-        far = self.long - 6;
-        block = build.room(1, 1, -6, self.long - 1, side, self.tall, variant=dice.below(3));
-        build.level(block, 0);
+        a0 = cy - 3;
+        a1 = cy + 4;
+        g = Q3DM2_ROOFS;
+        far = long - 7;
+        mid = long // 2 - 1;
+        block = build.room(1, 1, 0, long - 1, side, self.tall, variant=dice.below(3), sky=True);
+        build.level(block, g);
         build.doorway(block, self.enter);
-        # The landing by the way in, the platform at the far end, and the
-        # stair down from the landing into the cells' floor.
-        build.solid(1, 1, -6, 6, side, 0);
-        build.solid(far, 1, -6, self.long - 1, side, 0);
-        stair(build, 11, 1, -6, 2, 6, 3);
-        keep_box(build, block, 5, 1, 6, 4, 0);
+        # The rows either side of the aisle, the galleries on their roofs,
+        # and the warden's platform across its far end.
+        build.solid(1, 1, 0, long - 1, a0, g);
+        build.solid(1, a1, 0, long - 1, side, g);
+        build.solid(far, a0, 0, long - 1, a1, g);
+        # How the galleries are reached: a stair up the aisle to the -y
+        # gallery (cut off from the platform, so the catwalk must be crossed),
+        # a lift to the +y gallery, or a jump pad to the -y gallery.
+        stair_top = 3 + g;
         if self.form == 0 {
-            # The catwalk across, spikes firing over it from the walls.
-            slab(build, 6, cy - 1, far, cy + 2, 0);
-            keep_box(build, block, 5, cy - 1, 6, cy + 2, 0);
-            keep_box(build, block, far, cy - 1, far + 1, cy + 2, 0);
-            over = build.touch(float(self.long // 2 - 2), float(cy - 1), 0.0, float(self.long // 2 + 2), float(cy + 2), 5.0, False);
-            over +>:Fires:+> build.spikes(float(self.long // 2) - 1.0, 1.2, 1.5, 1);
-            over +>:Fires:+> build.spikes(float(self.long // 2) + 1.0, float(side) - 0.2, 1.5, 3);
+            flying_stair(build, 3, a0, 0, 0, g, 3);
+            keep_box(build, block, stair_top - 2, a0 - 1, stair_top, a0, g);
+            keep_box(build, block, stair_top - 1, a0, stair_top, a0 + 3, g);
+            build.widen(block, far - 3, 1, 0, far, a0, g);
+            build.supply(float(far) - 1.5, 3.0, 0, "item_armor_combat", "q3");
         } elif self.form == 1 {
-            stair(build, self.long - 12, 1, -6, 0, 6, 3);
-            keep_box(build, block, far, 1, far + 1, 4, 0);
+            lift(build, 6, a1 - 3, 9, a1, 0, g);
+            keep_box(build, block, 6, a1, 9, a1 + 1, g);
+            keep_box(build, block, 5, a1 - 4, 10, a1, 0);
         } else {
-            pad(build, block, float(far) - 3.0, float(cy) + 0.5, -6, float(far) + 1.5, float(cy) + 0.5, 0, far, cy - 2, far + 1, cy + 3);
+            pad_to(build, block, 8.5, float(a0) + 3.0, 0, 8.5, float(a0) - 2.0, g, 6, a0 - 1, 11, a0);
         }
-        # The platform's rim to drop from, back into the cells.
-        keep_box(build, block, far, side - 4, far + 1, side - 1, 0);
-        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, 0, side, -6, [8, self.long - 10], [Q3DM2_FOES.pick(dice, self.danger, True), Q3DM2_FOES.pick(dice, self.danger)]);
-        hint(build, 2.0, 1.0, 0.0, 4.0, float(side), 6.0, "The cells of the house", "Those kept here wait for you", 2.0);
-        for index in range(dice.between(2, 3)) {
-            build.foe(13.5 + float(index) * 2.5, float(cy) + (3.5 if index % 2 == 0 else -2.5), -6, "monster_zombie", 90.0);
+        # The catwalk across the aisle, spikes firing along it.
+        slab(build, mid - 1, a0, mid + 2, a1, g);
+        keep_box(build, block, mid - 1, a0 - 1, mid + 2, a0, g);
+        keep_box(build, block, mid - 1, a1, mid + 2, a1 + 1, g);
+        over = build.touch(float(mid - 1), float(a0), float(g), float(mid + 2), float(a1), float(g + 5), False);
+        over +>:Fires:+> build.spikes(float(mid) - 0.5, 1.2, float(g) + 1.5, 1);
+        over +>:Fires:+> build.spikes(float(mid) + 1.5, float(side) - 0.2, float(g) + 1.5, 3);
+        # The cells in both rows: every other one shut until the key is
+        # taken, what stands open holding supplies.
+        ambush = build.name("ambush");
+        build.put_at({"classname": key_item(self.key), "asset_game": "q1", "target": ambush}, float(long) - 3.0, float(cy) + 0.5, g);
+        spots = list(range(5, far - 7, 5));
+        for (index, x) in enumerate(spots) {
+            shut = index % 2 == 0;
+            if not (self.form == 0 and x < stair_top + 1) {
+                build.widen(block, x, a0 - 5, 0, x + 4, a0, 5);
+                if shut {
+                    build.rising_door(float(x), float(a0 - 1), 0.0, float(x + 4), float(a0), 5.0, {"targetname": ambush, "wait": "-1"});
+                    build.foe(float(x) + 2.0, float(a0) - 3.0, 0, "monster_zombie", 90.0);
+                } else {
+                    build.supply(float(x) + 2.0, float(a0) - 3.0, 0, "item_shells");
+                }
+            }
+            if not (self.form == 1 and x < 10) {
+                build.widen(block, x, a1, 0, x + 4, a1 + 5, 5);
+                if shut {
+                    build.rising_door(float(x), float(a1), 0.0, float(x + 4), float(a1 + 1), 5.0, {"targetname": ambush, "wait": "-1"});
+                    build.foe(float(x) + 2.0, float(a1) + 3.0, 0, Q3DM2_FOES.pick(dice, self.danger, True), 270.0);
+                } else {
+                    build.supply(float(x) + 2.0, float(a1) + 3.0, 0, Q3_HEALTH, "q3");
+                }
+            }
         }
-        build.foe(float(self.long) - 3.5, 3.0, 0, Q3DM2_FOES.pick(dice, self.danger, True), 180.0);
-        build.supply(2.5, float(side) - 2.5, 0, Q3_HEALTH, "q3");
+        # The upper tier: stalls along the galleries' outer walls, roofed by
+        # the sky, the gallery in front of them to walk.
+        for x in range(6, far - 2, 5) {
+            if x < mid - 2 or x > mid + 2 {
+                build.solid(x, 1, g, x + 1, 4, g + 7);
+                build.solid(x, side - 3, g, x + 1, side, g + 7);
+            }
+        }
+        # Edges to drop from, back into the aisle.
+        keep_box(build, block, far, cy - 1, far + 1, cy + 2, g);
+        keep_box(build, block, mid + 3, a1, mid + 6, a1 + 1, g);
+        hint(build, 2.0, float(a0), 0.0, 4.0, float(a1), 6.0, "The cells of the house", "Those kept here wait for you", 2.0);
+        for index in range(dice.between(1, 2)) {
+            build.foe(float(mid + 3 + index * 3) + 0.5, float(cy) + (2.5 if index == 0 else -2.5), 0, Q3DM2_FOES.pick(dice, self.danger), 180.0);
+        }
+        build.foe(float(long) - 3.5, 3.0, g, Q3DM2_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(float(long) - 3.5, float(side) - 3.0, g, Q3DM2_FOES.pick(dice, self.danger), 180.0);
+        build.supply(2.5, float(cy) + 2.5, 0, Q3_HEALTH, "q3");
+        build.supply(float(mid) + 4.5, float(side) - 5.0, g, Q3_ARMOR, "q3");
     }
 }
 
@@ -470,9 +527,9 @@ node PainAltar(Prefab) {
         self.long = dice.between(30, 32);
         self.wide = dice.between(18, 20);
         self.down = dice.below(3);
-        self.tall = 9;
+        self.tall = 28;
         self.low = -9;
-        self.high = 11;
+        self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -484,7 +541,7 @@ node PainAltar(Prefab) {
         middle = self.wide // 2;
         wall = 7;
         rim = wall + 7;
-        room = gate_into(build, dice, self.enter, self.long, self.wide, wall, -8, self.tall, self.key);
+        room = gate_into(build, dice, self.enter, self.long, self.wide, wall, -8, self.tall, self.key, True);
         build.solid(wall + 1, 1, -8, rim, self.wide - 1, 0);
         slab(build, rim, 1, self.long - 1, 5, 0);
         slab(build, rim, self.wide - 5, self.long - 1, self.wide - 1, 0);
