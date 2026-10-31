@@ -30,6 +30,7 @@ import from ..kits { level_district }
 import from .common { gate_into }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pit_fall, pad_to, closets, wake_on }
+import from .q3open_parts { vista }
 
 glob Q3DM16: str = "q3:q3dm16",
      Q3DM16_LIGHT: list[str] = ["monster_army", "monster_wizard"],
@@ -51,13 +52,13 @@ node BounceLanding(Prefab) {
         self.district = level_district(Q3DM16);
         self.long = dice.between(26, 28);
         self.wide = dice.between(20, 22);
-        self.tall = dice.between(16, 17);
+        self.tall = dice.between(58, 62);
         self.bridged = dice.chance(0.4);
         self.ledges = dice.chance(0.6);
         self.low = -13;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle, floor=0);
+        self.enter = vista(2, middle, 0);
         self.leaves = [
             Port(face=0, along=middle, floor=0),
             Port(face=3, along=float(self.long - 4), floor=0),
@@ -148,11 +149,11 @@ node BounceSteps(Prefab) {
         self.wide = dice.between(16, 18);
         self.long_pad = dice.chance(0.6);
         self.perch = dice.chance(0.5);
-        self.tall = 27 if self.perch else 22;
+        self.tall = dice.between(60, 62);
         self.low = -13;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle, floor=0);
+        self.enter = vista(2, middle, 0);
         self.leaves = [Port(face=0, along=middle, floor=12), Port(face=3, along=12.0, floor=4), Port(face=1, along=22.0, floor=8)];
         visitor.place(self);
     }
@@ -232,12 +233,12 @@ node BounceRing(Prefab) {
         self.long = dice.between(28, 30);
         self.wide = self.long;
         self.both = dice.chance(0.6);
-        self.tall = dice.between(17, 18);
+        self.tall = dice.between(58, 62);
         self.low = -3;
         self.high = self.tall + 1;
         cx = float(self.long // 2);
-        self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
-        self.leaves = [Port(face=0, along=float(self.wide // 2), floor=0), Port(face=1, along=cx + 6.0, floor=8 if self.both else 0), Port(face=3, along=cx + 6.0, floor=8)];
+        self.enter = vista(2, float(self.wide // 2), 0);
+        self.leaves = [vista(0, float(self.wide // 2), 0), Port(face=1, along=cx + 6.0, floor=8 if self.both else 0), Port(face=3, along=cx + 6.0, floor=8)];
         visitor.place(self);
     }
 
@@ -311,14 +312,14 @@ node BounceArena(Prefab) {
         self.district = level_district(Q3DM16);
         self.long = dice.between(30, 32);
         self.wide = dice.between(26, 28);
-        self.tall = dice.between(18, 19);
+        self.tall = dice.between(58, 62);
         self.padded = dice.chance(0.4);
         self.low = -15;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
         cx = float(self.long // 2);
-        self.enter = Port(face=2, along=cy, floor=0);
-        self.leaves = [Port(face=0, along=cy, floor=0), Port(face=1, along=cx, floor=8), Port(face=3, along=cx, floor=8), Port(face=0, along=3.0, floor=0)];
+        self.enter = vista(2, cy, 0);
+        self.leaves = [vista(0, cy, 0), Port(face=1, along=cx, floor=8), Port(face=3, along=cx, floor=8), Port(face=0, along=3.0, floor=0)];
         visitor.place(self);
     }
 
@@ -398,10 +399,10 @@ node BounceVault(Prefab) {
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
         self.tower = dice.chance(0.5);
-        self.tall = 22 if self.tower else 18;
+        self.tall = dice.between(58, 62);
         self.low = -11;
         self.high = self.tall + 1;
-        self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
+        self.enter = vista(2, float(self.hall_wide // 2), 0);
         self.leaves = [];
         visitor.place(self);
     }
@@ -481,7 +482,7 @@ node BounceExit(Prefab) {
         self.district = level_district(Q3DM16);
         self.long = dice.between(32, 34);
         self.wide = dice.between(18, 20);
-        self.tall = dice.between(22, 23);
+        self.tall = dice.between(58, 62);
         self.zig = dice.chance(0.5);
         self.long_pad = dice.chance(0.5);
         self.low = -11;
