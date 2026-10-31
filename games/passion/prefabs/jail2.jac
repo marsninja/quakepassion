@@ -19,9 +19,9 @@ Raised in jail2's own palette.
   gallery along one wall up a lift or a stair that rises when its switch
   high on the far wall is shot (jail2's stair of doors); a grate under the
   water breaks on a stash. Ways on from the floor and the gallery (a hub).
-- `LaserControl`: a corridor fenced by lasers under a control balcony up a
-  lift (or a lift called down); the control on the balcony shuts the fences
-  and guards come up the corridor.
+- `LaserControl`: a corridor shut across by walls whose gates are fenced by
+  lasers, under a control balcony up a lift (or a lift called down); the
+  control on the balcony shuts the fences and guards come up the corridor.
 - `SecurityComplex`: a hall round a sunken control pit, offices on a
   mezzanine along one wall up a stair; the console in the pit (or in an
   office) opens the gates out; guards appear in the offices as the player
@@ -39,6 +39,7 @@ import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair }
 import from .warejail_parts { shutter, auto_shutters, key_cue, sparking, guards, charges, stash, keep_row, called_lift, closets, gate_pair, post_button, laser, laser_grid, bars }
+import from .q2walls_parts { partition }
 
 glob JAIL2: str = "q2:jail2";
 
@@ -65,7 +66,7 @@ node Reception(Prefab) {
         self.post = dice.between(3, 4);
         self.climb = dice.chance(0.65);
         self.checkpoint = dice.chance(0.6);
-        self.tall = self.gallery + 8;
+        self.tall = self.gallery + 13;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -199,6 +200,14 @@ node CellTiers(Prefab) {
             keep_row(build, atrium, mid, 6, t, 1, 3);
             keep_row(build, atrium, mid, self.wide - 7, t, 1, 3);
         }
+        # The lower cells' floors a step over the aisle, and a wall across the
+        # atrium's floor, a gate through it over a sill.
+        for x in cells {
+            build.solid(x - 3, 1, 0, x, 5, 1);
+            build.solid(x - 3, self.wide - 5, 0, x, self.wide - 1, 1);
+        }
+        wx = self.long - 6 - t;
+        partition(build, atrium, wx, 5, wx + 1, self.wide - 5, 0, t - 1, [[middle - 2, middle + 2]]);
         # Barred cells below, each opened by the button on its wall: a
         # prisoner turned loose, or a stash.
         barred = [cells[index] for index in dice.order(len(cells))][:min(3, len(cells) - 1)] if len(cells) > 1 else [];
@@ -210,10 +219,10 @@ node CellTiers(Prefab) {
             press +>:Fires:+> cell_bars;
             inside_y = float(self.wide) - 3.0 if north else 2.5;
             if index == 0 {
-                build.supply(float(x) - 1.5, inside_y, 0, Q2_ARMOR, "q2");
+                build.supply(float(x) - 1.5, inside_y, 1, Q2_ARMOR, "q2");
                 build.secret(float(x - 3), float(self.wide - 4) if north else 1.0, 0.0, float(x), float(self.wide - 1) if north else 4.0, 3.0);
             } else {
-                build.foe(float(x) - 1.5, inside_y, 0, JAIL2_FOES.pick(dice, self.danger), 270.0 if north else 90.0);
+                build.foe(float(x) - 1.5, inside_y, 1, JAIL2_FOES.pick(dice, self.danger), 270.0 if north else 90.0);
             }
         }
         build.doorway(atrium, self.enter);
@@ -230,7 +239,7 @@ node CellTiers(Prefab) {
             build.foe(float(x) - 1.5, 1.5, t, JAIL2_FOES.pick(dice, self.danger, index == 0), 90.0);
         }
         guards(build, reached, [[float(mid) + 1.5, float(self.wide) - 4.5], [float(mid) + 6.5, float(self.wide) - 4.5]], t, JAIL2_FOES.squad(dice, self.danger, 2), 270.0);
-        build.foe(3.5, 7.5, 0, "monster_infantry", 0.0, patrol=[[3.5, 7.5], [float(self.long) - 12.5, 7.5]]);
+        build.foe(3.5, 7.5, 0, "monster_infantry", 0.0, patrol=[[3.5, 7.5], [float(wx) - 1.5, 7.5]]);
         for index in range(dice.between(2, 3)) {
             build.foe(float(8 + index * 6) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, JAIL2_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
@@ -258,7 +267,7 @@ node DrainHall(Prefab) {
         self.deep = dice.between(5, 7);
         self.rising = dice.chance(0.6);
         self.grate = dice.chance(0.6);
-        self.tall = self.gallery + 10;
+        self.tall = self.gallery + 16;
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -346,12 +355,12 @@ node LaserControl(Prefab) {
         self.title = "Laser control";
         self.source = JAIL2;
         self.district = level_district(JAIL2);
-        self.long = dice.between(28, 31);
+        self.long = dice.between(30, 33);
         self.wide = dice.between(16, 18);
         self.balcony = dice.between(10, 12);
         self.fences = dice.between(1, 2);
         self.called = dice.chance(0.5);
-        self.tall = self.balcony + 7;
+        self.tall = self.balcony + 12;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -383,12 +392,15 @@ node LaserControl(Prefab) {
         }
         keep_row(build, hall, bx - 1, 1, self.balcony, 0, 6);
         build.solid(1, 3, self.balcony, 2, self.wide - 3, self.balcony + 2);
-        # The fences of lasers across the corridor beyond.
+        # The fences of lasers across the corridor beyond: each across a gate
+        # in a wall, over a sill.
         xs: list[float] = [];
         for fence in range(self.fences) {
-            xs.append(float(bx + 6 + fence * 5) + 0.5);
+            at = bx + 6 + fence * 4;
+            partition(build, hall, at, 1, at + 1, self.wide - 1, 0, 10, [[middle - 2, middle + 2]]);
+            xs.append(float(at) + 0.5);
         }
-        beams = laser_grid(build, xs, 1.2, 0, [1.0, 2.5, 4.0]);
+        beams = laser_grid(build, xs, float(middle - 2) + 0.2, 0, [1.5, 3.0, 4.5]);
         for x in xs {
             build.touch(x - 2.5, 1.0, 0.0, x - 1.5, float(self.wide - 1), 6.0, True, "Find the laser control");
         }
@@ -431,7 +443,7 @@ node SecurityComplex(Prefab) {
         self.long = dice.between(28, 31);
         self.wide = dice.between(24, 26);
         self.in_pit = dice.chance(0.6);
-        self.tall = self.deck + 7;
+        self.tall = self.deck + 12;
         self.low = -5;
         self.high = self.tall + 1;
         middle = float(self.wide // 2 - 2);
@@ -473,6 +485,10 @@ node SecurityComplex(Prefab) {
         for x in range(8 + self.deck, self.long - 4, 6) {
             build.solid(x, self.wide - 4, self.deck, x + 1, self.wide - 1, self.deck + 6);
         }
+        # Walls across the floor either side of the pit, a gate over a sill
+        # through each, so the pit's sides are rooms of their own.
+        partition(build, hall, px0 - 1, 1, px0, self.wide - 4, 0, self.deck - 1, [[2, 5], [py1 + 1, py1 + 4]]);
+        partition(build, hall, px1, 1, px1 + 1, self.wide - 1, 0, self.deck - 1, [[2, 5], [py1 + 1, py1 + 4]]);
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
@@ -494,11 +510,11 @@ node SecurityComplex(Prefab) {
         auto_shutters(build, dice, self, [port for port in self.taken if port.floor != 0], 0.6);
         # Going down into the pit, guards appear in the offices.
         down = build.touch(float(px0), float(py0), -4.0, float(px0 + 4), float(py0 + 3), 2.0);
-        guards(build, down, [[float(self.long) - 6.5, float(self.wide) - 3.5], [float(self.deck) + 11.5, float(self.wide) - 3.5]], self.deck, JAIL2_FOES.squad(dice, self.danger, 2, True), 270.0);
+        guards(build, down, [[float(self.long) - 6.5, float(self.wide) - 5.5], [float(self.deck) + 11.5, float(self.wide) - 5.5]], self.deck, JAIL2_FOES.squad(dice, self.danger, 2, True), 270.0);
         build.foe(float(cx) + 3.5, float(cy) + 0.5, -4, JAIL2_FOES.pick(dice, self.danger), 180.0);
-        build.foe(3.5, 2.5, 0, "monster_infantry", 0.0, patrol=[[3.5, 2.5], [float(self.long) - 3.5, 2.5]]);
+        build.foe(float(px1) + 2.5, 2.5, 0, "monster_infantry", 0.0, patrol=[[float(px1) + 2.5, 2.5], [float(self.long) - 3.5, 2.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(px1) + 2.5, float(py0) + 1.5 + float(index) * 3.0, 0, JAIL2_FOES.pick(dice, self.danger, index == 0), 180.0);
+            build.foe(float(px1) + 3.5, float(py0) + 1.5 + float(index) * 3.0, 0, JAIL2_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.supply(float(cx) + 0.5, float(py0) + 1.5, -4, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 2.5, float(self.wide) - 3.5, self.deck, Q2_ARMOR, "q2");
