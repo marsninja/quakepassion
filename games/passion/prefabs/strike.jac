@@ -13,7 +13,7 @@ airstrike is called in. Raised in strike's own palette.
   stair up the cliff's face to its top, and an arch from the top out to a
   sea stack (or a jetty to it); the flippers in the sea, guards coming
   onto the cliff as the player climbs.
-- `Canyon`: a canyon, its river at the foot, a path along each wall (the
+- `Canyon`: a canyon under a high sky, a broad river at the foot, a path along each wall (the
   far one higher) over caves at the canyon's floor, a bridge over it stepping up to the far path, a stair
   down to the canyon floor and a tunnel on from there; flyers come in
   over the canyon.
@@ -21,9 +21,11 @@ airstrike is called in. Raised in strike's own palette.
   up a stair, bridged to a walkway along the far wall, its door into the
   guardroom; a watchtower up a lift (or
   none, and a second bunker); barrels. A hub.
-- `MarkerSite`: the airstrike marker (the key) on a radio bunker's deck up
-  a lift or a stair; taking it opens the closets and brings the flyers;
-  "Place the airstrike marker in the target area".
+- `MarkerSite`: a cove, a quay round two sides over the drowned rock, a
+  radio bunker on an islet (a jetty to it, or swum), the airstrike marker
+  (the key) on its roof up a lift or a stair; taking it opens the closets
+  on the quay and brings the flyers; "Place the airstrike marker in the
+  target area".
 - `StrikeZone`: the end. A door (a key's, as a gate) out to the target
   zone; the marker placed at its console, the airstrike falls round it
   and the way out opens; a ledge along one side with its guards."""
@@ -57,7 +59,7 @@ node Landing(Prefab) {
         self.wide = dice.between(24, 26);
         self.deep = dice.between(10, 12);
         self.cliff = 9;
-        self.tall = 18;
+        self.tall = 44;
         self.by_lift = dice.chance(0.4);
         self.jetty_x = dice.between(14, self.long - 12);
         self.low = -self.deep - 2;
@@ -150,7 +152,7 @@ node SeaCliffs(Prefab) {
         self.wide = dice.between(24, 26);
         self.deep = dice.between(10, 12);
         self.ledge = 10;
-        self.tall = 20;
+        self.tall = 44;
         self.arch = dice.chance(0.65);
         self.stack_x = dice.between(16, self.long - 8);
         self.low = -self.deep - 2;
@@ -234,7 +236,7 @@ node Canyon(Prefab) {
         self.long = dice.between(30, 32);
         self.wide = dice.between(27, 28);
         self.far_path = 4;
-        self.tall = 22;
+        self.tall = 40;
         self.bridge_x = dice.between(8, self.long - 16);
         self.by_lift = dice.chance(0.4);
         self.low = -14;
@@ -269,8 +271,8 @@ node Canyon(Prefab) {
             build.solid(x, self.wide - 3, -8, x + 1, self.wide - 2, 0);
         }
         # The river along the canyon's foot, a stair up out of it.
-        build.pool(1, cy - 3, -13, self.long - 1, cy + 3, -8, 2, steps=False);
-        stair(build, 4, cy - 3, -13, 0, 5, 2);
+        build.pool(1, cy - 5, -13, self.long - 1, cy + 3, -8, 2, steps=False);
+        stair(build, 4, cy - 5, -13, 0, 5, 2);
         stair(build, self.long - 9, cy + 1, -13, 0, 5, 2);
         # The bridge over the canyon from the near path, stepping up to the
         # far one.
@@ -305,7 +307,7 @@ node Canyon(Prefab) {
         squad(build, come_in, [[float(self.long // 2), float(cy), 6.0], [float(self.long) - 6.0, float(cy) + 2.0, 8.0]], ["monster_flyer"], 180.0);
         rounds(build, STRIKE_FOES.pick(dice, self.danger), [[3.5, float(cy) + 4.5], [float(self.long) - 10.5, float(cy) + 4.5]], -8);
         build.foe(float(self.long) - 4.5, 3.5, 0, STRIKE_FOES.pick(dice, self.danger), 180.0);
-        build.foe(float(bx) + 1.5, float(cy) - 4.0, -8, STRIKE_FOES.pick(dice, self.danger, True), 90.0);
+        build.foe(float(bx) + 1.5, float(cy) + 5.5, -8, STRIKE_FOES.pick(dice, self.danger, True), 90.0);
         splashing(build, 10.5, float(cy), -9.0, 4.0);
         sparking(build, float(self.long) - 1.2, float(cy) + 4.0, -6.0, 2, 5.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
@@ -328,7 +330,7 @@ node Outpost(Prefab) {
         self.district = level_district(STRIKE);
         self.long = dice.between(30, 32);
         self.wide = dice.between(26, 28);
-        self.tall = 20;
+        self.tall = 44;
         self.tower = dice.chance(0.6);
         self.bunker_x = dice.between(9, 12);
         self.bunker_y = dice.between(9, self.wide - 17);
@@ -410,28 +412,29 @@ node Outpost(Prefab) {
     }
 }
 
-"""The airstrike marker on a radio bunker's deck up a lift or a stair;
-taking it opens the closets."""
+"""A cove under the sky, a quay round two sides over the drowned rock, a
+radio bunker on an islet in the sea, the airstrike marker on its roof up a
+lift or a stair; taking it opens the closets on the quay."""
 node MarkerSite(Prefab) {
     has key: str = "key_silver",
-        hall_wide: int = 18,
-        level: int = 7,
+        hall_wide: int = 24,
         by_lift: bool = False,
-        tall: int = 15;
+        jetty: bool = True,
+        tall: int = 20;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Marker site (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = STRIKE;
         self.district = level_district(STRIKE);
-        self.long = dice.between(22, 24);
-        self.hall_wide = dice.between(18, 20);
+        self.long = dice.between(34, 36);
+        self.hall_wide = dice.between(24, 26);
         self.wide = self.hall_wide + 4;
-        self.level = 7;
         self.by_lift = dice.chance(0.5);
-        self.tall = 15;
+        self.jetty = dice.chance(0.6);
+        self.tall = 44;
         self.low = -9;
-        self.high = 18;
+        self.high = 46;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -442,33 +445,69 @@ node MarkerSite(Prefab) {
         dice = build.begin(self);
         side = self.hall_wide - 1;
         cy = side // 2;
-        room = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
-        build.level(room, self.level);
-        build.doorway(room, self.enter);
-        # The radio deck over the far end, up a lift or a stair; the radio
-        # sets on it.
-        dx = self.long - 8;
-        deck(build, dx, 1, self.long - 1, side, self.level);
-        build.solid(self.long - 2, 3, self.level, self.long - 1, side - 3, self.level + 3);
-        # The cooling sump under the deck, a stair up out of it.
-        build.pool(dx + 1, 3, -5, self.long - 2, side - 2, 0, 2, steps=False);
-        stair(build, dx + 1, 3, -5, 0, 5, 2);
+        cove = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3), sky=True);
+        build.doorway(cove, self.enter);
+        # The sea, and the quay along the far wall a deck over it; a stair up
+        # out of the water onto the near quay and one onto the far.
+        build.pool(6, 1, -8, self.long - 1, side, 0, 2, steps=False);
+        quay = side - 5;
+        build.solid(6, quay, -1, self.long - 1, side, 0);
+        stair(build, 13, 1, -8, 2, 8, 3);
+        keep_box(build, cove, 5, 1, 6, 4, 0);
+        stair(build, self.long - 4, quay - 8, -8, 1, 8, 3);
+        keep_box(build, cove, self.long - 4, quay, self.long - 1, quay + 1, 0);
+        # The islet: rock up from the bottom, the bunker on it, a walk along
+        # its near side and its front.
+        ix0 = 15;
+        ix1 = self.long - 7;
+        iy0 = 4;
+        iy1 = quay - 3;
+        bx0 = ix0 + 6;
+        by1 = iy1 - 3;
+        roof = 6;
+        build.solid(ix0, iy0, -8, ix1, iy1, 0);
+        build.solid(bx0, iy0, 0, ix1, by1, roof);
+        # A guardroom in the bunker, its door in the front.
+        guard = build.room(bx0 + 1, iy0 + 1, 0, ix1 - 1, by1 - 1, roof - 2, variant=dice.below(3));
+        build.widen(guard, bx0 + 1, by1 - 1, 0, bx0 + 4, by1, 4);
+        build.rising_door(float(bx0 + 1), float(by1 - 1), 0.0, float(bx0 + 4), float(by1), 4.0, {"wait": "-1"});
+        build.foe(float(bx0) + 2.5, float(iy0) + 2.5, 0, STRIKE_FOES.pick(dice, self.danger, True), 90.0);
+        build.supply(float(ix1) - 2.5, float(iy0) + 2.5, 0, Q2_ARMOR, "q2");
+        # Up to the roof by the islet's edge, a deck over the walk to it; the
+        # radio sets on it.
         if self.by_lift {
-            lift(build, dx - 3, cy - 1, dx, cy + 2, 0, self.level);
-            keep_box(build, room, dx, cy - 1, dx + 1, cy + 2, self.level);
+            lift(build, ix0, iy0 + 2, ix0 + 3, iy0 + 5, 0, roof);
+            deck(build, ix0 + 3, iy0 + 2, bx0, iy0 + 5, roof);
+            keep_box(build, cove, ix0 + 3, iy0 + 2, ix0 + 4, iy0 + 5, roof);
         } else {
-            stair(build, dx - self.level, 1, 0, 0, self.level, 3);
-            keep_box(build, room, dx, 1, dx + 1, 4, self.level);
+            stair(build, ix0, iy0 + 1, 0, 1, roof, 3);
+            deck(build, ix0 + 3, iy0 + 4, bx0, iy0 + 7, roof);
+            keep_box(build, cove, ix0 + 3, iy0 + 4, ix0 + 4, iy0 + 7, roof);
         }
-        taken = key_taken(build, self.key, float(self.long) - 4.0, float(cy) + 0.5, self.level);
+        build.solid(ix1 - 2, iy0 + 1, roof, ix1 - 1, by1 - 1, roof + 3);
+        # The way to the islet: a jetty from the far quay, or swum, the lift
+        # up out of the water by its near side either way.
+        if self.jetty {
+            deck(build, ix0 + 1, iy1, ix0 + 4, quay, 0);
+            keep_box(build, cove, ix0 + 1, quay, ix0 + 4, quay + 1, 0);
+            keep_box(build, cove, ix0 + 1, iy1 - 1, ix0 + 4, iy1, 0);
+        } else {
+            build.touch(3.0, float(cy - 2), 0.0, 5.0, float(cy + 2), 6.0, True, "The radio bunker stands out in the water");
+        }
+        lift(build, ix0, iy0 - 3, ix0 + 3, iy0, -8, 0);
+        keep_box(build, cove, ix0, iy0, ix0 + 3, iy0 + 1, 0);
+        taken = key_taken(build, self.key, float(bx0) + 3.0, float(iy0 + by1) * 0.5, roof);
         taken +>:Fires:+> build.objective("Place the airstrike marker in the target area");
-        closets(build, taken, side, 0, [3, dx - 5], [STRIKE_FOES.pick(dice, self.danger, True), STRIKE_FOES.pick(dice, self.danger)]);
-        squad(build, taken, [[float(dx) - 4.0, float(cy) + 0.5, 6.0], [6.0, float(cy) - 2.5, 6.0]], ["monster_flyer"], 0.0);
-        beamed(build, taken, 2, 2, -8, STRIKE_FOES.pick(dice, self.danger, True), 6.5, float(cy) + 0.5, 0, 0.0);
-        rounds(build, "monster_soldier_ss", [[float(dx) + 2.5, 3.0], [float(dx) + 2.5, float(side) - 3.0]], self.level);
-        build.foe(float(dx) - 4.5, float(side) - 3.5, 0, STRIKE_FOES.pick(dice, self.danger), 180.0);
-        sparking(build, float(self.long) - 2.2, float(cy) - 3.5, float(self.level) + 1.5, 2, 3.0);
-        sparking(build, float(self.long) - 2.2, float(cy) + 4.5, float(self.level) + 2.0, 2, 4.5);
+        closets(build, taken, side, 0, [3, self.long - 9], [STRIKE_FOES.pick(dice, self.danger, True), STRIKE_FOES.pick(dice, self.danger)]);
+        squad(build, taken, [[10.5, float(cy) - 4.0, 6.0], [float(self.long) - 3.0, 7.0, 6.0]], ["monster_flyer"], 0.0);
+        rounds(build, "monster_soldier_ss", [[8.5, float(quay) + 2.5], [float(self.long) - 3.5, float(quay) + 2.5]], 0);
+        for index in range(dice.between(2, 3)) {
+            build.foe(10.5, 7.5 + float(index) * 4.0, -6, "monster_flipper", 0.0);
+        }
+        splashing(build, 10.5, float(cy) - 2.0, -2.0, 3.5);
+        build.foe(float(bx0) + 2.5, float(iy1) - 1.5, 0, STRIKE_FOES.pick(dice, self.danger), 180.0);
+        sparking(build, float(ix1) - 2.2, float(iy0) + 2.5, float(roof) + 1.5, 2, 3.0);
+        sparking(build, float(ix1) - 2.2, float(by1) - 2.5, float(roof) + 2.0, 2, 4.5);
         build.supply(2.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
     }
 }
@@ -488,7 +527,7 @@ node StrikeZone(Prefab) {
         self.long = dice.between(30, 32);
         self.wide = dice.between(22, 24);
         self.ledge = 6;
-        self.tall = 20;
+        self.tall = 44;
         self.low = -8;
         self.high = self.tall + 2;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
