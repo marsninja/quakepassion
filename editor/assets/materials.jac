@@ -40,6 +40,11 @@ obj ArchiveMaterials(Materials) {
         return loader;
     }
 
+    def archives -> AssetCatalog | None {
+        self.reader();
+        return self.catalog;
+    }
+
     """Open every game's archives now, rather than at the first material
     each holds (each takes a moment to index): a game whose files are not
     there is passed over."""

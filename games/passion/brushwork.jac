@@ -120,6 +120,23 @@ def map_items(mass: Massing, spaces: list[Space], dressing: Dressing, extra: lis
     return items;
 }
 
+"""The kit whose sky a level shows: the one over most of its open floor."""
+def sky_kit(spaces: list[Space]) -> Kit | None {
+    areas: dict[str, int] = {};
+    best: Kit | None = None;
+    for space in spaces {
+        if not space.sky {
+            continue;
+        }
+        kit = kit_of(space.district);
+        areas[kit.name] = areas.get(kit.name, 0) + space.w * space.d;
+        if best is None or areas[kit.name] > areas[best.name] {
+            best = kit;
+        }
+    }
+    return best;
+}
+
 """`map_items` a step at a time, into `items`."""
 def map_item_steps(mass: Massing, spaces: list[Space], dressing: Dressing, extra: list[MapItem], message: str, items: list[MapItem]) -> Iterator[str] {
     by_id: dict[int, Space] = {};
@@ -129,6 +146,12 @@ def map_item_steps(mass: Massing, spaces: list[Space], dressing: Dressing, extra
     world = MapItem(
         fields={"classname": "worldspawn", "message": message, "_minlight": "8", "_bounce": "1", "generator": "passion"}
     );
+    # What the level's sky is (games/passion/sky.jac).
+    open_kit = sky_kit(spaces);
+    if open_kit is not None {
+        world.fields["_sky"] = open_kit.sky;
+        world.fields["_sky_source"] = open_kit.source;
+    }
     shell: list[list[Side]] = [];
     yield from shell_brush_steps(mass, by_id, shell);
     world.brushes = shell;

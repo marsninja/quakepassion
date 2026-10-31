@@ -24,6 +24,20 @@ import from ..bsp {
 }
 import from ...math.vec3 { Vec3 }
 
+"""A map's worldspawn fields, read without parsing the rest of it."""
+def worldspawn_fields(data: bytes) -> dict[str, str] {
+    require_range(data, 0, 160);
+    if data[0:4] != b"IBSP" or i32_at(data, 4) != 38 {
+        raise ValueError("Expected Quake 2 BSP version 38");
+    }
+    offset = i32_at(data, 8);
+    size = i32_at(data, 12);
+    require_range(data, offset, size);
+    text = data[offset:offset + size].decode("utf-8");
+    found = parse_entities(text[:text.find("}") + 1]);
+    return found[0].fields if found else {};
+}
+
 def texture_names(data: bytes) -> list[str] {
     require_range(data, 0, 160);
     if data[0:4] != b"IBSP" or i32_at(data, 4) != 38 {
