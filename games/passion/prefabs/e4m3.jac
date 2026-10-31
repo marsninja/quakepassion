@@ -14,13 +14,14 @@ key in a cage its guardian's death opens. Raised in e4m3's own palette.
   that flies open as the player comes level with it; the far crypt's
   button opens the corridor's end ("This door is opened elsewhere."); a
   lift up to a gallery over the corridor's end.
-- `ElderNave`: a nave between colonnades, galleries over the aisles up
+- `ElderNave`: a nave between colonnades, a deep font down its middle by
+  the dice, galleries over the aisles up
   stairs (or a lift), an altar at its head with a teleporter up to a
   gallery; reaching the altar brings fiends in by teleporter in waves, a
   relay timing each; a secret behind a wall that is not there; ways on
   from the floor, the altar and the galleries (a hub).
-- `CountedArena`: a hall, an arena sunk in its middle round an altar; its
-  foes wake as it is entered and their deaths are counted: the last opens
+- `CountedArena`: a hall, an arena sunk in its middle round an altar,
+  flooded to the waist by the dice; its foes wake as it is entered and their deaths are counted: the last opens
   the way on ("The door has opened.") and brings in more by teleporter.
 - `GuardianCage`: the key room. The key in a cage at a hall's far end
   that opens when its guardian dies; taking the key opens the closets
@@ -36,6 +37,7 @@ import from .common { stair, pillars, key_ambush, lift, key_item }
 import from .e3m5 { keep_run, sealed_way, bursting }
 import from .e3m6 { rounds }
 import from .e3m7 { relayed }
+import from .e4m6 { flood }
 
 glob E4M3: str = "q1:e4m3";
 
@@ -81,7 +83,7 @@ node ShrineCourt(Prefab) {
         self.title = "Shrine court";
         self.source = E4M3;
         self.district = level_district(E4M3);
-        self.long = dice.between(26, 30);
+        self.long = dice.between(30, 34);
         self.wide = dice.between(20, 24);
         self.tall = dice.between(18, 22);
         self.plinth = dice.between(3, 4);
@@ -109,9 +111,9 @@ node ShrineCourt(Prefab) {
         stair(build, sx - 4 - self.plinth, middle - 2, 0, 0, self.plinth, 4);
         keep_run(build, court, sx - 4, middle - 2, sx - 3, middle + 2, self.plinth);
         # The pool and the obelisks round it.
-        px = long // 2 - 5;
-        build.pool(px, middle - 3, -3, px + 6, middle + 3, 0, 2);
-        for corner in [[px - 2, middle - 5], [px + 7, middle - 5], [px - 2, middle + 4], [px + 7, middle + 4]] {
+        px = 5;
+        build.pool(px, middle - 5, -6, px + 8, middle + 5, 0, 2);
+        for corner in [[px - 2, middle - 7], [px + 9, middle - 7], [px - 2, middle + 6], [px + 9, middle + 6]] {
             build.solid(corner[0], corner[1], 0, corner[0] + 1, corner[1] + 1, 8);
         }
         # The shrine's door, shut until the window over it is shot (by the
@@ -122,14 +124,14 @@ node ShrineCourt(Prefab) {
             shot = build.cue([build.button(float(sx), float(middle) + 0.5, float(self.plinth) + 10.0, 2, "", True)], "button");
             relayed(build, shot, 0.5) +>:Fires:+> build.cue([door], "door");
             build.touch(float(sx - 4 - self.plinth), float(middle - 2), 0.0, float(sx - 4), float(middle + 2), 6.0, True, "You must shoot the window");
-            wave(build, shot, 2.0, [E4M3_FOES.pick(dice, self.danger, True), "monster_demon1" if self.danger > 0.3 else "monster_knight"], [[1, 1, -8], [1, wide - 5, -8]], [[float(px) - 4.5, 3.5, 0.0], [float(px) - 4.5, float(wide) - 3.5, 0.0]]);
+            wave(build, shot, 2.0, [E4M3_FOES.pick(dice, self.danger, True), "monster_demon1" if self.danger > 0.3 else "monster_knight"], [[1, 1, -8], [1, wide - 5, -8]], [[3.5, 3.5, 0.0], [3.5, float(wide) - 3.5, 0.0]]);
         } else {
             # The door opened by a button beside it on the plinth.
             door2: dict[str, str] = {"wait": "-1", "message": "This door is opened elsewhere."};
             build.rising_door(float(sx), float(middle - 2), float(self.plinth), float(sx + 1), float(middle + 2), float(self.plinth + 8), door2);
             press = build.push(float(sx), float(middle) + 2.5, float(self.plinth) + 1.2, 2);
             relayed(build, press, 0.5) +>:Fires:+> build.cue([door2], "door");
-            wave(build, press, 2.0, [E4M3_FOES.pick(dice, self.danger, True)], [[1, 1, -8]], [[float(px) - 4.5, 3.5, 0.0]]);
+            wave(build, press, 2.0, [E4M3_FOES.pick(dice, self.danger, True)], [[1, 1, -8]], [[3.5, 3.5, 0.0]]);
         }
         # A wall of the court that is not there, a closet behind with the
         # quad damage.
@@ -142,11 +144,11 @@ node ShrineCourt(Prefab) {
         build.supply(2.5, float(middle) - 1.5, 0, "item_shells");
         # The dead rise round the pool as a body comes to it; knights walk
         # the court.
-        near = build.touch(float(px - 3), float(middle - 6), 0.0, float(px + 9), float(middle + 6), 6.0);
+        near = build.touch(float(px - 3), float(middle - 8), 0.0, float(px + 11), float(middle + 8), 6.0);
         dead = build.waiting();
         near +>:Fires:+> dead;
         for index in range(dice.between(3, 4)) {
-            build.foe(float(px + 8 + index % 2 * 2) + 0.5, 3.5 + float(index) * 4.0, 0, E4M3_FOES.pick(dice, self.danger), 180.0, waits=dead);
+            build.foe(float(px) + 1.5 + float(index) * 5.0, 2.5 if index % 2 == 0 else float(wide) - 2.5, 0, E4M3_FOES.pick(dice, self.danger), 180.0, waits=dead);
         }
         rounds(build, "monster_knight", float(sx) - 6.5, 2.5, float(sx) - 6.5, float(wide) - 2.5, 0);
         up = build.touch(float(sx - 4 - self.plinth), float(middle - 3), 0.0, float(sx - 4), float(middle + 3), 6.0);
@@ -186,22 +188,23 @@ node ZombieCrypts(Prefab) {
         long = self.long;
         wide = self.wide;
         middle = wide // 2;
-        corridor = build.room(1, 6, 0, long - 6, wide - 6, self.tall, variant=dice.below(3));
-        end = build.room(long - 6, 1, 0, long - 1, wide - 1, self.tall, variant=dice.below(3));
+        hx = long - 7;
+        corridor = build.room(1, 6, 0, hx, wide - 6, self.tall, variant=dice.below(3));
+        end = build.room(hx, 1, 0, long - 1, wide - 1, self.tall, variant=dice.below(3));
         build.level(end, self.gallery);
         build.room(1, 1, 0, 3, wide - 1, self.tall, variant=dice.below(3));
         build.widen(corridor, 3, 6, 0, 4, wide - 6, self.tall);
         # The end hall sealed from the corridor until the far crypt's
         # button is pressed.
-        build.solid(long - 7, 6, 0, long - 6, wide - 6, self.tall);
-        build.widen(end, long - 7, middle - 2, 0, long - 6, middle + 2, 7);
+        build.solid(hx - 1, 6, 0, hx, wide - 6, self.tall);
+        build.widen(end, hx - 1, middle - 2, 0, hx, middle + 2, 7);
         end_door: dict[str, str] = {"wait": "-1", "message": "This door is opened elsewhere."};
-        build.rising_door(float(long - 7), float(middle - 2), 0.0, float(long - 6), float(middle + 2), 7.0, end_door);
+        build.rising_door(float(hx - 1), float(middle - 2), 0.0, float(hx), float(middle + 2), 7.0, end_door);
         opens = build.cue([end_door], "door");
         x = 4;
         index = 0;
         last_x = 4;
-        while x + 5 <= long - 8 {
+        while x + 5 <= hx - 2 {
             # A touch across the corridor level with the pair of crypts
             # sets both their doors flying open.
             level = build.touch(float(x), 6.0, 0.0, float(x + 5), float(wide - 6), 6.0);
@@ -227,21 +230,21 @@ node ZombieCrypts(Prefab) {
         # A gallery over the end hall's far side, a lift up to it.
         g = self.gallery;
         build.solid(long - 4, 1, g - 1, long - 1, wide - 1, g);
-        lift(build, long - 6, wide - 5, long - 4, wide - 2, 0, g);
+        lift(build, hx, wide - 5, long - 4, wide - 2, 0, g);
         keep_run(build, end, long - 4, wide - 5, long - 3, wide - 2, g);
-        keep_run(build, end, long - 6, wide - 6, long - 4, wide - 1, 0);
+        keep_run(build, end, hx, wide - 6, long - 4, wide - 1, 0);
         build.doorway(corridor, self.enter);
         for port in self.taken {
             build.doorway(end, port);
         }
-        inside = build.touch(float(long - 6), float(middle - 2), 0.0, float(long - 4), float(middle + 2), 6.0);
+        inside = build.touch(float(hx), float(middle - 2), 0.0, float(long - 4), float(middle + 2), 6.0);
         end_guard = build.waiting();
         inside +>:Fires:+> end_guard;
         for index in range(dice.between(1, 2)) {
             build.foe(float(long) - 5.5, 3.5 + float(index) * 3.0, 0, E4M3_FOES.pick(dice, self.danger), 180.0, waits=end_guard);
         }
         build.foe(float(long) - 2.5, float(middle) + 0.5, g, E4M3_FOES.pick(dice, self.danger, True), 180.0, waits=end_guard);
-        rounds(build, "monster_zombie", 5.5, float(middle) + 0.5, float(long) - 9.5, float(middle) + 0.5, 0);
+        rounds(build, "monster_zombie", 5.5, float(middle) + 0.5, float(hx) - 3.5, float(middle) + 0.5, 0);
     }
 }
 
@@ -251,7 +254,8 @@ node ElderNave(Prefab) {
     has gallery: int = 6,
         altar: int = 3,
         tall: int = 20,
-        climb: int = 0;
+        climb: int = 0,
+        font: bool = True;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -264,6 +268,7 @@ node ElderNave(Prefab) {
         self.altar = dice.between(3, 4);
         self.tall = self.gallery + dice.between(12, 14);
         self.climb = dice.below(2);
+        self.font = dice.chance(0.7);
         self.low = -8;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -317,7 +322,12 @@ node ElderNave(Prefab) {
         reached = build.touch(float(ax - self.altar), float(middle - 2), 0.0, float(ax), float(middle + 2), 6.0);
         kinds = [E4M3_FOES.pick(dice, self.danger, True), "monster_demon1" if self.danger > 0.4 else "monster_knight"];
         wave(build, reached, 1.0, kinds, [[1, 1, -8], [1, 5, -8]], [[8.5, float(middle) - 3.5, 0.0], [8.5, float(middle) + 3.5, 0.0]]);
-        wave(build, reached, 12.0, [E4M3_FOES.pick(dice, self.danger), E4M3_FOES.pick(dice, self.danger)], [[1, wide - 5, -8], [1, wide - 9, -8]], [[float(long) - 10.5, float(middle) + 0.5, 0.0], [12.5, float(middle) + 0.5, 0.0]]);
+        wave(build, reached, 12.0, [E4M3_FOES.pick(dice, self.danger), E4M3_FOES.pick(dice, self.danger)], [[1, wide - 5, -8], [1, wide - 9, -8]], [[float(long) - 10.5, float(middle) + 0.5, 0.0], [12.5, float(middle) - 4.5, 0.0]]);
+        # A font down the nave's middle, deep, a stair out at each end of
+        # its near side.
+        if self.font {
+            build.pool(11, middle - 3, -6, ax - self.altar - 2, middle + 3, 0, 2, False, True, True);
+        }
         # A wall of the south gallery that is not there, a closet behind.
         build.solid(14, 1, self.gallery, 18, 4, self.gallery + 6);
         false_wall(build, nave, 15, 3, 17, 4, self.gallery, 4, [15, 1, 17, 3], "item_armor2");
@@ -328,8 +338,11 @@ node ElderNave(Prefab) {
         entered = build.touch(1.0, float(middle - 3), 0.0, 4.0, float(middle + 3), 6.0);
         pews = build.waiting();
         entered +>:Fires:+> pews;
+        # On the nave's floor beside the font, short of the stairs up, and
+        # one in the aisle.
         for index in range(dice.between(3, 4)) {
-            build.foe(float(8 + index * 4) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, E4M3_FOES.pick(dice, self.danger), 0.0, waits=pews);
+            at = [9.5 + float(index) * 2.0, float(middle) + (4.5 if index % 2 == 0 else -4.5)] if index < 3 else [10.5, 3.5];
+            build.foe(at[0], at[1], 0, E4M3_FOES.pick(dice, self.danger), 0.0, waits=pews);
         }
         rounds(build, E4M3_FOES.pick(dice, self.danger, True), 12.5, 3.5, float(long) - 4.5, 3.5, self.gallery);
         rounds(build, "monster_knight", float(long) - 4.5, float(wide) - 3.5, 12.5, float(wide) - 3.5, self.gallery);
@@ -343,7 +356,8 @@ way on and bring in more by teleporter."""
 node CountedArena(Prefab) {
     has sunk: int = 4,
         tall: int = 16,
-        count: int = 3;
+        count: int = 3,
+        flooded: bool = False;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -352,9 +366,10 @@ node CountedArena(Prefab) {
         self.district = level_district(E4M3);
         self.long = dice.between(26, 30);
         self.wide = dice.between(22, 24);
-        self.sunk = dice.between(3, 5);
+        self.sunk = dice.between(4, 6);
         self.tall = dice.between(15, 17);
         self.count = dice.between(2, 3);
+        self.flooded = dice.chance(0.6);
         self.low = -self.sunk - 8;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -383,6 +398,10 @@ node CountedArena(Prefab) {
         keep_run(build, hall, ax1 - 4, wide - 6, ax1 - 1, wide - 5, 0);
         mx = (ax0 + ax1) // 2;
         build.solid(mx - 2, cy - 2, low, mx + 2, cy + 2, 1);
+        # Flooded by the dice to a body's waist, the stairs rising out of it.
+        if self.flooded {
+            flood(build, ax0, 6, low, ax1, wide - 6, -1);
+        }
         keep_run(build, hall, ax0 - 1, 6, ax0, wide - 6, 0);
         keep_run(build, hall, ax1, 6, ax1 + 1, wide - 6, 0);
         # The arena's foes, woken as it is entered; their deaths counted.
