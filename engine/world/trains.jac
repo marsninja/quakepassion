@@ -659,6 +659,70 @@ walker BlastMover {
     }
 }
 
+"""Whether a train waits where it starts until something fires it (Quake's
+func_train with a targetname, Quake II's without START_ON) and has not been
+fired yet: in the way as a shut door is, until then (a door that rises on
+its track when a guard dies, a pair that slide apart as the exit is
+neared)."""
+def train_waits(train: Train) -> bool {
+    return train.kind == "train" and not train.running and not train.started;
+}
+
+"""Whether a train's track comes back round to where it starts (Quake's
+always do; a Quake II train may stop at its last corner)."""
+def train_track_loops(train: Train) -> bool {
+    route = train.current spawn TrainRoute();
+    if not route.points {
+        return False;
+    }
+    following = [route.points[-1]->:TrackNext:->][?:TrackPoint];
+    return len(following) > 0 and following[0] in route.points;
+}
+
+"""A train's motion at each corner of its track and at points along the
+way between, as far apart as the train is long that way (at least
+`spacing`): posed end to end it is beside all it passes, where a rider gets
+on or off a train going by (a platform passing the end of a bridge).
+In the order it runs them from where it starts."""
+def train_ride_stops(train: Train, spacing: float = 64.0) -> list[Vec3] {
+    route = train.current spawn TrainRoute();
+    points = route.points;
+    legs = len(points) if train_track_loops(train) else len(points) - 1;
+    size = train.bounds.maxs.sub(train.bounds.mins);
+    stops: list[Vec3] = [];
+    for k in range(len(points)) {
+        here = points[k].origin.sub(train.anchor);
+        stops.append(here);
+        following = points[(k + 1) % len(points)];
+        # A Quake II train that teleports to its next corner is never
+        # between the two.
+        if k >= legs or following.teleport {
+            continue;
+        }
+        way = following.origin.sub(train.anchor).sub(here);
+        along = way.normalized();
+        long = abs(size.x * along.x) + abs(size.y * along.y) + abs(size.z * along.z);
+        pieces = int(way.length() / max(spacing, long - 16.0));
+        for j in range(1, pieces) {
+            stops.append(here.add(way.scale(float(j) / float(pieces))));
+        }
+    }
+    return stops;
+}
+
+"""Whether a body may ride a train: a track mover that is no secret door,
+wide enough both ways to stand on (a train that is a door is ridden by no
+one), whose brushes are all known."""
+def train_rideable(train: Train) -> bool {
+    size = train.bounds.maxs.sub(train.bounds.mins);
+    return train.kind == "train" and len(train.hulls) > 0 and len(train.origins) >= len(train.hulls) and size.x >= 32.0 and size.y >= 32.0;
+}
+
+"""Where a train stands now: its brushes' box moved along its track."""
+def train_box(train: Train) -> AABB {
+    return AABB(mins=train.bounds.mins.add(train.motion), maxs=train.bounds.maxs.add(train.motion));
+}
+
 """A secret door's motion fully open: the third point of its track of four,
 counted from its rest (the point it sits at unmoved), wherever it is now."""
 def secret_open_motion(train: Train) -> Vec3 {

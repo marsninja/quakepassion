@@ -14,9 +14,13 @@ patches included, in all three games alike.
   (a barrier), dropped off a ledge, jumped across a gap, teleported or
   lifted by a plat. The flood is the `FloodFloors` walker.
 - Movers are compiled where a player needs them: doors open (an extended
-  bridge is a floor), plats at the top. Each spot a door closes over keeps
-  the door's model, as botlib's AREACONTENTS_MOVER areas do, so routes know
-  where they run into it.
+  bridge is a floor), plats at the top, a train waiting to be fired gone
+  from where it waits. Each spot a door closes over keeps the door's model,
+  as botlib's AREACONTENTS_MOVER areas do, so routes know where they run
+  into it. Round each mover the level is flooded again with it at rest,
+  and round each train posed at points along its track (two passing side
+  by side posed together), stepped and jumped onto and off there, which
+  carries what stands on it from one to the next (a ride, as a plat's).
 - Spots on one floor are merged into convex rectangles: the areas. Each is
   a thin box at its floor's height, and an axis-aligned tree locates them.
 - The steps between areas become reachabilities, one per pair and kind,
@@ -52,7 +56,7 @@ import from ..formats.aas {
 import from ..world.world { World }
 import from ..world.level { Level }
 import from ..world.doors { Door, HasDoor, DoorMember, door_parts, door_starts_open }
-import from ..world.trains { Train, HasTrain, TrackPoint, TrackNext, secret_open_motion }
+import from ..world.trains { Train, HasTrain, TrackPoint, TrackNext, secret_open_motion, train_waits, train_box, train_track_loops, train_ride_stops, train_rideable }
 import from ..world.traversal { Traversal, HasTraversal, Destination, ArrivesAt, touches_volume, sweeps_volume }
 import from ..world.pickups { Pickup, HasPickup }
 import from ..world.hazards { Hazard, HasHazard }
@@ -69,8 +73,13 @@ obj NavRules {
         drop: float = 320.0,
         speed: float = 320.0,
         jump_speed: float = 270.0,
-        # How fast a water jump lifts a body out (Q1 CheckWaterJump).
-        water_jump: float = 225.0,
+        # How high over a liquid's top a ledge may be that a body in the
+        # liquid climbs out onto. Q1's CheckWaterJump wants a wall 8 over
+        # the origin of a body in to the waist (at least 4 under the top)
+        # and an opening 32 over it: up to 28 over the top. Quake II's and
+        # III's PM_CheckWaterJump look 4 and 20 over an origin at most a
+        # unit over the top: 21 (Quake III's view, higher, keeps it 19).
+        water_ledge: float = 28.0,
         gravity: float = 800.0,
         # The longest gap jump looked for, in cells.
         reach: int = 12,
@@ -128,8 +137,11 @@ obj NavGrid {
         # The pose new spots are found in, and where they may be (none: anywhere).
         pose: int = 1,
         region: list[AABB] = [],
-        # The movers already joined as lifts.
+        # The movers already joined as lifts, and for each the spot on its
+        # top where it was compiled and the height a body stands at on it
+        # at the other end of its travel.
         lifted: set[int] = set(),
+        lift_tops: dict[int, tuple[int, float]] = {},
         traces: int = 0;
 
     """Whether a new spot may be added at `point` (inside the region)."""
@@ -157,6 +169,18 @@ obj NavGrid {
     def sweep(start: Vec3, finish: Vec3) -> Trace {
         self.traces += 1;
         return self.collision.trace(start, finish);
+    }
+
+    """The spots whose columns lie under `box` (its middle within it across),
+    in the order they were found: where a pose round one mover looks."""
+    def spots_over(box: AABB) -> list[NavSpot] {
+        found: list[int] = [];
+        for column in range(self.column_at(box.mins.x), self.column_at(box.maxs.x) + 1) {
+            for row in range(self.column_at(box.mins.y), self.column_at(box.maxs.y) + 1) {
+                found.extend(self.columns.get((column, row), []));
+            }
+        }
+        return [self.spots[index] for index in sorted(found)];
     }
 
     """The spot of column (`column`, `row`) at about height `z`, or -1."""
@@ -188,6 +212,13 @@ obj NavGrid {
         }
         self.columns[key].append(spot.index);
         return spot;
+    }
+
+    """The BSP model of the floor under a body standing at `point` (0: the
+    world's, or none)."""
+    def floor_model(point: Vec3) -> int {
+        floor = self.sweep(point.add(Vec3(z=1.0)), point.sub(Vec3(z=4.0)));
+        return floor.model if floor.fraction < 1.0 else 0;
     }
 
     """Where a box let down from `top` comes to rest, at most `depth` below:
@@ -232,17 +263,12 @@ obj NavGrid {
             # lip a few units up that the level sweep slipped past): try it
             # as a step up instead, below.
         }
-        # The highest a body here climbs to: a barrier's height, or out of
-        # the water higher (Q1 SV_WaterJump: the water jump rises at its
-        # own speed, no gravity on it, until the body is clear of the
-        # water, then on as a jump): about a body's height over the surface.
-        reach = a.z + rules.barrier;
+        # A body in a liquid climbs out higher than a jump off a floor takes
+        # it: the water jump, onto a ledge a little over the liquid's top.
         lifts = [rules.step, rules.barrier];
-        if spot.liquid == 1 {
-            reach = max(reach, self.surface_over(a) + 24.0 + rules.water_jump * rules.water_jump / (2.0 * rules.gravity) - 4.0);
-            if reach > a.z + rules.barrier {
-                lifts.append(reach - a.z);
-            }
+        climb = self.water_climb(spot);
+        if climb > rules.barrier {
+            lifts.append(climb);
         }
         for lift in lifts {
             up = self.sweep(a, a.add(Vec3(z=lift)));
@@ -259,29 +285,61 @@ obj NavGrid {
                 return [];
             }
             rise = landing - a.z;
+            if lift > rules.barrier and rise <= rules.step {
+                # Over a wall out of the water and back down: no way found.
+                return [];
+            }
             if rise <= rules.step and rise >= -rules.step {
                 return [(landing, TRAVEL_WALK)];
             }
             if rise > rules.step {
-                if landing > reach {
+                if rise > lift {
                     return [];
                 }
                 # Out of the water onto a ledge: no jump off a floor there,
                 # but the water jump (Q1 CheckWaterJump), facing the wall.
-                return [(landing, TRAVEL_WATERJUMP if spot.liquid == 1 else TRAVEL_BARRIERJUMP)];
+                return [(landing, TRAVEL_WATERJUMP if spot.liquid == 1 or lift > rules.barrier else TRAVEL_BARRIERJUMP)];
             }
             return [(landing, TRAVEL_WALKOFFLEDGE)];
         }
         return [];
     }
 
-    """The top of the water over `point`, to within four units."""
-    def surface_over(point: Vec3) -> float {
-        z = point.z;
-        while z < point.z + 128.0 and self.level.liquid_at(Vec3(x=point.x, y=point.y, z=z + 4.0)) == 1 {
-            z += 4.0;
+    """Whether a body has room at `spot` as the grid's collision poses the
+    movers now, and a floor under it (or a liquid round it)."""
+    def stands(spot: NavSpot) -> bool {
+        o = spot.origin;
+        if self.sweep(o, o).start_solid {
+            return False;
         }
-        return z;
+        if spot.liquid != 0 {
+            return True;
+        }
+        floor = self.sweep(o.add(Vec3(z=1.0)), o.sub(Vec3(z=4.0)));
+        return floor.fraction < 1.0;
+    }
+
+    """How far up a body in a liquid at `spot` climbs out onto a ledge,
+    from its origin: higher than a jump off a floor. A swimmer rises to the
+    surface, and the water jump (Q1 CheckWaterJump, Quake II's and III's
+    PM_CheckWaterJump, in water, slime or lava alike) pops it up the wall
+    onto a ledge as high over the liquid's top as the game's check looks
+    (`water_ledge`). 0 when the spot is not in a liquid, or the liquid goes
+    on over its head (the spot above it there climbs out instead)."""
+    def water_climb(spot: NavSpot) -> float {
+        if spot.liquid <= 0 {
+            return 0.0;
+        }
+        top = spot.origin.z + 4.0;
+        while top < spot.origin.z + 40.0 and self.level.liquid_at(Vec3(x=spot.origin.x, y=spot.origin.y, z=top)) > 0 {
+            top += 4.0;
+        }
+        if self.level.liquid_at(Vec3(x=spot.origin.x, y=spot.origin.y, z=top)) > 0 {
+            return 0.0;
+        }
+        # `top` is the first height sounded over the liquid, its top within
+        # four under it; a body's feet on the ledge have its origin 24 over.
+        return top - 4.0 + self.rules.water_ledge + 24.0 - spot.origin.z;
     }
 
     """Up and down through the water from `spot` (a body in water swims
@@ -411,6 +469,12 @@ walker StitchSpots {
 
     can stitch with NavSpot entry {
         grid = self.grid;
+        # A spot found with the movers at rest (on a lowered plat's top, a
+        # train's deck along its track) may be over nothing with them posed:
+        # no way on from it then, nor onto it.
+        if here.pose == 0 and not grid.stands(here) {
+            return;
+        }
         have = [step.target for step in [edge here->:NavStep:->]];
         for (across, along) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
             for (z, kind) in grid.moves(here, across, along) {
@@ -419,6 +483,9 @@ walker StitchSpots {
                     continue;
                 }
                 spot = grid.spots[index];
+                if spot.pose == 0 and not grid.stands(spot) {
+                    continue;
+                }
                 here +>:NavStep(kind=kind, target=spot.index):+> spot;
                 have.append(index);
                 self.joined += 1;
@@ -440,7 +507,17 @@ walker FloodFloors {
         }
         here.expanded = True;
         grid = self.grid;
+        # With the movers posed otherwise, a spot found on one (a lift's top)
+        # may be in a mover or over nothing now: no body is there to go on.
+        if grid.pose == 0 and not grid.stands(here) {
+            return;
+        }
         fresh: list[NavSpot] = [];
+        # Flooded again in another pose, a spot keeps the ways it has.
+        have: set[int] = set();
+        if grid.pose == 0 {
+            have = set([step.target * 64 + step.kind for step in [edge here->:NavStep:->]]);
+        }
         bit = 1;
         for (across, along) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
             found = grid.moves(here, across, along);
@@ -470,6 +547,10 @@ walker FloodFloors {
                 if grid.pose == 0 and here.pose == 1 and spot.pose == 1 {
                     continue;
                 }
+                if spot.index * 64 + kind in have {
+                    continue;
+                }
+                have.add(spot.index * 64 + kind);
                 here +>:NavStep(kind=kind, target=spot.index):+> spot;
             }
             bit *= 2;
@@ -487,6 +568,10 @@ walker FloodFloors {
             if grid.pose == 0 and here.pose == 1 and spot.pose == 1 {
                 continue;
             }
+            if spot.index * 64 + TRAVEL_SWIM in have {
+                continue;
+            }
+            have.add(spot.index * 64 + TRAVEL_SWIM);
             here +>:NavStep(kind=TRAVEL_SWIM, target=spot.index):+> spot;
         }
         visit fresh;
@@ -501,11 +586,14 @@ ledge, a step, a tunnel's mouth over it), which a drop into the pit does
 not reach."""
 walker FindJumps {
     has grid: NavGrid,
+        # When set, only jumps off these movers (trains posed along their
+        # tracks): the rest of the level was searched with them away.
+        riders: list[int] = [],
         fresh: list[NavSpot] = [],
         found: int = 0;
 
     can leap with NavSpot entry {
-        if not here.ledge or here.liquid != 0 {
+        if not here.ledge or here.liquid != 0 or (self.riders and here.mover not in self.riders) {
             return;
         }
         grid = self.grid;
@@ -535,7 +623,14 @@ walker FindJumps {
                 column = here.column + across * cells;
                 row = here.row + along * cells;
                 index = grid.find(column, row, landing);
-                if index < 0 or index not in reached {
+                # Off a posed train onto the level (not onto a mover found
+                # with it elsewhere), onto what stands in this pose.
+                ridden = not self.riders;
+                if self.riders {
+                    onto = grid.spots[index].mover if index >= 0 else grid.floor_model(grid.middle(column, row).add(Vec3(z=landing)));
+                    ridden = onto not in grid.mover_models and (index < 0 or grid.stands(grid.spots[index]));
+                }
+                if ridden and (index < 0 or index not in reached) {
                     spot = grid.spots[index] if index >= 0 else grid.add(column, row, landing);
                     if index < 0 {
                         self.fresh.append(spot);
@@ -593,6 +688,129 @@ def:priv nav_secret_doors(world: World) -> list[tuple[Train, Vec3]] {
     }
     return found;
 }
+
+"""The trains that wait where they start until something fires them (see
+train_waits): in the way as shut doors are, and out of it once fired."""
+def:priv nav_waiting_trains(world: World) -> list[Train] {
+    return [train for train in [world->:HasTrain:->][?:Train] if train_waits(train)];
+}
+
+"""The trains a body may ride (see train_rideable) with where each is posed
+along its track to be boarded and left (see train_ride_stops)."""
+def nav_train_stops(world: World) -> list[tuple[Train, list[Vec3]]] {
+    found: list[tuple[Train, list[Vec3]]] = [];
+    for train in [world->:HasTrain:->][?:Train] {
+        if not train_rideable(train) {
+            continue;
+        }
+        stops = train_ride_stops(train);
+        if len(stops) >= 2 {
+            found.append((train, stops));
+        }
+    }
+    return found;
+}
+
+"""Whether a spot stands on a train posed with motion `shift`: the train's
+spot, over its box there."""
+def:priv nav_on_train(spot: NavSpot, train: Train, shift: Vec3) -> bool {
+    o = spot.origin;
+    box = train.bounds;
+    return spot.mover == train.model and box.mins.x + shift.x - 16.0 <= o.x <= box.maxs.x + shift.x + 16.0
+        and box.mins.y + shift.y - 16.0 <= o.y <= box.maxs.y + shift.y + 16.0
+        and box.mins.z + shift.z <= o.z <= box.maxs.z + shift.z + 32.0;
+}
+
+"""Where a spot on a train posed with motion `shift` may be (see
+nav_on_train): over its box, a body's half width round it."""
+def:priv nav_train_reach(train: Train, shift: Vec3) -> AABB {
+    return AABB(mins=train.bounds.mins.add(shift).sub(Vec3(x=16.0, y=16.0)), maxs=train.bounds.maxs.add(shift).add(Vec3(x=16.0, y=16.0, z=32.0)));
+}
+
+"""Carry what stands on a train at one stop along its track (motion
+`before`) to the next (motion `after`, the grid's collision posed so): a
+spot where each lands standing on it, when a body has room there (inside a
+car shut in its shaft nothing else would find it)."""
+def:priv nav_carry_riders(grid: NavGrid, train: Train, before: Vec3, after: Vec3) {
+    move = after.sub(before);
+    riders = [spot for spot in grid.spots_over(nav_train_reach(train, before)) if nav_on_train(spot, train, before)];
+    for spot in riders {
+        carried = spot.origin.add(move);
+        column = grid.column_at(carried.x);
+        row = grid.column_at(carried.y);
+        if grid.find(column, row, carried.z) >= 0 {
+            continue;
+        }
+        middle = grid.middle(column, row);
+        at = Vec3(x=middle.x, y=middle.y, z=carried.z);
+        if grid.sweep(at, at).start_solid {
+            continue;
+        }
+        landing = grid.ground(at.x, at.y, at.z + 1.0, 8.0);
+        if landing is None {
+            continue;
+        }
+        grid.add(column, row, landing);
+    }
+}
+
+"""Rides on trains: a body standing on a train at one stop along its track
+is carried to the next, standing on it the same way (or swimming, carried
+into a liquid). Each spot on a train
+(found by the rest floods with the train at each stop) is joined to the
+spot as far along as the train moves to its next stop, when there is one
+standing on it there too. Returns how many were joined."""
+def:priv nav_train_rides(world: World, grid: NavGrid) -> int {
+    count = 0;
+    for (train, stops) in nav_train_stops(world) {
+        loops = train_track_loops(train);
+        last = len(stops) if loops else len(stops) - 1;
+        for k in range(last) {
+            here = stops[k];
+            there = stops[(k + 1) % len(stops)];
+            move = there.sub(here);
+            if move.length() < 1.0 {
+                continue;
+            }
+            for spot in grid.spots_over(nav_train_reach(train, here)) {
+                if not nav_on_train(spot, train, here) {
+                    continue;
+                }
+                carried = spot.origin.add(move);
+                index = grid.find(grid.column_at(carried.x), grid.column_at(carried.y), carried.z);
+                # Standing on it there too, or carried down into a liquid,
+                # where the rider swims off it.
+                if index < 0 or index == spot.index or (grid.spots[index].mover != train.model and grid.spots[index].liquid <= 0) {
+                    continue;
+                }
+                target = grid.spots[index];
+                spot +>:NavStep(kind=TRAVEL_ELEVATOR, target=index, model=train.model):+> target;
+                count += 1;
+            }
+        }
+    }
+    return count;
+}
+
+"""Whether a body steps from the top of one mover's box onto another's: the
+two side by side, a body's width of them facing each other across a gap no
+wider than half a body, their tops within a step."""
+def:priv nav_decks_meet(one: AABB, other: AABB, step: float) -> bool {
+    gap_x = max(0.0, other.mins.x - one.maxs.x, one.mins.x - other.maxs.x);
+    gap_y = max(0.0, other.mins.y - one.maxs.y, one.mins.y - other.maxs.y);
+    facing_x = min(one.maxs.x, other.maxs.x) - max(one.mins.x, other.mins.x);
+    facing_y = min(one.maxs.y, other.maxs.y) - max(one.mins.y, other.mins.y);
+    side_by_side = (facing_x >= 32.0 and gap_y <= 16.0) or (facing_y >= 32.0 and gap_x <= 16.0);
+    return side_by_side and abs(one.maxs.z - other.maxs.z) <= step;
+}
+
+# How far round a train posed along its track it is flooded (below, and
+# beside and above): onto it and a step off it, a body's height over it.
+glob NAV_RIDE_REACH_BELOW: Vec3 = Vec3(x=40.0, y=40.0, z=64.0),
+    NAV_RIDE_REACH_ABOVE: Vec3 = Vec3(x=40.0, y=40.0, z=96.0);
+
+# How many rounds of rest floods are flooded at most.
+glob NAV_REST_ROUNDS: int = 3;
 
 # How far round a mover's brush a body is within its reach (below and
 # beside, and above), and how far the player's box reaches round a point
@@ -671,6 +889,14 @@ def:priv nav_posed_collision(world: World, collision: CollisionMap) -> Collision
             if k < len(train.origins) {
                 posed.offsets[train.hulls[k]] = train.origins[k].add(opened);
             }
+        }
+    }
+    # A train waiting to be fired gone from where it waits: once going it
+    # is somewhere along its track, wherever that is (one that loops never
+    # stops anywhere for good).
+    for train in nav_waiting_trains(world) {
+        for hull in train.hulls {
+            posed.disabled.add(hull);
         }
     }
     return posed;
@@ -1014,11 +1240,35 @@ def:priv nav_lifts(world: World, grid: NavGrid, level: Level) -> tuple[int, list
             continue;
         }
         grid.lifted.add(door.model);
+        grid.lift_tops[door.model] = (on_top.index, far_z);
         on_top +>:NavStep(kind=TRAVEL_ELEVATOR, target=found.index, model=door.model):+> found;
         found +>:NavStep(kind=TRAVEL_ELEVATOR, target=on_top.index, model=door.model):+> on_top;
         count += 1;
     }
     return (count, tops, notes);
+}
+
+"""A body standing on a lift at the other end of its travel from where it
+was compiled (found by the rest floods: a plat waiting at the foot of its
+shaft) rides it to its top there, and back: each such spot is joined both
+ways to the spot on its top. Returns how many were joined."""
+def:priv nav_lift_riders(grid: NavGrid) -> int {
+    count = 0;
+    for model in grid.lift_tops {
+        top = grid.lift_tops[model][0];
+        far_z = grid.lift_tops[model][1];
+        on_top = grid.spots[top];
+        have = [step.target for step in [edge on_top->:NavStep:->]];
+        for spot in grid.spots {
+            if spot.mover != model or spot.index == top or spot.index in have or abs(spot.origin.z - far_z) > grid.rules.step {
+                continue;
+            }
+            on_top +>:NavStep(kind=TRAVEL_ELEVATOR, target=spot.index, model=model):+> spot;
+            spot +>:NavStep(kind=TRAVEL_ELEVATOR, target=on_top.index, model=model):+> on_top;
+            count += 1;
+        }
+    }
+    return count;
 }
 
 """Mark the spots each door closes over (its shut box grown by the
@@ -1040,14 +1290,17 @@ def:priv nav_mark_movers(world: World, grid: NavGrid, level: Level) {
             }
         }
     }
-    # A secret door's doorway is the door's, as a door's is.
-    for (train, opened) in nav_secret_doors(world) {
-        lo = train.bounds.mins.sub(NAV_BODY_BELOW);
-        hi = train.bounds.maxs.add(NAV_BODY_ABOVE);
+    # A secret door's doorway is the door's, as a door's is, and so is
+    # where a waiting train stands.
+    track_boxes = [(train.model, train.bounds) for (train, opened) in nav_secret_doors(world)];
+    track_boxes.extend([(train.model, train_box(train)) for train in nav_waiting_trains(world)]);
+    for (model, box) in track_boxes {
+        lo = box.mins.sub(NAV_BODY_BELOW);
+        hi = box.maxs.add(NAV_BODY_ABOVE);
         for spot in grid.spots {
             o = spot.origin;
             if spot.pose == 1 and o.x > lo.x and o.x < hi.x and o.y > lo.y and o.y < hi.y and o.z > lo.z and o.z < hi.z {
-                spot.mover = train.model;
+                spot.mover = model;
             }
         }
     }
@@ -1287,11 +1540,16 @@ def:priv nav_step_time(kind: int, start: Vec3, finish: Vec3, rules: NavRules) ->
 """Flood again round each mover with the movers shut: where the level
 starts them, and a door that starts open where it closes to. A floor that
 drops or a bridge that moves away is walked on until it does, and a bridge
-drawn out by a button once it is. Only places within reach of a mover are
-added (posed `0`); the spots already found there are expanded again in this
-pose. Returns how many were added."""
+drawn out by a button once it is. Then round each mover again with it alone
+shut and the others where travel needs them: a floor walked on before it
+drops may lead to what only another mover's opening uncovers (a trap floor
+round the button a pillar rises off); and round each train at each
+stop along its track, where it is boarded and left. Only places within reach
+of a mover are added (posed `0`); the spots already found there are
+expanded again in this pose. Returns how many were added."""
 def:priv nav_rest_flood(world: World, grid: NavGrid, level: Level, flood: FloodFloors) -> int {
     boxes: list[AABB] = [];
+    hulls: list[list[int]] = [];
     for door in door_parts(world) {
         if door.kind == "button" or not door.hulls or not door.origins {
             continue;
@@ -1302,30 +1560,166 @@ def:priv nav_rest_flood(world: World, grid: NavGrid, level: Level, flood: FloodF
         lo = Vec3(x=min(rest.x, posed.x), y=min(rest.y, posed.y), z=min(rest.z, posed.z)).add(record.mins);
         hi = Vec3(x=max(rest.x, posed.x), y=max(rest.y, posed.y), z=max(rest.z, posed.z)).add(record.maxs);
         boxes.append(AABB(mins=lo.sub(NAV_MOVER_REACH_BELOW), maxs=hi.add(NAV_MOVER_REACH_ABOVE)));
+        hulls.append(door.hulls);
     }
     for (train, opened) in nav_secret_doors(world) {
         box = train.bounds;
         lo = Vec3(x=min(0.0, opened.x), y=min(0.0, opened.y), z=min(0.0, opened.z)).add(box.mins);
         hi = Vec3(x=max(0.0, opened.x), y=max(0.0, opened.y), z=max(0.0, opened.z)).add(box.maxs);
         boxes.append(AABB(mins=lo.sub(NAV_MOVER_REACH_BELOW), maxs=hi.add(NAV_MOVER_REACH_ABOVE)));
+        hulls.append(train.hulls);
+    }
+    # A train at each stop along its track (a waiting one is stood on where
+    # it waits; posed, it is gone): what is walked onto it there, and off.
+    poses: list[list[Vec3] | None] = [None for box in boxes];
+    # For a train past its first stop: the train, and its motion at the
+    # stop before and at this one (what stood on it there is carried on).
+    rides: list[tuple[Train, Vec3, Vec3] | None] = [None for box in boxes];
+    # The trains a pose has along their tracks: jumped off and onto there.
+    riders: list[list[int]] = [[] for box in boxes];
+    for (train, stops) in nav_train_stops(world) {
+        loops = train_track_loops(train);
+        for k in range(len(stops)) {
+            shift = stops[k];
+            box = train.bounds;
+            boxes.append(AABB(mins=box.mins.add(shift).sub(NAV_RIDE_REACH_BELOW), maxs=box.maxs.add(shift).add(NAV_RIDE_REACH_ABOVE)));
+            hulls.append(train.hulls);
+            poses.append([origin.add(shift) for origin in train.origins]);
+            riders.append([train.model]);
+            # Round a track that loops, the train comes back to its start.
+            if k > 0 or loops {
+                rides.append((train, stops[(k + len(stops) - 1) % len(stops)], shift));
+            } else {
+                rides.append(None);
+            }
+        }
+    }
+    # Two trains beside each other at stops along their tracks (passing
+    # side by side at one height) are posed there together: a body steps
+    # from the one onto the other.
+    ridden = nav_train_stops(world);
+    for i in range(len(ridden)) {
+        for j in range(i + 1, len(ridden)) {
+            one = ridden[i][0];
+            other = ridden[j][0];
+            for shift in ridden[i][1] {
+                one_deck = AABB(mins=one.bounds.mins.add(shift), maxs=one.bounds.maxs.add(shift));
+                for beside in ridden[j][1] {
+                    other_deck = AABB(mins=other.bounds.mins.add(beside), maxs=other.bounds.maxs.add(beside));
+                    if not nav_decks_meet(one_deck, other_deck, grid.rules.step) {
+                        continue;
+                    }
+                    lo = Vec3(x=min(one_deck.mins.x, other_deck.mins.x), y=min(one_deck.mins.y, other_deck.mins.y), z=min(one_deck.mins.z, other_deck.mins.z));
+                    hi = Vec3(x=max(one_deck.maxs.x, other_deck.maxs.x), y=max(one_deck.maxs.y, other_deck.maxs.y), z=max(one_deck.maxs.z, other_deck.maxs.z));
+                    boxes.append(AABB(mins=lo.sub(NAV_RIDE_REACH_BELOW), maxs=hi.add(NAV_RIDE_REACH_ABOVE)));
+                    hulls.append(one.hulls + other.hulls);
+                    poses.append([one.origins[k].add(shift) for k in range(len(one.hulls))] + [other.origins[k].add(beside) for k in range(len(other.hulls))]);
+                    rides.append(None);
+                    riders.append([one.model, other.model]);
+                }
+            }
+        }
     }
     if not boxes {
         return 0;
     }
     before = len(grid.spots);
     posed_collision = grid.collision;
-    grid.collision = nav_shut_collision(world, level.collision);
-    grid.pose = 0;
-    grid.region = boxes;
-    near: list[NavSpot] = [];
-    for spot in list(grid.spots) {
-        if grid.allowed(spot.origin) {
-            spot.expanded = False;
-            near.append(spot);
+    shut_collision = nav_shut_collision(world, level.collision);
+    bridged_collision = posed_collision.for_body(posed_collision.eye_height);
+    bridged_collision.offsets = [offset.add(Vec3()) for offset in posed_collision.offsets];
+    bridged_collision.disabled = set(posed_collision.disabled);
+    for door in door_parts(world) {
+        record = level.bsp.models[door.model];
+        # Wide enough both ways to be stood on: a bridge, not a door that
+        # shuts a doorway (a car's, shut behind whoever rides it).
+        wide = record.maxs.x - record.mins.x >= 32.0 and record.maxs.y - record.mins.y >= 32.0;
+        if door_starts_open(door) and wide {
+            for hull in door.hulls {
+                bridged_collision.offsets[hull] = shut_collision.offsets[hull];
+            }
         }
     }
-    for spot in near {
-        spot spawn flood;
+    grid.pose = 0;
+    # Again while a round finds more: what one pose found (a train's deck at
+    # the far end of its track) may lead on in another (onto a bridge drawn
+    # out beside it, with all at rest).
+    passes: list[int] = [];
+    for round in range(NAV_REST_ROUNDS) {
+        passes.extend(list(range(-1, len(boxes))));
+    }
+    # Past the first round, only what the round before found is flooded
+    # from again (the rest was, in every pose).
+    found = len(grid.spots);
+    fresh = 0;
+    for (number, index) in enumerate(passes) {
+        if index < 0 and number > 0 {
+            if len(grid.spots) == found {
+                break;
+            }
+            fresh = found;
+            found = len(grid.spots);
+        }
+        if index < 0 {
+            grid.collision = shut_collision;
+            grid.region = boxes;
+        } else {
+            # This mover where the level starts it, the rest posed; round a
+            # train along its track, with the bridges drawn out too (doors
+            # that start open and shut into floors: all where travel needs
+            # them: platforms that meet over a pillar raised by the same
+            # button).
+            placed = poses[index];
+            base = posed_collision if placed is None else bridged_collision;
+            alone = base.for_body(base.eye_height);
+            alone.offsets = [offset.add(Vec3()) for offset in base.offsets];
+            alone.disabled = set(base.disabled);
+            for k in range(len(hulls[index])) {
+                hull = hulls[index][k];
+                if placed is not None and k < len(placed) {
+                    alone.offsets[hull] = placed[k];
+                    alone.disabled.discard(hull);
+                    continue;
+                }
+                alone.offsets[hull] = shut_collision.offsets[hull];
+                if hull in shut_collision.disabled {
+                    alone.disabled.add(hull);
+                } else {
+                    alone.disabled.discard(hull);
+                }
+            }
+            grid.collision = alone;
+            grid.region = [boxes[index]];
+            ride = rides[index];
+            if ride is not None {
+                nav_carry_riders(grid, ride[0], ride[1], ride[2]);
+            }
+        }
+        # Round one mover only the spots under its box are looked at.
+        looked = grid.spots[fresh:] if index < 0 else [spot for spot in grid.spots_over(boxes[index]) if spot.index >= fresh];
+        near: list[NavSpot] = [];
+        for spot in looked {
+            if grid.allowed(spot.origin) {
+                spot.expanded = False;
+                near.append(spot);
+            }
+        }
+        for spot in near {
+            spot spawn flood;
+        }
+        # Gap jumps off a train posed along its track onto the floors beside
+        # it (a short leap across from a passing deck).
+        if index >= 0 and riders[index] {
+            leaps = FindJumps(grid=grid, riders=riders[index]);
+            for spot in grid.spots_over(boxes[index]) {
+                if spot.index >= fresh and grid.allowed(spot.origin) {
+                    spot spawn leaps;
+                }
+            }
+            for spot in leaps.fresh {
+                spot spawn flood;
+            }
+        }
     }
     grid.collision = posed_collision;
     grid.pose = 1;
@@ -1343,11 +1737,22 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
         # sewer is the way on from its start): a drop taken from as far up as
         # a thousand units; Quake II's and III's, whose falls hurt more, from
         # 320.
-        rules = NavRules(speed=300.0 if level.bsp.game == "q2" else 320.0, gravity=gravity, barrier=40.0 * 800.0 / gravity, drop=1024.0 if level.bsp.game == "q1" else 320.0);
+        game = level.bsp.game;
+        rules = NavRules(
+            speed=300.0 if game == "q2" else 320.0,
+            gravity=gravity,
+            barrier=40.0 * 800.0 / gravity,
+            drop=1024.0 if game == "q1" else 320.0,
+            water_ledge=28.0 if game == "q1" else (21.0 if game == "q2" else 19.0)
+        );
     }
     collision = nav_posed_collision(world, level.collision);
     grid = NavGrid(rules=rules, collision=collision, level=level);
     grid.mover_models = set([door.model for door in door_parts(world) if door.kind != "button"]);
+    # A spot on a train is the train's, as one on a plat is the plat's.
+    for (train, stops) in nav_train_stops(world) {
+        grid.mover_models.add(train.model);
+    }
     build = NavBuild(aas=Aas());
     seeds: list[NavSpot] = [];
     # A body put at a seed point in the air (a teleporter's exit) falls to
@@ -1401,6 +1806,9 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
         }
     }
     build.resting = nav_rest_flood(world, grid, level, flood);
+    rides = nav_train_rides(world, grid);
+    build.lifts += rides;
+    build.notes.append("train rides " + str(rides));
     # The far end of a lift that starts at the other end of its travel (one
     # waiting at the foot of its shaft) is only found with the movers at
     # rest: join those lifts now, and flood from their tops.
@@ -1410,6 +1818,7 @@ def compile_navigation(world: World, level: Level, rules: NavRules | None = None
     for summit in late[1] {
         summit spawn flood;
     }
+    build.lifts += nav_lift_riders(grid);
     # Round the movers, join what the stages left apart.
     stitch = StitchSpots(grid=grid);
     reach = nav_mover_reach(world, level);

@@ -36,20 +36,16 @@ import from ..world.world { World, Player }
 import from ..world.level { Level }
 import from ..world.exits { LevelExit, HasExit, exit_map }
 import from ..world.signals { Signal }
-import from ..world.objectives { Objective, mover_objectives, mover_blocked, exit_objectives, train_objectives }
+import from ..world.objectives { Objective, mover_objectives, mover_blocked, exit_objectives, objective_mover }
 import from ..world.doors { Door, door_parts, door_starts_open }
-import from ..world.trains { Train, HasTrain, TrackPoint, TrackNext, TrainRoute }
+import from ..world.trains { Train, HasTrain, train_waits, train_box, train_ride_stops }
 import from ..world.bot_routes { NavMesh, build_navmesh }
-import from ..nav.compile { NavBuild, compile_navigation, nav_shut_shift }
+import from ..nav.compile { NavBuild, compile_navigation, nav_shut_shift, nav_train_stops }
 import from .graph { LevelGraph, Place, Move, Gate, Opener, Thing, Holds, Guards, Bars, Offers, DoneFrom, Contains, StandsIn }
 
 # How far over a standing body's top a jump takes it (Quake's 270 units a
 # second up against 800 of gravity lifts it about 45).
 glob EXTRACT_JUMP_REACH: float = 48.0;
-
-# How far beside a train a body gets on or off it: the body's half width
-# and a short jump.
-glob EXTRACT_TRAIN_REACH: float = 64.0;
 
 """How a level is read: `sims` runs jumps and falls through the player's
 movement (what a proof needs; a bot routing a level does not)."""
@@ -74,6 +70,11 @@ def run_body(
     tick: float = 1.0 / 120.0
 ) -> Vec3 | None {
     heading = Vec3(x=direction.x, y=direction.y).normalized();
+    # No body stands in solid there (a mover where the run is posed
+    # otherwise): nothing to run.
+    if collision.trace(origin, origin).start_solid {
+        return None;
+    }
     body = Player();
     begin = origin.sub(heading.scale(run_up));
     if collision.trace(begin, begin).start_solid {
@@ -103,6 +104,61 @@ def run_body(
         }
     }
     return None;
+}
+
+"""The collision a jump from `start` to `finish` is run through: the
+level's, with each train either end stands on posed at the stop along its
+track where it does (where the navigation found the jump: the body's floor
+is the train's top there), kept in `posed_for` by the stops it poses."""
+def jump_collision(collision: CollisionMap, decks: list[tuple[Train, list[Vec3]]], start: Vec3, finish: Vec3, posed_for: dict[str, CollisionMap]) -> CollisionMap {
+    shifts: list[tuple[Train, Vec3]] = [];
+    key = "";
+    for (train, stops) in decks {
+        for point in [start, finish] {
+            for k in range(len(stops)) {
+                box = train.bounds;
+                shift = stops[k];
+                over = box.mins.x + shift.x - 16.0 <= point.x <= box.maxs.x + shift.x + 16.0 and box.mins.y + shift.y - 16.0 <= point.y <= box.maxs.y + shift.y + 16.0
+                    and box.mins.z + shift.z <= point.z <= box.maxs.z + shift.z + 32.0;
+                if not over {
+                    continue;
+                }
+                alone = posed_with(collision, [(train, shift)], str(train.model) + "@" + str(k), posed_for);
+                floor = alone.trace(point.add(Vec3(z=1.0)), point.sub(Vec3(z=4.0)));
+                if floor.start_solid or floor.fraction >= 1.0 or floor.model != train.model {
+                    continue;
+                }
+                # Already there, unless it waits and is run away.
+                if shift.sub(train.motion).length() > 1.0 or (len(train.hulls) > 0 and train.hulls[0] in collision.disabled) {
+                    shifts.append((train, shift));
+                    key += str(train.model) + "@" + str(k) + " ";
+                }
+                break;
+            }
+        }
+    }
+    if not shifts {
+        return collision;
+    }
+    return posed_with(collision, shifts, key, posed_for);
+}
+
+"""The collision with trains posed with motions (`shifts`), kept in
+`posed_for` under `key`."""
+def posed_with(collision: CollisionMap, shifts: list[tuple[Train, Vec3]], key: str, posed_for: dict[str, CollisionMap]) -> CollisionMap {
+    if key not in posed_for {
+        posed = collision.for_body(collision.eye_height);
+        posed.offsets = [offset.add(Vec3()) for offset in collision.offsets];
+        posed.disabled = set(collision.disabled);
+        for (train, shift) in shifts {
+            for k in range(len(train.hulls)) {
+                posed.offsets[train.hulls[k]] = train.origins[k].add(shift);
+                posed.disabled.discard(train.hulls[k]);
+            }
+        }
+        posed_for[key] = posed;
+    }
+    return posed_for[key];
 }
 
 """How fast a jump leaves the ground in a game's movement."""
@@ -188,6 +244,22 @@ def read_level_graph(world: World, level: Level, build: NavBuild | None = None, 
     began = time.time();
     jumps = 0;
     sure_jumps = 0;
+    decks = nav_train_stops(world);
+    posed_for: dict[str, CollisionMap] = {};
+    # Jumps are run as the navigation found them: a train waiting to be
+    # fired gone from where it waits (a way through it wants it fired).
+    ground = collision;
+    waiting = [train for train in [world->:HasTrain:->][?:Train] if train_waits(train)];
+    if waiting {
+        ground = collision.for_body(collision.eye_height);
+        ground.offsets = [offset.add(Vec3()) for offset in collision.offsets];
+        ground.disabled = set(collision.disabled);
+        for train in waiting {
+            for hull in train.hulls {
+                ground.disabled.add(hull);
+            }
+        }
+    }
     for index in range(1, len(aas.areas)) {
         info = aas.areas[index];
         for r in range(info.first_reach, info.first_reach + info.reach_count) {
@@ -203,8 +275,9 @@ def read_level_graph(world: World, level: Level, build: NavBuild | None = None, 
                 # and overshoots a shorter gap a player clears by running
                 # less.
                 sure = False;
+                posed = jump_collision(ground, decks, reach.start, reach.finish, posed_for);
                 for run_up in [96.0, 40.0, 16.0, 0.0] {
-                    landed = run_body(collision, profile, reach.start, reach.finish.sub(reach.start), reach.start, run_up);
+                    landed = run_body(posed, profile, reach.start, reach.finish.sub(reach.start), reach.start, run_up);
                     if landed is not None {
                         into = mesh.locate(landed);
                         sure = into == reach.area or landed.sub(reach.finish).length() < 48.0 or (0 < into < len(aas.areas) and walks_into(aas, into, reach.area));
@@ -266,7 +339,6 @@ def read_level_graph(world: World, level: Level, build: NavBuild | None = None, 
     }
     atlas.notes.append("jumps sure " + str(sure_jumps) + "/" + str(jumps) + ", falls " + str(falls) + " in " + str(round(time.time() - began, 1)) + " s");
     read_gates(atlas, world, level, mesh, places);
-    read_trains(atlas, world, level, mesh, places);
     share_openers(atlas, level);
     shot_through_gates(atlas, level);
     read_exits(atlas, world, level, mesh, places);
@@ -407,7 +479,8 @@ def segment_meets(a: Vec3, b: Vec3, box: AABB) -> bool {
 }
 
 """Where a mover stands shut (a door), at its top (a lift) or at rest (a
-secret door), as the navigation compiler poses it; None when not known."""
+secret door, a train waiting to be fired), as the navigation compiler
+poses it; None when not known."""
 def shut_box(world: World, level: Level, model: int) -> AABB | None {
     for door in door_parts(world) {
         if door.model == model and door.origins {
@@ -418,7 +491,7 @@ def shut_box(world: World, level: Level, model: int) -> AABB | None {
     }
     for train in [world->:HasTrain:->][?:Train] {
         if train.model == model {
-            return train.bounds;
+            return train_box(train);
         }
     }
     return None;
@@ -569,6 +642,13 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
             models.append(train.model);
             kinds[train.model] = "secret";
         }
+        # A train waiting to be fired bars where it waits as a shut door
+        # does, until what fires it is done.
+        if train_waits(train) and train.model not in models {
+            models.append(train.model);
+            kinds[train.model] = "train";
+            hulls[train.model] = list(train.hulls);
+        }
     }
     for model in models {
         box = shut_box(world, level, model);
@@ -583,6 +663,27 @@ def read_gates(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, pla
             for place in places[1:] {
                 if place.mover == model and body_inside(place, box) and body_in_mover(level.collision, hulls.get(model, []), place) {
                     gate +>:Bars:+> place;
+                }
+            }
+        }
+        # A waiting train is stood on further along its track only once it
+        # is going.
+        if gate.kind == "train" {
+            for train in [world->:HasTrain:->][?:Train] {
+                if train.model != model {
+                    continue;
+                }
+                stops = train_ride_stops(train);
+                for place in places[1:] {
+                    if place.mover != model or on_box(place, box) {
+                        continue;
+                    }
+                    for shift in stops[1:] {
+                        if on_box(place, AABB(mins=train.bounds.mins.add(shift), maxs=train.bounds.maxs.add(shift))) {
+                            gate +>:Bars:+> place;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -667,6 +768,14 @@ def read_bridges(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, p
     }
     for model in models {
         if model in ridden {
+            continue;
+        }
+        # One that shuts by itself as a body comes near (Quake's door with
+        # no name and no health spawns a field round it that fires it:
+        # steps that slide out as they are climbed) is there for whoever
+        # walks onto it.
+        leader = objective_mover(world, model);
+        if leader is not None and leader.automatic and not leader.keys {
             continue;
         }
         box = shut_box(world, level, model);
@@ -760,165 +869,6 @@ def shot_through_gates(atlas: LevelGraph, level: Level) {
     }
 }
 
-"""One stretch of a train's route: the box its brushes sweep from one path
-corner to the next, and the heights of its top at the two ends."""
-obj TrainLeg {
-    has box: AABB,
-        low: float,
-        high: float;
-}
-
-"""The legs of a train's route, each corner to the one after it (a corner
-the train jumps to, Quake II's teleporting path corner, is a stop of its
-own, not swept to)."""
-def train_legs(train: Train) -> list[TrainLeg] {
-    route = train.current spawn TrainRoute();
-    points = route.points;
-    boxes: list[AABB] = [];
-    for point in points {
-        shift = point.origin.sub(train.anchor);
-        boxes.append(AABB(mins=train.bounds.mins.add(shift), maxs=train.bounds.maxs.add(shift)));
-    }
-    legs: list[TrainLeg] = [];
-    for k in range(len(points)) {
-        ahead = [point for point in [points[k]->:TrackNext:->][?:TrackPoint] if point in points];
-        here = boxes[k];
-        legs.append(TrainLeg(box=here, low=here.maxs.z, high=here.maxs.z));
-        if not ahead or ahead[0].teleport {
-            continue;
-        }
-        there = boxes[points.index(ahead[0])];
-        swept = AABB(
-            mins=Vec3(x=min(here.mins.x, there.mins.x), y=min(here.mins.y, there.mins.y), z=min(here.mins.z, there.mins.z)),
-            maxs=Vec3(x=max(here.maxs.x, there.maxs.x), y=max(here.maxs.y, there.maxs.y), z=max(here.maxs.z, there.maxs.z))
-        );
-        legs.append(TrainLeg(box=swept, low=min(here.maxs.z, there.maxs.z), high=max(here.maxs.z, there.maxs.z)));
-    }
-    return legs;
-}
-
-"""Whether a body in `place` gets on or off a train along `leg`: standing
-over its top somewhere along the leg (on it, or where it rises through: a
-floor it lifts a body off), or beside it within a step or a short jump (a
-step across, a jump up a barrier's height or down a drop's) with nothing
-of the level between."""
-def train_rider(collision: CollisionMap, hulls: list[int], place: Place, leg: TrainLeg) -> bool {
-    box = leg.box;
-    gap_x = max(0.0, box.mins.x - place.box.maxs.x, place.box.mins.x - box.maxs.x);
-    gap_y = max(0.0, box.mins.y - place.box.maxs.y, place.box.mins.y - box.maxs.y);
-    if gap_x <= 16.0 and gap_y <= 16.0 {
-        return leg.low - 18.0 <= place.floor <= leg.high + 18.0;
-    }
-    if gap_x > EXTRACT_TRAIN_REACH or gap_y > EXTRACT_TRAIN_REACH or place.floor < leg.low - EXTRACT_TRAIN_REACH or place.floor > leg.high + 40.0 {
-        return False;
-    }
-    # Across from the place's edge nearest the train to the train's edge,
-    # at the height of the higher of the place's floor and the train's top.
-    top = min(max(place.floor, leg.low), leg.high);
-    z = max(place.floor, top) + 32.0;
-    middle = box.mins.add(box.maxs).scale(0.5);
-    start = Vec3(x=min(max(middle.x, place.box.mins.x), place.box.maxs.x), y=min(max(middle.y, place.box.mins.y), place.box.maxs.y), z=z);
-    finish = Vec3(x=min(max(start.x, box.mins.x), box.maxs.x), y=min(max(start.y, box.mins.y), box.maxs.y), z=z);
-    across = collision.trace(start, finish, hulls);
-    return not across.start_solid and across.fraction >= 1.0;
-}
-
-"""Trains (Quake's func_train): floors that carry a body along their route
-from corner to corner. A body that gets on one anywhere along its route
-(`train_rider`) is carried to everywhere else along it it gets off, and on
-to another train whose route runs beside it at the same height (e3m6's two
-platforms passing over a pit); a ride, as a lift's. A train that waits to
-be fired is a gate whose openers are what fires it."""
-def read_trains(atlas: LevelGraph, world: World, level: Level, mesh: NavMesh, places: list[Place]) {
-    trains = [train for train in [world->:HasTrain:->][?:Train] if train.kind == "train"];
-    if not trains {
-        return;
-    }
-    legs: list[list[TrainLeg]] = [train_legs(train) for train in trains];
-    # Trains whose routes run side by side at one height ride as one.
-    group = list(range(len(trains)));
-    for i in range(len(trains)) {
-        for j in range(i + 1, len(trains)) {
-            beside = False;
-            for a in legs[i] {
-                for b in legs[j] {
-                    near = a.box.mins.x - 32.0 <= b.box.maxs.x and b.box.mins.x - 32.0 <= a.box.maxs.x
-                        and a.box.mins.y - 32.0 <= b.box.maxs.y and b.box.mins.y - 32.0 <= a.box.maxs.y;
-                    if near and a.low - 18.0 <= b.high and b.low - 18.0 <= a.high {
-                        beside = True;
-                    }
-                }
-            }
-            if beside {
-                was = group[j];
-                for k in range(len(group)) {
-                    if group[k] == was {
-                        group[k] = group[i];
-                    }
-                }
-            }
-        }
-    }
-    riders: list[list[Place]] = [];
-    for index in range(len(trains)) {
-        on: list[Place] = [];
-        for place in places[1:] {
-            if place.deadly {
-                continue;
-            }
-            for leg in legs[index] {
-                if train_rider(level.collision, trains[index].hulls, place, leg) {
-                    on.append(place);
-                    break;
-                }
-            }
-        }
-        riders.append(on);
-    }
-    rides = 0;
-    for index in range(len(trains)) {
-        train = trains[index];
-        objectives = train_objectives(world, train);
-        if objectives {
-            token = "open:" + str(train.model);
-            gate = Gate(model=train.model, kind="train", needs=[token], box=AABB(mins=train.bounds.mins.add(train.motion), maxs=train.bounds.maxs.add(train.motion)));
-            atlas +>:Guards:+> gate;
-            for objective in objectives {
-                opener = Opener(kind=objective.kind, token=token, point=objective.point, what=objective_what(objective), needs=opened_with(objective));
-                atlas +>:Offers:+> opener;
-                for place in opener_places_of(objective, level.collision, mesh, places) {
-                    opener +>:DoneFrom:+> place;
-                }
-            }
-        }
-    }
-    for index in range(len(trains)) {
-        for other in range(len(trains)) {
-            if group[other] != group[index] {
-                continue;
-            }
-            for a in riders[index] {
-                for b in riders[other] {
-                    if a is b {
-                        continue;
-                    }
-                    a +>:Move(
-                        kind=TRAVEL_ELEVATOR,
-                        to=b.area,
-                        must=True,
-                        model=trains[index].model,
-                        start=a.center,
-                        finish=b.center,
-                        gate=trains[other].model if other != index else 0
-                    ):+> b;
-                    rides += 1;
-                }
-            }
-        }
-    }
-    atlas.notes.append("trains " + str(len(trains)) + ", rides " + str(rides));
-}
-
 """An input of a counter (`hits` maps each to all its counter's inputs):
 its own opener, giving its own token, done where it is; answers the tokens
 the counter's mover then wants (none when it is no counter's input)."""
@@ -933,6 +883,14 @@ def add_counter_input(atlas: LevelGraph, objective: Objective, hits: dict[str, l
         single +>:DoneFrom:+> place;
     }
     return [name for name in hits[hit]];
+}
+
+"""Whether a place stands on a mover posed at `box`: over it, its floor
+between the box's bottom and top (a platform's top, or a car's floor
+inside it)."""
+def on_box(place: Place, box: AABB) -> bool {
+    over = box.mins.x - 16.0 <= place.center.x <= box.maxs.x + 16.0 and box.mins.y - 16.0 <= place.center.y <= box.maxs.y + 16.0;
+    return over and box.mins.z - 4.0 <= place.floor <= box.maxs.z + 4.0;
 }
 
 """Whether a place is on top of a box: a body standing there has its feet
