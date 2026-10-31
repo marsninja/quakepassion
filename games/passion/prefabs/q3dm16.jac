@@ -30,6 +30,7 @@ import from ..kits { level_district }
 import from .common { gate_into }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pit_fall, pad_to, closets, wake_on }
+import from .q3vista_parts { vista, daylight }
 
 glob Q3DM16: str = "q3:q3dm16",
      Q3DM16_LIGHT: list[str] = ["monster_army", "monster_wizard"],
@@ -51,13 +52,13 @@ node BounceLanding(Prefab) {
         self.district = level_district(Q3DM16);
         self.long = dice.between(26, 28);
         self.wide = dice.between(20, 22);
-        self.tall = dice.between(16, 17);
+        self.tall = dice.between(58, 62);
         self.bridged = dice.chance(0.4);
         self.ledges = dice.chance(0.6);
         self.low = -13;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle, floor=0);
+        self.enter = vista(2, middle, 0);
         self.leaves = [
             Port(face=0, along=middle, floor=0),
             Port(face=3, along=float(self.long - 4), floor=0),
@@ -74,6 +75,7 @@ node BounceLanding(Prefab) {
         mid = self.wide // 2;
         p1x = self.long - 11;
         sky = build.room(1, 1, lo, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [lo, 0]);
         build.level(sky, 0);
         build.level(sky, 6);
         # The platforms, and the gaps between them jumped (or bridged).
@@ -148,11 +150,11 @@ node BounceSteps(Prefab) {
         self.wide = dice.between(16, 18);
         self.long_pad = dice.chance(0.6);
         self.perch = dice.chance(0.5);
-        self.tall = 27 if self.perch else 22;
+        self.tall = dice.between(60, 62);
         self.low = -13;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle, floor=0);
+        self.enter = vista(2, middle, 0);
         self.leaves = [Port(face=0, along=middle, floor=12), Port(face=3, along=12.0, floor=4), Port(face=1, along=22.0, floor=8)];
         visitor.place(self);
     }
@@ -164,6 +166,7 @@ node BounceSteps(Prefab) {
         mid = self.wide // 2;
         p3 = 28;
         sky = build.room(1, 1, lo, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [lo, 0, 8]);
         for z in [0, 4, 8, 12] {
             build.level(sky, z);
         }
@@ -232,12 +235,12 @@ node BounceRing(Prefab) {
         self.long = dice.between(28, 30);
         self.wide = self.long;
         self.both = dice.chance(0.6);
-        self.tall = dice.between(17, 18);
+        self.tall = dice.between(58, 62);
         self.low = -3;
         self.high = self.tall + 1;
         cx = float(self.long // 2);
-        self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
-        self.leaves = [Port(face=0, along=float(self.wide // 2), floor=0), Port(face=1, along=cx + 6.0, floor=8 if self.both else 0), Port(face=3, along=cx + 6.0, floor=8)];
+        self.enter = vista(2, float(self.wide // 2), 0);
+        self.leaves = [vista(0, float(self.wide // 2), 0), Port(face=1, along=cx + 6.0, floor=8 if self.both else 0), Port(face=3, along=cx + 6.0, floor=8)];
         visitor.place(self);
     }
 
@@ -247,6 +250,7 @@ node BounceRing(Prefab) {
         cx = self.long // 2;
         cy = self.wide // 2;
         sky = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [0, 8]);
         build.level(sky, 8);
         # The moat of lava a cell wide between the ring and the base, jumped.
         m0 = 8;
@@ -311,14 +315,14 @@ node BounceArena(Prefab) {
         self.district = level_district(Q3DM16);
         self.long = dice.between(30, 32);
         self.wide = dice.between(26, 28);
-        self.tall = dice.between(18, 19);
+        self.tall = dice.between(58, 62);
         self.padded = dice.chance(0.4);
         self.low = -15;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
         cx = float(self.long // 2);
-        self.enter = Port(face=2, along=cy, floor=0);
-        self.leaves = [Port(face=0, along=cy, floor=0), Port(face=1, along=cx, floor=8), Port(face=3, along=cx, floor=8), Port(face=0, along=3.0, floor=0)];
+        self.enter = vista(2, cy, 0);
+        self.leaves = [vista(0, cy, 0), Port(face=1, along=cx, floor=8), Port(face=3, along=cx, floor=8), Port(face=0, along=3.0, floor=0)];
         visitor.place(self);
     }
 
@@ -329,6 +333,7 @@ node BounceArena(Prefab) {
         cx = self.long // 2;
         cy = self.wide // 2;
         sky = build.room(1, 1, lo, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [lo, 0]);
         build.level(sky, 0);
         build.level(sky, 8);
         build.solid(1, 1, lo, 7, self.wide - 1, 0);
@@ -398,10 +403,10 @@ node BounceVault(Prefab) {
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
         self.tower = dice.chance(0.5);
-        self.tall = 22 if self.tower else 18;
+        self.tall = dice.between(58, 62);
         self.low = -11;
         self.high = self.tall + 1;
-        self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
+        self.enter = vista(2, float(self.hall_wide // 2), 0);
         self.leaves = [];
         visitor.place(self);
     }
@@ -413,6 +418,7 @@ node BounceVault(Prefab) {
         side = self.hall_wide - 1;
         cy = side // 2;
         room = build.room(1, 1, lo, self.long - 1, side, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, side, [lo, 0]);
         build.level(room, 0);
         build.level(room, 4);
         build.level(room, 8);
@@ -481,7 +487,7 @@ node BounceExit(Prefab) {
         self.district = level_district(Q3DM16);
         self.long = dice.between(32, 34);
         self.wide = dice.between(18, 20);
-        self.tall = dice.between(22, 23);
+        self.tall = dice.between(58, 62);
         self.zig = dice.chance(0.5);
         self.long_pad = dice.chance(0.5);
         self.low = -11;
@@ -498,6 +504,7 @@ node BounceExit(Prefab) {
         mid = self.wide // 2;
         wall = 8;
         room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key, True);
+        daylight(build, wall + 1, 1, self.long - 1, self.wide - 1, [lo, 0, 12]);
         build.level(room, 6);
         build.level(room, 12);
         build.widen(room, wall + 1, 1, lo, self.long - 1, self.wide - 1, 0);

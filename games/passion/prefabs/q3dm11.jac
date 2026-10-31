@@ -34,6 +34,7 @@ import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pit_fall, pad_to, closets, wake_on }
+import from .q3vista_parts { vista, daylight }
 
 glob Q3DM11: str = "q3:q3dm11",
      Q3DM11_LIGHT: list[str] = ["monster_army", "monster_enforcer"],
@@ -67,7 +68,7 @@ node DevaDock(Prefab) {
         self.district = level_district(Q3DM11);
         self.long = dice.between(24, 28);
         self.wide = dice.between(18, 20);
-        self.tall = dice.between(14, 16);
+        self.tall = dice.between(20, 24);
         self.lifted = dice.chance(0.4);
         self.grated = dice.chance(0.7);
         self.low = -7;
@@ -143,7 +144,7 @@ node DevaGlassDoors(Prefab) {
         self.district = level_district(Q3DM11);
         self.long = dice.between(30, 32);
         self.wide = dice.between(16, 18);
-        self.tall = dice.between(15, 16);
+        self.tall = dice.between(20, 22);
         self.lifted = dice.chance(0.4);
         self.hidden = dice.chance(0.5);
         self.traps = dice.between(2, 3);
@@ -225,15 +226,15 @@ node DevaCatwalks(Prefab) {
         self.district = level_district(Q3DM11);
         self.long = dice.between(26, 30);
         self.wide = dice.between(18, 22);
-        self.tall = dice.between(16, 17);
+        self.tall = dice.between(24, 28);
         self.upper = dice.chance(0.7);
         self.crossed = dice.chance(0.5);
         self.pools = dice.between(1, 2);
         self.low = -11;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle, floor=0);
-        self.leaves = [Port(face=0, along=middle, floor=0), Port(face=1, along=float(self.long - 4), floor=0), Port(face=3, along=float(self.long // 2), floor=-8)];
+        self.enter = vista(2, middle, 0);
+        self.leaves = [vista(0, middle, 0), Port(face=1, along=float(self.long - 4), floor=0), Port(face=3, along=float(self.long // 2), floor=-8)];
         visitor.place(self);
     }
 
@@ -303,15 +304,15 @@ node DevaAtrium(Prefab) {
         self.district = level_district(Q3DM11);
         self.long = dice.between(30, 32);
         self.wide = dice.between(26, 28);
-        self.tall = dice.between(19, 20);
+        self.tall = dice.between(32, 36);
         self.lifted = dice.chance(0.4);
         self.bridged = dice.chance(0.5);
         self.low = -11;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
-        self.enter = Port(face=2, along=cy, floor=0);
+        self.enter = vista(2, cy, 0);
         self.leaves = [
-            Port(face=0, along=cy, floor=0),
+            vista(0, cy, 0),
             Port(face=1, along=float(self.long - 6), floor=8),
             Port(face=3, along=float(self.long - 6), floor=8),
             Port(face=0, along=3.0, floor=8)
@@ -326,7 +327,8 @@ node DevaAtrium(Prefab) {
         cy = self.wide // 2;
         gal = 8;
         px = cx - 3;
-        hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [0, gal]);
         build.level(hall, gal);
         build.level(hall, -10);
         deck(build, 1, 1, self.long - 1, 5, gal);
@@ -393,7 +395,7 @@ node DevaReactor(Prefab) {
         self.district = level_district(Q3DM11);
         self.long = dice.between(20, 22);
         self.wide = self.long;
-        self.tall = dice.between(23, 24);
+        self.tall = dice.between(42, 44);
         self.lifted = dice.chance(0.4);
         self.open_side = dice.chance(0.5);
         self.low = -1;
@@ -477,7 +479,7 @@ node DevaControl(Prefab) {
         self.wide = self.hall_wide + 4;
         self.glass = dice.chance(0.6);
         self.lifted = dice.chance(0.5);
-        self.tall = 16;
+        self.tall = 22;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -542,7 +544,7 @@ node DevaAirlock(Prefab) {
         self.long = dice.between(26, 28);
         self.wide = dice.between(18, 20);
         self.gantry = dice.chance(0.5);
-        self.tall = dice.between(17, 18);
+        self.tall = dice.between(24, 28);
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);

@@ -7,8 +7,10 @@ works' floors that hurts. Quake III's arenas hold no foes of their own;
 q3dm12's are enforcers and ogres, fiends as a run goes deeper.
 
 - `DredGate`: the start. A hall behind a partition whose doors slide
-  apart; beyond, a works floor under a gantry along its north wall, up a
-  stair or thrown up to by a pad, lava in a trough along its south wall.
+  apart; beyond, a sluice of lava down the works, a low south quay and a
+  north quay four lifts over it, gangways climbing across from one to the
+  other, a crane's gantry from wall to wall over them all, thrown up to
+  from the low quay or up a stair from the high.
 - `DredLavaPit`: a pit of lava, a rim round it, a platform out in it
   reached by a bridge (and one more, now and then); a pad on the platform
   throws a body up onto a ledge along the far wall, another from the rim
@@ -33,6 +35,7 @@ import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pad_to, closets, wake_on, sliding_pair }
+import from .q3vista_parts { vista, daylight }
 
 glob Q3DM12: str = "q3:q3dm12",
      Q3DM12_LIGHT: list[str] = ["monster_enforcer", "monster_ogre"],
@@ -41,30 +44,37 @@ glob Q3DM12: str = "q3:q3dm12",
 """A foe for the Dredwerkz."""
 glob DRED_FOES: FoeMix = FoeMix(light=Q3DM12_LIGHT, strong=Q3DM12_HEAVY, heavy_light=Q3DM12_HEAVY, scale=0.5);
 
-"""The start: a hall behind a partition with sliding doors, a works floor
-under a gantry, lava in a trough."""
+"""The start: a hall behind a partition with sliding doors, a sluice of
+lava between two quays, gangways across it, a crane's gantry over them."""
 node DredGate(Prefab) {
-    has part: int = 10,
+    has part: int = 8,
         padded: bool = False,
-        trough: bool = True,
-        tall: int = 15;
+        gangways: int = 1,
+        crane: int = 16,
+        tall: int = 22;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Dredwerkz gate";
         self.source = Q3DM12;
         self.district = level_district(Q3DM12);
-        self.long = dice.between(26, 30);
-        self.wide = dice.between(18, 20);
-        self.tall = dice.between(15, 16);
-        self.part = dice.between(9, 11);
+        self.long = dice.between(28, 32);
+        self.wide = dice.between(20, 22);
+        self.tall = dice.between(22, 26);
+        self.part = dice.between(7, 9);
         self.padded = dice.chance(0.5);
-        self.trough = dice.chance(0.7);
+        self.gangways = dice.between(1, 2);
+        self.crane = self.long - dice.between(9, 11);
         self.low = -3;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
-        self.leaves = [Port(face=0, along=middle, floor=0), Port(face=1, along=float(self.long - 4), floor=7), Port(face=0, along=float(self.wide - 3), floor=7)];
+        self.leaves = [
+            Port(face=0, along=4.0, floor=0),
+            Port(face=0, along=float(self.wide - 4), floor=4),
+            Port(face=1, along=float(self.crane + 2), floor=11),
+            Port(face=3, along=float(self.crane + 2), floor=11)
+        ];
         visitor.place(self);
     }
 
@@ -73,28 +83,44 @@ node DredGate(Prefab) {
         dice = build.begin(self);
         mid = self.wide // 2;
         pw = self.part;
+        ch = pw + 4;
+        cr = self.crane;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
-        build.level(hall, 7);
+        build.level(hall, 4);
+        build.level(hall, 11);
         # The partition and its sliding doors.
         build.solid(pw, 1, 0, pw + 1, self.wide - 1, self.tall);
         sliding_pair(build, hall, pw, mid - 2, mid + 2, 0, 7);
-        # The gantry along the north wall over its arcade.
-        deck(build, pw + 1, self.wide - 5, self.long - 1, self.wide - 1, 7);
-        for x in range(pw + 4, self.long - 2, 4) {
-            build.solid(x, self.wide - 5, 0, x + 1, self.wide - 4, 6);
+        # A sluice of lava down the works from the doors to the far wall,
+        # the low south quay on one side of it, the north quay four lifts up
+        # on the other, a stair up to that from the doors' landing.
+        build.pool(ch, mid - 1, -2, self.long - 1, mid + 2, 0, 4, False, False);
+        hurt(build, float(ch), float(mid - 1), -2.0, float(self.long - 1), float(mid + 2), 0.0);
+        build.solid(ch, mid + 2, 0, self.long - 1, self.wide - 1, 4);
+        stair(build, pw + 1, mid + 2, 0, 1, 4, 3);
+        build.solid(pw + 1, mid + 6, 0, ch, self.wide - 1, 4);
+        # Gangways climbing across the sluice from quay to quay.
+        spots = [ch + 3];
+        if self.gangways > 1 and cr - 4 >= ch + 7 {
+            spots.append(cr - 4);
         }
+        for gx in spots {
+            for step in range(3) {
+                build.solid(gx, mid - 1 + step, -2, gx + 3, mid + step, step + 1);
+            }
+            keep_box(build, hall, gx, mid + 2, gx + 3, mid + 3, 4);
+        }
+        # The crane's gantry from wall to wall over both quays and the sluice:
+        # thrown up to from the south quay, or up a stair from the north.
+        deck(build, cr, 1, cr + 4, self.wide - 1, 11);
         if self.padded {
-            pad_to(build, float(self.long - 8), float(self.wide - 8), 0, float(self.long - 8), float(self.wide) - 3.0, 7);
-            keep_box(build, hall, self.long - 9, self.wide - 5, self.long - 7, self.wide - 4, 7);
+            pad_to(build, float(cr - 3), 4.5, 0, float(cr + 2), 4.5, 11);
+            keep_box(build, hall, cr, 3, cr + 1, 7, 11);
         } else {
-            stair(build, pw + 2, self.wide - 8, 0, 0, 7, 3);
-            keep_box(build, hall, pw + 7, self.wide - 5, pw + 10, self.wide - 4, 7);
+            stair(build, cr - 7, self.wide - 4, 4, 0, 7, 3);
+            keep_box(build, hall, cr, self.wide - 4, cr + 1, self.wide - 1, 11);
         }
-        # Lava in a trough along the south wall of the works.
-        if self.trough {
-            build.pool(pw + 3, 1, -2, self.long - 3, 3, 0, 4, False, False);
-            hurt(build, float(pw + 3), 1.0, -2.0, float(self.long - 3), 3.0, 0.0);
-        }
+        keep_box(build, hall, cr + 3, 1, cr + 4, 5, 11);
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
@@ -103,12 +129,13 @@ node DredGate(Prefab) {
         build.supply(2.5, float(mid) - 1.5, 0, "ammo_shells", "q2");
         # At the doors, what waits in the works wakes.
         works = wake_on(build, float(pw - 2), float(mid - 2), float(pw), float(mid + 2), 0.0);
-        build.foe(float(pw) + 5.5, float(mid) + 0.5, 0, DRED_FOES.pick(dice, self.danger), 180.0, waits=works);
-        build.foe(float(self.long) - 4.5, float(mid) - 2.5, 0, DRED_FOES.pick(dice, self.danger), 180.0, waits=works);
-        build.foe(float(self.long) - 3.5, float(self.wide) - 2.5, 7, DRED_FOES.pick(dice, self.danger, True), 180.0);
-        build.foe(5.5, float(mid) + 3.5, 0, "monster_enforcer", 0.0);
-        build.foe(float(pw) + 3.5, float(mid) + 3.5, 0, "monster_enforcer", 0.0, patrol=[[float(pw) + 3.5, float(mid) + 3.5], [float(self.long) - 4.5, float(mid) + 3.5]]);
-        build.supply(float(self.long) - 3.0, float(self.wide) - 4.5, 7, Q3_ARMOR, "q3");
+        build.foe(float(pw) + 5.5, 4.5, 0, DRED_FOES.pick(dice, self.danger), 180.0, waits=works);
+        build.foe(float(self.long) - 4.5, 6.5, 0, DRED_FOES.pick(dice, self.danger), 180.0, waits=works);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 2.5, 4, DRED_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(4.5, float(mid) + 3.5, 0, "monster_enforcer", 0.0);
+        build.foe(float(ch) + 1.5, float(self.wide) - 3.5, 4, "monster_enforcer", 0.0, patrol=[[float(ch) + 1.5, float(self.wide) - 3.5], [float(cr) - 8.5, float(self.wide) - 3.5]]);
+        build.foe(float(cr) + 1.5, float(mid) + 0.5, 11, DRED_FOES.pick(dice, self.danger), 270.0);
+        build.supply(float(cr) + 2.0, float(self.wide) - 3.0, 11, Q3_ARMOR, "q3");
         build.supply(float(pw) - 2.5, 2.5, 0, Q3_HEALTH, "q3");
     }
 }
@@ -127,15 +154,15 @@ node DredLavaPit(Prefab) {
         self.district = level_district(Q3DM12);
         self.long = dice.between(30, 32);
         self.wide = dice.between(22, 24);
-        self.tall = dice.between(18, 19);
+        self.tall = dice.between(36, 40);
         self.north = dice.chance(0.5);
         self.padded = dice.chance(0.6);
         self.low = -7;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
-        self.enter = Port(face=2, along=cy, floor=0);
+        self.enter = vista(2, cy, 0);
         self.leaves = [
-            Port(face=0, along=cy, floor=8),
+            vista(0, cy, 8),
             Port(face=1, along=float(self.long - 6), floor=0),
             Port(face=3, along=float(self.long - 6), floor=0),
             Port(face=1, along=3.0, floor=0)
@@ -149,7 +176,8 @@ node DredLavaPit(Prefab) {
         cy = self.wide // 2;
         cx = (self.long - 2) // 2;
         px1 = self.long - 8;
-        hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [0, 8]);
         build.level(hall, 8);
         # The pit, lava in its bottom.
         build.pool(6, 5, -6, px1, self.wide - 5, -3, 4, False, False);
@@ -289,15 +317,15 @@ node DredFurnace(Prefab) {
         self.district = level_district(Q3DM12);
         self.long = dice.between(30, 32);
         self.wide = dice.between(26, 28);
-        self.tall = dice.between(25, 26);
+        self.tall = dice.between(36, 38);
         self.bridged = dice.chance(0.5);
         self.pools = dice.between(1, 2);
         self.low = -11;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
-        self.enter = Port(face=2, along=cy, floor=0);
+        self.enter = vista(2, cy, 0);
         self.leaves = [
-            Port(face=0, along=cy, floor=0),
+            vista(0, cy, 0),
             Port(face=1, along=float(self.long - 14), floor=8),
             Port(face=3, along=float(self.long - 6), floor=8),
             Port(face=1, along=float(self.long - 3), floor=16)
@@ -387,7 +415,7 @@ node DredVault(Prefab) {
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
         self.pillar = dice.chance(0.5);
-        self.tall = 17;
+        self.tall = 24;
         self.low = -4;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -461,7 +489,7 @@ node DredExit(Prefab) {
         self.long = dice.between(26, 28);
         self.wide = dice.between(18, 20);
         self.padded = dice.chance(0.5);
-        self.tall = dice.between(17, 18);
+        self.tall = dice.between(26, 30);
         self.low = -3;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);

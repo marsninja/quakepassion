@@ -32,6 +32,7 @@ import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, key_taken, pit_fall, pad_to, closets, wake_on }
+import from .q3vista_parts { vista, daylight }
 
 glob Q3DM15: str = "q3:q3dm15",
      Q3DM15_LIGHT: list[str] = ["monster_knight", "monster_hell_knight"],
@@ -62,15 +63,15 @@ node DemonGate(Prefab) {
         self.district = level_district(Q3DM15);
         self.long = dice.between(28, 30);
         self.wide = dice.between(18, 20);
-        self.tall = dice.between(18, 19);
+        self.tall = dice.between(50, 54);
         self.drawbridge = dice.chance(0.6);
         self.padded = dice.chance(0.4);
         self.low = -12;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle, floor=0);
+        self.enter = vista(2, middle, 0);
         self.leaves = [
-            Port(face=0, along=middle, floor=9),
+            vista(0, middle, 9),
             Port(face=0, along=3.0, floor=0),
             Port(face=1, along=16.0, floor=0),
             Port(face=3, along=float(self.long - 4), floor=9)
@@ -84,6 +85,7 @@ node DemonGate(Prefab) {
         mid = self.wide // 2;
         kx = self.long - 8;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [0, 9]);
         build.level(hall, 9);
         # The moat across the room, and its bridge: drawn down when the
         # button by it is pressed, or standing.
@@ -141,14 +143,14 @@ node DemonBladePit(Prefab) {
         self.district = level_district(Q3DM15);
         self.long = dice.between(30, 34);
         self.wide = dice.between(16, 18);
-        self.tall = dice.between(17, 18);
+        self.tall = dice.between(38, 42);
         self.broken = dice.chance(0.4);
         self.count = dice.between(2, 3);
         self.low = -15;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle, floor=0);
-        self.leaves = [Port(face=0, along=middle, floor=0), Port(face=1, along=float(self.long - 4), floor=0), Port(face=3, along=float(self.long - 4), floor=0)];
+        self.enter = vista(2, middle, 0);
+        self.leaves = [vista(0, middle, 0), Port(face=1, along=float(self.long - 4), floor=0), Port(face=3, along=float(self.long - 4), floor=0)];
         visitor.place(self);
     }
 
@@ -157,7 +159,8 @@ node DemonBladePit(Prefab) {
         dice = build.begin(self);
         mid = self.wide // 2;
         cx = self.long // 2;
-        hall = build.room(1, 1, -14, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        hall = build.room(1, 1, -14, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [-14, 0]);
         build.level(hall, 0);
         build.level(hall, 8);
         build.solid(1, 1, -14, 7, self.wide - 1, 0);
@@ -217,7 +220,7 @@ node DemonHall(Prefab) {
         self.district = level_district(Q3DM15);
         self.long = dice.between(28, 30);
         self.wide = dice.between(20, 22);
-        self.tall = dice.between(17, 18);
+        self.tall = dice.between(26, 30);
         self.warp = dice.chance(0.5);
         self.low = -10;
         self.high = self.tall + 1;
@@ -300,16 +303,16 @@ node DemonThrone(Prefab) {
         self.district = level_district(Q3DM15);
         self.long = dice.between(30, 32);
         self.wide = dice.between(26, 28);
-        self.tall = dice.between(22, 23);
+        self.tall = dice.between(30, 34);
         self.padded = dice.chance(0.4);
         self.pit = dice.chance(0.7);
         self.low = -9;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
         cx = float(self.long // 2);
-        self.enter = Port(face=2, along=cy, floor=0);
+        self.enter = vista(2, cy, 0);
         self.leaves = [
-            Port(face=0, along=cy, floor=0),
+            vista(0, cy, 0),
             Port(face=1, along=cx, floor=12),
             Port(face=3, along=cx - 6.0, floor=12),
             Port(face=1, along=5.0, floor=0)
@@ -394,7 +397,7 @@ node DemonAltar(Prefab) {
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
         self.padded = dice.chance(0.5);
-        self.tall = 18;
+        self.tall = 24;
         self.low = -9;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -458,7 +461,7 @@ node DemonSanctum(Prefab) {
         self.long = dice.between(28, 30);
         self.wide = dice.between(18, 20);
         self.padded = dice.chance(0.5);
-        self.tall = dice.between(22, 23);
+        self.tall = dice.between(50, 54);
         self.low = -9;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -472,7 +475,8 @@ node DemonSanctum(Prefab) {
         mid = self.wide // 2;
         wall = 8;
         bx = self.long - 6;
-        room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key);
+        room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key, True);
+        daylight(build, wall + 1, 1, self.long - 1, self.wide - 1, [0, 12]);
         build.level(room, 6);
         build.level(room, 12);
         # The ledge along the north wall, up a stair or a pad.
