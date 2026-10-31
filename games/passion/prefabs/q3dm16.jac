@@ -30,7 +30,7 @@ import from ..kits { level_district }
 import from .common { gate_into }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pit_fall, pad_to, closets, wake_on }
-import from .q3open_parts { vista }
+import from .q3open_parts { vista, daylight }
 
 glob Q3DM16: str = "q3:q3dm16",
      Q3DM16_LIGHT: list[str] = ["monster_army", "monster_wizard"],
@@ -75,6 +75,7 @@ node BounceLanding(Prefab) {
         mid = self.wide // 2;
         p1x = self.long - 11;
         sky = build.room(1, 1, lo, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [lo, 0]);
         build.level(sky, 0);
         build.level(sky, 6);
         # The platforms, and the gaps between them jumped (or bridged).
@@ -165,6 +166,7 @@ node BounceSteps(Prefab) {
         mid = self.wide // 2;
         p3 = 28;
         sky = build.room(1, 1, lo, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [lo, 0, 8]);
         for z in [0, 4, 8, 12] {
             build.level(sky, z);
         }
@@ -248,6 +250,7 @@ node BounceRing(Prefab) {
         cx = self.long // 2;
         cy = self.wide // 2;
         sky = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [0, 8]);
         build.level(sky, 8);
         # The moat of lava a cell wide between the ring and the base, jumped.
         m0 = 8;
@@ -330,6 +333,7 @@ node BounceArena(Prefab) {
         cx = self.long // 2;
         cy = self.wide // 2;
         sky = build.room(1, 1, lo, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [lo, 0]);
         build.level(sky, 0);
         build.level(sky, 8);
         build.solid(1, 1, lo, 7, self.wide - 1, 0);
@@ -414,6 +418,7 @@ node BounceVault(Prefab) {
         side = self.hall_wide - 1;
         cy = side // 2;
         room = build.room(1, 1, lo, self.long - 1, side, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, side, [lo, 0]);
         build.level(room, 0);
         build.level(room, 4);
         build.level(room, 8);
@@ -499,6 +504,7 @@ node BounceExit(Prefab) {
         mid = self.wide // 2;
         wall = 8;
         room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key, True);
+        daylight(build, wall + 1, 1, self.long - 1, self.wide - 1, [lo, 0, 12]);
         build.level(room, 6);
         build.level(room, 12);
         build.widen(room, wall + 1, 1, lo, self.long - 1, self.wide - 1, 0);

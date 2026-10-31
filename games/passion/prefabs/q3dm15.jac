@@ -32,7 +32,7 @@ import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, key_taken, pit_fall, pad_to, closets, wake_on }
-import from .q3open_parts { vista }
+import from .q3open_parts { vista, daylight }
 
 glob Q3DM15: str = "q3:q3dm15",
      Q3DM15_LIGHT: list[str] = ["monster_knight", "monster_hell_knight"],
@@ -85,6 +85,7 @@ node DemonGate(Prefab) {
         mid = self.wide // 2;
         kx = self.long - 8;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [0, 9]);
         build.level(hall, 9);
         # The moat across the room, and its bridge: drawn down when the
         # button by it is pressed, or standing.
@@ -159,6 +160,7 @@ node DemonBladePit(Prefab) {
         mid = self.wide // 2;
         cx = self.long // 2;
         hall = build.room(1, 1, -14, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [-14, 0]);
         build.level(hall, 0);
         build.level(hall, 8);
         build.solid(1, 1, -14, 7, self.wide - 1, 0);
@@ -474,6 +476,7 @@ node DemonSanctum(Prefab) {
         wall = 8;
         bx = self.long - 6;
         room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key, True);
+        daylight(build, wall + 1, 1, self.long - 1, self.wide - 1, [0, 12]);
         build.level(room, 6);
         build.level(room, 12);
         # The ledge along the north wall, up a stair or a pad.

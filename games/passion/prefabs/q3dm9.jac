@@ -41,7 +41,7 @@ import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pit_fall, pad_to }
-import from .q3open_parts { vista, rising_bays, bay_floor }
+import from .q3open_parts { vista, rising_bays, bay_floor, daylight }
 
 glob Q3DM9: str = "q3:q3dm9",
      Q3DM9_LIGHT: list[str] = ["monster_knight", "monster_ogre"],
@@ -96,6 +96,7 @@ node KeepGatehouse(Prefab) {
         middle = self.wide // 2;
         gal = self.gallery;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [0, 4, gal]);
         build.level(hall, gal);
         build.level(hall, 2);
         build.level(hall, 4);
@@ -223,6 +224,7 @@ node KeepPit(Prefab) {
         y1 = self.wide - 5 if self.ring else self.wide - 1;
         far = 2;
         hall = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [0, low]);
         build.level(hall, 0);
         build.level(hall, far);
         build.solid(1, 1, low, self.long - 1, self.wide - 1, 0);
@@ -351,6 +353,7 @@ node KeepTrench(Prefab) {
         ty1 = mid + 4;
         head = 9;
         hall = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [1, low]);
         build.level(hall, 0);
         build.level(hall, 2);
         build.level(hall, 3);
@@ -464,6 +467,7 @@ node KeepCourt(Prefab) {
         gx = self.long - 5;
         near = cx - 10;
         court = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [1, tw]);
         build.level(court, tw);
         build.level(court, 2);
         # The court goes up round its tower in terraces, each a step over the
@@ -571,6 +575,7 @@ node KeepReliquary(Prefab) {
         side = self.hall_wide - 1;
         cy = side // 2;
         hall = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, side, [0, 8]);
         build.doorway(hall, self.enter);
         ambush = build.waiting();
         if self.crypt {
@@ -656,6 +661,7 @@ node KeepBattlements(Prefab) {
         bh = self.wall_high;
         bx = self.long - 6;
         room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key, True);
+        daylight(build, wall + 1, 1, self.long - 1, self.wide - 1, [1, bh]);
         guards = build.waiting();
         build.level(room, bh);
         deck(build, bx, 1, self.long - 1, self.wide - 1, bh);

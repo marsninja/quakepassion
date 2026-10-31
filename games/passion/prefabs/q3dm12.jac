@@ -35,7 +35,7 @@ import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pad_to, closets, wake_on, sliding_pair }
-import from .q3open_parts { vista }
+import from .q3open_parts { vista, daylight }
 
 glob Q3DM12: str = "q3:q3dm12",
      Q3DM12_LIGHT: list[str] = ["monster_enforcer", "monster_ogre"],
@@ -177,6 +177,7 @@ node DredLavaPit(Prefab) {
         cx = (self.long - 2) // 2;
         px1 = self.long - 8;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [0, 8]);
         build.level(hall, 8);
         # The pit, lava in its bottom.
         build.pool(6, 5, -6, px1, self.wide - 5, -3, 4, False, False);

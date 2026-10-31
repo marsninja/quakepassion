@@ -31,7 +31,7 @@ import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
 import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, key_taken, pad_to, closets, wake_on }
-import from .q3open_parts { vista }
+import from .q3open_parts { vista, daylight }
 
 glob Q3DM13: str = "q3:q3dm13",
      Q3DM13_LIGHT: list[str] = ["monster_dog", "monster_ogre"],
@@ -84,6 +84,7 @@ node LostCourt(Prefab) {
         mid = self.wide // 2;
         ax = self.aqueduct;
         court = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [0, 8]);
         build.level(court, 8);
         # The aqueduct across the court on its arches, the broken stair up.
         deck(build, ax, 1, ax + 4, self.wide - 1, 8);
@@ -158,6 +159,7 @@ node LostCistern(Prefab) {
         mid = self.wide // 2;
         cx = self.long // 2;
         hall = build.room(1, 1, lo, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [lo, 0, 8]);
         build.level(hall, 0);
         build.level(hall, 8);
         # The broken floor over the cistern.
@@ -235,6 +237,7 @@ node LostTower(Prefab) {
         cx = self.long // 2;
         cy = self.wide // 2;
         tower = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [16]);
         build.level(tower, 8);
         build.level(tower, 16);
         # The floors at eight and sixteen lifts.
@@ -314,6 +317,7 @@ node LostTemple(Prefab) {
         cy = self.wide // 2;
         gal = 8;
         court = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [0, 8]);
         build.level(court, gal);
         build.level(court, 16);
         build.level(court, -6);
@@ -483,6 +487,7 @@ node LostGate(Prefab) {
         mid = self.wide // 2;
         wall = 8;
         room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key, True);
+        daylight(build, wall + 1, 1, self.long - 1, self.wide - 1, [0, 8]);
         build.level(room, 6);
         build.level(room, 12);
         # The platform across the far wall over its arcade, the way out on it.

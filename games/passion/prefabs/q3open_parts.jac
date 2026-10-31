@@ -1,7 +1,9 @@
 """Moves the later Quake III arenas (q3dm9 to q3dm16) take to stand open as
 the real ones do: wide high ways between their courts, so a body sees from
-one into the next, and floors broken into plates a step apart."""
+one into the next, floors broken into plates a step apart, and the light
+the day gives a court under a high sky."""
 import from ..prefab { Raising, Port }
+import from ..cast { origin_text }
 
 """A way a body sees through: eight cells wide and sixteen lifts high, where
 the wall it opens in has clear air over its floor that far."""
@@ -34,4 +36,18 @@ def bay_floor(x: int, one: int, two: int) -> int {
         return 3;
     }
     return 4;
+}
+
+"""What the day lights of a court whose sky stands far above it: lamps with
+no fitting over the box x0..x1, y0..y1, a grid `every` cells apart, at a
+man's height and more over each lift of `floors`."""
+def daylight(build: Raising, x0: int, y0: int, x1: int, y1: int, floors: list[int], every: int = 7, strength: int = 300) {
+    for z in floors {
+        for y in range(y0 + 2, y1 - 1, every) {
+            for x in range(x0 + 2, x1 - 1, every) {
+                at = build.units(float(x) + 0.5, float(y) + 0.5, float(z));
+                build.casting.put({"classname": "light", "origin": origin_text(at.x, at.y, at.z + 128.0), "light": str(strength), "_color": "255 250 235"});
+            }
+        }
+    }
 }

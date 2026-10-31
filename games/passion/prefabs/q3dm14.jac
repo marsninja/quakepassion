@@ -36,6 +36,7 @@ import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pad_to, closets, wake_on, sliding_pair }
+import from .q3open_parts { daylight }
 
 glob Q3DM14: str = "q3:q3dm14",
      Q3DM14_LIGHT: list[str] = ["monster_knight", "monster_zombie"],
@@ -145,6 +146,7 @@ node GrimShaft(Prefab) {
         dice = build.begin(self);
         mid = self.wide // 2;
         shaft = build.room(1, 1, -24, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
+        daylight(build, 1, 1, self.long - 1, self.wide - 1, [-24, -8]);
         build.level(shaft, 0);
         build.level(shaft, -8);
         build.level(shaft, -16);
