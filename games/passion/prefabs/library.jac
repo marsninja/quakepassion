@@ -120,7 +120,7 @@ glob FAMILIES: list[list[str]] = [
          ["bunk1", "ware1", "ware2"],
          ["jail1", "jail2", "jail3", "jail4", "jail5", "security"],
          ["mintro", "mine1", "mine2", "mine3", "mine4"],
-         ["fact1", "fact2", "fact3", "power1", "power2", "biggun"],
+         ["fact1", "fact2", "fact3", "power1", "power2", "biggun", "train"],
          ["hangar1", "hangar2", "lab", "command", "strike", "space"],
          ["city1", "city2", "city3", "boss1", "boss2"],
          ["cool1", "waste1", "waste2", "waste3"],
