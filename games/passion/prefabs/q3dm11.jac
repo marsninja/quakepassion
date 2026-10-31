@@ -28,10 +28,11 @@ q3dm11's are grunts and enforcers, ogres as a run goes deeper.
 - `DevaAirlock`: the end (or a gate). Past the door, its traps go off; the
   way out on a gantry a pad throws a body up to, or on a dais."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pit_fall, pad_to, closets, wake_on }
 
 glob Q3DM11: str = "q3:q3dm11",
@@ -39,9 +40,7 @@ glob Q3DM11: str = "q3:q3dm11",
      Q3DM11_HEAVY: list[str] = ["monster_ogre"];
 
 """A foe for Deva Station."""
-def deva_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM11_LIGHT, Q3DM11_HEAVY, strong);
-}
+glob DEVA_FOES: FoeMix = FoeMix(light=Q3DM11_LIGHT, strong=Q3DM11_HEAVY, heavy_light=Q3DM11_HEAVY, scale=0.5);
 
 """Traps along a wall (the cell line y = `line`, firing the way `out`
 goes, 1 +y or 3 -y) at each of `xs`, `z` lifts up, set off one after
@@ -117,10 +116,10 @@ node DevaDock(Prefab) {
         build.supply(2.5, float(mid) - 1.5, 0, "ammo_shells", "q2");
         # At the platform's foot its guards wake.
         guards = wake_on(build, float(self.long - 12), float(mid - 3), float(self.long - 7), float(mid + 3), 0.0);
-        build.foe(float(self.long) - 3.5, 3.5, p, deva_foe(dice, self.danger), 180.0, waits=guards);
-        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, p, deva_foe(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.5, 3.5, p, DEVA_FOES.pick(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, p, DEVA_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long // 2 + index * 3) + 0.5, float(mid) + 3.5, 0, deva_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long // 2 + index * 3) + 0.5, float(mid) + 3.5, 0, DEVA_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(5.5, 2.5, -6, "monster_enforcer", 0.0, patrol=[[5.5, 2.5], [float(self.long) - 15.5, 2.5]]);
         build.supply(float(self.long) - 3.0, float(mid) + 0.5, p, Q3_ARMOR, "q3");
@@ -201,9 +200,9 @@ node DevaGlassDoors(Prefab) {
         for port in self.taken {
             build.doorway(hall, port);
         }
-        build.foe(float(gx) - 4.5, float(mid) + 3.5, 0, deva_foe(dice, self.danger), 180.0);
+        build.foe(float(gx) - 4.5, float(mid) + 3.5, 0, DEVA_FOES.pick(dice, self.danger), 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(gx + 4 + index * 3) + 0.5, float(mid) + (2.5 if index % 2 == 0 else -2.5), 0, deva_foe(dice, self.danger, index == 2), 180.0, waits=far);
+            build.foe(float(gx + 4 + index * 3) + 0.5, float(mid) + (2.5 if index % 2 == 0 else -2.5), 0, DEVA_FOES.pick(dice, self.danger, index == 2), 180.0, waits=far);
         }
         build.foe(float(gx) + 1.5, float(self.wide) - 2.5, 8, "monster_enforcer", 180.0);
         build.foe(float(self.long) - 4.5, 3.5, 0, "monster_army", 90.0, patrol=[[float(self.long) - 4.5, 3.5], [float(gx) + 3.5, 3.5]]);
@@ -265,7 +264,7 @@ node DevaCatwalks(Prefab) {
             lift(build, self.long - 6, uc, self.long - 3, uc + 3, 0, 7);
             keep_box(build, hall, 6, uc, 7, uc + 3, 7);
             keep_box(build, hall, self.long - 7, uc, self.long - 6, uc + 3, 7);
-            build.foe(float(cx) + 0.5, float(uc) + 1.5, 7, deva_foe(dice, self.danger, True), 180.0);
+            build.foe(float(cx) + 0.5, float(uc) + 1.5, 7, DEVA_FOES.pick(dice, self.danger, True), 180.0);
         }
         # Slime in the machine floor, and the teleporter back up.
         for index in range(self.pools) {
@@ -280,10 +279,10 @@ node DevaCatwalks(Prefab) {
         }
         # Down on the machine floor what waits there wakes.
         below = wake_on(build, float(cx + 2), 5.0, float(cx + 7), 7.0, float(lo));
-        build.foe(float(self.long) - 10.5, float(self.wide) - 6.5, lo, deva_foe(dice, self.danger), 180.0, waits=below);
+        build.foe(float(self.long) - 10.5, float(self.wide) - 6.5, lo, DEVA_FOES.pick(dice, self.danger), 180.0, waits=below);
         build.foe(9.5, 5.5, lo, "monster_army", 0.0, patrol=[[9.5, 5.5], [float(self.long) - 9.5, 5.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(8 + index * 5) + 0.5, 3.5 if index % 2 == 0 else float(self.wide) - 3.5, 0, deva_foe(dice, self.danger), 0.0);
+            build.foe(float(8 + index * 5) + 0.5, 3.5 if index % 2 == 0 else float(self.wide) - 3.5, 0, DEVA_FOES.pick(dice, self.danger), 0.0);
         }
         build.supply(float(self.long) - 3.0, 3.0, 0, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 11.0, float(mid) + 2.5, lo, Q3_ARMOR, "q3");
@@ -365,15 +364,15 @@ node DevaAtrium(Prefab) {
         for port in self.taken {
             build.doorway(hall, port);
         }
-        build.foe(float(cx) + 5.5, float(self.wide) - 2.5, gal, deva_foe(dice, self.danger), 180.0, waits=guards);
-        build.foe(float(cx) + 5.5, 2.5, gal, deva_foe(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(cx) + 5.5, float(self.wide) - 2.5, gal, DEVA_FOES.pick(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(cx) + 5.5, 2.5, gal, DEVA_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
         up = wake_on(build, 3.0, 1.0, 12.0, 5.0, float(gal));
-        build.foe(float(self.long) - 4.5, 3.5, gal, deva_foe(dice, self.danger), 180.0, waits=up);
+        build.foe(float(self.long) - 4.5, 3.5, gal, DEVA_FOES.pick(dice, self.danger), 180.0, waits=up);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx - 6 + index * 6) + 0.5, float(cy) + (6.5 if index % 2 == 0 else -6.5), 0, deva_foe(dice, self.danger), 0.0);
+            build.foe(float(cx - 6 + index * 6) + 0.5, float(cy) + (6.5 if index % 2 == 0 else -6.5), 0, DEVA_FOES.pick(dice, self.danger), 0.0);
         }
         build.foe(4.5, float(cy) + 6.5, 0, "monster_enforcer", 0.0, patrol=[[4.5, float(cy) + 6.5], [float(self.long) - 4.5, float(cy) + 6.5]]);
-        build.foe(float(cx) + 2.5, float(cy) - 1.5, -10, deva_foe(dice, self.danger), 180.0);
+        build.foe(float(cx) + 2.5, float(cy) - 1.5, -10, DEVA_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(cx) + 0.5, float(cy) + 0.5, -10, Q3_ARMOR, "q3");
         build.supply(3.0, float(self.wide) - 3.0, gal, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 3.0, float(cy) + 3.5, 0, Q3_HEALTH, "q3");
@@ -449,9 +448,9 @@ node DevaReactor(Prefab) {
             build.doorway(hall, port);
         }
         lower = wake_on(build, float(cx - 1), float(cy - 6), float(cx + 2), float(cy - 3), 7.0);
-        build.foe(float(cx) + 4.5, float(cy) + 4.5, 7, deva_foe(dice, self.danger), 180.0, waits=lower);
-        build.foe(float(cx) - 4.5, float(cy) + 4.5, 14, deva_foe(dice, self.danger), 0.0, waits=lower);
-        build.foe(float(cx) + 4.5, float(cy) - 0.5, 14, deva_foe(dice, self.danger, True), 180.0);
+        build.foe(float(cx) + 4.5, float(cy) + 4.5, 7, DEVA_FOES.pick(dice, self.danger), 180.0, waits=lower);
+        build.foe(float(cx) - 4.5, float(cy) + 4.5, 14, DEVA_FOES.pick(dice, self.danger), 0.0, waits=lower);
+        build.foe(float(cx) + 4.5, float(cy) - 0.5, 14, DEVA_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(float(cx) - 4.5, float(cy) - 4.5, 0, "monster_army", 0.0, patrol=[[float(cx) - 4.5, float(cy) - 4.5], [float(cx) + 4.5, float(cy) - 4.5], [float(cx) + 4.5, float(cy) + 4.5], [float(cx) - 4.5, float(cy) + 4.5]]);
         build.supply(float(cx) + 4.5, float(cy) + 1.5, 14, Q3_ARMOR, "q3");
         build.supply(float(cx) - 4.5, float(cy) - 1.5, 7, Q3_HEALTH, "q3");
@@ -518,11 +517,11 @@ node DevaControl(Prefab) {
             taken = key_taken(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, dh);
         }
         if taken is not None {
-            closets(build, taken, side, 0, [2, 7], [deva_foe(dice, self.danger, True), deva_foe(dice, self.danger)]);
+            closets(build, taken, side, 0, [2, 7], [DEVA_FOES.pick(dice, self.danger, True), DEVA_FOES.pick(dice, self.danger)]);
             deva_traps(build, taken, [3, 7, 11], float(side) - 0.2, 9.0, 3);
         }
-        build.foe(float(dx) + 2.5, 3.5, dh, deva_foe(dice, self.danger), 180.0);
-        build.foe(float(dx) - 5.5, float(cy) + 3.5, 0, deva_foe(dice, self.danger), 180.0);
+        build.foe(float(dx) + 2.5, 3.5, dh, DEVA_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(dx) - 5.5, float(cy) + 3.5, 0, DEVA_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(dx) + 1.5, float(side) - 2.5, dh, Q3_ARMOR, "q3");
     }
@@ -573,18 +572,18 @@ node DevaAirlock(Prefab) {
             pad_to(build, float(gx - 3), float(mid), 0, float(gx) + 2.5, 3.0, 8);
             keep_box(build, room, gx, mid - 2, gx + 1, mid + 2, 8);
             build.way_out(float(self.long) - 3.0, float(mid), 8);
-            build.foe(float(self.long) - 3.0, float(self.wide) - 3.0, 8, deva_foe(dice, self.danger, True), 180.0, waits=guards);
+            build.foe(float(self.long) - 3.0, float(self.wide) - 3.0, 8, DEVA_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
         } else {
             dx = self.long - 10;
             build.solid(dx, mid - 4, 0, self.long - 2, mid + 4, 3);
             stair(build, dx - 3, mid - 2, 0, 0, 3, 4);
             build.way_out(float(dx) + 4.0, float(mid), 3);
-            build.foe(float(self.long) - 3.5, 2.5, 0, deva_foe(dice, self.danger, True), 180.0, waits=guards);
+            build.foe(float(self.long) - 3.5, 2.5, 0, DEVA_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, deva_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, DEVA_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(self.long) - 8.5, float(self.wide) - 3.5, 0, deva_foe(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(self.long) - 8.5, float(self.wide) - 3.5, 0, DEVA_FOES.pick(dice, self.danger), 180.0, waits=guards);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
     }
 }

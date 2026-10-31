@@ -28,16 +28,14 @@ stretches keep few. Raised in fact3's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush, gate_into, lift }
 import from .minefact { slab, hurt, burning, sparking, stash, port_door, crusher }
 
 glob FACT3: str = "q2:fact3";
 
 """fact3's few foes: guards, gunners, a gladiator deeper in."""
-def fact3_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_gunner", "monster_soldier_ss"] if heavy else ["monster_soldier_light", "monster_soldier"], ["monster_gladiator"] if heavy else ["monster_gunner"], danger * 0.5));
-}
+glob FACT3_FOES: FoeMix = FoeMix(light=["monster_soldier_light", "monster_soldier"], strong=["monster_gunner"], heavy_light=["monster_gunner", "monster_soldier_ss"], heavy_strong=["monster_gladiator"], scale=0.5);
 
 """The start: a lobby, a slime duct across its floor under a grate, a
 gallery along the far side."""
@@ -109,8 +107,8 @@ node UpperLobby(Prefab) {
         sparking(build, float(self.long) - 1.1, float(self.wide) - 3.5, 4.0, 2, 4.0);
         guard = build.waiting();
         build.touch(float(dx + 4), float(middle - 2), 0.0, float(dx + 6), float(middle + 2), 6.0) +>:Fires:+> guard;
-        build.foe(float(self.long) - 3.5, 3.0, self.deck, fact3_foe(dice, self.danger), 180.0, waits=guard);
-        build.foe(float(dx + 7) + 0.5, float(self.wide) - 3.5, 0, fact3_foe(dice, self.danger), 180.0, patrol=[[float(dx + 7) + 0.5, float(self.wide) - 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]]);
+        build.foe(float(self.long) - 3.5, 3.0, self.deck, FACT3_FOES.pick(dice, self.danger), 180.0, waits=guard);
+        build.foe(float(dx + 7) + 0.5, float(self.wide) - 3.5, 0, FACT3_FOES.pick(dice, self.danger), 180.0, patrol=[[float(dx + 7) + 0.5, float(self.wide) - 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]]);
         build.supply(float(self.long) - 2.5, float(middle) + 0.5, 0, Q2_HEALTH, "q2");
     }
 }
@@ -179,7 +177,7 @@ node SinkingFloor(Prefab) {
         below = build.waiting();
         late +>:Fires:+> below;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 4.5, float(middle + 2 + index * 2) + 0.5, low, fact3_foe(dice, self.danger, index == 0), 180.0, waits=below);
+            build.foe(float(self.long) - 4.5, float(middle + 2 + index * 2) + 0.5, low, FACT3_FOES.pick(dice, self.danger, index == 0), 180.0, waits=below);
         }
         sparking(build, float(sx) - 0.5, float(self.wide) - 1.1, 3.0, 3, 3.0);
         sparking(build, float(self.long) - 1.1, float(middle) + 3.5, float(low) + 3.0, 2, 4.0);
@@ -234,7 +232,7 @@ node SlimeDuct(Prefab) {
         build.touch(float(self.long - 5), 1.0, 0.0, float(self.long - 1), float(self.wide - 1), 6.0, True, "Shoot the switch over the slime.");
         trip +>:Fires:+> build.sparks(float(self.long) - 1.2, float(middle) + 0.5, 7.0, 2);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long // 2 + index * 4) + 0.5, 2.5 if index == 0 else float(self.wide) - 2.5, 0, fact3_foe(dice, self.danger, index == 1), 180.0);
+            build.foe(float(self.long // 2 + index * 4) + 0.5, 2.5 if index == 0 else float(self.wide) - 2.5, 0, FACT3_FOES.pick(dice, self.danger, index == 1), 180.0);
         }
         sparking(build, 1.1, float(self.wide) - 3.5, 3.0, 0, 5.0);
         build.supply(float(self.long) - 2.5, float(middle) + 0.5, 0, Q2_HEALTH, "q2");
@@ -312,7 +310,7 @@ node ProductionLine(Prefab) {
         up_line = build.waiting();
         build.touch(float(g0), float(middle - 2), float(g), float(g0 + 2), float(middle + 2), float(g + 6)) +>:Fires:+> up_line;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(g0 + 6 + index * 6) + 0.5, float(middle) + 0.5, g, fact3_foe(dice, self.danger, index == 0), 180.0, waits=up_line);
+            build.foe(float(g0 + 6 + index * 6) + 0.5, float(middle) + 0.5, g, FACT3_FOES.pick(dice, self.danger, index == 0), 180.0, waits=up_line);
         }
         build.foe(float(self.long // 2) + 0.5, 3.5 + float(self.wide - 8), 0, "monster_soldier", 0.0, patrol=[[float(g0) + 0.5, float(self.wide) - 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]]);
         sparking(build, 5.1, float(self.wide) - 3.0, 3.0, 0, 3.0);
@@ -373,7 +371,7 @@ node DesignOffice(Prefab) {
         # A plan chest by the north wall, a stash behind a panel in it.
         build.solid(ox - 4, 4, 0, ox, 8, 6);
         stash(build, ox - 3, 5, 0, 2, Q2_ARMOR);
-        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, self.office, side, 0, [2, ox - 4], [fact3_foe(dice, self.danger, True), fact3_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, self.office, side, 0, [2, ox - 4], [FACT3_FOES.pick(dice, self.danger, True), FACT3_FOES.pick(dice, self.danger)]);
         sparking(build, float(self.long) - 1.1, float(cy) - 3.5, float(self.office) + 2.0, 2, 4.0);
         build.supply(2.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
     }
@@ -420,7 +418,7 @@ node WorksExit(Prefab) {
         build.way_out(float(px0 + px1) * 0.5 + 1.0, float(middle), 1);
         sparking(build, float(wall) + 1.1, 3.5, 3.0, 0, 3.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(wall) - 3.5, 3.5 + float(index) * 5.0, 0, fact3_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 3.5 + float(index) * 5.0, 0, FACT3_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
     }

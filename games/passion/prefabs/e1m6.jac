@@ -47,7 +47,7 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from ..space { Space }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, pillars, apart, lift }
 import from .e1m2_parts { slab, keep_box, arcade, stash, closets, spike_wall, key_cue }
 import from .e1m2 { port_gate }
@@ -55,9 +55,7 @@ import from .e1m2 { port_gate }
 glob E1M6: str = "q1:e1m6";
 
 """e1m6's foes: ogres above all, zombies and scrags, a fiend deeper in."""
-def e1m6_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_ogre", "monster_ogre", "monster_knight"] if heavy else ["monster_ogre", "monster_zombie", "monster_knight"], ["monster_demon1"] if heavy else ["monster_wizard"], danger));
-}
+glob E1M6_FOES: FoeMix = FoeMix(light=["monster_ogre", "monster_zombie", "monster_knight"], strong=["monster_wizard"], heavy_light=["monster_ogre", "monster_ogre", "monster_knight"], heavy_strong=["monster_demon1"]);
 
 """A foe standing on a floor whose death is a cue: what it is wired to
 fires as it dies (e1m6's ogres counted as they fall)."""
@@ -161,7 +159,7 @@ node LavaOverlook(Prefab) {
         }
         # Halfway over the lava, an ogre is sent in onto the near floor.
         halfway = build.touch(float(lava_x0 + self.span // 2 - 1), float(y0), 0.0, float(lava_x0 + self.span // 2 + 1), float(y1), 6.0);
-        halfway +>:Fires:+> build.summon(2, y1 - 4, -8, e1m6_foe(dice, self.danger, True), float(foot_x), float(mid) - 2.5, 0, 0.0);
+        halfway +>:Fires:+> build.summon(2, y1 - 4, -8, E1M6_FOES.pick(dice, self.danger, True), float(foot_x), float(mid) - 2.5, 0, 0.0);
         # The secret: a stash in the balcony's rock, a teleporter in it to the
         # far landing.
         stash(build, 5, y0 + 1, 0, 2, "item_armor2");
@@ -178,7 +176,7 @@ node LavaOverlook(Prefab) {
         rim +>:Fires:+> floor_foes;
         rim +>:Fires:+> build.summon(2, y0 + 4, -8, "monster_wizard", float(lava_x0) + 4.5, float(mid) + 0.5, 5, 180.0);
         for index in range(2) {
-            build.foe(float(foot_x) - 0.5 - float(index) * 2.0, float(y1) - 2.5, 0, e1m6_foe(dice, self.danger), 180.0, waits=floor_foes);
+            build.foe(float(foot_x) - 0.5 - float(index) * 2.0, float(y1) - 2.5, 0, E1M6_FOES.pick(dice, self.danger), 180.0, waits=floor_foes);
         }
         for index in range(dice.between(1, 2)) {
             build.foe(float(lava_x0 + 4 + index * 5) + 0.5, float(mid) + 0.5, 6, "monster_wizard", 180.0);
@@ -186,11 +184,11 @@ node LavaOverlook(Prefab) {
         # The far landing's closets open and its guards wake as the player
         # arrives.
         landed = build.touch(float(lava_x1), float(y0), 0.0, float(lava_x1 + 2), float(y1), 6.0);
-        closets(build, landed, y0, [lava_x1 + 1], 0, 3, [e1m6_foe(dice, self.danger, True)]);
+        closets(build, landed, y0, [lava_x1 + 1], 0, 3, [E1M6_FOES.pick(dice, self.danger, True)]);
         guards = build.waiting();
         landed +>:Fires:+> guards;
         for index in range(2) {
-            build.foe(float(self.long) - 2.5, float(mid) - 2.5 + float(index) * 5.0, 0, e1m6_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(self.long) - 2.5, float(mid) - 2.5 + float(index) * 5.0, 0, E1M6_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         build.foe(float(lava_x1) + 2.5, float(y1) - 2.5, 0, "monster_knight", 270.0, patrol=[[float(lava_x1) + 2.5, float(y1) - 2.5], [float(lava_x1) + 2.5, float(y0) + 5.5]]);
         build.supply(float(self.long) - 2.5, float(y1) - 2.5, 0, "item_health");
@@ -300,7 +298,7 @@ node DoorMaze(Prefab) {
                 # Rooms whose doors open as the corridor's middle is reached,
                 # what waits in them coming out.
                 crossing +>:Fires:+> build.opened(float(x + 1), float(door_y), 0.0, float(x + 4), float(door_y + 1), 7.0);
-                build.foe(float(x) + 2.5, float(y0 + y1) * 0.5, 0, e1m6_foe(dice, self.danger, True), facing, waits=loosed);
+                build.foe(float(x) + 2.5, float(y0 + y1) * 0.5, 0, E1M6_FOES.pick(dice, self.danger, True), facing, waits=loosed);
                 continue;
             }
             if rank == 3 {
@@ -323,21 +321,21 @@ node DoorMaze(Prefab) {
                 }
                 woken = build.waiting();
                 press +>:Fires:+> woken;
-                build.foe(float(mid) + 0.5, float(c0) + 2.0 + (1.0 if rank % 2 == 0 else 0.0), 0, e1m6_foe(dice, self.danger), 180.0, waits=woken);
+                build.foe(float(mid) + 0.5, float(c0) + 2.0 + (1.0 if rank % 2 == 0 else 0.0), 0, E1M6_FOES.pick(dice, self.danger), 180.0, waits=woken);
                 inside = build.touch(float(x + 1), float(y0), 0.0, float(x + 4), float(y1), 6.0);
                 lurking = build.waiting();
                 inside +>:Fires:+> lurking;
                 build.foe(float(x) + 1.0, float(y0 + y1) * 0.5, 0, "monster_zombie", facing, waits=lurking);
                 if rank == 0 {
-                    press +>:Fires:+> build.summon(x + 1, c0, -9, e1m6_foe(dice, self.danger, True), float(x) + 2.5, float(c0) + 2.5, 0, 0.0);
+                    press +>:Fires:+> build.summon(x + 1, c0, -9, E1M6_FOES.pick(dice, self.danger, True), float(x) + 2.5, float(c0) + 2.5, 0, 0.0);
                 }
             } elif dice.chance(0.6) {
-                build.foe(float(x) + 2.5, float(y0 + y1) * 0.5, 0, e1m6_foe(dice, self.danger), facing);
+                build.foe(float(x) + 2.5, float(y0 + y1) * 0.5, 0, E1M6_FOES.pick(dice, self.danger), facing);
             } else {
                 build.supply(float(x) + 2.5, float(y0 + y1) * 0.5, 0, ["item_health", "item_rockets", "item_spikes", "item_shells"][dice.below(4)]);
             }
         }
-        build.foe(float(mid) + 0.5, 2.5, self.drop, e1m6_foe(dice, self.danger, True), 90.0);
+        build.foe(float(mid) + 0.5, 2.5, self.drop, E1M6_FOES.pick(dice, self.danger, True), 90.0);
         build.foe(3.5, float(c0) + 1.5, 0, "monster_knight", 0.0, patrol=[[3.5, float(c0) + 1.5], [float(self.long) - 3.5, float(c0) + 1.5]]);
     }
 }
@@ -410,14 +408,14 @@ node LavaCauseway(Prefab) {
         halfway = build.touch(float(self.long // 2), float(middle - 2), 0.0, float(self.long // 2 + 2), float(middle + 2), 6.0);
         ledges = build.waiting();
         halfway +>:Fires:+> ledges;
-        halfway +>:Fires:+> build.summon(1, 2, -9, e1m6_foe(dice, self.danger, True), 5.5, float(middle) + 0.5, 0, 0.0);
-        closets(build, halfway, side, [x for x in [9, 14] if x + 3 <= self.long - 9], self.ledge, 1, [e1m6_foe(dice, self.danger, True)]);
+        halfway +>:Fires:+> build.summon(1, 2, -9, E1M6_FOES.pick(dice, self.danger, True), 5.5, float(middle) + 0.5, 0, 0.0);
+        closets(build, halfway, side, [x for x in [9, 14] if x + 3 <= self.long - 9], self.ledge, 1, [E1M6_FOES.pick(dice, self.danger, True)]);
         build.touch(1.0, float(middle - 2), 0.0, 3.0, float(middle + 2), 6.0, True, "Beware the lava");
         for index in range(dice.between(2, 4)) {
             at_y = 3.0 if index % 2 == 0 else float(side) - 2.0;
-            build.foe(float(8 + index * 5) + 0.5, at_y, self.ledge, e1m6_foe(dice, self.danger, True), 90.0 if index % 2 == 0 else 270.0, waits=ledges);
+            build.foe(float(8 + index * 5) + 0.5, at_y, self.ledge, E1M6_FOES.pick(dice, self.danger, True), 90.0 if index % 2 == 0 else 270.0, waits=ledges);
         }
-        build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, 0, e1m6_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, 0, E1M6_FOES.pick(dice, self.danger), 180.0);
         build.foe(6.5, float(side) - 2.0, self.ledge, "monster_knight", 0.0, patrol=[[6.5, float(side) - 2.0], [float(self.long) - 3.5, float(side) - 2.0]]);
         # A stash in the north wall at the ledge's height.
         stash(build, side, self.long - 8, self.ledge, 1, "item_health");
@@ -513,9 +511,9 @@ node SinkingStair(Prefab) {
         below = build.waiting();
         later +>:Fires:+> below;
         down = build.touch(float(brink), float(lane), float(-d), float(brink + 3), float(self.wide - 5), float(-d + 6));
-        down +>:Fires:+> build.summon(brink + 6, self.wide - 9, -2 * d, e1m6_foe(dice, self.danger, True), float(brink) + 2.5, float(mid) + 2.5, -d, 0.0);
+        down +>:Fires:+> build.summon(brink + 6, self.wide - 9, -2 * d, E1M6_FOES.pick(dice, self.danger, True), float(brink) + 2.5, float(mid) + 2.5, -d, 0.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 3.5, float(mid) - 2.5 + float(index) * 2.5, -d, e1m6_foe(dice, self.danger, index == 0), 180.0, waits=below);
+            build.foe(float(self.long) - 3.5, float(mid) - 2.5 + float(index) * 2.5, -d, E1M6_FOES.pick(dice, self.danger, index == 0), 180.0, waits=below);
         }
         for index in range(dice.between(1, 2)) {
             build.foe(float(brink + 4 + index * 5) + 0.5, float(mid) + 0.5, -d // 2, "monster_wizard", 180.0);
@@ -590,9 +588,9 @@ node ZombieGallery(Prefab) {
         }
         starts = [x for x in [9, 14, 19, 24] if x + 3 <= self.long - 6];
         closets(build, firsts[0], side, starts[:2], g, 1, ["monster_zombie"]);
-        closets(build, firsts[1], side, starts[2:], g, 1, ["monster_zombie", e1m6_foe(dice, self.danger, True)]);
-        firsts[2] +>:Fires:+> build.summon(2, 2, -8, e1m6_foe(dice, self.danger, True), float(self.long // 2) + 0.5, float(mid) - 3.5, 0, 180.0);
-        closets(build, firsts[2], side, starts[:2], 0, 1, [e1m6_foe(dice, self.danger, True), "monster_zombie"]);
+        closets(build, firsts[1], side, starts[2:], g, 1, ["monster_zombie", E1M6_FOES.pick(dice, self.danger, True)]);
+        firsts[2] +>:Fires:+> build.summon(2, 2, -8, E1M6_FOES.pick(dice, self.danger, True), float(self.long // 2) + 0.5, float(mid) - 3.5, 0, 180.0);
+        closets(build, firsts[2], side, starts[:2], 0, 1, [E1M6_FOES.pick(dice, self.danger, True), "monster_zombie"]);
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
@@ -607,8 +605,8 @@ node ZombieGallery(Prefab) {
         topped = build.touch(5.0, 1.0, float(g), 9.0, 5.0, float(g + 6));
         guard = build.waiting();
         topped +>:Fires:+> guard;
-        build.foe(float(self.long) - 3.0, float(mid) + 0.5, g, e1m6_foe(dice, self.danger, True), 180.0, waits=guard);
-        build.foe(float(self.long) - 3.0, float(side) - 2.5, g, e1m6_foe(dice, self.danger), 180.0, waits=guard);
+        build.foe(float(self.long) - 3.0, float(mid) + 0.5, g, E1M6_FOES.pick(dice, self.danger, True), 180.0, waits=guard);
+        build.foe(float(self.long) - 3.0, float(side) - 2.5, g, E1M6_FOES.pick(dice, self.danger), 180.0, waits=guard);
         build.foe(9.5, 3.0, g, "monster_knight", 0.0, patrol=[[9.5, 3.0], [float(self.long) - 3.0, 3.0]]);
         build.supply(float(self.long) - 3.0, 3.0, g, "item_health");
         build.supply(2.5, float(side) - 2.5, 0, "item_rockets");
@@ -677,13 +675,13 @@ node LavaKeyShrine(Prefab) {
         # The key: taking it opens the closets in the north wall on the
         # shore, sends a foe in behind, and opens the key's own vault.
         taken = key_cue(build, self.key, float(island_x) + 4.5, float(middle) + 0.5, 0);
-        closets(build, taken, side, [2, 6] if self.shore >= 8 else [2], 0, 1, [e1m6_foe(dice, self.danger, True), "monster_zombie"]);
+        closets(build, taken, side, [2, 6] if self.shore >= 8 else [2], 0, 1, [E1M6_FOES.pick(dice, self.danger, True), "monster_zombie"]);
         build.touch(1.0, float(y0), 0.0, 3.0, float(side), 6.0, True, "The key is kept by the lava");
-        taken +>:Fires:+> build.summon(3, middle - 1, -8, e1m6_foe(dice, self.danger, True), 3.5, float(middle) + 0.5, 0, 0.0);
+        taken +>:Fires:+> build.summon(3, middle - 1, -8, E1M6_FOES.pick(dice, self.danger, True), 3.5, float(middle) + 0.5, 0, 0.0);
         archers = build.waiting();
         taken +>:Fires:+> archers;
         for index in range(2) {
-            build.foe(float(self.long) - 3.0 - float(index) * 4.0, float(side) - 2.0, 7, e1m6_foe(dice, self.danger), 270.0, waits=archers);
+            build.foe(float(self.long) - 3.0 - float(index) * 4.0, float(side) - 2.0, 7, E1M6_FOES.pick(dice, self.danger), 270.0, waits=archers);
         }
         # The vault beyond the south wall, behind the key's own door.
         vault = build.room(2, 1, 0, 7, 4, 7);
@@ -694,7 +692,7 @@ node LavaKeyShrine(Prefab) {
         keeper = build.waiting();
         onto +>:Fires:+> keeper;
         onto +>:Fires:+> build.summon(3, middle + 4, -8, "monster_wizard", float(island_x) + 2.5, float(middle) + 0.5, 4, 180.0);
-        build.foe(float(island_x) + 2.5, float(middle) + 2.5, 0, e1m6_foe(dice, self.danger, True), 180.0, waits=keeper);
+        build.foe(float(island_x) + 2.5, float(middle) + 2.5, 0, E1M6_FOES.pick(dice, self.danger, True), 180.0, waits=keeper);
         build.foe(3.5, float(side) - 6.5, 0, "monster_knight", 90.0, patrol=[[3.5, float(side) - 6.5], [3.5, float(y0) + 2.5]]);
         build.supply(float(lava_x) - 2.5, float(y0) + 2.5, 0, "item_health");
     }
@@ -784,13 +782,13 @@ node ChthonDoor(Prefab) {
         }
         build.way_out(float(self.long) - 4.0, float(mid), -d);
         brim = build.touch(float(moat_x - 2), float(mid - 2), float(-d), float(moat_x), float(mid + 2), float(-d + 6));
-        brim +>:Fires:+> build.summon(4, mid - 1, -9, e1m6_foe(dice, self.danger, True), float(land_x) + 1.5, float(mid) + 0.5, 0, 180.0);
+        brim +>:Fires:+> build.summon(4, mid - 1, -9, E1M6_FOES.pick(dice, self.danger, True), float(land_x) + 1.5, float(mid) + 0.5, 0, 180.0);
         # The stash under the landing; the guards on the far bank counted as
         # they fall to a cache in the far wall.
         stash(build, land_x, mid - 7, -d, 2, "item_armor2");
         both = build.tally(2, "A cache has opened");
         for index in range(2) {
-            foe_cue(build, float(self.long) - 6.5, float(mid) - 4.5 + float(index) * 9.0, -d, e1m6_foe(dice, self.danger, True), 180.0) +>:Fires:+> both;
+            foe_cue(build, float(self.long) - 6.5, float(mid) - 4.5 + float(index) * 9.0, -d, E1M6_FOES.pick(dice, self.danger, True), 180.0) +>:Fires:+> both;
         }
         build.solid(self.long - 5, 1, -d, self.long - 1, 5, -d + 7);
         cache = build.room(self.long - 4, 1, -d, self.long - 1, 4, -d + 6);
@@ -801,13 +799,13 @@ node ChthonDoor(Prefab) {
         archers = build.waiting();
         plate +>:Fires:+> archers;
         for y in [3.0, float(self.wide) - 3.0] {
-            build.foe(float(moat_x) - 1.5, y, 0, e1m6_foe(dice, self.danger), 0.0, waits=archers);
+            build.foe(float(moat_x) - 1.5, y, 0, E1M6_FOES.pick(dice, self.danger), 0.0, waits=archers);
         }
         entering = build.touch(2.0, float(mid - 3), 0.0, 5.0, float(mid + 3), 6.0);
         hall_foes = build.waiting();
         entering +>:Fires:+> hall_foes;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(dx) - 3.5 - float(index % 2) * 3.0, 6.5 + float(index) * 3.5, 0, e1m6_foe(dice, self.danger, index == 0), 180.0, waits=hall_foes);
+            build.foe(float(dx) - 3.5 - float(index % 2) * 3.0, 6.5 + float(index) * 3.5, 0, E1M6_FOES.pick(dice, self.danger, index == 0), 180.0, waits=hall_foes);
         }
         build.foe(3.5, float(mid) + 0.5, 0, "monster_knight", 0.0, patrol=[[3.5, float(mid) + 0.5], [float(dx) - 4.5, float(mid) + 0.5]]);
         build.supply(2.5, 2.5, 0, "item_health");

@@ -35,7 +35,7 @@ its sizes.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, pillars, lift, apart }
 import from .e1m2_parts { slab, keep_box, arcade, stash, closets, spike_wall, key_cue, flood, sump }
 import from .e1m2 { port_gate }
@@ -43,9 +43,7 @@ import from .e1m2 { port_gate }
 glob E2M1: str = "q1:e2m1";
 
 """e2m1's foes: grunts and dogs, enforcers growing with the danger."""
-def e2m1_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_enforcer", "monster_army"] if heavy else ["monster_army", "monster_army", "monster_dog"], ["monster_enforcer"], danger));
-}
+glob E2M1_FOES: FoeMix = FoeMix(light=["monster_army", "monster_army", "monster_dog"], strong=["monster_enforcer"], heavy_light=["monster_enforcer", "monster_army"]);
 
 """Lasers set in a wall (as `spike_wall`), each firing when `cue` does."""
 def laser_wall(build: Raising, cue: Cue, line: int, start: int, finish: int, high: float, every: int, direction: int) {
@@ -165,9 +163,9 @@ node InstallationDock(Prefab) {
             build.foe(float(self.long) - 3.5 - float(index) * 3.0, float(self.wide) - 3.5, 0, "monster_dog", 180.0, waits=garage);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(14 + index * 4) + 0.5, 4.5, 0, e2m1_foe(dice, self.danger), 180.0);
+            build.foe(float(14 + index * 4) + 0.5, 4.5, 0, E2M1_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(self.long) - 4.5, float(self.wide) - 3.0, self.deck, e2m1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 4.5, float(self.wide) - 3.0, self.deck, E2M1_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, self.deck, "item_health");
     }
 }
@@ -241,7 +239,7 @@ node FloodedTunnels(Prefab) {
         guards = build.waiting();
         out +>:Fires:+> guards;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(x1) + 2.5, 3.5 + float(index) * 3.0, 0, e2m1_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(x1) + 2.5, 3.5 + float(index) * 3.0, 0, E2M1_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         build.foe(2.5, 2.5, 0, "monster_army", 90.0, patrol=[[2.5, 2.5], [2.5, float(self.wide) - 2.5]]);
         build.foe(float(walk_x0) + 2.5, float(self.wide) - 2.5, 0, "monster_army", 0.0, patrol=[[float(walk_x0) + 2.5, float(self.wide) - 2.5], [float(x1) - 1.5, float(self.wide) - 2.5]]);
@@ -329,11 +327,11 @@ node PumpingStation(Prefab) {
             nearing +>:Fires:+> build.summon(self.long - 5, 2, -9, "monster_enforcer", float(self.long) - 2.5, float(middle) - 2.5, self.walk, 180.0);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long // 2 + index * 3) + 0.5, 5.0, 0, e2m1_foe(dice, self.danger), 0.0);
+            build.foe(float(self.long // 2 + index * 3) + 0.5, 5.0, 0, E2M1_FOES.pick(dice, self.danger), 0.0);
         }
         build.foe(6.5, float(self.wide) - 2.5, self.walk, "monster_army", 0.0, patrol=[[6.5, float(self.wide) - 2.5], [float(self.long) - 6.5, float(self.wide) - 2.5]]);
         build.foe(float(self.long) - 6.5, 2.5, self.walk, "monster_enforcer", 180.0, patrol=[[float(self.long) - 6.5, 2.5], [6.5, 2.5]]);
-        build.foe(float(self.long) - 5.5, 5.5, 0, e2m1_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 5.5, 5.5, 0, E2M1_FOES.pick(dice, self.danger), 180.0);
         if dice.chance(0.5) {
             build.foe(float(self.long // 2) + 1.5, float(middle) + 1.5, -6, "monster_fish", 0.0);
         }
@@ -423,9 +421,9 @@ node Sluice(Prefab) {
         halfway = build.touch(float(gap - 1), float(self.wide - 5), 8.0, float(gap + 2), float(self.wide - 1), 14.0);
         guards = build.waiting();
         halfway +>:Fires:+> guards;
-        halfway +>:Fires:+> build.summon(1, 1, -9, e2m1_foe(dice, self.danger, True), 7.5, 2.5, 0, 0.0);
+        halfway +>:Fires:+> build.summon(1, 1, -9, E2M1_FOES.pick(dice, self.danger, True), 7.5, 2.5, 0, 0.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 2.5, 4.5 + float(index) * 3.0, 0, e2m1_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(self.long) - 2.5, 4.5 + float(index) * 3.0, 0, E2M1_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         build.foe(7.5, float(self.wide) - 3.0, 8, "monster_army", 0.0, patrol=[[7.5, float(self.wide) - 3.0], [float(self.long) - 7.5, float(self.wide) - 3.0]]);
         build.foe(6.5, 2.5, 0, "monster_dog", 0.0, patrol=[[6.5, 2.5], [float(gap) - 3.5, 2.5]]);
@@ -499,7 +497,7 @@ node LaserCorridor(Prefab) {
         far = build.waiting();
         walking +>:Fires:+> far;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 2.5, 3.5 + float(index) * 3.0, 0, e2m1_foe(dice, self.danger, index == 0), 180.0, waits=far);
+            build.foe(float(self.long) - 2.5, 3.5 + float(index) * 3.0, 0, E2M1_FOES.pick(dice, self.danger, index == 0), 180.0, waits=far);
         }
         build.foe(2.5, 2.5, 0, "monster_army", 90.0, patrol=[[2.5, 2.5], [2.5, float(self.wide) - 2.5]]);
         if dice.chance(0.5) {
@@ -569,13 +567,13 @@ node KeyLab(Prefab) {
         # The key: taking it opens the closets in the north wall and brings
         # an enforcer in behind; the gallery's guards wake.
         taken = key_cue(build, self.key, float(cx) + 0.5, float(cy) + 0.5, 0);
-        closets(build, taken, side, [3, self.long - 7], 0, 1, [e2m1_foe(dice, self.danger, True), e2m1_foe(dice, self.danger)]);
+        closets(build, taken, side, [3, self.long - 7], 0, 1, [E2M1_FOES.pick(dice, self.danger, True), E2M1_FOES.pick(dice, self.danger)]);
         taken +>:Fires:+> build.summon(2, side - 5, -8, "monster_enforcer", 3.5, float(side) - 2.5, 0, 0.0);
         gallery = build.waiting();
         taken +>:Fires:+> gallery;
-        build.foe(float(self.long) - 2.5, float(cy) + 0.5, 7, e2m1_foe(dice, self.danger, True), 180.0, waits=gallery);
+        build.foe(float(self.long) - 2.5, float(cy) + 0.5, 7, E2M1_FOES.pick(dice, self.danger, True), 180.0, waits=gallery);
         build.foe(float(x0) + 2.5, 2.5, 7, "monster_army", 0.0, patrol=[[float(x0) + 2.5, 2.5], [float(self.long) - 5.5, 2.5]]);
-        build.foe(float(self.long) - 2.5, float(side) - 2.5, 0, e2m1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 2.5, float(side) - 2.5, 0, E2M1_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(2.5, float(side) - 2.5, 0, "item_health");
     }
 }
@@ -632,10 +630,10 @@ node SlipgateBunker(Prefab) {
         head = build.touch(float(wall - 3), float(middle - 2), 0.0, float(wall), float(middle + 2), 6.0);
         head +>:Fires:+> build.summon(1, 1, -11, "monster_enforcer", 3.5, float(middle) + 0.5, 0, 0.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, e2m1_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, E2M1_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 3.5, 2.5 + float(index) * (float(self.wide) - 5.0), -4, e2m1_foe(dice, self.danger, True), 180.0);
+            build.foe(float(self.long) - 3.5, 2.5 + float(index) * (float(self.wide) - 5.0), -4, E2M1_FOES.pick(dice, self.danger, True), 180.0);
         }
         build.foe(3.5, 2.5, 0, "monster_army", 90.0, patrol=[[3.5, 2.5], [3.5, float(self.wide) - 2.5]]);
         build.supply(2.5, 2.5, 0, "item_health");

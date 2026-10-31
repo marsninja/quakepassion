@@ -27,10 +27,11 @@ knight, zombie, hell_knight. Raised in q3dm2's own palette.
   stands on; touching the sanctum's floor brings a foe in behind and wakes
   the balconies."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, pillars, key_ambush, gate_into, lift }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3low_parts { slab, keep_box, hint, wake_later, pad, flying_stair, sliding_pair }
 
 glob Q3DM2: str = "q3:q3dm2",
@@ -38,9 +39,7 @@ glob Q3DM2: str = "q3:q3dm2",
      Q3DM2_HEAVY: list[str] = ["monster_hell_knight"];
 
 """A foe for q3dm2's stretches."""
-def q3dm2_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM2_LIGHT, Q3DM2_HEAVY, strong);
-}
+glob Q3DM2_FOES: FoeMix = FoeMix(light=Q3DM2_LIGHT, strong=Q3DM2_HEAVY, heavy_light=Q3DM2_HEAVY, scale=0.5);
 
 """The start: the great doors, a ledge over a hall half a storey down, a
 stair or a lift down, a walk along a wall over the hall."""
@@ -127,13 +126,13 @@ node PainGate(Prefab) {
         rim = build.touch(8.0, 1.0, 0.0, 10.0, float(self.wide - 1), 6.0);
         below = wake_later(build, rim, 1.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 4.5 - float(index) * 4.0, float(middle) + (2.5 if index % 2 == 0 else -2.5), -8, q3dm2_foe(dice, self.danger, index == 0), 180.0, waits=below);
+            build.foe(float(self.long) - 4.5 - float(index) * 4.0, float(middle) + (2.5 if index % 2 == 0 else -2.5), -8, Q3DM2_FOES.pick(dice, self.danger, index == 0), 180.0, waits=below);
         }
-        build.foe(float(self.long) - 3.5, float(middle) + 0.5, -8, q3dm2_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, float(middle) + 0.5, -8, Q3DM2_FOES.pick(dice, self.danger), 180.0);
         if self.walk == 1 {
-            build.foe(float(self.long) - 3.5, 3.0, 0, q3dm2_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long) - 3.5, 3.0, 0, Q3DM2_FOES.pick(dice, self.danger), 180.0);
         } elif self.walk == 2 {
-            build.foe(float(self.long) - 3.5, float(self.wide) - 3.0, 0, q3dm2_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long) - 3.5, float(self.wide) - 3.0, 0, Q3DM2_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(float(self.long) - 3.0, float(middle) + 3.5, -8, Q3_HEALTH, "q3");
         build.supply(20.5, float(middle) + 0.5, -8, Q3_ARMOR, "q3");
@@ -205,14 +204,14 @@ node PainLifts(Prefab) {
         ride = build.touch(float(bx - 3), float(self.wide - 5), 0.0, float(bx), float(self.wide - 2), 4.0);
         above = wake_later(build, ride, 0.5);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 3.0, 3.5 + float(index) * float(self.wide - 7), b, q3dm2_foe(dice, self.danger, index == 0), 180.0, waits=above);
+            build.foe(float(self.long) - 3.0, 3.5 + float(index) * float(self.wide - 7), b, Q3DM2_FOES.pick(dice, self.danger, index == 0), 180.0, waits=above);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(8 + index * 4) + 0.5, 3.0 if index % 2 == 0 else float(self.wide) - 3.0, 0, q3dm2_foe(dice, self.danger), 0.0);
+            build.foe(float(8 + index * 4) + 0.5, 3.0 if index % 2 == 0 else float(self.wide) - 3.0, 0, Q3DM2_FOES.pick(dice, self.danger), 0.0);
         }
-        build.foe(float(self.long) - 3.5, float(middle) + 0.5, 0, q3dm2_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, float(middle) + 0.5, 0, Q3DM2_FOES.pick(dice, self.danger), 180.0);
         if self.form == 2 {
-            build.foe(10.5, 3.0, b, q3dm2_foe(dice, self.danger), 0.0);
+            build.foe(10.5, 3.0, b, Q3DM2_FOES.pick(dice, self.danger), 0.0);
         }
         build.supply(float(self.long) - 2.5, float(middle) + 2.5, b, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 3.5, 3.5, 0, "ammo_nails");
@@ -298,11 +297,11 @@ node PainPit(Prefab) {
         rim = build.touch(5.0, 6.0, 0.0, 7.0, float(north), 6.0);
         below = wake_later(build, rim, 1.5);
         for index in range(dice.between(3, 4)) {
-            build.foe(float(16 + index * 3) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), -8, q3dm2_foe(dice, self.danger), 180.0, waits=below);
+            build.foe(float(16 + index * 3) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), -8, Q3DM2_FOES.pick(dice, self.danger), 180.0, waits=below);
         }
-        build.foe(float(long) - 3.5, float(middle) + 0.5, -8, q3dm2_foe(dice, self.danger, True), 180.0);
-        build.foe(9.5, 3.0, 0, q3dm2_foe(dice, self.danger), 0.0, patrol=[[9.5, 3.0], [float(long) - 3.5, 3.0]]);
-        build.foe(float(long) - 3.5, float(wide) - 3.0, 0, q3dm2_foe(dice, self.danger, True), 180.0);
+        build.foe(float(long) - 3.5, float(middle) + 0.5, -8, Q3DM2_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(9.5, 3.0, 0, Q3DM2_FOES.pick(dice, self.danger), 0.0, patrol=[[9.5, 3.0], [float(long) - 3.5, 3.0]]);
+        build.foe(float(long) - 3.5, float(wide) - 3.0, 0, Q3DM2_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(bx) + 1.5, float(middle) + 0.5, -8, "item_armor_body", "q3");
         build.supply(3.5, 3.5, 0, Q3_HEALTH, "q3");
         if self.bridge {
@@ -379,11 +378,11 @@ node PainHalls(Prefab) {
         look = build.touch(10.0, float(middle - 2), 0.0, 12.0, float(middle + 2), 6.0);
         below = wake_later(build, look, 1.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(long) - 5.5 - float(index) * 5.0, float(middle) + (2.5 if index % 2 == 0 else -2.5), -8, q3dm2_foe(dice, self.danger, index == 0), 180.0, waits=below);
+            build.foe(float(long) - 5.5 - float(index) * 5.0, float(middle) + (2.5 if index % 2 == 0 else -2.5), -8, Q3DM2_FOES.pick(dice, self.danger, index == 0), 180.0, waits=below);
         }
-        build.foe(14.5, 2.5, -8, q3dm2_foe(dice, self.danger), 0.0, patrol=[[14.5, 2.5], [float(long) - 3.5, 2.5]]);
+        build.foe(14.5, 2.5, -8, Q3DM2_FOES.pick(dice, self.danger), 0.0, patrol=[[14.5, 2.5], [float(long) - 3.5, 2.5]]);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(long // 2 + index * 6) + 0.5, 3.0, 0, q3dm2_foe(dice, self.danger), 180.0);
+            build.foe(float(long // 2 + index * 6) + 0.5, 3.0, 0, Q3DM2_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(float(long) - 3.0, 3.0, 0, Q3_HEALTH, "q3");
         build.supply(4.5, float(wide) - 3.0, -8, Q3_ARMOR, "q3");
@@ -446,12 +445,12 @@ node PainCells(Prefab) {
         }
         # The platform's rim to drop from, back into the cells.
         keep_box(build, block, far, side - 4, far + 1, side - 1, 0);
-        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, 0, side, -6, [8, self.long - 10], [q3dm2_foe(dice, self.danger, True), q3dm2_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, 0, side, -6, [8, self.long - 10], [Q3DM2_FOES.pick(dice, self.danger, True), Q3DM2_FOES.pick(dice, self.danger)]);
         hint(build, 2.0, 1.0, 0.0, 4.0, float(side), 6.0, "The cells of the house", "Those kept here wait for you", 2.0);
         for index in range(dice.between(2, 3)) {
             build.foe(13.5 + float(index) * 2.5, float(cy) + (3.5 if index % 2 == 0 else -2.5), -6, "monster_zombie", 90.0);
         }
-        build.foe(float(self.long) - 3.5, 3.0, 0, q3dm2_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, 3.0, 0, Q3DM2_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(2.5, float(side) - 2.5, 0, Q3_HEALTH, "q3");
     }
 }
@@ -510,14 +509,14 @@ node PainAltar(Prefab) {
         # Touching the sanctum's floor brings a foe in behind, out of a
         # closet sealed under the hall, and wakes the balconies.
         floor = build.touch(float(rim + 4), 5.0, -8.0, float(rim + 6), float(self.wide - 5), -2.0);
-        floor +>:Fires:+> build.summon(2, 2, -8, q3dm2_foe(dice, self.danger, True), float(rim) + 1.5, float(middle) + 4.5, -8, 0.0);
+        floor +>:Fires:+> build.summon(2, 2, -8, Q3DM2_FOES.pick(dice, self.danger, True), float(rim) + 1.5, float(middle) + 4.5, -8, 0.0);
         above = wake_later(build, floor, 0.5);
-        build.foe(float(self.long) - 4.0, 3.0, 0, q3dm2_foe(dice, self.danger, True), 180.0, waits=above);
-        build.foe(float(self.long) - 4.0, float(self.wide) - 3.0, 0, q3dm2_foe(dice, self.danger), 180.0, waits=above);
+        build.foe(float(self.long) - 4.0, 3.0, 0, Q3DM2_FOES.pick(dice, self.danger, True), 180.0, waits=above);
+        build.foe(float(self.long) - 4.0, float(self.wide) - 3.0, 0, Q3DM2_FOES.pick(dice, self.danger), 180.0, waits=above);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(rim + 8 + index * 3) + 0.5, float(middle) + (4.5 if index % 2 == 0 else -4.0), -8, q3dm2_foe(dice, self.danger), 180.0);
+            build.foe(float(rim + 8 + index * 3) + 0.5, float(middle) + (4.5 if index % 2 == 0 else -4.0), -8, Q3DM2_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(wall) + 3.5, 3.0, 0, q3dm2_foe(dice, self.danger), 0.0);
+        build.foe(float(wall) + 3.5, 3.0, 0, Q3DM2_FOES.pick(dice, self.danger), 0.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(rim) + 2.5, float(self.wide) - 3.0, 0, "item_haste", "q3");
     }

@@ -36,6 +36,7 @@ own palette.
   out on a tier up a pad or two stairs, a gallery whose campers wake as the
   player comes in."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, pillars, key_ambush, gate_into, lift, spiral, ring_landing, ring_path }
@@ -354,9 +355,7 @@ node StoneBridge(Prefab) {
 }
 
 """A foe for q3dm6's stretches."""
-def q3dm6_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM6_LIGHT, Q3DM6_HEAVY, strong);
-}
+glob Q3DM6_FOES: FoeMix = FoeMix(light=Q3DM6_LIGHT, strong=Q3DM6_HEAVY, heavy_light=Q3DM6_HEAVY, scale=0.5);
 
 """The start: a long hall under the grounds (q3dm6's lower halls), columns
 down its open side, a gallery along one wall over the aisle under it,
@@ -435,9 +434,9 @@ node LowerHall(Prefab) {
         climb = build.touch(foot[0] - 1.5, foot[1] - 1.5, 0.0, foot[0] + 1.5, foot[1] + 1.5, 6.0);
         above = wake_later(build, climb, 0.4);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 4.5 - float(index) * 6.0, float(gy0) + 2.0, g, q3dm6_foe(dice, self.danger, index == 0), 180.0, waits=above);
+            build.foe(float(self.long) - 4.5 - float(index) * 6.0, float(gy0) + 2.0, g, Q3DM6_FOES.pick(dice, self.danger, index == 0), 180.0, waits=above);
         }
-        build.foe(float(self.long) - 5.5, float(middle) + 0.5, 0, q3dm6_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 5.5, float(middle) + 0.5, 0, Q3DM6_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, float(middle) - 2.5, 0, Q3_HEALTH, "q3");
         build.supply(8.5, float(gy0) + 2.0, g, Q3_ARMOR, "q3");
     }
@@ -510,10 +509,10 @@ node RailLedge(Prefab) {
         up = build.touch(start_box[0], start_box[1], 0.0, start_box[2], start_box[3], 6.0);
         campers = wake_later(build, up, 0.3);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 2.5, float(middle) + 3.5 - float(index) * 7.0, h, q3dm6_foe(dice, self.danger, index == 0), 180.0, waits=campers);
+            build.foe(float(self.long) - 2.5, float(middle) + 3.5 - float(index) * 7.0, h, Q3DM6_FOES.pick(dice, self.danger, index == 0), 180.0, waits=campers);
         }
-        build.foe(float(lx) + 2.5, float(middle) + 0.5, 0, q3dm6_foe(dice, self.danger), 180.0);
-        build.foe(5.5, float(middle) + 3.5, 0, q3dm6_foe(dice, self.danger), 0.0);
+        build.foe(float(lx) + 2.5, float(middle) + 0.5, 0, Q3DM6_FOES.pick(dice, self.danger), 180.0);
+        build.foe(5.5, float(middle) + 3.5, 0, Q3DM6_FOES.pick(dice, self.danger), 0.0);
         build.supply(float(self.long) - 2.5, float(middle) + 0.5, h, "weapon_railgun", "q3");
         build.supply(float(lx) + 2.0, 2.5, 0, Q3_HEALTH, "q3");
     }
@@ -581,15 +580,15 @@ node QuadChamber(Prefab) {
         landed = build.touch(float(cx - 3), float(cy - 3), float(bottom), float(cx + 3), float(cy + 3), float(bottom + 4));
         lurkers = wake_later(build, landed, 0.5);
         for index in range(dice.between(1, 2)) {
-            build.foe(5.5 + float(index) * 4.0, float(self.wide) - 4.5, bottom, q3dm6_foe(dice, self.danger, index == 0), 0.0, waits=lurkers);
+            build.foe(5.5 + float(index) * 4.0, float(self.wide) - 4.5, bottom, Q3DM6_FOES.pick(dice, self.danger, index == 0), 0.0, waits=lurkers);
         }
         if self.barred and self.taken {
             lever = build.push(float(self.long - 4), float(cy) + 0.5, float(bottom) + 2.0, 2);
             bars(build, lever, self.taken, self.long, self.wide);
             hint(build, 1.0, float(cy - 2), 0.0, 4.0, float(cy + 3), 6.0, "The ways on are shut", "The switch is down below", 2.0);
         }
-        build.foe(float(self.long) - 4.5, 3.5, 0, q3dm6_foe(dice, self.danger), 180.0);
-        build.foe(4.5, float(self.wide) - 3.5, 0, q3dm6_foe(dice, self.danger), 0.0);
+        build.foe(float(self.long) - 4.5, 3.5, 0, Q3DM6_FOES.pick(dice, self.danger), 180.0);
+        build.foe(4.5, float(self.wide) - 3.5, 0, Q3DM6_FOES.pick(dice, self.danger), 0.0);
         build.supply(3.5, 3.5, 0, Q3_HEALTH, "q3");
         build.supply(float(cx) - 5.5, float(cy) + 0.5, bottom, Q3_HEALTH, "q3");
     }
@@ -653,13 +652,13 @@ node CampingVault(Prefab) {
         keep_box(build, room, x2, cy + 1, x2 + 1, cy + 4, t2);
         # The key on the top tier; taking it opens the closets below.
         taken = key_taken(build, self.key, float(self.long) - 2.5, float(cy) + 0.5, t2);
-        closets(build, taken, side, 0, [3, 8], [q3dm6_foe(dice, self.danger, True), q3dm6_foe(dice, self.danger)]);
+        closets(build, taken, side, 0, [3, 8], [Q3DM6_FOES.pick(dice, self.danger, True), Q3DM6_FOES.pick(dice, self.danger)]);
         up = build.touch(start[0], start[1], 0.0, start[2], start[3], 6.0);
         tiers = wake_later(build, up, 0.3);
-        build.foe(float(x1) + 2.5, float(cy) + 3.5, t1, q3dm6_foe(dice, self.danger), 180.0, waits=tiers);
-        build.foe(float(self.long) - 3.0, 3.0, t2, q3dm6_foe(dice, self.danger), 180.0, waits=tiers);
+        build.foe(float(x1) + 2.5, float(cy) + 3.5, t1, Q3DM6_FOES.pick(dice, self.danger), 180.0, waits=tiers);
+        build.foe(float(self.long) - 3.0, 3.0, t2, Q3DM6_FOES.pick(dice, self.danger), 180.0, waits=tiers);
         hint(build, 1.0, float(cy - 2), 0.0, 4.0, float(cy + 3), 6.0, "The key is on the top tier", "Climb from tier to tier", 2.0);
-        build.foe(float(x1) - 6.5, float(cy) + 3.5, 0, q3dm6_foe(dice, self.danger), 180.0);
+        build.foe(float(x1) - 6.5, float(cy) + 3.5, 0, Q3DM6_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, float(side) - 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(x1) + 2.5, float(side) - 4.5, t1, Q3_ARMOR, "q3");
     }
@@ -720,12 +719,12 @@ node CampingGate(Prefab) {
         through = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
         campers = wake_later(build, through, 0.5);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall + 6 + index * 5) + 0.5, float(gy) + 1.5, 12, q3dm6_foe(dice, self.danger, index == 0), 0.0, waits=campers);
+            build.foe(float(wall + 6 + index * 5) + 0.5, float(gy) + 1.5, 12, Q3DM6_FOES.pick(dice, self.danger, index == 0), 0.0, waits=campers);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(tx) + 2.5, 3.5 + float(index) * 5.0, t, q3dm6_foe(dice, self.danger), 180.0);
+            build.foe(float(tx) + 2.5, 3.5 + float(index) * 5.0, t, Q3DM6_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(wall) - 3.5, 3.0, 0, q3dm6_foe(dice, self.danger), 0.0);
+        build.foe(float(wall) - 3.5, 3.0, 0, Q3DM6_FOES.pick(dice, self.danger), 0.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(wall) + 3.5, float(self.wide) - 3.5 if self.gallery_low else 3.5, 0, Q3_ARMOR, "q3");
     }

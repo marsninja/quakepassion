@@ -35,10 +35,11 @@ q3dm18's own palette.
   a bay with a pit to the void in its floor, the way out on a ledge high
   across the bay's far end, up a pad (or, by the seed, a lift)."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, key_ambush, lift }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3late_parts { deck, keep_box, void_floor, throw, wake_later, columns }
 
 glob Q3DM18: str = "q3:q3dm18",
@@ -46,9 +47,7 @@ glob Q3DM18: str = "q3:q3dm18",
      Q3DM18_HEAVY: list[str] = ["monster_shambler"];
 
 """A foe for q3dm18's stretches."""
-def space_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM18_LIGHT, Q3DM18_HEAVY, strong);
-}
+glob SPACE_FOES: FoeMix = FoeMix(light=Q3DM18_LIGHT, strong=Q3DM18_HEAVY, heavy_light=Q3DM18_HEAVY, scale=0.5);
 
 """The start: a bay, a gallery high along one wall, a pad up to it, a
 trench to the void along the other wall."""
@@ -119,13 +118,13 @@ node DockingBay(Prefab) {
         build.supply(2.5, py - 2.0, 0, "ammo_shells", "q2");
         gy = float(gy0) + 2.5;
         build.supply(float(self.long) - 4.0, gy, self.upper, Q3_ARMOR, "q3");
-        build.foe(float(self.long) - 3.5, py + out * 2.0, 0, space_foe(dice, self.danger), 180.0);
-        build.foe(float(self.long) - 6.5, gy, self.upper, space_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, py + out * 2.0, 0, SPACE_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 6.5, gy, self.upper, SPACE_FOES.pick(dice, self.danger, True), 180.0);
         # A few steps in, the gallery's guards come out a moment on.
         walked = build.touch(8.0, 1.0, 0.0, 10.0, float(self.wide - 1), 6.0);
         guards = wake_later(build, walked, 2.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(16 + index * 5) + 0.5, gy, self.upper, space_foe(dice, self.danger), 180.0, waits=guards);
+            build.foe(float(16 + index * 5) + 0.5, gy, self.upper, SPACE_FOES.pick(dice, self.danger), 180.0, waits=guards);
         }
         build.supply(float(self.long) - 3.5, py - out * 3.0, 0, Q3_HEALTH, "q3");
     }
@@ -223,15 +222,15 @@ node PadChamber(Prefab) {
         }
         build.supply(float(cx) - 3.0, float(cy) + 0.5, -6, "item_armor_body", "q3");
         build.supply(float(cx) - 0.5, float(cy) + 2.0, -6, Q3_HEALTH, "q3");
-        build.foe(float(cx) + 3.0, float(cy) - 2.0, -6, space_foe(dice, self.danger), 180.0);
+        build.foe(float(cx) + 3.0, float(cy) - 2.0, -6, SPACE_FOES.pick(dice, self.danger), 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx + 7) + 0.5, 4.5 + float(index) * float(self.wide - 9) / 2.0, 0, space_foe(dice, self.danger), 180.0);
+            build.foe(float(cx + 7) + 0.5, 4.5 + float(index) * float(self.wide - 9) / 2.0, 0, SPACE_FOES.pick(dice, self.danger), 180.0);
         }
         # Out on the floor, the ring's guards come round a moment on.
         walked = build.touch(6.0, 6.0, 0.0, 9.0, float(self.wide - 6), 6.0);
         guards = wake_later(build, walked, 2.5);
-        build.foe(float(self.long) - 3.0, float(cy) + 0.5, u, space_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(3.0, float(cy) + 3.5, u, space_foe(dice, self.danger), 0.0, waits=guards);
+        build.foe(float(self.long) - 3.0, float(cy) + 0.5, u, SPACE_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(3.0, float(cy) + 3.5, u, SPACE_FOES.pick(dice, self.danger), 0.0, waits=guards);
         build.supply(float(self.long) - 3.0, float(cy) + 3.5, u, Q3_HEALTH, "q3");
         build.supply(3.0, float(cy) - 3.5, u, "ammo_rockets", "q3");
     }
@@ -317,14 +316,14 @@ node SpaceWalk(Prefab) {
         build.supply(float(g) + 1.5, float(uy0) + 1.5, u, Q3_ARMOR, "q3");
         build.supply(float(g) + 4.5, float(uy0) + 1.5, u, Q3_HEALTH, "q3");
         build.supply(float(far) - 2.0, float(ly1) + 2.0, 0, "ammo_rockets", "q3");
-        build.foe(float(g) - 5.5, float(ly0) + 2.0, 0, space_foe(dice, self.danger), 180.0);
-        build.foe(float(self.long) - 3.0, float(uy0) + 1.5, u, space_foe(dice, self.danger, True), 180.0);
-        build.foe(float(far) - 4.5, float(uy0) + 1.5, u, space_foe(dice, self.danger), 180.0);
+        build.foe(float(g) - 5.5, float(ly0) + 2.0, 0, SPACE_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.0, float(uy0) + 1.5, u, SPACE_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(float(far) - 4.5, float(uy0) + 1.5, u, SPACE_FOES.pick(dice, self.danger), 180.0);
         # At the break, what holds the far deck comes on.
         brink = build.touch(float(g - 3), float(ly0), 0.0, float(g), float(ly0 + 4), 6.0);
         far_side = wake_later(build, brink, 1.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 2.5, 3.0 + float(index) * float(self.wide - 6) / 2.0, 0, space_foe(dice, self.danger), 180.0, waits=far_side);
+            build.foe(float(self.long) - 2.5, 3.0 + float(index) * float(self.wide - 6) / 2.0, 0, SPACE_FOES.pick(dice, self.danger), 180.0, waits=far_side);
         }
         build.supply(float(self.long) - 3.5, float(ly1) + 2.0, 0, Q3_HEALTH, "q3");
         build.supply(3.0, 3.0, 0, "ammo_bullets", "q2");
@@ -401,18 +400,18 @@ node QuadDais(Prefab) {
         }
         build.supply(float(cx) + 0.5, float(cy) - 1.5, 2, "item_quad", "q3");
         # A guard walks round the dais; others hold the floor's corners.
-        build.foe(float(cx) - 6.5, float(cy) - 6.5, 0, space_foe(dice, self.danger), 0.0, patrol=[[float(cx) - 6.5, float(cy) - 6.5], [float(cx) + 7.5, float(cy) - 6.5], [float(cx) + 7.5, float(cy) + 5.5], [float(cx) - 6.5, float(cy) + 5.5]]);
+        build.foe(float(cx) - 6.5, float(cy) - 6.5, 0, SPACE_FOES.pick(dice, self.danger), 0.0, patrol=[[float(cx) - 6.5, float(cy) - 6.5], [float(cx) + 7.5, float(cy) - 6.5], [float(cx) + 7.5, float(cy) + 5.5], [float(cx) - 6.5, float(cy) + 5.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 8.5, 3.5 + float(index) * 5.0, 0, space_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long) - 8.5, 3.5 + float(index) * 5.0, 0, SPACE_FOES.pick(dice, self.danger), 180.0);
         }
         # Up on the dais, the balconies' guards let loose.
         dais = build.touch(float(cx - 3), float(cy - 3), 2.0, float(cx + 4), float(cy + 4), 8.0);
         guards = build.waiting();
         dais +>:Fires:+> guards;
-        build.foe(float(self.long) - 3.0, 4.5, u, space_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(float(cx) + 2.5, float(self.wide) - 3.0, u, space_foe(dice, self.danger), 270.0, waits=guards);
+        build.foe(float(self.long) - 3.0, 4.5, u, SPACE_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(cx) + 2.5, float(self.wide) - 3.0, u, SPACE_FOES.pick(dice, self.danger), 270.0, waits=guards);
         if self.three {
-            build.foe(float(cx) + 2.5, 3.0, u, space_foe(dice, self.danger), 90.0, waits=guards);
+            build.foe(float(cx) + 2.5, 3.0, u, SPACE_FOES.pick(dice, self.danger), 90.0, waits=guards);
         }
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.5, u, "item_health_mega", "q3");
         build.supply(3.0, 3.0, 0, Q3_HEALTH, "q3");
@@ -477,9 +476,9 @@ node RailPerch(Prefab) {
             build.level(room, -10);
             void_floor(build, 6, 1, px0 - 1, 5, -10, 3.0, float(cy) + 0.5, 0, 0.0, 8);
         }
-        key_ambush(build, self.key, key_x, float(cy) + 0.5, u, side, 0, [2, 7], [space_foe(dice, self.danger, True), space_foe(dice, self.danger)]);
-        build.foe(key_x, float(cy) + 2.5, u, space_foe(dice, self.danger), 180.0);
-        build.foe(float(px0) - 4.5, float(side) - 3.0, 0, space_foe(dice, self.danger), 0.0);
+        key_ambush(build, self.key, key_x, float(cy) + 0.5, u, side, 0, [2, 7], [SPACE_FOES.pick(dice, self.danger, True), SPACE_FOES.pick(dice, self.danger)]);
+        build.foe(key_x, float(cy) + 2.5, u, SPACE_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(px0) - 4.5, float(side) - 3.0, 0, SPACE_FOES.pick(dice, self.danger), 0.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(px0) - 2.0, float(cy) + 3.5, 0, "ammo_rockets", "q3");
         # A shorting panel by the door, sparking now and then.
@@ -546,12 +545,12 @@ node AirlockPortal(Prefab) {
         guards = build.waiting();
         door +>:Fires:+> guards;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 4.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, u, space_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(self.long) - 4.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, u, SPACE_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, space_foe(dice, self.danger), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, SPACE_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(lx) - 2.5, float(self.wide) - 3.5, 0, space_foe(dice, self.danger), 180.0);
+        build.foe(float(lx) - 2.5, float(self.wide) - 3.5, 0, SPACE_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(2.5, float(self.wide) - 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(lx) - 2.0, 3.0, 0, "ammo_rockets", "q3");

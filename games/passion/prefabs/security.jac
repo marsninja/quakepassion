@@ -26,21 +26,15 @@ security's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, lift }
 import from .warejail_parts { shutter, auto_shutters, key_cue, sparking, guards, charges, keep_row, called_lift, closets, gate_pair, post_button, laser, laser_grid, drip, hurt, sweeper, pulse_wave }
 
 glob SECURITY: str = "q2:security";
 
 """security's foes: berserkers and tanks, gunners and gladiators beside."""
-def security_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_berserk", "monster_gladiator"] if heavy else ["monster_berserk", "monster_gunner", "monster_infantry"], ["monster_tank"] if heavy else ["monster_gladiator"], danger * 0.5 if heavy else danger));
-}
+glob SECURITY_FOES: FoeMix = FoeMix(light=["monster_berserk", "monster_gunner", "monster_infantry"], strong=["monster_gladiator"], heavy_light=["monster_berserk", "monster_gladiator"], heavy_strong=["monster_tank"], heavy_scale=0.5);
 
-"""`count` of security's foes, the first heavy when `heavy`."""
-def security_foes(dice: Stream, danger: float, count: int, heavy: bool = False) -> list[str] {
-    return [security_foe(dice, danger, heavy and index == 0) for index in range(count)];
-}
 
 """A sweeping laser from an emitter in the wall at the cell line y = 1 (at
 x `lx`), aimed at a carrier riding along y = `ty` from `x0` to `x1`; its
@@ -127,10 +121,10 @@ node GridEntry(Prefab) {
         build.touch(1.0, 1.0, 0.0, 4.0, float(self.wide - 1), 8.0) +>:Fires:+> build.objective("Locate and destroy grid control");
         # Halfway, guards appear on the walk.
         halfway = build.touch(float(self.long // 2), 1.0, 0.0, float(self.long // 2 + 1), float(wy), 6.0);
-        guards(build, halfway, [[float(self.long) - 3.5, float(self.wide) - 3.0], [float(self.long) - 8.5, float(self.wide) - 3.0]], self.walk, security_foes(dice, self.danger, 2), 180.0);
+        guards(build, halfway, [[float(self.long) - 3.5, float(self.wide) - 3.0], [float(self.long) - 8.5, float(self.wide) - 3.0]], self.walk, SECURITY_FOES.squad(dice, self.danger, 2), 180.0);
         build.foe(12.5, float(self.wide) - 3.0, self.walk, "monster_infantry", 0.0, patrol=[[12.5, float(self.wide) - 3.0], [float(self.long) - 3.5, float(self.wide) - 3.0]]);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 3.5, float(middle) - 3.5 + float(index) * 3.0, 0, security_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(self.long) - 3.5, float(middle) - 3.5 + float(index) * 3.0, 0, SECURITY_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.supply(float(self.long) - 2.5, 2.5, 0, Q2_HEALTH, "q2");
         build.supply(14.5, float(self.wide) - 2.5, self.walk, Q2_ARMOR, "q2");
@@ -205,9 +199,9 @@ node LiftTower(Prefab) {
         auto_shutters(build, dice, self, self.taken, 0.5);
         # Riding up, guards appear on the platforms above.
         first = build.touch(1.0, float(north), float(r), float(self.long - 1), float(self.wide - 1), float(r + 6));
-        guards(build, first, [[float(self.long // 2) + 0.5, 3.0]], 2 * r, security_foes(dice, self.danger, 1), 90.0);
-        guards(build, first, [[float(self.long // 2) + 0.5, float(self.wide) - 3.0]], 3 * r, security_foes(dice, self.danger, 1, True), 270.0);
-        build.foe(float(self.long // 2) + 0.5, 4.5, 0, security_foe(dice, self.danger), 90.0);
+        guards(build, first, [[float(self.long // 2) + 0.5, 3.0]], 2 * r, SECURITY_FOES.squad(dice, self.danger, 1), 90.0);
+        guards(build, first, [[float(self.long // 2) + 0.5, float(self.wide) - 3.0]], 3 * r, SECURITY_FOES.squad(dice, self.danger, 1, True), 270.0);
+        build.foe(float(self.long // 2) + 0.5, 4.5, 0, SECURITY_FOES.pick(dice, self.danger), 90.0);
         build.foe(3.5, float(self.wide) - 2.5, r, "monster_infantry", 0.0, patrol=[[3.5, float(self.wide) - 2.5], [float(self.long) - 6.5, float(self.wide) - 2.5]]);
         build.supply(float(self.long) - 3.5, 2.5, 2 * r, Q2_HEALTH, "q2");
         build.supply(4.5, float(self.wide) - 2.5, 3 * r, Q2_HEALTH, "q2");
@@ -303,10 +297,10 @@ node LaserMaze(Prefab) {
         auto_shutters(build, dice, self, self.taken, 0.5);
         # On the catwalk, guards appear at its far end.
         up = build.touch(5.0, float(cy), float(self.walk), 8.0, float(self.wide - 1), float(self.walk + 6));
-        guards(build, up, [[float(self.long) - 3.5, float(self.wide) - 3.0]], self.walk, security_foes(dice, self.danger, 1, True), 180.0);
-        guards(build, up, [[float(self.long) - 4.5, float(middle) - 3.5]], 0, security_foes(dice, self.danger, 1), 180.0);
+        guards(build, up, [[float(self.long) - 3.5, float(self.wide) - 3.0]], self.walk, SECURITY_FOES.squad(dice, self.danger, 1, True), 180.0);
+        guards(build, up, [[float(self.long) - 4.5, float(middle) - 3.5]], 0, SECURITY_FOES.squad(dice, self.danger, 1), 180.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(12 + index * 8) + 0.5, float(middle) - 2.5, 0, security_foe(dice, self.danger), 180.0);
+            build.foe(float(12 + index * 8) + 0.5, float(middle) - 2.5, 0, SECURITY_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(float(self.long // 2) + 0.5, float(self.wide) - 3.0, self.walk, Q2_ARMOR, "q2");
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
@@ -406,11 +400,11 @@ node GridControl(Prefab) {
         # Coming in, guards appear on the balcony; the tank waits by the
         # control late in a run.
         come_in = build.touch(1.0, float(cy - 3), 0.0, 4.0, float(cy + 3), 6.0);
-        guards(build, come_in, [[float(cx) + 0.5, float(self.wide) - 2.5]], b, security_foes(dice, self.danger, 1), 270.0);
+        guards(build, come_in, [[float(cx) + 0.5, float(self.wide) - 2.5]], b, SECURITY_FOES.squad(dice, self.danger, 1), 270.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(4 + index * 6) + 0.5, 4.5, 0, security_foe(dice, self.danger, index == 0), 90.0);
+            build.foe(float(4 + index * 6) + 0.5, 4.5, 0, SECURITY_FOES.pick(dice, self.danger, index == 0), 90.0);
         }
-        build.foe(float(cx) + 4.5, float(cy) + 0.5, 0, "monster_tank" if self.danger > 0.7 else security_foe(dice, self.danger, True), 180.0);
+        build.foe(float(cx) + 4.5, float(cy) + 0.5, 0, "monster_tank" if self.danger > 0.7 else SECURITY_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(3.5, float(self.wide) - 2.5, b, "monster_infantry", 0.0, patrol=[[6.5, float(self.wide) - 2.5], [float(self.long) - 2.5, float(self.wide) - 2.5]]);
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, b, Q2_ARMOR, "q2");
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
@@ -463,7 +457,7 @@ node MonitorRoom(Prefab) {
         # The key by the monitors; taking it opens the closets, switches on
         # lasers across the floor and a sweep along it.
         taken = key_cue(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, self.upper);
-        closets(build, taken, [3, 8] if dice.chance(0.5) else [3, 9], side, -1, 0, security_foes(dice, self.danger, 2, True), 90.0);
+        closets(build, taken, [3, 8] if dice.chance(0.5) else [3, 9], side, -1, 0, SECURITY_FOES.squad(dice, self.danger, 2, True), 90.0);
         for x in [6.5, 10.5] {
             taken +>:Fires:+> laser(build, x, float(side) + 1.2, 2.0, 1, False);
         }
@@ -473,7 +467,7 @@ node MonitorRoom(Prefab) {
         build.push(1.0, float(side) + 2.5, 1.0, 0) +>:Fires:+> sweep;
         build.touch(float(mx - 4), float(side + 1), 0.0, float(mx - 3), float(self.wide - 1), 6.0, False, "Grid sensors active");
         pulse_wave(build, [sweep], 3.0, 0.5);
-        build.foe(float(self.long) - 3.0, float(side) + 2.5, self.upper, security_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.0, float(side) + 2.5, self.upper, SECURITY_FOES.pick(dice, self.danger), 180.0);
         build.foe(4.5, float(cy) + 3.5, 0, "monster_infantry", 0.0, patrol=[[4.5, float(cy) + 3.5], [float(mx) - 4.5, float(cy) + 3.5]]);
         build.supply(2.5, float(side) + 2.5, 0, Q2_HEALTH, "q2");
         sparking(build, float(self.long) - 2.2, float(cy) - 2.5, float(self.upper) + 2.0, 2, 3.0);
@@ -522,9 +516,9 @@ node GridExit(Prefab) {
         }
         # On the ledge, guards appear in the pit.
         ledge = build.touch(float(wall + 1), 1.0, 0.0, float(wall + 4), float(self.wide - 1), 6.0);
-        guards(build, ledge, [[float(self.long) - 5.5, 3.5], [float(self.long) - 5.5, float(self.wide) - 3.5]], low, security_foes(dice, self.danger, 2, True), 180.0);
+        guards(build, ledge, [[float(self.long) - 5.5, 3.5], [float(self.long) - 5.5, float(self.wide) - 3.5]], low, SECURITY_FOES.squad(dice, self.danger, 2, True), 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, security_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, SECURITY_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
         build.touch(float(self.long - 9), 1.0, float(low), float(self.long - 8), float(self.wide - 1), float(low + 6), False, "Grid sensors active");

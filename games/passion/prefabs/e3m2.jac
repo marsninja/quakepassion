@@ -34,7 +34,7 @@ gold key caged across a pit of the dead. Raised in e3m2's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, pillars, lift }
 import from .e2m4 { e2m4_bars, e2m4_key, e2m4_closets, e2m4_stash }
 import from .e2m7 { e2m7_plate }
@@ -43,9 +43,7 @@ glob E3M2: str = "q1:e3m2";
 
 """e3m2's foes: the dead and ogres, scrags, fiends and a shambler deeper
 in."""
-def e3m2_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_ogre", "monster_ogre", "monster_demon1"] if heavy else ["monster_zombie", "monster_zombie", "monster_ogre", "monster_wizard"], ["monster_demon1", "monster_shambler"] if heavy else ["monster_ogre"], danger * 0.7 if heavy else danger));
-}
+glob E3M2_FOES: FoeMix = FoeMix(light=["monster_zombie", "monster_zombie", "monster_ogre", "monster_wizard"], strong=["monster_ogre"], heavy_light=["monster_ogre", "monster_ogre", "monster_demon1"], heavy_strong=["monster_demon1", "monster_shambler"], heavy_scale=0.7);
 
 """A door to be shot open: a door of the prefab's cells that rises when
 it takes a hit."""
@@ -129,13 +127,13 @@ node ZinGate(Prefab) {
         waiting_by = build.waiting();
         press +>:Fires:+> waiting_by;
         for index in range(2) {
-            build.foe(float(self.long) - 4.5, float(middle) - 2.5 + float(index) * 5.0, 0, e3m2_foe(dice, self.danger, index == 0), 180.0, waits=waiting_by);
+            build.foe(float(self.long) - 4.5, float(middle) - 2.5 + float(index) * 5.0, 0, E3M2_FOES.pick(dice, self.danger, index == 0), 180.0, waits=waiting_by);
         }
         # Walking into the court opens the crypts on their dead.
         into = build.touch(float(self.long // 2 - 2), 6.0, 0.0, float(self.long // 2 + 2), float(inner), 6.0);
         dead = build.waiting();
         into +>:Fires:+> dead;
-        e2m4_closets(build, [x for x in [8, 14, 20] if x + 3 < self.long - 4], inner, 0, into, dead, ["monster_zombie", "monster_zombie", e3m2_foe(dice, self.danger)]);
+        e2m4_closets(build, [x for x in [8, 14, 20] if x + 3 < self.long - 4], inner, 0, into, dead, ["monster_zombie", "monster_zombie", E3M2_FOES.pick(dice, self.danger)]);
         # A door in the north wall that opens on a stash when shot.
         if self.stash {
             vault = build.room(2, inner + 1, 0, 5, inner + 4, 6);
@@ -219,9 +217,9 @@ node CollapseHall(Prefab) {
         # A stash in the pit's near wall, behind a wall that opens when shot.
         e2m4_stash(build, 4, 6, 6, 8, -9, 0, "item_artifact_super_damage");
         for index in range(dice.between(3, 5)) {
-            build.foe(float(10 + index * 3) + 0.5, 3.5 + float(index % 3) * 3.0, -9, "monster_zombie" if index > 0 else e3m2_foe(dice, self.danger, True), 90.0, waits=dead);
+            build.foe(float(10 + index * 3) + 0.5, 3.5 + float(index % 3) * 3.0, -9, "monster_zombie" if index > 0 else E3M2_FOES.pick(dice, self.danger, True), 90.0, waits=dead);
         }
-        build.foe(float(self.long) - 4.5, 2.5, 0, e3m2_foe(dice, self.danger), 90.0, patrol=[[float(self.long) - 4.5, 2.5], [float(self.long) - 4.5, float(self.wide) - 2.5]]);
+        build.foe(float(self.long) - 4.5, 2.5, 0, E3M2_FOES.pick(dice, self.danger), 90.0, patrol=[[float(self.long) - 4.5, 2.5], [float(self.long) - 4.5, float(self.wide) - 2.5]]);
         build.foe(float(self.long // 2) + 0.5, float(mid) + 0.5, 5, "monster_wizard", 180.0);
         build.supply(2.5, 2.5, 0, "item_health");
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, 0, "item_rockets");
@@ -267,7 +265,7 @@ node CrusherCorridor(Prefab) {
         for x in range(bays[-1], bays[-1] + 3) {
             build.keep(corridor, x, 5, 9);
         }
-        build.foe(4.5, 4.5, 9, e3m2_foe(dice, self.danger, True), 0.0);
+        build.foe(4.5, 4.5, 9, E3M2_FOES.pick(dice, self.danger, True), 0.0);
         build.supply(2.5, 4.5, 9, "item_health");
         # The ceilings that slam down on whoever walks under them.
         for index in range(self.crushers) {
@@ -291,9 +289,9 @@ node CrusherCorridor(Prefab) {
         coming = build.touch(1.0, 1.0, 0.0, 3.0, 6.0, 6.0);
         dead = build.waiting();
         coming +>:Fires:+> dead;
-        e2m4_closets(build, bays[:-1], 6, 0, coming, dead, ["monster_zombie", e3m2_foe(dice, self.danger)]);
-        build.foe(float(bays[-1]) + 1.5, 7.5, 0, e3m2_foe(dice, self.danger), 270.0, waits=dead);
-        build.foe(float(self.long) - 4.5, 3.5, 0, e3m2_foe(dice, self.danger), 180.0, patrol=[[float(self.long) - 4.5, 3.5], [4.5, 3.5]]);
+        e2m4_closets(build, bays[:-1], 6, 0, coming, dead, ["monster_zombie", E3M2_FOES.pick(dice, self.danger)]);
+        build.foe(float(bays[-1]) + 1.5, 7.5, 0, E3M2_FOES.pick(dice, self.danger), 270.0, waits=dead);
+        build.foe(float(self.long) - 4.5, 3.5, 0, E3M2_FOES.pick(dice, self.danger), 180.0, patrol=[[float(self.long) - 4.5, 3.5], [4.5, 3.5]]);
         build.supply(float(self.long // 2) + 0.5, 3.5, 0, "item_health");
         build.supply(2.5, 2.5, 0, "item_shells");
     }
@@ -381,10 +379,10 @@ node ZinHall(Prefab) {
         guard = build.waiting();
         arrive +>:Fires:+> guard;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 3.5, 3.5 + float(index) * (float(inner) - 7.0), b, e3m2_foe(dice, self.danger, True), 180.0, waits=guard);
+            build.foe(float(self.long) - 3.5, 3.5 + float(index) * (float(inner) - 7.0), b, E3M2_FOES.pick(dice, self.danger, True), 180.0, waits=guard);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(6 + index * 2) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), 0, e3m2_foe(dice, self.danger), 0.0, patrol=[[float(6 + index * 2) + 0.5, 6.5], [float(6 + index * 2) + 0.5, float(inner) - 6.5]]);
+            build.foe(float(6 + index * 2) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), 0, E3M2_FOES.pick(dice, self.danger), 0.0, patrol=[[float(6 + index * 2) + 0.5, 6.5], [float(6 + index * 2) + 0.5, float(inner) - 6.5]]);
         }
         build.supply(float(self.long) - 2.5, float(middle) + 3.5, b, "item_health");
         build.supply(2.5, 2.5, 0, "item_shells");
@@ -462,11 +460,11 @@ node ZinVault(Prefab) {
         taken = e2m4_key(build, self.key, float(self.long) - 2.5, float(cy) + 0.5, 0);
         out = build.waiting();
         taken +>:Fires:+> out;
-        e2m4_closets(build, [2, px1 + 1], side, 0, taken, out, [e3m2_foe(dice, self.danger, True), e3m2_foe(dice, self.danger)]);
+        e2m4_closets(build, [2, px1 + 1], side, 0, taken, out, [E3M2_FOES.pick(dice, self.danger, True), E3M2_FOES.pick(dice, self.danger)]);
         late = build.delay(1.5);
         taken +>:Fires:+> late;
         late +>:Fires:+> build.summon(1, 2, -8, "monster_shambler" if self.danger > 0.6 else "monster_demon1", float(px1) + 2.5, float(cy) + 0.5, 0, 0.0);
-        build.foe(float(px1) + 4.5, 2.5, 0, e3m2_foe(dice, self.danger), 180.0, patrol=[[float(px1) + 4.5, 2.5], [float(px1) + 4.5, float(side) - 4.5]]);
+        build.foe(float(px1) + 4.5, 2.5, 0, E3M2_FOES.pick(dice, self.danger), 180.0, patrol=[[float(px1) + 4.5, 2.5], [float(px1) + 4.5, float(side) - 4.5]]);
         # A gallery along the south wall over the pit, a lift up to it from
         # the far floor.
         build.level(vault, 7);
@@ -475,7 +473,7 @@ node ZinVault(Prefab) {
         for x in range(px1 + 1, px1 + 4) {
             build.keep(vault, x, 3, 7);
         }
-        build.foe(float(px0) + 2.5, 2.5, 7, e3m2_foe(dice, self.danger), 0.0);
+        build.foe(float(px0) + 2.5, 2.5, 7, E3M2_FOES.pick(dice, self.danger), 0.0);
         build.supply(float(px0 + px1) * 0.5, 2.5, 7, "item_health");
         build.supply(2.5, 2.5, 0, "item_health");
         build.supply(float(px0 + 2) + 0.5, float(side) - 2.5, -7, "item_health");
@@ -531,14 +529,14 @@ node ZinExit(Prefab) {
         nave = build.touch(float(wall + 6), 1.0, 0.0, float(wall + 8), float(inner), 6.0);
         dead = build.waiting();
         nave +>:Fires:+> dead;
-        e2m4_closets(build, [x for x in [wall + 4, wall + 9, wall + 14] if x + 3 < dx], inner, 0, nave, dead, ["monster_zombie", e3m2_foe(dice, self.danger, True)]);
+        e2m4_closets(build, [x for x in [wall + 4, wall + 9, wall + 14] if x + 3 < dx], inner, 0, nave, dead, ["monster_zombie", E3M2_FOES.pick(dice, self.danger, True)]);
         late = build.delay(2.0);
         nave +>:Fires:+> late;
-        late +>:Fires:+> build.summon(1, 2, -8, e3m2_foe(dice, self.danger, True), float(wall) + 2.5, float(middle) + 0.5, 0, 0.0);
+        late +>:Fires:+> build.summon(1, 2, -8, E3M2_FOES.pick(dice, self.danger, True), float(wall) + 2.5, float(middle) + 0.5, 0, 0.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, e3m2_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, E3M2_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(dx) - 2.5, float(middle) + 0.5, 0, e3m2_foe(dice, self.danger), 180.0, patrol=[[float(dx) - 2.5, 2.5], [float(dx) - 2.5, float(inner) - 2.5]]);
+        build.foe(float(dx) - 2.5, float(middle) + 0.5, 0, E3M2_FOES.pick(dice, self.danger), 180.0, patrol=[[float(dx) - 2.5, 2.5], [float(dx) - 2.5, float(inner) - 2.5]]);
         # A gallery along the nave's south wall, a lift up to it.
         build.level(chapel, 9);
         build.solid(wall + 1, 1, 8, dx, 4, 9);
@@ -546,7 +544,7 @@ node ZinExit(Prefab) {
         for x in range(wall + 1, wall + 4) {
             build.keep(chapel, x, 3, 9);
         }
-        build.foe(float(dx) - 3.5, 2.5, 9, e3m2_foe(dice, self.danger), 180.0, patrol=[[float(dx) - 3.5, 2.5], [float(wall) + 5.5, 2.5]]);
+        build.foe(float(dx) - 3.5, 2.5, 9, E3M2_FOES.pick(dice, self.danger), 180.0, patrol=[[float(dx) - 3.5, 2.5], [float(wall) + 5.5, 2.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
     }
 }

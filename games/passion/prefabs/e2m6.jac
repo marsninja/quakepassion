@@ -39,7 +39,7 @@ a drowned pit, and the way out on an island. Raised in e2m6's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, spiral, ring_path, ring_landing, lift }
 import from .e2m4 { e2m4_bars, e2m4_key, e2m4_moat, e2m4_stash }
 
@@ -47,9 +47,7 @@ glob E2M6: str = "q1:e2m6";
 
 """e2m6's foes: the dead and fiends, hell knights and ogres, a vore deeper
 in."""
-def e2m6_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_hell_knight", "monster_ogre"] if heavy else ["monster_zombie", "monster_zombie", "monster_ogre"], ["monster_shalrath"] if heavy else ["monster_demon1"], danger * 0.5 if heavy else danger));
-}
+glob E2M6_FOES: FoeMix = FoeMix(light=["monster_zombie", "monster_zombie", "monster_ogre"], strong=["monster_demon1"], heavy_light=["monster_hell_knight", "monster_ogre"], heavy_strong=["monster_shalrath"], heavy_scale=0.5);
 
 """A relay that says `message` to who set it off (e2m6's "The second floor
 is accessible"), fired by the cues wired to it."""
@@ -181,7 +179,7 @@ node OublietteLedge(Prefab) {
         guard = build.waiting();
         across +>:Fires:+> guard;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 2.5, 4.5 + float(index) * 5.0, h, e2m6_foe(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(float(self.long) - 2.5, 4.5 + float(index) * 5.0, h, E2M6_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
         build.foe(float(self.long) - 4.5, 2.5, h, "monster_ogre", 90.0, patrol=[[float(self.long) - 4.5, 2.5], [float(self.long) - 4.5, float(self.wide) - 2.5]]);
         build.foe(float(nl + 12) + 0.5, float(middle) + 0.5, 5, "monster_wizard", 180.0);
@@ -279,9 +277,9 @@ node SunkenLake(Prefab) {
         brink = build.touch(4.0, 1.0, 0.0, 6.0, float(self.wide - 1), 6.0);
         guard = build.waiting();
         brink +>:Fires:+> guard;
-        build.foe(float(fx) + 2.5, float(middle) - 1.5, 0, e2m6_foe(dice, self.danger, True), 180.0, waits=guard);
+        build.foe(float(fx) + 2.5, float(middle) - 1.5, 0, E2M6_FOES.pick(dice, self.danger, True), 180.0, waits=guard);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(fx) + 3.5, float(middle) + 2.5 + float(index) * 3.0, 0, e2m6_foe(dice, self.danger), 180.0, waits=guard);
+            build.foe(float(fx) + 3.5, float(middle) + 2.5 + float(index) * 3.0, 0, E2M6_FOES.pick(dice, self.danger), 180.0, waits=guard);
         }
         build.foe(8.5, float(self.wide) - 3.0, s, "monster_hell_knight" if self.danger > 0.3 else "monster_knight", 0.0, patrol=[[8.5, float(self.wide) - 3.0], [float(self.long) - 3.0, float(self.wide) - 3.0], [float(self.long) - 3.0, 7.5]]);
         for index in range(dice.between(1, 2)) {
@@ -393,7 +391,7 @@ node ChangingBridge(Prefab) {
         guard = build.waiting();
         middle_touch +>:Fires:+> guard;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(p1) + 2.5, 3.5 + float(index) * 4.0, 0, e2m6_foe(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(float(p1) + 2.5, 3.5 + float(index) * 4.0, 0, E2M6_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
         late = build.delay(2.0);
         near +>:Fires:+> late;
@@ -499,7 +497,7 @@ node CellBlock(Prefab) {
             if index % 2 == 0 {
                 build.foe(float(x) + 2.5, 2.5, 0, "monster_zombie", 90.0, waits=dead);
             } else {
-                build.foe(float(x) + 2.5, float(self.wide) - 2.5, 0, e2m6_foe(dice, self.danger), 270.0, waits=dead);
+                build.foe(float(x) + 2.5, float(self.wide) - 2.5, 0, E2M6_FOES.pick(dice, self.danger), 270.0, waits=dead);
             }
         }
         # A button on the back wall of a cell opens the stair's bars.
@@ -519,7 +517,7 @@ node CellBlock(Prefab) {
             late +>:Fires:+> build.summon(2 + index * 5, 6, -8, "monster_zombie", float(sx) - 3.5, float(middle) - 1.5 + float(index) * 3.0, 0, 180.0);
         }
         build.foe(7.5, float(self.wide) - 3.0, g, "monster_hell_knight" if self.danger > 0.3 else "monster_knight", 0.0, patrol=[[7.5, float(self.wide) - 3.0], [float(self.long) - 3.5, float(self.wide) - 3.0]]);
-        build.foe(float(self.long) - 6.5, 3.0, g, e2m6_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 6.5, 3.0, g, E2M6_FOES.pick(dice, self.danger, True), 180.0);
         if self.stash {
             build.solid(1, self.wide - 5, g, 6, self.wide - 1, g + 6);
             e2m4_stash(build, 2, self.wide - 4, 4, self.wide - 2, g, 0, "item_artifact_super_damage");
@@ -587,7 +585,7 @@ node DeepWell(Prefab) {
         foot = build.touch(4.0, 4.0, 0.0, float(self.long - 4), 5.0, 6.0);
         keeper = build.waiting();
         foot +>:Fires:+> keeper;
-        build.foe(float(self.long) - 4.5, float(self.wide // 2) + 0.5, 0, e2m6_foe(dice, self.danger, True), 180.0, waits=keeper);
+        build.foe(float(self.long) - 4.5, float(self.wide // 2) + 0.5, 0, E2M6_FOES.pick(dice, self.danger, True), 180.0, waits=keeper);
         late = build.delay(1.5);
         foot +>:Fires:+> late;
         behind = path[(self.steps // 3) % lap];
@@ -668,7 +666,7 @@ node DrownedKey(Prefab) {
             door = {"wait": "-1"};
             build.rising_door(float(at), float(side), 0.0, float(at + 3), float(side + 1), 6.0, door);
             taken +>:Fires:+> build.cue([door], "door");
-            build.foe(float(at) + 1.5, float(side) + 2.5, 0, e2m6_foe(dice, self.danger, index == 0), 270.0, waits=out);
+            build.foe(float(at) + 1.5, float(side) + 2.5, 0, E2M6_FOES.pick(dice, self.danger, index == 0), 270.0, waits=out);
         }
         late = build.delay(1.0);
         taken +>:Fires:+> late;
@@ -676,7 +674,7 @@ node DrownedKey(Prefab) {
         for index in range(dice.between(1, 2)) {
             build.foe(float(9 + index * 5) + 0.5, float(cy) + 2.5, -d + 1, "monster_fish", 0.0);
         }
-        build.foe(float(self.long) - 2.5, float(side) - 1.5, 0, e2m6_foe(dice, self.danger), 180.0, patrol=[[float(self.long) - 2.5, float(side) - 1.5], [3.5, float(side) - 1.5]]);
+        build.foe(float(self.long) - 2.5, float(side) - 1.5, 0, E2M6_FOES.pick(dice, self.danger), 180.0, patrol=[[float(self.long) - 2.5, float(side) - 1.5], [3.5, float(side) - 1.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
         build.supply(3.5, float(side) - 2.5, 0, "item_health");
     }
@@ -751,14 +749,14 @@ node DismalExit(Prefab) {
         for index in range(dice.between(1, 2)) {
             build.foe(float(x0 + 4 + index * 6) + 0.5, 2.5, 8, "monster_ogre", 90.0, waits=wake);
         }
-        build.foe(float(ix) + 1.5, float(middle) + 1.5, 0, e2m6_foe(dice, self.danger, True), 180.0, waits=wake);
+        build.foe(float(ix) + 1.5, float(middle) + 1.5, 0, E2M6_FOES.pick(dice, self.danger, True), 180.0, waits=wake);
         # Fiends brought in on the shore as the door opens.
         late = build.delay(3.0);
         through +>:Fires:+> late;
-        late +>:Fires:+> build.summon(1, 2, -9, e2m6_foe(dice, self.danger, True), float(wall) + 3.5, float(middle) + 4.5, 0, 0.0);
+        late +>:Fires:+> build.summon(1, 2, -9, E2M6_FOES.pick(dice, self.danger, True), float(wall) + 3.5, float(middle) + 4.5, 0, 0.0);
         late +>:Fires:+> build.summon(5, 2, -9, "monster_demon1" if self.danger > 0.4 else "monster_ogre", float(wall) + 2.5, float(middle) + 2.5, 0, 0.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 6.5 + float(index) * 4.0, 0, e2m6_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 6.5 + float(index) * 4.0, 0, E2M6_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(float(x0) + 4.5, float(middle) + 4.5, -d + 1, "monster_fish", 0.0);
         if self.stash {

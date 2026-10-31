@@ -26,7 +26,7 @@ Raised in hangar1's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush }
 import from .plant_parts { key_doors, open_ways, charges, sparking, stash, crate_pile, squad, keep_box, plat, laser, quake, port_door, hurting }
 
@@ -34,12 +34,7 @@ glob HANGAR1: str = "q2:hangar1";
 
 """hangar1's foes: infantry and gunners, hovers, a tank deeper in; flippers
 in the water."""
-def hangar1_foe(dice: Stream, danger: float, heavy: bool = False, flying: bool = False) -> str {
-    if flying {
-        return "monster_hover" if dice.chance(0.7) else "monster_flyer";
-    }
-    return q1_foe(dice, q1_palette(["monster_infantry", "monster_gunner"] if heavy else ["monster_infantry", "monster_infantry", "monster_gunner"], ["monster_tank"] if heavy else ["monster_gunner"], danger * 0.3 if heavy else danger * 0.6));
-}
+glob HANGAR1_FOES: FoeMix = FoeMix(light=["monster_infantry", "monster_infantry", "monster_gunner"], strong=["monster_gunner"], heavy_light=["monster_infantry", "monster_gunner"], heavy_strong=["monster_tank"], scale=0.6, heavy_scale=0.3, flying="monster_flyer", flying_other="monster_hover", flying_odds=0.7);
 
 """A door that closes when its cue fires: Quake II's START_OPEN func_door
 drawn shut in the cells x0..x1, y0..y1, z0..z1, waiting slid aside into
@@ -115,7 +110,7 @@ node HangarApron(Prefab) {
         shutter = build.opened(float(self.long - 6), float(self.wide - 6), 0.0, float(self.long - 5), float(self.wide - 2), 5.0);
         lever = build.push(float(self.long) - 3.0, float(self.wide - 7), 1.5, 3);
         lever +>:Fires:+> shutter;
-        squad(build, lever, [[float(self.long) - 3.0, float(self.wide) - 4.0, 0.0]], [hangar1_foe(dice, self.danger, True)], 180.0);
+        squad(build, lever, [[float(self.long) - 3.0, float(self.wide) - 4.0, 0.0]], [HANGAR1_FOES.pick(dice, self.danger, True)], 180.0);
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, 0, "ammo_cells", "q2");
         open_ways(build, apron, self);
         build.start(2.5, float(cy) - 1.5, 0, 0.0);
@@ -125,7 +120,7 @@ node HangarApron(Prefab) {
         mission +>:Fires:+> build.objective("Close main hangar bay door.\nDestroy blackhole generator.");
         mission +>:Fires:+> build.objective("Find a way into the main\nhangar bay installation.", False);
         crossing = build.touch(float(self.long // 2 - 1), 10.0, 0.0, float(self.long // 2 + 1), float(self.wide - 1), 6.0);
-        squad(build, crossing, [[float(self.long) - 3.5, float(self.wide) - 4.5, float(b)], [float(self.long) - 3.5, 13.5, float(b)]], [hangar1_foe(dice, self.danger), "monster_infantry"], 180.0);
+        squad(build, crossing, [[float(self.long) - 3.5, float(self.wide) - 4.5, float(b)], [float(self.long) - 3.5, 13.5, float(b)]], [HANGAR1_FOES.pick(dice, self.danger), "monster_infantry"], 180.0);
         charges(build, crossing, [[float(self.long) - 2.0, 6.0, 10.0], [float(self.long) - 8.0, 3.0, 12.0]], 0.3);
         for index in range(2) {
             fx = 9.5 + float(index) * 10.0;
@@ -133,8 +128,8 @@ node HangarApron(Prefab) {
         }
         build.foe(4.5, 10.5, 0, "monster_infantry", 0.0, patrol=[[4.5, 10.5], [float(self.long) - 8.5, 10.5]]);
         build.foe(8.5, 3.0, 6, "monster_infantry", 0.0, patrol=[[8.5, 3.0], [float(self.long) - 7.5, 3.0]]);
-        build.foe(float(self.long // 2) + 0.5, float(cy) + 3.5, 8, hangar1_foe(dice, self.danger, False, True), 180.0, patrol=[[float(self.long // 2) + 0.5, float(cy) + 3.5], [8.5, float(cy) + 3.5]]);
-        build.foe(float(self.long) - 9.5, float(cy) + 3.5, 0, hangar1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long // 2) + 0.5, float(cy) + 3.5, 8, HANGAR1_FOES.pick(dice, self.danger, False, True), 180.0, patrol=[[float(self.long // 2) + 0.5, float(cy) + 3.5], [8.5, float(cy) + 3.5]]);
+        build.foe(float(self.long) - 9.5, float(cy) + 3.5, 0, HANGAR1_FOES.pick(dice, self.danger, True), 180.0);
         sparking(build, dice.uniform(4.0, 6.0), float(self.long) - 1.2, 12.0, 4.0, 2);
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, b, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 8.0, 3.0, 6, "ammo_rockets", "q2");
@@ -194,12 +189,12 @@ node FloodedSump(Prefab) {
         dive = build.touch(8.0, 1.0, -10.0, 12.0, float(self.wide - 1), -2.0);
         squad(build, dive, [[float(wx) + 5.5, float(cy) - 2.5, -9.0], [float(wx) + 9.5, float(cy) + 2.5, -9.0]], ["monster_flipper"], 180.0);
         landed = build.touch(float(self.long - 7), 4.0, 0.0, float(self.long - 5), float(self.wide - 1), 6.0);
-        landed +>:Fires:+> build.summon(self.long - 5, cy - 1, -9, hangar1_foe(dice, self.danger, True), float(self.long) - 3.5, float(cy) + 0.5, 0, 180.0);
-        squad(build, landed, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 3.5, float(self.wide) - 3.5, 0.0]], [hangar1_foe(dice, self.danger), hangar1_foe(dice, self.danger, True)], 180.0);
+        landed +>:Fires:+> build.summon(self.long - 5, cy - 1, -9, HANGAR1_FOES.pick(dice, self.danger, True), float(self.long) - 3.5, float(cy) + 0.5, 0, 180.0);
+        squad(build, landed, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 3.5, float(self.wide) - 3.5, 0.0]], [HANGAR1_FOES.pick(dice, self.danger), HANGAR1_FOES.pick(dice, self.danger, True)], 180.0);
         build.foe(9.5, float(cy) + 0.5, -9, "monster_flipper", 0.0, patrol=[[9.5, float(cy) + 0.5], [float(wx) - 1.5, float(cy) + 0.5], [float(wx) - 1.5, 3.5], [9.5, 3.5]]);
         build.foe(float(wx) + 4.5, float(cy) + 0.5, -9, "monster_flipper", 0.0, patrol=[[float(wx) + 4.5, float(cy) + 0.5], [float(self.long) - 9.5, float(cy) + 0.5]]);
         build.foe(3.5, 3.5, 0, "monster_infantry", 90.0, patrol=[[3.5, 3.5], [3.5, float(self.wide) - 6.5]]);
-        build.foe(float(self.long // 2), float(cy) + 0.5, 4, hangar1_foe(dice, self.danger, False, True), 180.0);
+        build.foe(float(self.long // 2), float(cy) + 0.5, 4, HANGAR1_FOES.pick(dice, self.danger, False, True), 180.0);
         sparking(build, dice.uniform(3.0, 5.0), float(wx) - 0.2, float(cy) - 3.0, 3.0, 2);
         build.supply(3.0, float(self.wide) - 3.0, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.0, float(cy) + 0.5, 0, Q2_ARMOR, "q2");
@@ -270,9 +265,9 @@ node BayHangar(Prefab) {
         build.train([4.0, 4.0, 1.0], [[6.0, float(cy - 2), float(self.tall - 3)], [float(self.long - 10), float(cy - 2), float(self.tall - 3)]], 60.0, 3.0);
         open_ways(build, bay, self);
         up = build.touch(4.0, 4.0, float(g), 9.0, 9.0, float(g + 6));
-        squad(build, up, [[float(self.long) - 3.0, float(cy) + 4.5, float(g)], [float(cx) + 0.5, float(cy) + 3.5, float(g - 1)]], [hangar1_foe(dice, self.danger), hangar1_foe(dice, self.danger, True)], 180.0);
+        squad(build, up, [[float(self.long) - 3.0, float(cy) + 4.5, float(g)], [float(cx) + 0.5, float(cy) + 3.5, float(g - 1)]], [HANGAR1_FOES.pick(dice, self.danger), HANGAR1_FOES.pick(dice, self.danger, True)], 180.0);
         onto = build.touch(float(cx - 8), float(cy - 1), float(g - 1), float(cx - 6), float(cy + 2), float(g + 5));
-        onto +>:Fires:+> build.summon(cx - 2, cy - 1, 6, hangar1_foe(dice, self.danger, True), float(cx) + 4.5, float(cy) + 0.5, g - 1, 180.0);
+        onto +>:Fires:+> build.summon(cx - 2, cy - 1, 6, HANGAR1_FOES.pick(dice, self.danger, True), float(cx) + 4.5, float(cy) + 0.5, g - 1, 180.0);
         # The bay's floor doors open from the controls on the gantry.
         controls = build.push(float(self.long - 1), float(cy) + 6.5, float(g) + 1.2, 2);
         build.touch(1.0, float(cy - 3), 0.0, 4.0, float(cy + 3), 8.0, True, "The bay's floor doors open from the gantry");
@@ -285,7 +280,7 @@ node BayHangar(Prefab) {
         charges(build, onto, [[float(cx) + 4.0, float(cy) + 6.0, float(g + 2)], [float(cx) - 4.0, float(cy) - 6.0, float(g + 2)]], 0.4);
         build.foe(3.0, 3.0, g, "monster_infantry", 0.0, patrol=[[3.0, 3.0], [float(self.long) - 3.0, 3.0], [float(self.long) - 3.0, float(self.wide) - 3.0], [3.0, float(self.wide) - 3.0]]);
         build.foe(float(cx) - 10.5, float(cy) + 0.5, 0, "monster_infantry", 0.0, patrol=[[float(cx) - 10.5, float(cy) - 7.5], [float(cx) + 10.5, float(cy) - 7.5]]);
-        build.foe(float(cx) + 0.5, float(cy) + 0.5, 0, hangar1_foe(dice, self.danger), 180.0);
+        build.foe(float(cx) + 0.5, float(cy) + 0.5, 0, HANGAR1_FOES.pick(dice, self.danger), 180.0);
         build.foe(float(cx) + 0.5, float(cy) + 9.5, 8, "monster_hover", 180.0, patrol=[[float(cx) - 6.5, float(cy) + 9.5], [float(cx) + 6.5, float(cy) + 9.5]]);
         sparking(build, dice.uniform(3.0, 5.0), float(cx) - 8.2, float(cy) + 3.0, 7.0, 2);
         build.supply(float(cx) + 0.5, float(cy) + 0.5, g - 1, "ammo_rockets", "q2");
@@ -346,9 +341,9 @@ node LaserTunnel(Prefab) {
         open_ways(build, tunnel, self);
         build.touch(4.0, 1.0, 0.0, 6.0, float(self.wide - 5), 6.0, True, "The lasers cycle: time the run, or take the duct");
         far_end = build.touch(float(self.long - 6), 1.0, 0.0, float(self.long - 4), float(self.wide - 5), 6.0);
-        squad(build, far_end, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 6.5, float(self.wide) - 3.0, float(d)]], ["monster_infantry", hangar1_foe(dice, self.danger, True)], 180.0);
+        squad(build, far_end, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 6.5, float(self.wide) - 3.0, float(d)]], ["monster_infantry", HANGAR1_FOES.pick(dice, self.danger, True)], 180.0);
         in_duct = build.touch(6.0, float(self.wide - 5), float(d), 8.0, float(self.wide - 1), float(d + 6));
-        squad(build, in_duct, [[float(self.long // 2), float(self.wide) - 3.0, float(d)]], [hangar1_foe(dice, self.danger)], 180.0);
+        squad(build, in_duct, [[float(self.long // 2), float(self.wide) - 3.0, float(d)]], [HANGAR1_FOES.pick(dice, self.danger)], 180.0);
         build.foe(4.5, 3.5, 0, "monster_infantry", 0.0, patrol=[[4.5, 3.5], [float(self.long) - 4.5, 3.5]]);
         build.foe(float(self.long) - 4.5, float(self.wide) - 3.0, d, "monster_gunner", 180.0, patrol=[[float(self.long) - 4.5, float(self.wide) - 3.0], [9.5, float(self.wide) - 3.0]]);
         crate_pile(build, self.long - 12, 1, 0, 2, 1);
@@ -405,11 +400,11 @@ node HangarControl(Prefab) {
         # A block in the near corner, a stash behind a panel in it.
         build.solid(2, 1, 0, 6, 5, 5);
         stash(build, 5, 3, 0, False, 1, "item_adrenaline");
-        key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, d, side, 0, [3, 9], [hangar1_foe(dice, self.danger, True), hangar1_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, d, side, 0, [3, 9], [HANGAR1_FOES.pick(dice, self.danger, True), HANGAR1_FOES.pick(dice, self.danger)]);
         up = build.touch(float(dx + 1), 1.0, float(d), float(dx + 3), float(side), float(d + 6));
-        squad(build, up, [[4.5, 3.5, 0.0], [4.5, float(side) - 3.5, 0.0]], ["monster_infantry", hangar1_foe(dice, self.danger)], 0.0);
+        squad(build, up, [[4.5, 3.5, 0.0], [4.5, float(side) - 3.5, 0.0]], ["monster_infantry", HANGAR1_FOES.pick(dice, self.danger)], 0.0);
         build.foe(8.5, float(cy) + 0.5, -3, "monster_flipper", 0.0, patrol=[[8.5, float(cy) + 0.5], [float(self.long) - 11.5, float(cy) + 0.5]]);
-        build.foe(float(self.long) - 3.5, 3.5, d, hangar1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, 3.5, d, HANGAR1_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(float(dx) + 2.5, float(side) - 3.5, 0, "monster_infantry", 180.0, patrol=[[float(dx) + 2.5, float(side) - 3.5], [float(dx) + 2.5, 5.5]]);
         sparking(build, dice.uniform(4.0, 6.0), float(self.long) - 1.2, float(side) - 3.0, float(d) + 2.0, 2);
         build.supply(2.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
@@ -487,12 +482,12 @@ node BayDoor(Prefab) {
         control +>:Fires:+> late;
         late +>:Fires:+> build.opened(float(ex), float(cy - 2), 0.0, float(ex + 1), float(cy + 2), 8.0);
         build.way_out(float(self.long) - 4.0, float(cy), 0);
-        squad(build, late, [[float(ex) - 3.5, 3.5, 0.0], [float(ex) - 3.5, float(self.wide) - 9.5, 0.0]], [hangar1_foe(dice, self.danger, True), "monster_infantry"], 180.0);
+        squad(build, late, [[float(ex) - 3.5, 3.5, 0.0], [float(ex) - 3.5, float(self.wide) - 9.5, 0.0]], [HANGAR1_FOES.pick(dice, self.danger, True), "monster_infantry"], 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, hangar1_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, HANGAR1_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(float(self.long // 2), float(cy) + 0.5, 0, "monster_infantry", 0.0, patrol=[[float(self.long // 2), 8.5], [float(self.long // 2), float(self.wide) - 9.5]]);
-        build.foe(float(self.long // 2), float(cy) - 2.5, 10, hangar1_foe(dice, self.danger, False, True), 180.0);
+        build.foe(float(self.long // 2), float(cy) - 2.5, 10, HANGAR1_FOES.pick(dice, self.danger, False, True), 180.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
     }
 }

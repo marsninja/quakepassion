@@ -40,7 +40,7 @@ e4m8's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, pillars, key_ambush, key_item, spiral, ring_landing }
 import from .e4m6 { flood, onward_ports, port_door }
 import from .e4m7 { counted_foe }
@@ -49,9 +49,7 @@ glob E4M8: str = "q1:e4m8";
 
 """e4m8's foes: the dead above all, ogres and fiends, hell knights and a
 shambler deeper in."""
-def e4m8_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_ogre", "monster_demon1"] if heavy else ["monster_zombie", "monster_zombie", "monster_ogre"], ["monster_hell_knight", "monster_shambler"] if heavy else ["monster_demon1"], danger * 0.5 if heavy else danger));
-}
+glob E4M8_FOES: FoeMix = FoeMix(light=["monster_zombie", "monster_zombie", "monster_ogre"], strong=["monster_demon1"], heavy_light=["monster_ogre", "monster_demon1"], heavy_strong=["monster_hell_knight", "monster_shambler"], heavy_scale=0.5);
 
 """The spans [x0, x1] of blocks along a street from `x0` to `x1`, an
 alley three cells wide between each and the next, none across `alley`
@@ -197,7 +195,7 @@ node CityStreet(Prefab) {
         for (index, house) in enumerate(houses) {
             late = build.delay(1.0 + 1.5 * float(index));
             down +>:Fires:+> late;
-            dead_house(build, house[0], 1 + d if house[1] == 1 else self.wide - 1 - d, house[1] == 1, late, "monster_zombie" if index % 2 == 0 else e4m8_foe(dice, self.danger));
+            dead_house(build, house[0], 1 + d if house[1] == 1 else self.wide - 1 - d, house[1] == 1, late, "monster_zombie" if index % 2 == 0 else E4M8_FOES.pick(dice, self.danger));
         }
         # Spikes fly across the alley while anyone is in it.
         in_alley = build.touch(float(alley - 2), 1.0, 0.0, float(alley + 2), float(1 + d), 6.0, False);
@@ -218,10 +216,10 @@ node CityStreet(Prefab) {
         build.start(2.5, float(middle) + 0.5, 0, 0.0);
         build.supply(2.5, float(middle) - 1.5, 0, "item_shells");
         for index in range(dice.between(2, 3)) {
-            build.foe(float(8 + index * 5) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, e4m8_foe(dice, self.danger), 180.0);
+            build.foe(float(8 + index * 5) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, E4M8_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(float(px) - 4.5, float(middle) + 0.5, 0, "monster_ogre", 180.0, patrol=[[float(px) - 4.5, float(middle) + 0.5], [6.5, float(middle) + 0.5]]);
-        build.foe(float(self.long) - 3.5, float(middle) + 3.5, self.plaza, e4m8_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, float(middle) + 3.5, self.plaza, E4M8_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(self.long) - 2.5, 2.5, self.plaza, "item_health");
     }
 }
@@ -310,14 +308,14 @@ node CityTerraces(Prefab) {
         guards = build.waiting();
         down +>:Fires:+> guards;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(2 * t + o + 4 + index * 3) + 0.5, float(middle) + 1.5, bottom, e4m8_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(2 * t + o + 4 + index * 3) + 0.5, float(middle) + 1.5, bottom, E4M8_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         late = build.delay(1.0);
         down +>:Fires:+> late;
         dead_house(build, t + o + 2, self.wide - 6, False, late, "monster_zombie", -self.drop);
         px = float(t + o + self.drop) + 1.5;
         build.foe(px, 2.5, -self.drop, "monster_ogre", 90.0, patrol=[[px, 2.5], [px, float(self.wide) - 2.5]]);
-        build.foe(float(t) - 3.5, float(middle) + 3.5, 0, e4m8_foe(dice, self.danger), 0.0);
+        build.foe(float(t) - 3.5, float(middle) + 3.5, 0, E4M8_FOES.pick(dice, self.danger), 0.0);
         build.supply(float(self.long) - 2.5, 2.5, bottom, "item_health");
         build.supply(float(t) - 2.5, 2.5, 0, "item_shells");
         build.supply(float(t) + 1.5, float(middle) + 4.5, -self.drop, "item_rockets");
@@ -394,7 +392,7 @@ node NamelessPlaza(Prefab) {
             if self.chamber {
                 counted_foe(build, float(cx + 8) + 0.5, 3.5 + float(index) * 6.0, 0, "monster_demon1", 180.0, slain);
             } else {
-                build.foe(float(cx + 8) + 0.5, 3.5 + float(index) * 6.0, 0, e4m8_foe(dice, self.danger), 180.0);
+                build.foe(float(cx + 8) + 0.5, 3.5 + float(index) * 6.0, 0, E4M8_FOES.pick(dice, self.danger), 180.0);
             }
         }
         # The roof's guards wake as the player passes the stair's middle.
@@ -402,7 +400,7 @@ node NamelessPlaza(Prefab) {
         roused = build.touch(float(cx - 6), float(cy - 6), 1.0, float(cx + 6), float(cy - 4), float(self.steps // 2 + 4));
         guards = build.waiting();
         roused +>:Fires:+> guards;
-        build.foe(float(cx) + 0.5, float(cy) + 0.5, self.steps, e4m8_foe(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(cx) + 0.5, float(cy) + 0.5, self.steps, E4M8_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
         build.foe(float(half[0]) + 1.0, float(half[1]) + 1.0, self.steps, "monster_ogre", 180.0, waits=guards);
         corners = [[float(cx - 8) + 0.5, float(cy - 8) + 0.5], [float(cx + 8) + 0.5, float(cy - 8) + 0.5], [float(cx + 8) + 0.5, float(cy + 8) + 0.5], [float(cx - 8) + 0.5, float(cy + 8) + 0.5]];
         build.foe(corners[0][0], corners[0][1], 0, "monster_ogre" if self.danger > 0.3 else "monster_zombie", 0.0, patrol=corners);
@@ -521,7 +519,7 @@ node AbyssShaft(Prefab) {
         landed = build.touch(6.0, float(middle - 2), float(-deep), 12.0, float(middle + 2), float(-deep + 6));
         landed +>:Fires:+> below;
         for index in range(dice.between(3, 5)) {
-            build.foe(float(self.long) - 4.5 - float(index % 2) * 3.0, 3.5 + float(index) * 2.0, -deep, "monster_zombie" if index % 2 == 0 else e4m8_foe(dice, self.danger), 180.0, waits=below);
+            build.foe(float(self.long) - 4.5 - float(index % 2) * 3.0, 3.5 + float(index) * 2.0, -deep, "monster_zombie" if index % 2 == 0 else E4M8_FOES.pick(dice, self.danger), 180.0, waits=below);
         }
         build.foe(float(self.long) - 3.5, float(middle) + 0.5, -deep, "monster_hell_knight" if self.danger > 0.3 else "monster_ogre", 180.0, patrol=[[float(self.long) - 3.5, 3.5], [float(self.long) - 3.5, float(self.wide) - 8.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
@@ -607,20 +605,20 @@ node DeadQuarter(Prefab) {
                 if index < 6 and dice.chance(0.7) {
                     late = build.delay(0.8 + 1.2 * float(index));
                     crossing +>:Fires:+> late;
-                    dead_house(build, x, 5 if low else self.wide - 5, low, late, "monster_zombie" if index % 3 != 2 else e4m8_foe(dice, self.danger));
+                    dead_house(build, x, 5 if low else self.wide - 5, low, late, "monster_zombie" if index % 3 != 2 else E4M8_FOES.pick(dice, self.danger));
                     index += 1;
                 }
             }
         }
-        crossing +>:Fires:+> build.summon(1, 1, self.tall + 1, e4m8_foe(dice, self.danger, True), float(alley) - 4.5, 6.5, 0, 0.0);
+        crossing +>:Fires:+> build.summon(1, 1, self.tall + 1, E4M8_FOES.pick(dice, self.danger, True), float(alley) - 4.5, 6.5, 0, 0.0);
         # Spikes fly down the sunken street while anyone is in it.
         sunk = build.touch(float(x_in), float(y0 + 2), float(z), float(x_out), float(y1 - 2), float(z + 5), False);
         later = build.delay(1.5);
         sunk +>:Fires:+> later;
         later +>:Fires:+> build.spikes(float(x_out) + 0.5, float(middle), float(z) + 3.0, 2);
         build.foe(6.5, 7.5, 0, "monster_ogre", 0.0, patrol=[[6.5, 7.5], [float(self.long) - 6.5, 7.5]]);
-        build.foe(float(self.long) - 6.5, float(self.wide) - 7.5, 0, e4m8_foe(dice, self.danger, True), 180.0);
-        build.foe(float(alley) + 0.5, float(middle) + 0.5, z, e4m8_foe(dice, self.danger), 0.0);
+        build.foe(float(self.long) - 6.5, float(self.wide) - 7.5, 0, E4M8_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(float(alley) + 0.5, float(middle) + 0.5, z, E4M8_FOES.pick(dice, self.danger), 0.0);
         build.supply(2.5, 2.5, 0, "item_health");
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, 0, "item_shells");
         build.supply(float(alley) - 4.5, float(middle) + 0.5, z, "item_rockets");
@@ -692,14 +690,14 @@ node RooftopKey(Prefab) {
             hidden = build.waiting();
             key +>:Fires:+> hidden;
             for index in range(2) {
-                build.foe(float(bx) + 3.5 + float(index) * 3.0, float(cy) + 0.5, 0, e4m8_foe(dice, self.danger, index == 0), 90.0, waits=hidden);
+                build.foe(float(bx) + 3.5 + float(index) * 3.0, float(cy) + 0.5, 0, E4M8_FOES.pick(dice, self.danger, index == 0), 90.0, waits=hidden);
             }
             build.touch(1.0, float(cy - 2), 0.0, 4.0, float(cy + 2), 6.0, True, "Slay the fiends to open the shrine");
         } else {
-            key_ambush(build, self.key, float(self.long) - 4.5, float(cy) + 0.5, self.roof, side, 0, [2, bx - 4], [e4m8_foe(dice, self.danger, True), "monster_zombie"]);
-            build.foe(float(bx) + 3.5, float(cy) + 0.5, 0, e4m8_foe(dice, self.danger), 90.0);
+            key_ambush(build, self.key, float(self.long) - 4.5, float(cy) + 0.5, self.roof, side, 0, [2, bx - 4], [E4M8_FOES.pick(dice, self.danger, True), "monster_zombie"]);
+            build.foe(float(bx) + 3.5, float(cy) + 0.5, 0, E4M8_FOES.pick(dice, self.danger), 90.0);
         }
-        build.foe(float(self.long) - 8.5, float(cy) - 2.0, self.roof, e4m8_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 8.5, float(cy) - 2.0, self.roof, E4M8_FOES.pick(dice, self.danger), 180.0);
         build.foe(3.0, 2.5, 0, "monster_zombie", 0.0, patrol=[[3.0, 2.5], [float(bx) - 4.5, 2.5]]);
         build.supply(2.5, float(side) - 2.5, 0, "item_health");
         build.supply(float(self.long) - 5.5, float(cy) + 0.5, 0, "item_rockets");
@@ -774,13 +772,13 @@ node CityExit(Prefab) {
         climb = build.touch(float(tx - self.temple), float(middle - 2), 1.0, float(tx), float(middle + 2), float(self.temple + 6));
         guard = build.waiting();
         climb +>:Fires:+> guard;
-        build.foe(float(self.long) - 3.5, float(middle) + 3.5, self.temple, "monster_shambler" if self.danger > 0.6 else e4m8_foe(dice, self.danger, True), 180.0, waits=guard);
+        build.foe(float(self.long) - 3.5, float(middle) + 3.5, self.temple, "monster_shambler" if self.danger > 0.6 else E4M8_FOES.pick(dice, self.danger, True), 180.0, waits=guard);
         on_stair = build.touch(float(tx - self.temple), float(middle - 2), 0.0, float(tx), float(middle + 2), float(self.temple + 4), False);
         on_stair +>:Fires:+> build.spikes(float(tx) - 2.0, 2.1, float(self.temple) + 1.0, 1);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, e4m8_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, E4M8_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(tx) - 9.5, float(middle) + 4.5, 0, e4m8_foe(dice, self.danger), 0.0, patrol=[[float(tx) - 9.5, float(middle) + 4.5], [float(tx) - 9.5, float(middle) - 3.5]]);
+        build.foe(float(tx) - 9.5, float(middle) + 4.5, 0, E4M8_FOES.pick(dice, self.danger), 0.0, patrol=[[float(tx) - 9.5, float(middle) + 4.5], [float(tx) - 9.5, float(middle) - 3.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
     }
 }

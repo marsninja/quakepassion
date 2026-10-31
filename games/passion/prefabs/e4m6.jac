@@ -41,15 +41,13 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires, Next }
 import from ..kits { level_district, kit_of }
 import from ..space { Space }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, key_item, ring_path, spiral }
 
 glob E4M6: str = "q1:e4m6";
 
 """e4m6's foes: spawn above all, fiends and hell knights, vores deeper in."""
-def e4m6_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_hell_knight", "monster_demon1"] if heavy else ["monster_tarbaby", "monster_tarbaby", "monster_demon1"], ["monster_shalrath"] if heavy else ["monster_hell_knight"], danger * 0.5 if heavy else danger));
-}
+glob E4M6_FOES: FoeMix = FoeMix(light=["monster_tarbaby", "monster_tarbaby", "monster_demon1"], strong=["monster_hell_knight"], heavy_light=["monster_hell_knight", "monster_demon1"], heavy_strong=["monster_shalrath"], heavy_scale=0.5);
 
 """Water (liquid 2) in every air cell of the prefab's box x0..x1, y0..y1,
 z0..z1."""
@@ -398,11 +396,11 @@ node PainGate(Prefab) {
         stirred = build.waiting();
         foot +>:Fires:+> stirred;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(x0) - 1.5, 2.5 + float(index) * 3.0 + (float(self.wide) - 12.0 if self.stair_side == 0 else 0.0), 0, e4m6_foe(dice, self.danger), 0.0, waits=stirred);
+            build.foe(float(x0) - 1.5, 2.5 + float(index) * 3.0 + (float(self.wide) - 12.0 if self.stair_side == 0 else 0.0), 0, E4M6_FOES.pick(dice, self.danger), 0.0, waits=stirred);
         }
         far_x = float(x1) + 2.5;
         build.foe(far_x, 2.5, 0, "monster_hell_knight" if self.danger > 0.3 else "monster_demon1", 90.0, patrol=[[far_x, 2.5], [far_x, float(self.wide) - 2.5]]);
-        build.foe(float(self.long) - 3.5, float(middle) + 3.5, 0, e4m6_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, float(middle) + 3.5, 0, E4M6_FOES.pick(dice, self.danger, True), 180.0);
         if self.danger > 0.15 or dice.chance(0.5) {
             build.foe(float(x0 + self.cistern // 2) + 0.5, 5.5, -7, "monster_fish", 90.0);
         }
@@ -565,7 +563,7 @@ node FloodedMaze(Prefab) {
         stirred = build.waiting();
         roused +>:Fires:+> stirred;
         for (index, end) in enumerate(others[:dice.between(3, 5)]) {
-            build.foe(float(4 * end[0]) + 2.5, float(4 * end[1]) + 2.5, 0, e4m6_foe(dice, self.danger, index == 0), float(90 * dice.below(4)), waits=stirred);
+            build.foe(float(4 * end[0]) + 2.5, float(4 * end[1]) + 2.5, 0, E4M6_FOES.pick(dice, self.danger, index == 0), float(90 * dice.below(4)), waits=stirred);
         }
         run = [0, 0, 0];
         for j in range(self.rows) {
@@ -601,7 +599,7 @@ node FloodedMaze(Prefab) {
         # In the labyrinth, a fiend is brought in behind the player at the
         # middle.
         if self.hub {
-            roused +>:Fires:+> build.summon(1, 1, self.tall + 1, e4m6_foe(dice, self.danger, True), float(4 * mid_i) + 2.5, float(4 * mid_j) + 2.5, 0, 0.0);
+            roused +>:Fires:+> build.summon(1, 1, self.tall + 1, E4M6_FOES.pick(dice, self.danger, True), float(4 * mid_i) + 2.5, float(4 * mid_j) + 2.5, 0, 0.0);
         }
     }
 }
@@ -755,11 +753,11 @@ node ButtonCourt(Prefab) {
         swarm = build.waiting();
         landed +>:Fires:+> swarm;
         for index in range(dice.between(3, 5)) {
-            build.foe(float(near + 4 + index * 3) + 0.5, float(g + 2) + float(index % 2) * float(self.wide - 2 * g - 5), 0, e4m6_foe(dice, self.danger), 180.0, waits=swarm);
+            build.foe(float(near + 4 + index * 3) + 0.5, float(g + 2) + float(index % 2) * float(self.wide - 2 * g - 5), 0, E4M6_FOES.pick(dice, self.danger), 180.0, waits=swarm);
         }
         for side in sides {
             gy = 1.0 + float(g) * 0.5 if side == 0 else float(self.wide - 1) - float(g) * 0.5;
-            build.foe(float(gx1) - 2.5, gy, self.up, e4m6_foe(dice, self.danger, True), 180.0, waits=swarm);
+            build.foe(float(gx1) - 2.5, gy, self.up, E4M6_FOES.pick(dice, self.danger, True), 180.0, waits=swarm);
         }
         count +>:Fires:+> build.summon(ex + 1, 2, self.tall + 1, "monster_hell_knight", float(ex) + 3.0, float(middle) + 0.5, self.top, 180.0);
         build.foe(float(near) + 3.5, float(self.lane) + 1.5, 0, "monster_demon1" if self.danger < 0.5 else "monster_hell_knight", 0.0, patrol=[[float(near) + 3.5, float(self.lane) + 1.5], [float(sx) - 1.5, float(self.lane) + 1.5]]);
@@ -881,14 +879,14 @@ node SpawnPit(Prefab) {
                 build.foe(float(x0 + 3 + index * 3) + 0.5, float(pit_y1) - 2.5, -self.deep + 1, "monster_fish", 180.0);
             }
             for index in range(dice.between(2, 3)) {
-                build.foe(float(x1) + 2.5, 3.5 + float(index) * 4.0, 0, e4m6_foe(dice, self.danger), 180.0, waits=leap);
+                build.foe(float(x1) + 2.5, 3.5 + float(index) * 4.0, 0, E4M6_FOES.pick(dice, self.danger), 180.0, waits=leap);
             }
         } else {
             for index in range(3 + int(self.danger * 4.0) + dice.below(2)) {
                 build.foe(float(x0 + 4 + (index * 3) % max(1, self.pit - 5)) + 0.5, float(pit_y1) - 2.5 - float(index % 2) * 3.0, -self.deep, "monster_tarbaby", 180.0, waits=leap);
             }
         }
-        build.foe(float(x1) + 3.5, float(self.lane) + 1.5, 0, e4m6_foe(dice, self.danger, True), 180.0);
+        build.foe(float(x1) + 3.5, float(self.lane) + 1.5, 0, E4M6_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(2.5, 2.5, 0, "monster_hell_knight" if self.danger > 0.3 else "monster_demon1", 90.0, patrol=[[2.5, 2.5], [2.5, float(self.wide) - 2.5 - (float(g) if self.gallery_here else 0.0)]]);
         build.supply(float(x0) + 1.5, 2.0, -self.deep, "item_health");
         build.supply(float(self.long) - 2.5, 2.5, 0, "item_health");
@@ -976,16 +974,16 @@ node SilverCistern(Prefab) {
         # lies in the shadows there.
         if self.teleported {
             for index in range(dice.between(2, 3)) {
-                key +>:Fires:+> build.summon(3 + index * 4, 1, self.tall + 1, e4m6_foe(dice, self.danger, index == 0), 3.5 + float(index) * 2.0, 2.5 + float(index % 2) * float(self.wide - 5), 0, 0.0);
+                key +>:Fires:+> build.summon(3 + index * 4, 1, self.tall + 1, E4M6_FOES.pick(dice, self.danger, index == 0), 3.5 + float(index) * 2.0, 2.5 + float(index % 2) * float(self.wide - 5), 0, 0.0);
             }
         } else {
             freed = build.waiting();
             key +>:Fires:+> freed;
             for (index, at) in enumerate(under) {
-                build.foe(at[0], at[1], 0, e4m6_foe(dice, self.danger, index == 0), 180.0, waits=freed);
+                build.foe(at[0], at[1], 0, E4M6_FOES.pick(dice, self.danger, index == 0), 180.0, waits=freed);
             }
         }
-        build.foe(float(self.long) - 4.5, 3.5, self.ledge, e4m6_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 4.5, 3.5, self.ledge, E4M6_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(4.5, float(self.wide) - 2.5, 0, "monster_hell_knight" if self.danger > 0.4 else "monster_demon1", 0.0, patrol=[[4.5, float(self.wide) - 2.5], [float(self.long) - 4.5, float(self.wide) - 2.5]]);
         build.supply(3.5, 3.5, 0, "item_health");
     }
@@ -1113,10 +1111,10 @@ node UnholyAltar(Prefab) {
         for side in sides {
             y = 1.0 + float(g) * 0.5 if side == 0 else float(self.wide - 1) - float(g) * 0.5;
             build.foe(float(chapel_x1) - 3.5, y, self.gh, "monster_shalrath" if self.danger > 0.4 else "monster_hell_knight", 180.0, waits=roused);
-            build.foe(float(gx0) + 4.5, y, self.gh, e4m6_foe(dice, self.danger), 0.0);
+            build.foe(float(gx0) + 4.5, y, self.gh, E4M6_FOES.pick(dice, self.danger), 0.0);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(dais_x) - 4.5 + float(index), float(middle) + (4.5 if index % 2 == 0 else -3.5), 0, e4m6_foe(dice, self.danger), 180.0, waits=roused);
+            build.foe(float(dais_x) - 4.5 + float(index), float(middle) + (4.5 if index % 2 == 0 else -3.5), 0, E4M6_FOES.pick(dice, self.danger), 180.0, waits=roused);
         }
         # And fiends are brought in behind the player, at the nave's foot.
         for index in range(1 + (1 if self.danger > 0.4 else 0)) {

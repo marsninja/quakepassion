@@ -30,7 +30,7 @@ rounds and teleported in behind. Raised in e4m1's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, pillars, key_ambush, lift, key_item }
 import from .e3m5 { keep_run, sealed_way, bursting }
 import from .e3m6 { rounds }
@@ -38,9 +38,7 @@ import from .e3m6 { rounds }
 glob E4M1: str = "q1:e4m1";
 
 """e4m1's foes: grunts and dogs, enforcers growing with the danger."""
-def e4m1_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_enforcer", "monster_army"] if heavy else ["monster_army", "monster_army", "monster_dog"], ["monster_enforcer"], danger));
-}
+glob E4M1_FOES: FoeMix = FoeMix(light=["monster_army", "monster_army", "monster_dog"], strong=["monster_enforcer"], heavy_light=["monster_enforcer", "monster_army"]);
 
 """An alcove under the water off a pool: the prefab's cells x0..x1, y0..y1
 from lift z0 three lifts up, carved and flooded, a secret in it and a
@@ -133,11 +131,11 @@ node SewerOutfall(Prefab) {
         # Grunts walk the walkways; the catwalk's guard wakes as the stair
         # is climbed.
         rounds(build, "monster_army", 6.5, 2.5, float(long) - 4.5, 2.5, 0);
-        rounds(build, e4m1_foe(dice, self.danger), float(long) - 4.5, float(wide) - 2.5, 6.5, float(wide) - 2.5, 0);
+        rounds(build, E4M1_FOES.pick(dice, self.danger), float(long) - 4.5, float(wide) - 2.5, 6.5, float(wide) - 2.5, 0);
         climb = build.touch(float(cx - u), 1.0, 0.0, float(cx - u + 3), 4.0, 6.0);
         guard = build.waiting();
         climb +>:Fires:+> guard;
-        build.foe(float(cx) + 1.5, float(wide) - 3.5, u, e4m1_foe(dice, self.danger, True), 270.0, waits=guard);
+        build.foe(float(cx) + 1.5, float(wide) - 3.5, u, E4M1_FOES.pick(dice, self.danger, True), 270.0, waits=guard);
         build.foe(float(long) - 3.5, float(wide) - 3.0, 0, "monster_dog", 180.0, waits=guard);
         build.supply(float(long) - 2.5, float(wide) - 2.5, 0, "item_health");
     }
@@ -240,19 +238,19 @@ node FloodGate(Prefab) {
         later +>:Fires:+> balcony;
         build.touch(float(gx + 1), float(cy - 5), float(-d), float(gx + 3), float(cy + 5), 2.0, True, "You have opened the flood gate");
         # Beyond the gate, enforcers teleported in as it opens.
-        later +>:Fires:+> build.summon(1, 1, -d - 2, e4m1_foe(dice, self.danger, True), float(long) - 4.5, 3.5, 0, 180.0);
+        later +>:Fires:+> build.summon(1, 1, -d - 2, E4M1_FOES.pick(dice, self.danger, True), float(long) - 4.5, 3.5, 0, 180.0);
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
         }
         # Grunts walk the near walkways and the far ones.
         rounds(build, "monster_army", 3.5, 3.5, float(gx) - 2.5, 3.5, 0);
-        rounds(build, e4m1_foe(dice, self.danger), float(gx) + 3.5, float(wide) - 3.5, float(long) - 3.5, float(wide) - 3.5, 0);
+        rounds(build, E4M1_FOES.pick(dice, self.danger), float(gx) + 3.5, float(wide) - 3.5, float(long) - 3.5, float(wide) - 3.5, 0);
         up = build.touch(float(gx - 6 - p), 1.0, 0.0, float(gx - 6), 4.0, float(p + 6));
         deck_guard = build.waiting();
         up +>:Fires:+> deck_guard;
-        build.foe(float(gx) - 2.5, float(wide) - 2.5, p, e4m1_foe(dice, self.danger, True), 270.0, waits=deck_guard);
-        build.foe(float(long) - 3.5, float(cy) - 7.5, 0, e4m1_foe(dice, self.danger), 180.0);
+        build.foe(float(gx) - 2.5, float(wide) - 2.5, p, E4M1_FOES.pick(dice, self.danger, True), 270.0, waits=deck_guard);
+        build.foe(float(long) - 3.5, float(cy) - 7.5, 0, E4M1_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(gx) - 2.5, 2.5, p, "item_health");
         build.supply(float(long) - 2.5, float(wide) - 2.5, 0, "item_shells");
     }
@@ -337,9 +335,9 @@ node SewerLocks(Prefab) {
             down = build.touch(float(at), 1.0, float(floor_at), float(at + drop), 4.0, float(floor_at + 6));
             below = build.waiting();
             down +>:Fires:+> below;
-            build.foe(float(at + third) - 2.5, float(walk_y) - 2.5, floor_at, e4m1_foe(dice, self.danger, index == 1), 180.0, waits=below);
+            build.foe(float(at + third) - 2.5, float(walk_y) - 2.5, floor_at, E4M1_FOES.pick(dice, self.danger, index == 1), 180.0, waits=below);
         }
-        rounds(build, e4m1_foe(dice, self.danger), float(2 * third) + 3.5, 3.5, float(long) - 5.5, 3.5, bottom);
+        rounds(build, E4M1_FOES.pick(dice, self.danger), float(2 * third) + 3.5, 3.5, float(long) - 5.5, 3.5, bottom);
         rounds(build, "monster_army", 3.5, float(wide) - 2.5, float(long) - 5.5, float(wide) - 2.5, 0);
         build.supply(float(long) - 6.5, 2.5, bottom, "item_health");
         build.supply(float(third) + 2.5, float(wide) - 2.5, 0, "item_shells");
@@ -439,7 +437,7 @@ node SettlingTanks(Prefab) {
         build.solid(long - 9, 1, hi - 1, long - 6, wide - 1, hi);
         keep_run(build, hall, sx + 3, cy - 2, sx + 4, cy + 3, hi);
         keep_run(build, hall, sx + 6, cy - 3, sx + 9, cy - 2, hi);
-        build.foe(float(long) - 7.5, 3.5, hi, e4m1_foe(dice, self.danger), 90.0, patrol=[[float(long) - 7.5, 3.5], [float(long) - 7.5, float(wide) - 3.5]]);
+        build.foe(float(long) - 7.5, 3.5, hi, E4M1_FOES.pick(dice, self.danger), 90.0, patrol=[[float(long) - 7.5, 3.5], [float(long) - 7.5, float(wide) - 3.5]]);
         # Drops off the spine into the tanks.
         keep_run(build, hall, sx + 4, cy - 1, sx + 8, cy, s);
         keep_run(build, hall, sx + 4, cy + 1, sx + 8, cy + 2, s);
@@ -451,11 +449,11 @@ node SettlingTanks(Prefab) {
         guard = build.waiting();
         up +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(sx + 5 + index * 5) + 0.5, float(cy) + 0.5, s, e4m1_foe(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(float(sx + 5 + index * 5) + 0.5, float(cy) + 0.5, s, E4M1_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
         rounds(build, "monster_army", float(sx) + 2.5, 2.5, float(long) - 3.5, 2.5, 0);
         rounds(build, "monster_dog", float(long) - 3.5, float(wide) - 2.5, float(sx) + 2.5, float(wide) - 2.5, 0);
-        build.foe(float(long) - 2.5, float(cy) + 0.5, s, e4m1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(long) - 2.5, float(cy) + 0.5, s, E4M1_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(long) - 2.5, float(cy) - 0.5, s, "item_health");
         build.supply(2.5, 2.5, 0, "item_rockets");
     }
@@ -554,9 +552,9 @@ node CisternDrop(Prefab) {
         below = build.waiting();
         splash +>:Fires:+> below;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(fx) - 2.5, 2.5 + float(index) * 1.5, -h, e4m1_foe(dice, self.danger, index == 0), 180.0, waits=below);
+            build.foe(float(fx) - 2.5, 2.5 + float(index) * 1.5, -h, E4M1_FOES.pick(dice, self.danger, index == 0), 180.0, waits=below);
         }
-        rounds(build, e4m1_foe(dice, self.danger), float(fx) + 2.5, float(wide) - 3.5, float(long) - 3.5, float(wide) - 3.5, 0);
+        rounds(build, E4M1_FOES.pick(dice, self.danger), float(fx) + 2.5, float(wide) - 3.5, float(long) - 3.5, float(wide) - 3.5, 0);
         build.supply(float(fx) - 2.5, float(wide) - 2.5, -h, "item_health");
         build.supply(2.5, 2.5, 0, "item_spikes");
     }
@@ -619,12 +617,12 @@ node SumpKey(Prefab) {
             build.room(at, side + 1, 0, at + 3, side + 4, 7);
             build.widen(hall, at, side, 0, at + 3, side + 1, 6);
             taken +>:Fires:+> bursting(build, float(at), float(side), 0.0, float(at + 3), float(side + 1), 6.0);
-            build.foe(float(at) + 1.5, float(side) + 2.5, 0, e4m1_foe(dice, self.danger, at == 2), 270.0);
+            build.foe(float(at) + 1.5, float(side) + 2.5, 0, E4M1_FOES.pick(dice, self.danger, at == 2), 270.0);
         }
-        taken +>:Fires:+> build.summon(1, 5, -d - 2, e4m1_foe(dice, self.danger, True), 3.5, float(cy) + 0.5, 0, 0.0);
+        taken +>:Fires:+> build.summon(1, 5, -d - 2, E4M1_FOES.pick(dice, self.danger, True), 3.5, float(cy) + 0.5, 0, 0.0);
         drowned_alcove(build, 9, side, 11, side + 2, -d, "item_health");
-        rounds(build, e4m1_foe(dice, self.danger), float(long) - 2.5, 2.5, float(long) - 2.5, float(side) - 2.5, 0);
-        build.foe(float(x1) - 4.5, 2.5, 7, e4m1_foe(dice, self.danger), 180.0);
+        rounds(build, E4M1_FOES.pick(dice, self.danger), float(long) - 2.5, 2.5, float(long) - 2.5, float(side) - 2.5, 0);
+        build.foe(float(x1) - 4.5, 2.5, 7, E4M1_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, float(side) - 2.5, 0, "item_health");
     }
 }
@@ -678,12 +676,12 @@ node SewerExit(Prefab) {
         build.way_out(float(long) - 3.0, float(middle), 0);
         # Crossing the walkway, enforcers teleported in at its far end.
         over = build.touch(float(cx0 + 3), float(middle - 1), 0.0, float(cx0 + 5), float(middle + 2), 6.0);
-        over +>:Fires:+> build.summon(1, 1, -d - 2, e4m1_foe(dice, self.danger, True), float(cx1) + 1.5, 2.5, 0, 180.0);
+        over +>:Fires:+> build.summon(1, 1, -d - 2, E4M1_FOES.pick(dice, self.danger, True), float(cx1) + 1.5, 2.5, 0, 180.0);
         if dice.chance(0.6) {
             over +>:Fires:+> build.summon(1, wide - 5, -d - 2, "monster_enforcer", float(cx1) + 1.5, float(wide) - 2.5, 0, 180.0);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, e4m1_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, E4M1_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         rounds(build, "monster_dog", float(cx1) + 2.5, 2.5, float(cx1) + 2.5, float(wide) - 2.5, 0);
         build.supply(2.5, 2.5, 0, "item_health");

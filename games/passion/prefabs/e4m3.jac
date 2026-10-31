@@ -31,7 +31,7 @@ key in a cage its guardian's death opens. Raised in e4m3's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, pillars, key_ambush, lift, key_item }
 import from .e3m5 { keep_run, sealed_way, bursting }
 import from .e3m6 { rounds }
@@ -40,9 +40,7 @@ import from .e3m7 { relayed }
 glob E4M3: str = "q1:e4m3";
 
 """e4m3's foes: the dead above all, knights, fiends and spawn deeper in."""
-def e4m3_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_knight", "monster_ogre"] if heavy else ["monster_zombie", "monster_zombie", "monster_knight"], ["monster_demon1", "monster_tarbaby"] if heavy else ["monster_wizard"], danger));
-}
+glob E4M3_FOES: FoeMix = FoeMix(light=["monster_zombie", "monster_zombie", "monster_knight"], strong=["monster_wizard"], heavy_light=["monster_knight", "monster_ogre"], heavy_strong=["monster_demon1", "monster_tarbaby"]);
 
 """A wall that is not there: an opening of the prefab's cells x0..x1,
 y0..y1 from lift z (`high` lifts) cut as the air of `space` and filled by
@@ -124,14 +122,14 @@ node ShrineCourt(Prefab) {
             shot = build.cue([build.button(float(sx), float(middle) + 0.5, float(self.plinth) + 10.0, 2, "", True)], "button");
             relayed(build, shot, 0.5) +>:Fires:+> build.cue([door], "door");
             build.touch(float(sx - 4 - self.plinth), float(middle - 2), 0.0, float(sx - 4), float(middle + 2), 6.0, True, "You must shoot the window");
-            wave(build, shot, 2.0, [e4m3_foe(dice, self.danger, True), "monster_demon1" if self.danger > 0.3 else "monster_knight"], [[1, 1, -8], [1, wide - 5, -8]], [[float(px) - 4.5, 3.5, 0.0], [float(px) - 4.5, float(wide) - 3.5, 0.0]]);
+            wave(build, shot, 2.0, [E4M3_FOES.pick(dice, self.danger, True), "monster_demon1" if self.danger > 0.3 else "monster_knight"], [[1, 1, -8], [1, wide - 5, -8]], [[float(px) - 4.5, 3.5, 0.0], [float(px) - 4.5, float(wide) - 3.5, 0.0]]);
         } else {
             # The door opened by a button beside it on the plinth.
             door2: dict[str, str] = {"wait": "-1", "message": "This door is opened elsewhere."};
             build.rising_door(float(sx), float(middle - 2), float(self.plinth), float(sx + 1), float(middle + 2), float(self.plinth + 8), door2);
             press = build.push(float(sx), float(middle) + 2.5, float(self.plinth) + 1.2, 2);
             relayed(build, press, 0.5) +>:Fires:+> build.cue([door2], "door");
-            wave(build, press, 2.0, [e4m3_foe(dice, self.danger, True)], [[1, 1, -8]], [[float(px) - 4.5, 3.5, 0.0]]);
+            wave(build, press, 2.0, [E4M3_FOES.pick(dice, self.danger, True)], [[1, 1, -8]], [[float(px) - 4.5, 3.5, 0.0]]);
         }
         # A wall of the court that is not there, a closet behind with the
         # quad damage.
@@ -148,13 +146,13 @@ node ShrineCourt(Prefab) {
         dead = build.waiting();
         near +>:Fires:+> dead;
         for index in range(dice.between(3, 4)) {
-            build.foe(float(px + 8 + index % 2 * 2) + 0.5, 3.5 + float(index) * 4.0, 0, e4m3_foe(dice, self.danger), 180.0, waits=dead);
+            build.foe(float(px + 8 + index % 2 * 2) + 0.5, 3.5 + float(index) * 4.0, 0, E4M3_FOES.pick(dice, self.danger), 180.0, waits=dead);
         }
         rounds(build, "monster_knight", float(sx) - 6.5, 2.5, float(sx) - 6.5, float(wide) - 2.5, 0);
         up = build.touch(float(sx - 4 - self.plinth), float(middle - 3), 0.0, float(sx - 4), float(middle + 3), 6.0);
         porch = build.waiting();
         up +>:Fires:+> porch;
-        build.foe(float(sx) - 2.0, float(middle) + 0.5, self.plinth, e4m3_foe(dice, self.danger, True), 180.0, waits=porch);
+        build.foe(float(sx) - 2.0, float(middle) + 0.5, self.plinth, E4M3_FOES.pick(dice, self.danger, True), 180.0, waits=porch);
         build.supply(float(sx) - 2.5, 2.5, 0, "item_health");
     }
 }
@@ -215,7 +213,7 @@ node ZombieCrypts(Prefab) {
                 crypt = build.room(x, y0, 0, x + 5, y0 + 4, 7, variant=dice.below(3));
                 build.widen(crypt, x + 1, door_y, 0, x + 4, door_y + 1, 6);
                 level +>:Fires:+> bursting(build, float(x + 1), float(door_y), 0.0, float(x + 4), float(door_y + 1), 6.0);
-                build.foe(float(x) + 2.5, float(y0) + 2.0, 0, "monster_zombie" if index % 3 != 2 else e4m3_foe(dice, self.danger, True), 90.0 if south else 270.0, waits=loose);
+                build.foe(float(x) + 2.5, float(y0) + 2.0, 0, "monster_zombie" if index % 3 != 2 else E4M3_FOES.pick(dice, self.danger, True), 90.0 if south else 270.0, waits=loose);
                 if index % 2 == 0 {
                     build.supply(float(x) + 4.0, float(y0) + 1.0, 0, "item_health" if south else "item_spikes");
                 }
@@ -240,9 +238,9 @@ node ZombieCrypts(Prefab) {
         end_guard = build.waiting();
         inside +>:Fires:+> end_guard;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(long) - 5.5, 3.5 + float(index) * 3.0, 0, e4m3_foe(dice, self.danger), 180.0, waits=end_guard);
+            build.foe(float(long) - 5.5, 3.5 + float(index) * 3.0, 0, E4M3_FOES.pick(dice, self.danger), 180.0, waits=end_guard);
         }
-        build.foe(float(long) - 2.5, float(middle) + 0.5, g, e4m3_foe(dice, self.danger, True), 180.0, waits=end_guard);
+        build.foe(float(long) - 2.5, float(middle) + 0.5, g, E4M3_FOES.pick(dice, self.danger, True), 180.0, waits=end_guard);
         rounds(build, "monster_zombie", 5.5, float(middle) + 0.5, float(long) - 9.5, float(middle) + 0.5, 0);
     }
 }
@@ -317,9 +315,9 @@ node ElderNave(Prefab) {
         build.teleporter(float(long) - 3.0, float(middle) + 2.0, self.altar, 10.0, float(wide) - 3.5, self.gallery, 0.0);
         # Reaching the altar calls fiends in by teleporter, in waves.
         reached = build.touch(float(ax - self.altar), float(middle - 2), 0.0, float(ax), float(middle + 2), 6.0);
-        kinds = [e4m3_foe(dice, self.danger, True), "monster_demon1" if self.danger > 0.4 else "monster_knight"];
+        kinds = [E4M3_FOES.pick(dice, self.danger, True), "monster_demon1" if self.danger > 0.4 else "monster_knight"];
         wave(build, reached, 1.0, kinds, [[1, 1, -8], [1, 5, -8]], [[8.5, float(middle) - 3.5, 0.0], [8.5, float(middle) + 3.5, 0.0]]);
-        wave(build, reached, 12.0, [e4m3_foe(dice, self.danger), e4m3_foe(dice, self.danger)], [[1, wide - 5, -8], [1, wide - 9, -8]], [[float(long) - 10.5, float(middle) + 0.5, 0.0], [12.5, float(middle) + 0.5, 0.0]]);
+        wave(build, reached, 12.0, [E4M3_FOES.pick(dice, self.danger), E4M3_FOES.pick(dice, self.danger)], [[1, wide - 5, -8], [1, wide - 9, -8]], [[float(long) - 10.5, float(middle) + 0.5, 0.0], [12.5, float(middle) + 0.5, 0.0]]);
         # A wall of the south gallery that is not there, a closet behind.
         build.solid(14, 1, self.gallery, 18, 4, self.gallery + 6);
         false_wall(build, nave, 15, 3, 17, 4, self.gallery, 4, [15, 1, 17, 3], "item_armor2");
@@ -331,9 +329,9 @@ node ElderNave(Prefab) {
         pews = build.waiting();
         entered +>:Fires:+> pews;
         for index in range(dice.between(3, 4)) {
-            build.foe(float(8 + index * 4) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, e4m3_foe(dice, self.danger), 0.0, waits=pews);
+            build.foe(float(8 + index * 4) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, E4M3_FOES.pick(dice, self.danger), 0.0, waits=pews);
         }
-        rounds(build, e4m3_foe(dice, self.danger, True), 12.5, 3.5, float(long) - 4.5, 3.5, self.gallery);
+        rounds(build, E4M3_FOES.pick(dice, self.danger, True), 12.5, 3.5, float(long) - 4.5, 3.5, self.gallery);
         rounds(build, "monster_knight", float(long) - 4.5, float(wide) - 3.5, 12.5, float(wide) - 3.5, self.gallery);
         build.supply(float(long) - 3.0, float(middle) - 1.5, self.altar, "item_health");
         build.supply(2.5, 2.5, 0, "item_rockets");
@@ -405,7 +403,7 @@ node CountedArena(Prefab) {
         for port in self.taken {
             sealed_way(build, hall, long, wide, port, counted, "This door is opened elsewhere.");
         }
-        wave(build, counted, 1.0, [e4m3_foe(dice, self.danger, True)], [[1, 1, low - 8]], [[float(long) - 4.5, float(cy) + 0.5, 0.0]]);
+        wave(build, counted, 1.0, [E4M3_FOES.pick(dice, self.danger, True)], [[1, 1, low - 8]], [[float(long) - 4.5, float(cy) + 0.5, 0.0]]);
         # A wall of the hall that is not there, a closet behind.
         build.solid(1, 1, 0, 5, 5, 6);
         false_wall(build, hall, 2, 4, 4, 5, 0, 5, [1, 1, 4, 4], "item_health");
@@ -462,7 +460,7 @@ node GuardianCage(Prefab) {
             build.room(at, side + 1, 0, at + 3, side + 4, 7);
             build.widen(hall, at, side, 0, at + 3, side + 1, 6);
             taken +>:Fires:+> bursting(build, float(at), float(side), 0.0, float(at + 3), float(side + 1), 6.0);
-            build.foe(float(at) + 1.5, float(side) + 2.5, 0, e4m3_foe(dice, self.danger) if at == 3 else "monster_zombie", 270.0);
+            build.foe(float(at) + 1.5, float(side) + 2.5, 0, E4M3_FOES.pick(dice, self.danger) if at == 3 else "monster_zombie", 270.0);
         }
         wave(build, taken, 1.5, ["monster_zombie", "monster_zombie"], [[1, 1, -9], [6, 1, -9]], [[4.5, float(cy) - 2.5, 0.0], [4.5, float(cy) + 3.5, 0.0]]);
         # A wall by the way in that is not there, a closet behind.
@@ -479,7 +477,7 @@ node GuardianCage(Prefab) {
         dead = build.waiting();
         come +>:Fires:+> dead;
         build.foe(4.5, 2.5, 0, "monster_zombie", 0.0, waits=dead);
-        build.foe(float(cx) - 7.5, float(side) - 2.5, 0, e4m3_foe(dice, self.danger), 180.0, waits=dead);
+        build.foe(float(cx) - 7.5, float(side) - 2.5, 0, E4M3_FOES.pick(dice, self.danger), 180.0, waits=dead);
         build.supply(2.5, float(side) - 2.5, 0, "item_health");
         build.supply(2.5, 2.5, 0, "item_rockets");
     }
@@ -541,12 +539,12 @@ node ShrineExit(Prefab) {
         build.touch(float(ix - 2), float(middle - 2), 0.0, float(ix + 2), float(middle + 2), 6.0, False, "Are you sure you want to leave");
         # Crossing the stones, the dead teleported in on the shore behind.
         crossing = build.touch(float(x0), float(middle - 1), -1.0, float(x0 + 6), float(middle + 1), 5.0);
-        wave(build, crossing, 1.0, ["monster_zombie", e4m3_foe(dice, self.danger, True)], [[1, 1, -9], [1, wide - 5, -9]], [[float(wall) + 1.5, 2.5, 0.0], [float(wall) + 1.5, float(wide) - 2.5, 0.0]]);
+        wave(build, crossing, 1.0, ["monster_zombie", E4M3_FOES.pick(dice, self.danger, True)], [[1, 1, -9], [1, wide - 5, -9]], [[float(wall) + 1.5, 2.5, 0.0], [float(wall) + 1.5, float(wide) - 2.5, 0.0]]);
         hall_in = build.touch(1.0, float(middle - 2), 0.0, 3.0, float(middle + 2), 6.0);
         hall_guard = build.waiting();
         hall_in +>:Fires:+> hall_guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, e4m3_foe(dice, self.danger, index == 0), 180.0, waits=hall_guard);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, E4M3_FOES.pick(dice, self.danger, index == 0), 180.0, waits=hall_guard);
         }
         build.foe(float(x0) + 2.5, float(middle) + 4.5, -3, "monster_fish", 0.0);
         build.supply(2.5, 2.5, 0, "item_health");

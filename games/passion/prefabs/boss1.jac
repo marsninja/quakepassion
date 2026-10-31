@@ -25,7 +25,7 @@ palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, pillars, gate_into, lift }
 import from .q2_works { deck, keep_box, sparking, blast_chain, stash, hidden_closet, squad, rounds, beamed, held_door, key_taken, closets, pad_to, hurting, laser_burst, barrels }
 import from .city2 { random_sparks }
@@ -33,9 +33,7 @@ import from .city2 { random_sparks }
 glob BOSS1: str = "q2:boss1";
 
 """boss1's foes: iron maidens and flyers, gladiators deeper in."""
-def boss1_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_chick", "monster_gladiator"] if heavy else ["monster_chick", "monster_flyer", "monster_flyer"], ["monster_gladiator"], danger * 0.5));
-}
+glob BOSS1_FOES: FoeMix = FoeMix(light=["monster_chick", "monster_flyer", "monster_flyer"], strong=["monster_gladiator"], heavy_light=["monster_chick", "monster_gladiator"], scale=0.5);
 
 """An energy field across a way: a box of the prefab's cells that hurts
 whoever is in it (a trigger_hurt), switched off for good when `cue`
@@ -101,8 +99,8 @@ node ChamberApproach(Prefab) {
         laser_burst(build, come_in, 8.5, 1.1, 1.5, 1, 6.0);
         laser_burst(build, come_in, 16.5, float(self.wide) - 1.1, 1.5, 3, 8.0);
         climb = build.touch(float(gx - g), float(middle - 2), 2.0, float(gx - g + 3), float(middle + 2), 8.0);
-        squad(build, climb, [[float(self.long) - 3.0, 3.0, float(g)], [float(self.long) - 3.0, float(self.wide) - 3.0, float(g)], [15.5, float(self.wide) - 2.5, float(g)]], [boss1_foe(dice, self.danger, True), "monster_chick", "monster_flyer"], 180.0);
-        beamed(build, climb, 2, 2, -8, boss1_foe(dice, self.danger), float(gx) - 3.0, 3.0, 0, 180.0);
+        squad(build, climb, [[float(self.long) - 3.0, 3.0, float(g)], [float(self.long) - 3.0, float(self.wide) - 3.0, float(g)], [15.5, float(self.wide) - 2.5, float(g)]], [BOSS1_FOES.pick(dice, self.danger, True), "monster_chick", "monster_flyer"], 180.0);
+        beamed(build, climb, 2, 2, -8, BOSS1_FOES.pick(dice, self.danger), float(gx) - 3.0, 3.0, 0, 180.0);
         for index in range(dice.between(1, 2)) {
             build.foe(float(gx) - 3.5, 3.0 + float(index) * 5.0, 6, "monster_flyer", 180.0);
         }
@@ -184,13 +182,13 @@ node GearHall(Prefab) {
             build.doorway(hall, port);
         }
         up = build.touch(float(4 + b), 1.0, float(b), float(6 + b), 5.0, float(b + 6));
-        squad(build, up, [[float(self.long) - 8.0, float(self.wide) - 3.0, float(b)]], [boss1_foe(dice, self.danger, True)], 180.0);
-        beamed(build, up, 2, 2, -8, boss1_foe(dice, self.danger), float(self.long // 2), float(middle) + 0.5, 0, 0.0);
+        squad(build, up, [[float(self.long) - 8.0, float(self.wide) - 3.0, float(b)]], [BOSS1_FOES.pick(dice, self.danger, True)], 180.0);
+        beamed(build, up, 2, 2, -8, BOSS1_FOES.pick(dice, self.danger), float(self.long // 2), float(middle) + 0.5, 0, 0.0);
         rounds(build, "monster_chick", [[8.5, float(middle)], [float(self.long) - 9.5, float(middle)]], 0);
         for at in [[5, middle - 5], [5, middle + 3]] {
             build.breakable(float(at[0]), float(at[1]), 0.0, float(at[0] + 2), float(at[1] + 2), 2.0, 10);
         }
-        build.foe(float(self.long) - 3.0, float(middle) + 0.5, t, boss1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.0, float(middle) + 0.5, t, BOSS1_FOES.pick(dice, self.danger, True), 180.0);
         random_sparks(build, [[1.2, float(middle) + 4.0, 3.0, 0.0], [float(self.long) - 5.2, float(middle) + 3.0, float(t) - 3.0, 2.0], [float(self.long) - 5.2, float(middle) - 3.0, 4.0, 2.0]], 3.0);
         build.supply(2.5, float(middle) - 3.0, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.0, 3.0, t, "ammo_cells", "q2");
@@ -249,9 +247,9 @@ node LavaPlinths(Prefab) {
         on_plinths = build.touch(6.0, float(middle - 1), 0.0, 8.0, float(middle + 2), 6.0);
         squad(build, on_plinths, [[float(far) - 2.0, float(middle) + 4.0, 5.0], [float(far) - 6.0, float(middle) - 2.0, 6.0]], ["monster_flyer"], 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(6 + index * 4) + 0.5, float(middle) + 3.5, 5, boss1_foe(dice, self.danger), 180.0);
+            build.foe(float(6 + index * 4) + 0.5, float(middle) + 3.5, 5, BOSS1_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(far) + 3.0, float(middle) + 0.5, 0, boss1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(far) + 3.0, float(middle) + 0.5, 0, BOSS1_FOES.pick(dice, self.danger, True), 180.0);
         random_sparks(build, [[float(self.long) - 1.2, float(middle), 3.0, 2.0], [1.2, float(self.wide) - 3.0, 3.0, 0.0]], 3.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
         build.supply(float(far) + 3.0, 2.5, 0, "ammo_cells", "q2");
@@ -315,8 +313,8 @@ node InnerChamber(Prefab) {
         }
         # The chamber's guards come out on the tiers as the player comes in.
         come_in = build.touch(1.0, float(cy - 3), 0.0, 4.0, float(cy + 3), 8.0);
-        squad(build, come_in, [[float(self.long) - 4.0, 3.5, float(t)], [float(self.long) - 4.0, float(self.wide) - 3.5, float(t)], [float(cx) + 7.0, float(cy) + 0.5, 0.0]], [boss1_foe(dice, self.danger, True), "monster_chick", "monster_gladiator" if self.danger > 0.5 else "monster_chick"], 180.0);
-        beamed(build, come_in, 2, 2, -8, boss1_foe(dice, self.danger), float(cx) - 7.0, float(cy) + 0.5, 0, 0.0);
+        squad(build, come_in, [[float(self.long) - 4.0, 3.5, float(t)], [float(self.long) - 4.0, float(self.wide) - 3.5, float(t)], [float(cx) + 7.0, float(cy) + 0.5, 0.0]], [BOSS1_FOES.pick(dice, self.danger, True), "monster_chick", "monster_gladiator" if self.danger > 0.5 else "monster_chick"], 180.0);
+        beamed(build, come_in, 2, 2, -8, BOSS1_FOES.pick(dice, self.danger), float(cx) - 7.0, float(cy) + 0.5, 0, 0.0);
         rounds(build, "monster_chick", [[float(cx) - 7.0, float(cy) - 7.0], [float(cx) + 7.0, float(cy) - 7.0], [float(cx) + 7.0, float(cy) + 7.0], [float(cx) - 7.0, float(cy) + 7.0]], 0);
         build.foe(float(cx) + 0.5, float(cy) + 0.5, 8, "monster_flyer", 0.0);
         hidden_closet(build, self.long - 6, cy + 4, 0, 2, Q2_ARMOR, 6);
@@ -374,11 +372,11 @@ node Reliquary(Prefab) {
         keep_box(build, room, 7, 1, 8, 4, 10);
         build.breakable(12.0, float(side) - 4.0, 0.0, 14.0, float(side) - 2.0, 2.0, 10);
         taken = key_taken(build, self.key, float(self.long) - 3.5, float(cy), self.shelf);
-        closets(build, taken, side, 0, [3, self.long - 9], [boss1_foe(dice, self.danger, True), boss1_foe(dice, self.danger)]);
+        closets(build, taken, side, 0, [3, self.long - 9], [BOSS1_FOES.pick(dice, self.danger, True), BOSS1_FOES.pick(dice, self.danger)]);
         squad(build, taken, [[4.5, 3.0, 10.0], [4.5, float(side) - 3.0, 10.0]], ["monster_chick", "monster_flyer"], 0.0);
-        beamed(build, taken, 2, 2, -8, boss1_foe(dice, self.danger, True), 12.5, float(cy) + 0.5, 0, 0.0);
+        beamed(build, taken, 2, 2, -8, BOSS1_FOES.pick(dice, self.danger, True), 12.5, float(cy) + 0.5, 0, 0.0);
         build.touch(float(px - self.shelf - 3), 1.0, 0.0, float(px - self.shelf - 1), float(side), 6.0, True, "The shelf's steps are raised from the wall");
-        build.foe(float(self.long) - 3.5, float(cy) + 2.0, self.shelf, boss1_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, float(cy) + 2.0, self.shelf, BOSS1_FOES.pick(dice, self.danger), 180.0);
         rounds(build, "monster_chick", [[11.5, 2.5], [float(px) - 2.5, 2.5]], 0);
         random_sparks(build, [[float(self.long) - 1.2, float(cy) - 2.0, float(self.shelf) + 2.0, 2.0], [1.2, float(cy), 3.0, 0.0]], 3.0);
         build.supply(10.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
@@ -451,7 +449,7 @@ node MakronArena(Prefab) {
         laugh +>:Fires:+> build.sparks(float(mx) + 0.5, float(middle) + 0.5, float(self.dais) + 6.0, 0);
         blast_chain(build, count, [[float(mx) - 5.0, float(middle) - 5.0, 1.0], [float(mx) + 5.0, float(middle) + 5.0, 1.0], [float(self.long) - 8.0, float(middle), 2.0]], 0.3);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, boss1_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, BOSS1_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         rounds(build, "monster_chick", [[float(wall) + 13.0, 3.0], [float(self.long) - 9.0, 3.0]], 10);
         random_sparks(build, [[float(self.long) - 7.2, float(middle) - 4.0, 3.0, 2.0], [float(self.long) - 7.2, float(middle) + 4.0, 3.0, 2.0]], 2.5);

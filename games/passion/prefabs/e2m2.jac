@@ -38,16 +38,14 @@ gallery or down in a pit. Raised in e2m2's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, pillars, key_ambush, ring_path, spiral, lift }
 import from .e1m1_parts { deck, stash, bars }
 
 glob E2M2: str = "q1:e2m2";
 
 """e2m2's foes: knights and ogres, fiends and a shambler deeper in."""
-def e2m2_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_ogre", "monster_knight"] if heavy else ["monster_knight", "monster_knight", "monster_zombie"], ["monster_demon1"] if heavy else ["monster_ogre"], danger));
-}
+glob E2M2_FOES: FoeMix = FoeMix(light=["monster_knight", "monster_knight", "monster_zombie"], strong=["monster_ogre"], heavy_light=["monster_ogre", "monster_knight"], heavy_strong=["monster_demon1"]);
 
 """What a secret of e2m2's holds."""
 def e2m2_reward(dice: Stream) -> str {
@@ -150,7 +148,7 @@ node CitadelApproach(Prefab) {
             build.foe(float(wall_x) + 2.5, 2.5 + float(index) * 5.0, self.wall, "monster_ogre", 180.0);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(wall_x) - 3.5, float(middle) + 3.5 - float(index) * 7.0, 0, e2m2_foe(dice, self.danger), 180.0);
+            build.foe(float(wall_x) - 3.5, float(middle) + 3.5 - float(index) * 7.0, 0, E2M2_FOES.pick(dice, self.danger), 180.0);
         }
         # A knight walking the far bank.
         build.foe(17.5, 2.5, 0, "monster_knight", 90.0, patrol=[[17.5, 2.5], [17.5, float(self.wide) - 2.5]]);
@@ -286,7 +284,7 @@ node SpiralTower(Prefab) {
             for x in range(5, 8) {
                 build.keep(tower, x, self.wide - 5, floor);
             }
-            build.foe(float(self.long // 2) + 0.5, float(self.wide // 2) + 0.5, floor, e2m2_foe(dice, self.danger, True), 90.0);
+            build.foe(float(self.long // 2) + 0.5, float(self.wide // 2) + 0.5, floor, E2M2_FOES.pick(dice, self.danger, True), 90.0);
             build.supply(float(self.long // 2) - 1.5, float(self.wide // 2) + 0.5, floor, "item_shells");
         }
         build.doorway(tower, self.enter);
@@ -299,10 +297,10 @@ node SpiralTower(Prefab) {
         roused = build.touch(float(half[0]), float(half[1]), float(self.steps // 2 + 1), float(half[2]), float(half[3]), float(self.steps // 2 + 7));
         above = build.waiting();
         roused +>:Fires:+> above;
-        build.foe(float(mid[0] + mid[2]) * 0.5, float(mid[1] + mid[3]) * 0.5, self.steps, e2m2_foe(dice, self.danger, True), 180.0, waits=above);
+        build.foe(float(mid[0] + mid[2]) * 0.5, float(mid[1] + mid[3]) * 0.5, self.steps, E2M2_FOES.pick(dice, self.danger, True), 180.0, waits=above);
         for index in range(dice.between(1, 2)) {
             cell = path[self.steps // 2 + index * 3];
-            build.foe(float(cell[0] + cell[2]) * 0.5, float(cell[1] + cell[3]) * 0.5, self.steps // 2 + index * 3 + 1, e2m2_foe(dice, self.danger), 90.0, waits=above);
+            build.foe(float(cell[0] + cell[2]) * 0.5, float(cell[1] + cell[3]) * 0.5, self.steps // 2 + index * 3 + 1, E2M2_FOES.pick(dice, self.danger), 90.0, waits=above);
         }
         # A knight walking round the foot.
         build.foe(4.5, 4.5, 0, "monster_knight", 0.0, patrol=[[4.5, 4.5], [float(self.long) - 4.5, 4.5], [float(self.long) - 4.5, float(self.wide) - 4.5], [4.5, float(self.wide) - 4.5]]);
@@ -422,14 +420,14 @@ node CitadelCourt(Prefab) {
         guard = build.waiting();
         top_touch +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(kx0 + 3 + index * 4) + 0.5, float(ky0) + 3.5, self.keep_top, e2m2_foe(dice, self.danger, True), 270.0, waits=guard);
+            build.foe(float(kx0 + 3 + index * 4) + 0.5, float(ky0) + 3.5, self.keep_top, E2M2_FOES.pick(dice, self.danger, True), 270.0, waits=guard);
         }
         # Knights walking their rounds about the keep, and on its top.
         ring = [[float(kx0) - 1.5, float(ky1) + 2.5], [float(kx1) + 4.5, float(ky1) + 2.5], [float(kx1) + 4.5, float(ky0) - 4.5], [float(kx0) - 1.5, float(ky0) - 4.5]];
         build.foe(float(kx0) - 1.5, float(ky1) + 2.5, 0, "monster_knight", 0.0, patrol=ring);
         build.foe(float(kx0) + 1.5, float(ky1) - 1.5, self.keep_top, "monster_knight", 0.0, patrol=[[float(kx0) + 1.5, float(ky1) - 1.5], [float(kx1) - 1.5, float(ky1) - 1.5]]);
         for index in range(dice.between(2, 4)) {
-            build.foe(float(kx1) + 4.5, 4.5 + float(index) * 5.0, 0, e2m2_foe(dice, self.danger), 180.0);
+            build.foe(float(kx1) + 4.5, 4.5 + float(index) * 5.0, 0, E2M2_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(float(kx1) - 2.5, float(ky0) + 2.5, self.keep_top, "item_health");
         build.supply(float(kx0) - 1.0, 2.5, 0, "item_spikes");
@@ -535,7 +533,7 @@ node SpikeGallery(Prefab) {
         }
         floor_y = float(middle) + (2.5 if self.walk_low else -2.5);
         build.foe(6.5, floor_y, 0, "monster_knight", 0.0, patrol=[[6.5, floor_y], [float(self.long) - 6.5, floor_y]]);
-        build.foe(float(self.long) - 3.5, floor_y, 0, e2m2_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, floor_y, 0, E2M2_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(2 + self.walk) + 1.5, float(y0) + 1.5, self.walk, "item_health");
         build.supply(float(self.long) - 3.5, floor_y - 2.0, 0, "item_spikes");
     }
@@ -663,7 +661,7 @@ node OgrePit(Prefab) {
         bars(build, landed, self.taken, self.long, self.wide);
         floor_x = float(self.long) - 4.5 if self.descend else 4.5;
         for index in range(dice.between(2, 3)) {
-            build.foe(floor_x, 3.5 + float(index) * 4.0, 0, e2m2_foe(dice, self.danger, index == 0), 180.0, waits=below);
+            build.foe(floor_x, 3.5 + float(index) * 4.0, 0, E2M2_FOES.pick(dice, self.danger, index == 0), 180.0, waits=below);
         }
         build.foe(float(self.long // 2) + 0.5, 5.5, 0, "monster_knight", 0.0, patrol=[[float(self.ledge) + 5.5, 5.5], [float(self.long - self.ledge) - 5.5, 5.5]]);
         ledge_x = 3.5 if self.descend else float(self.long) - 3.5;
@@ -720,8 +718,8 @@ node OgreGoldHall(Prefab) {
                 build.keep(hall, gx - 1, y, 0);
             }
             stash(build, self.long - 5, 1, bottom, 1, e2m2_reward(dice));
-            key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, bottom, side, 0, [4, 9], [e2m2_foe(dice, self.danger, True), e2m2_foe(dice, self.danger)]);
-            build.foe(float(self.long) - 3.5, float(side) - 2.5, bottom, e2m2_foe(dice, self.danger, True), 180.0);
+            key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, bottom, side, 0, [4, 9], [E2M2_FOES.pick(dice, self.danger, True), E2M2_FOES.pick(dice, self.danger)]);
+            build.foe(float(self.long) - 3.5, float(side) - 2.5, bottom, E2M2_FOES.pick(dice, self.danger, True), 180.0);
             build.touch(float(gx) - 3.0, float(cy - 2), 0.0, float(gx), float(cy + 3), 6.0, True, "The key lies below");
         } else {
             build.level(hall, self.gallery);
@@ -735,12 +733,12 @@ node OgreGoldHall(Prefab) {
                 build.keep(hall, gx, y, self.gallery);
             }
             stash(build, self.long - 5, side - 4, self.gallery, 3, e2m2_reward(dice));
-            key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, self.gallery, side, 0, [4, 9], [e2m2_foe(dice, self.danger, True), e2m2_foe(dice, self.danger)]);
-            build.foe(float(self.long) - 3.5, 3.5, self.gallery, e2m2_foe(dice, self.danger, True), 180.0);
+            key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, self.gallery, side, 0, [4, 9], [E2M2_FOES.pick(dice, self.danger, True), E2M2_FOES.pick(dice, self.danger)]);
+            build.foe(float(self.long) - 3.5, 3.5, self.gallery, E2M2_FOES.pick(dice, self.danger, True), 180.0);
         }
         pillars(build, 4, 3, gx - 4, 4, 0, self.tall, 4, [[0, cy - 3, 5, cy + 3]]);
         pillars(build, 4, side - 3, gx - 4, side - 2, 0, self.tall, 4, [[0, cy - 3, 5, cy + 3]]);
-        build.foe(float(gx) - 6.5, float(cy) + 0.5, 0, e2m2_foe(dice, self.danger), 180.0);
+        build.foe(float(gx) - 6.5, float(cy) + 0.5, 0, E2M2_FOES.pick(dice, self.danger), 180.0);
         build.foe(3.5, float(cy) - 2.5, 0, "monster_knight", 0.0, patrol=[[3.5, float(cy) - 2.5], [float(gx) - 3.5, float(cy) - 2.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
     }
@@ -798,7 +796,7 @@ node CitadelSally(Prefab) {
                 build.keep(yard, x, self.wide - 4, 8);
             }
             build.way_out(float(self.long) - 3.0, float(self.wide) - 2.5, 8);
-            build.foe(float(dais_x) + 2.5, float(middle) + 0.5, 4, e2m2_foe(dice, self.danger, True), 180.0);
+            build.foe(float(dais_x) + 2.5, float(middle) + 0.5, 4, E2M2_FOES.pick(dice, self.danger, True), 180.0);
         } else {
             build.way_out(float(self.long) - 3.0, float(middle), 4);
         }
@@ -810,9 +808,9 @@ node CitadelSally(Prefab) {
             build.foe(float(gate_x + 13 + index * 4) + 0.5, float(self.wide) - 2.5, 8, "monster_ogre", 270.0, waits=wall_guard);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(gate_x) - 3.5, 2.5 + float(index) * 4.0, 0, e2m2_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(gate_x) - 3.5, 2.5 + float(index) * 4.0, 0, E2M2_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(dais_x) - 2.5, 2.5, 0, e2m2_foe(dice, self.danger, True), 180.0);
+        build.foe(float(dais_x) - 2.5, 2.5, 0, E2M2_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(float(gate_x) + 3.5, 2.5, 0, "monster_knight", 0.0, patrol=[[float(gate_x) + 3.5, 2.5], [float(dais_x) - 2.5, 2.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
     }

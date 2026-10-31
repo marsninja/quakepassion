@@ -36,16 +36,14 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from ..cast { BUTTON_MATERIAL }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, boulders, stalactites, lift, ring_path }
 import from .e2m4 { e2m4_bars, e2m4_key, e2m4_moat, e2m4_stash }
 
 glob E2M7: str = "q1:e2m7";
 
 """e2m7's foes: the dead and ogres, scrags, hell knights deeper in."""
-def e2m7_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_ogre", "monster_hell_knight"] if heavy else ["monster_zombie", "monster_ogre", "monster_wizard", "monster_zombie"], ["monster_demon1"] if heavy else ["monster_hell_knight"], danger));
-}
+glob E2M7_FOES: FoeMix = FoeMix(light=["monster_zombie", "monster_ogre", "monster_wizard", "monster_zombie"], strong=["monster_hell_knight"], heavy_light=["monster_ogre", "monster_hell_knight"], heavy_strong=["monster_demon1"]);
 
 """A mark on a wall to be shot (e2m7's shootable triggers): a plate in the
 wall's face at the prefab's cell point (x, y), `z` lifts up, facing
@@ -187,7 +185,7 @@ node UnderearthCave(Prefab) {
         dead = build.waiting();
         past +>:Fires:+> dead;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 6.5 - float(index) * 2.0, 3.5 + float(index) * 3.0, 0, e2m7_foe(dice, self.danger, index == 0), 180.0, waits=dead);
+            build.foe(float(self.long) - 6.5 - float(index) * 2.0, 3.5 + float(index) * 3.0, 0, E2M7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=dead);
         }
         build.foe(10.5, float(self.wide) - 3.0, s, "monster_ogre", 0.0, patrol=[[10.5, float(self.wide) - 3.0], [float(self.long) - 7.5, float(self.wide) - 3.0]]);
         build.foe(20.5, float(middle) + 0.5, 0, "monster_zombie", 90.0, patrol=[[20.5, 3.5], [20.5, float(self.wide) - 8.5]]);
@@ -279,7 +277,7 @@ node ShotMarks(Prefab) {
         guard = build.waiting();
         coming +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 4.5 - float(index) * 6.0, float(self.wide) - 3.0, g, e2m7_foe(dice, self.danger, index == 0), 270.0, waits=guard);
+            build.foe(float(self.long) - 4.5 - float(index) * 6.0, float(self.wide) - 3.0, g, E2M7_FOES.pick(dice, self.danger, index == 0), 270.0, waits=guard);
         }
         build.foe(10.5, 3.0, 0, "monster_knight" if self.danger < 0.4 else "monster_hell_knight", 0.0, patrol=[[10.5, 3.0], [float(self.long) - 3.5, 3.0]]);
         build.foe(float(self.long) - 6.5, float(middle) + 0.5, 0, "monster_zombie", 180.0, patrol=[[float(self.long) - 6.5, float(middle) + 0.5], [8.5, float(middle) + 0.5]]);
@@ -371,13 +369,13 @@ node SpikeRing(Prefab) {
         }
         late = build.delay(1.0);
         four +>:Fires:+> late;
-        late +>:Fires:+> build.summon(2, 6, -8, e2m7_foe(dice, self.danger, True), float(cx) - 5.5, float(cy) + 0.5, 0, 0.0);
+        late +>:Fires:+> build.summon(2, 6, -8, E2M7_FOES.pick(dice, self.danger, True), float(cx) - 5.5, float(cy) + 0.5, 0, 0.0);
         # What waits in the chamber wakes as the player comes in; an ogre
         # walks the gallery.
         guard = build.waiting();
         coming +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx) + 4.5, float(cy) - 4.5 + float(index) * 4.5, 0, e2m7_foe(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(float(cx) + 4.5, float(cy) - 4.5 + float(index) * 4.5, 0, E2M7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
         build.foe(2.5, float(self.wide) - 2.5, g, "monster_ogre", 0.0, patrol=[[2.5, float(self.wide) - 2.5], [float(self.long) - 2.5, float(self.wide) - 2.5], [float(self.long) - 2.5, 2.5], [2.5, 2.5]]);
         build.foe(float(cx) + 0.5, float(cy) - 5.5, 6, "monster_wizard", 0.0);
@@ -474,10 +472,10 @@ node LavaRiver(Prefab) {
         dead = build.waiting();
         bank +>:Fires:+> dead;
         for index in range(dice.between(2, 4)) {
-            build.foe(float(rx + 11 + index * 2) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, e2m7_foe(dice, self.danger, index == 0), 180.0, waits=dead);
+            build.foe(float(rx + 11 + index * 2) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, E2M7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=dead);
         }
         build.foe(float(rx + 10) + 0.5, 3.0, 0, "monster_hell_knight" if self.danger > 0.3 else "monster_knight", 90.0, patrol=[[float(rx + 10) + 0.5, 3.0], [float(rx + 10) + 0.5, float(self.wide) - 3.0]]);
-        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, s, e2m7_foe(dice, self.danger), 180.0, patrol=[[float(self.long) - 3.5, float(self.wide) - 3.5], [float(sx) + 3.5, float(self.wide) - 3.5]]);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, s, E2M7_FOES.pick(dice, self.danger), 180.0, patrol=[[float(self.long) - 3.5, float(self.wide) - 3.5], [float(sx) + 3.5, float(self.wide) - 3.5]]);
         build.foe(float(rx) + 3.5, float(middle) + 0.5, 6, "monster_wizard", 180.0);
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.0, s, "item_health");
         build.supply(3.5, 3.5, 0, "item_spikes");
@@ -569,15 +567,15 @@ node CagedKey(Prefab) {
             fields = {"wait": "-1"};
             build.rising_door(float(at), float(side), 0.0, float(at + 3), float(side + 1), 6.0, fields);
             taken +>:Fires:+> build.cue([fields], "door");
-            build.foe(float(at) + 1.5, float(side) + 2.5, 0, e2m7_foe(dice, self.danger, index == 0), 270.0, waits=out);
+            build.foe(float(at) + 1.5, float(side) + 2.5, 0, E2M7_FOES.pick(dice, self.danger, index == 0), 270.0, waits=out);
         }
         late = build.delay(0.5);
         taken +>:Fires:+> late;
         for index in range(2) {
             late +>:Fires:+> build.summon(2 + index * 4, 2, -8, "monster_wizard", float(bx) - 4.5, float(cy) - 2.5 + float(index) * 5.0, 5, 0.0);
         }
-        build.foe(float(bx) - 2.5, float(side) - 2.5, 0, e2m7_foe(dice, self.danger), 180.0, patrol=[[float(bx) - 2.5, float(side) - 2.5], [4.5, float(side) - 2.5]]);
-        build.foe(float(bx) + 2.5, 2.5, b, e2m7_foe(dice, self.danger, True), 180.0, patrol=[[float(bx) + 2.5, 2.5], [float(bx) + 2.5, float(side) - 2.5]]);
+        build.foe(float(bx) - 2.5, float(side) - 2.5, 0, E2M7_FOES.pick(dice, self.danger), 180.0, patrol=[[float(bx) - 2.5, float(side) - 2.5], [4.5, float(side) - 2.5]]);
+        build.foe(float(bx) + 2.5, 2.5, b, E2M7_FOES.pick(dice, self.danger, True), 180.0, patrol=[[float(bx) + 2.5, 2.5], [float(bx) + 2.5, float(side) - 2.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
         build.supply(float(bx) + 1.5, float(side) - 2.5, b, "item_health");
     }
@@ -650,15 +648,15 @@ node UnderearthExit(Prefab) {
         hollow = build.waiting();
         passing +>:Fires:+> hollow;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 3.5, 6.5 + float(index) * 2.5, 0, e2m7_foe(dice, self.danger, index == 0), 180.0, waits=hollow);
+            build.foe(float(self.long) - 3.5, 6.5 + float(index) * 2.5, 0, E2M7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=hollow);
         }
         clear = [[0, middle - 3, 5, middle + 3], [wall - 4, middle - 3, wall + 4, middle + 3], [sx - 6, 0, self.long, self.wide]];
         boulders(build, dice, 1, 1, self.long - 1, self.wide - 1, 0, dice.between(3, 6), clear);
         stalactites(build, dice, 3, 3, sx - 2, self.wide - 3, self.tall, dice.between(4, 7));
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, e2m7_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, E2M7_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(self.long) - 3.5, 2.5, s, e2m7_foe(dice, self.danger, True), 180.0, patrol=[[float(self.long) - 3.5, 2.5], [float(self.long) - 3.5, float(self.wide) - 2.5]]);
+        build.foe(float(self.long) - 3.5, 2.5, s, E2M7_FOES.pick(dice, self.danger, True), 180.0, patrol=[[float(self.long) - 3.5, 2.5], [float(self.long) - 3.5, float(self.wide) - 2.5]]);
         build.foe(float(wall) + 3.5, 2.5, 0, "monster_zombie", 90.0, patrol=[[float(wall) + 3.5, 2.5], [float(wall) + 3.5, float(self.wide) - 2.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
         build.supply(float(sx) - 2.5, 2.5, half, "item_health");

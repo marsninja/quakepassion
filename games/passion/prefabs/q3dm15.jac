@@ -26,10 +26,11 @@ q3dm15's are knights and hell knights, fiends as a run goes deeper.
   a pad, a balcony across the far wall a pad on the ledge throws a body up
   to, the way out on the balcony; a hurting pit in the floor."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, key_taken, pit_fall, pad_to, closets, wake_on }
 
 glob Q3DM15: str = "q3:q3dm15",
@@ -37,9 +38,7 @@ glob Q3DM15: str = "q3:q3dm15",
      Q3DM15_HEAVY: list[str] = ["monster_demon1"];
 
 """A foe for the Demon Keep."""
-def demon_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM15_LIGHT, Q3DM15_HEAVY, strong);
-}
+glob DEMON_FOES: FoeMix = FoeMix(light=Q3DM15_LIGHT, strong=Q3DM15_HEAVY, heavy_light=Q3DM15_HEAVY, scale=0.5);
 
 """Blades across a way (the cell line y = `line`, shot the way `out` goes,
 1 +y or 3 -y) at each of `xs`, `z` lifts up, each on a timer of its own."""
@@ -118,9 +117,9 @@ node DemonGate(Prefab) {
         build.supply(2.5, float(mid) - 1.5, 0, "ammo_shells", "q2");
         # Over the moat, the forecourt's guards wake.
         court = wake_on(build, 13.0, 1.0, 15.0, float(self.wide - 1), 0.0);
-        build.foe(float(kx) - 3.5, 3.5, 0, demon_foe(dice, self.danger), 180.0, waits=court);
-        build.foe(float(kx) - 3.5, float(self.wide) - 3.5, 0, demon_foe(dice, self.danger), 180.0, waits=court);
-        build.foe(float(self.long) - 3.5, float(mid) + 0.5, 9, demon_foe(dice, self.danger, True), 180.0);
+        build.foe(float(kx) - 3.5, 3.5, 0, DEMON_FOES.pick(dice, self.danger), 180.0, waits=court);
+        build.foe(float(kx) - 3.5, float(self.wide) - 3.5, 0, DEMON_FOES.pick(dice, self.danger), 180.0, waits=court);
+        build.foe(float(self.long) - 3.5, float(mid) + 0.5, 9, DEMON_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(5.5, float(mid) + 3.5, 0, "monster_knight", 0.0);
         build.foe(float(kx) + 2.5, 2.5, 0, "monster_knight", 90.0, patrol=[[float(kx) + 2.5, 2.5], [float(kx) + 2.5, float(self.wide) - 2.5]]);
         build.supply(float(self.long) - 3.0, 3.0, 9, Q3_ARMOR, "q3");
@@ -196,11 +195,11 @@ node DemonBladePit(Prefab) {
         for port in self.taken {
             build.doorway(hall, port);
         }
-        build.foe(float(self.long) - 3.5, float(mid) + 2.5, 0, demon_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(float(self.long) - 3.5, float(mid) - 2.5, 0, demon_foe(dice, self.danger), 180.0, waits=guards);
-        build.foe(float(cx) + 0.5, float(self.wide) - 3.0, 8, demon_foe(dice, self.danger), 270.0);
+        build.foe(float(self.long) - 3.5, float(mid) + 2.5, 0, DEMON_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.5, float(mid) - 2.5, 0, DEMON_FOES.pick(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(cx) + 0.5, float(self.wide) - 3.0, 8, DEMON_FOES.pick(dice, self.danger), 270.0);
         build.foe(float(cx) + 0.5, 4.5, -14, "monster_knight", 0.0);
-        build.foe(4.5, 3.5, 0, demon_foe(dice, self.danger), 0.0);
+        build.foe(4.5, 3.5, 0, DEMON_FOES.pick(dice, self.danger), 0.0);
         build.supply(float(cx) + 3.5, float(self.wide) - 3.0, 8, Q3_ARMOR, "q3");
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, 0, Q3_HEALTH, "q3");
     }
@@ -274,11 +273,11 @@ node DemonHall(Prefab) {
         }
         # At the nave stair's foot, the aisles' guards wake.
         foot = wake_on(build, float(self.long - 15), float(mid - 1), float(self.long - 12), float(mid + 2), float(lo));
-        build.foe(float(self.long // 2) + 0.5, 5.5, 0, demon_foe(dice, self.danger), 270.0, waits=foot);
-        build.foe(float(self.long // 2) - 2.5, float(self.wide) - 5.5, 0, demon_foe(dice, self.danger), 90.0, waits=foot);
-        build.foe(float(self.long // 2) + 0.5, 2.5, 8, demon_foe(dice, self.danger, True), 90.0);
+        build.foe(float(self.long // 2) + 0.5, 5.5, 0, DEMON_FOES.pick(dice, self.danger), 270.0, waits=foot);
+        build.foe(float(self.long // 2) - 2.5, float(self.wide) - 5.5, 0, DEMON_FOES.pick(dice, self.danger), 90.0, waits=foot);
+        build.foe(float(self.long // 2) + 0.5, 2.5, 8, DEMON_FOES.pick(dice, self.danger, True), 90.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(16 + index * 3) + 0.5, float(mid) + (2.5 if index % 2 == 0 else -2.5), lo, demon_foe(dice, self.danger), 180.0);
+            build.foe(float(16 + index * 3) + 0.5, float(mid) + (2.5 if index % 2 == 0 else -2.5), lo, DEMON_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(7.5, float(mid) - 2.5, lo, "monster_knight", 0.0, patrol=[[7.5, float(mid) - 2.5], [float(self.long) - 16.5, float(mid) - 2.5]]);
         build.supply(float(self.long // 2) + 0.5, float(mid) + 0.5, lo, Q3_ARMOR, "q3");
@@ -358,7 +357,7 @@ node DemonThrone(Prefab) {
             pit_fall(build, cx + 8, cy - 3, self.long - 4, cy + 3, -8, "The pit's floor burns", guards);
             pad_to(build, float(cx) + 9.5, float(cy), -8, float(cx) + 9.5, float(cy) + 5.5, 0);
             keep_box(build, hall, cx + 8, cy + 3, cx + 11, cy + 4, 0);
-            build.foe(float(self.long) - 3.5, float(cy) + 6.5, 0, demon_foe(dice, self.danger), 180.0, waits=guards);
+            build.foe(float(self.long) - 3.5, float(cy) + 6.5, 0, DEMON_FOES.pick(dice, self.danger), 180.0, waits=guards);
         }
         build.doorway(hall, self.enter);
         for port in self.taken {
@@ -366,11 +365,11 @@ node DemonThrone(Prefab) {
         }
         # On the dais, the galleries' guards wake.
         top = wake_on(build, float(cx - 5), float(cy - 5), float(cx + 5), float(cy + 5), 6.0);
-        build.foe(float(cx) + 5.5, 2.5, gal, demon_foe(dice, self.danger), 90.0, waits=top);
-        build.foe(float(cx) - 5.5, float(self.wide) - 2.5, gal, demon_foe(dice, self.danger), 270.0, waits=top);
-        build.foe(float(cx) + 2.5, float(cy) + 2.5, 6, demon_foe(dice, self.danger, True), 180.0);
+        build.foe(float(cx) + 5.5, 2.5, gal, DEMON_FOES.pick(dice, self.danger), 90.0, waits=top);
+        build.foe(float(cx) - 5.5, float(self.wide) - 2.5, gal, DEMON_FOES.pick(dice, self.danger), 270.0, waits=top);
+        build.foe(float(cx) + 2.5, float(cy) + 2.5, 6, DEMON_FOES.pick(dice, self.danger, True), 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx - 6 + index * 6) + 0.5, float(cy) + (8.5 if index % 2 == 0 else -8.5), 0, demon_foe(dice, self.danger), 0.0);
+            build.foe(float(cx - 6 + index * 6) + 0.5, float(cy) + (8.5 if index % 2 == 0 else -8.5), 0, DEMON_FOES.pick(dice, self.danger), 0.0);
         }
         build.supply(float(cx) - 2.5, float(cy) + 0.5, 6, Q3_ARMOR, "q3");
         build.supply(3.0, 3.0, gal, Q3_HEALTH, "q3");
@@ -435,10 +434,10 @@ node DemonAltar(Prefab) {
             blades(build, [px + 1, px + 3], float(side) - 0.2, 1.0, 3);
         }
         taken = key_taken(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, 8);
-        closets(build, taken, side, 0, [1, 5], [demon_foe(dice, self.danger, True), demon_foe(dice, self.danger)]);
+        closets(build, taken, side, 0, [1, 5], [DEMON_FOES.pick(dice, self.danger, True), DEMON_FOES.pick(dice, self.danger)]);
         taken +>:Fires:+> guards;
-        build.foe(float(self.long) - 3.0, 2.5, 8, demon_foe(dice, self.danger), 180.0, waits=guards);
-        build.foe(float(px) - 3.5, float(side) - 2.5, 0, demon_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.0, 2.5, 8, DEMON_FOES.pick(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(px) - 3.5, float(side) - 2.5, 0, DEMON_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 3.0, float(side) - 2.5, 8, Q3_HEALTH, "q3");
     }
@@ -499,10 +498,10 @@ node DemonSanctum(Prefab) {
         keep_box(build, room, wall + 4, mid - 3, wall + 5, mid, 0);
         inside = build.touch(float(wall + 1), float(mid - 2), 0.0, float(wall + 3), float(mid + 2), 6.0);
         inside +>:Fires:+> guards;
-        build.foe(float(self.long) - 3.0, 3.0, 12, demon_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(float(self.long) - 8.5, float(self.wide) - 3.0, 6, demon_foe(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.0, 3.0, 12, DEMON_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(self.long) - 8.5, float(self.wide) - 3.0, 6, DEMON_FOES.pick(dice, self.danger), 180.0, waits=guards);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, demon_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, DEMON_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(float(bx) - 1.5, 2.5, 0, "monster_knight", 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");

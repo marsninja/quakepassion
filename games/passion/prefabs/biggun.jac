@@ -30,7 +30,7 @@ Raised in biggun's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush }
 import from .plant_parts { key_doors, open_ways, charges, sparking, shelling, stash, crate_pile, squad, keep_box, plat, port_door, laser, quake }
 
@@ -38,12 +38,7 @@ glob BIGGUN: str = "q2:biggun";
 
 """biggun's foes: Strogg elite guards and gunners, flyers, gladiators
 deeper in."""
-def biggun_foe(dice: Stream, danger: float, heavy: bool = False, flying: bool = False) -> str {
-    if flying {
-        return "monster_flyer";
-    }
-    return q1_foe(dice, q1_palette(["monster_gunner", "monster_soldier_ss"] if heavy else ["monster_soldier_ss", "monster_soldier_ss", "monster_gunner"], ["monster_gladiator"] if heavy else ["monster_gunner"], danger * 0.4 if heavy else danger * 0.6));
-}
+glob BIGGUN_FOES: FoeMix = FoeMix(light=["monster_soldier_ss", "monster_soldier_ss", "monster_gunner"], strong=["monster_gunner"], heavy_light=["monster_gunner", "monster_soldier_ss"], heavy_strong=["monster_gladiator"], scale=0.6, heavy_scale=0.4, flying="monster_flyer");
 
 """The start: a yard under the gun's barrel, a laser fence across it, a
 bunker at its far end."""
@@ -119,13 +114,13 @@ node GunYard(Prefab) {
         sparking(build, dice.uniform(2.0, 4.0), 6.0, float(cy) + 2.2, float(b) + 1.5, 1);
         # Crossing the fence, guards appear on the bunker.
         past = build.touch(float(fx + 1), 3.0, 0.0, float(fx + 3), float(self.wide - 3), 6.0);
-        squad(build, past, [[float(self.long) - 4.5, float(cy) - 4.5, float(self.porch)], [float(self.long) - 3.5, float(cy) + 4.5, float(self.porch)], [float(self.long) - 5.5, float(cy) + 0.5, float(top)]], [biggun_foe(dice, self.danger, True), biggun_foe(dice, self.danger), "monster_soldier_ss"], 180.0);
+        squad(build, past, [[float(self.long) - 4.5, float(cy) - 4.5, float(self.porch)], [float(self.long) - 3.5, float(cy) + 4.5, float(self.porch)], [float(self.long) - 5.5, float(cy) + 0.5, float(top)]], [BIGGUN_FOES.pick(dice, self.danger, True), BIGGUN_FOES.pick(dice, self.danger), "monster_soldier_ss"], 180.0);
         charges(build, past, [[float(fx) + 6.0, 3.0, 2.0], [float(fx) + 8.0, float(self.wide) - 3.0, 2.0]], 0.5);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(fx + 4 + index * 3) + 0.5, float(cy) + (5.5 if index % 2 == 0 else -5.5), 0, biggun_foe(dice, self.danger), 180.0);
+            build.foe(float(fx + 4 + index * 3) + 0.5, float(cy) + (5.5 if index % 2 == 0 else -5.5), 0, BIGGUN_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(8.5, float(cy) + 0.5, top, "monster_soldier_ss", 0.0, patrol=[[8.5, float(cy) + 0.5], [float(bx) - 2.5, float(cy) + 0.5]]);
-        build.foe(float(fx) + 3.5, float(cy) + 0.5, 10, biggun_foe(dice, self.danger, False, True), 180.0);
+        build.foe(float(fx) + 3.5, float(cy) + 0.5, 10, BIGGUN_FOES.pick(dice, self.danger, False, True), 180.0);
         build.supply(float(self.long) - 2.5, 2.5, self.porch, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.0, float(cy) + 0.5, top, "ammo_rockets", "q2");
     }
@@ -202,10 +197,10 @@ node LaserGuard(Prefab) {
         }
         build.touch(4.0, 1.0, 0.0, 5.0, float(self.wide - 5), 8.0, True, "Lock down laser guard.");
         up = build.touch(float(g + 1), float(self.wide - 5), float(g), float(g + 3), float(self.wide - 1), float(g + 6));
-        squad(build, up, [[float(self.long) - 4.5, 3.5, 0.0], [float(self.long) - 4.5, float(cy) + 0.5, 0.0]], ["monster_soldier_ss", biggun_foe(dice, self.danger, True)], 180.0);
+        squad(build, up, [[float(self.long) - 4.5, 3.5, 0.0], [float(self.long) - 4.5, float(cy) + 0.5, 0.0]], ["monster_soldier_ss", BIGGUN_FOES.pick(dice, self.danger, True)], 180.0);
         build.foe(float(g + 2) + 0.5, float(self.wide) - 3.0, g, "monster_soldier_ss", 0.0, patrol=[[float(g + 2) + 0.5, float(self.wide) - 3.0], [float(self.long) - 3.5, float(self.wide) - 3.0]]);
-        build.foe(float(self.long) - 5.5, 3.5, 0, biggun_foe(dice, self.danger), 180.0);
-        build.foe(float(self.long // 2) + 0.5, float(cy) + 0.5, 6, biggun_foe(dice, self.danger, False, True), 180.0);
+        build.foe(float(self.long) - 5.5, 3.5, 0, BIGGUN_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2) + 0.5, float(cy) + 0.5, 6, BIGGUN_FOES.pick(dice, self.danger, False, True), 180.0);
         sparking(build, dice.uniform(3.0, 5.0), 10.5, 2.2, 5.0, 1);
         crate_pile(build, 4, 1, 0, 0, 2);
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, g, Q2_HEALTH, "q2");
@@ -266,14 +261,14 @@ node ShellHoist(Prefab) {
         keep_box(build, shaft, m + 3, 4, m + 8, 5, m);
         open_ways(build, shaft, self);
         ledge = build.touch(float(m + 2), 1.0, float(m), float(m + 4), 5.0, float(m + 6));
-        squad(build, ledge, [[float(self.long) - 3.5, float(cy) + 0.5, float(h)], [float(tx) - 6.0, float(cy) + 1.0, float(m + 3)]], [biggun_foe(dice, self.danger, True), "monster_flyer"], 180.0);
+        squad(build, ledge, [[float(self.long) - 3.5, float(cy) + 0.5, float(h)], [float(tx) - 6.0, float(cy) + 1.0, float(m + 3)]], [BIGGUN_FOES.pick(dice, self.danger, True), "monster_flyer"], 180.0);
         ledge +>:Fires:+> quake(build, float(tx), float(cy), float(h), 2);
         charges(build, ledge, [[float(self.long) - 2.0, 2.0, float(h + 3)], [float(self.long) - 2.0, float(self.wide) - 2.0, float(h + 4)], [float(tx) + 2.0, float(cy), float(h + 5)], [float(tx) - 3.0, float(cy) + 3.0, float(m + 5)], [4.0, float(cy) + 3.0, float(m + 4)]], 0.5);
         alarm = build.timer(dice.uniform(3.0, 5.0));
         alarm +>:Fires:+> build.sparks(float(tx) - 0.2, 3.0, float(h) - 2.0, 2);
         alarm +>:Fires:+> build.sparks(float(tx) - 0.2, float(self.wide) - 3.0, float(h) - 2.0, 2);
         build.foe(float(m + 3) + 0.5, 3.0, m, "monster_soldier_ss", 0.0, patrol=[[float(m + 3) + 0.5, 3.0], [float(tx) - 1.5, 3.0]]);
-        build.foe(float(self.long // 2), float(cy) + 2.5, 0, biggun_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2), float(cy) + 2.5, 0, BIGGUN_FOES.pick(dice, self.danger), 180.0);
         build.foe(float(self.long) - 3.5, 3.5, h, "monster_soldier_ss", 90.0, patrol=[[float(self.long) - 3.5, 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]]);
         sparking(build, dice.uniform(3.0, 5.0), 1.2, float(cy) + 2.0, float(m) + 2.0, 0);
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, h, Q2_HEALTH, "q2");
@@ -348,13 +343,13 @@ node GunTurret(Prefab) {
         build.jump_pad(float(cx + 8), float(self.wide - 8), 0, float(cx + 8), float(self.wide) - 2.5, g);
         keep_box(build, hall, cx + 6, self.wide - 5, cx + 11, self.wide - 4, g);
         up = build.touch(float(6 + g - 3), 1.0, float(g), float(6 + g), 5.0, float(g + 6));
-        squad(build, up, [[float(cx) - 8.0, float(cy) + 0.5, float(g + 3)], [float(cx) + 8.0, float(cy) + 0.5, float(g + 3)], [float(cx) + 0.5, float(cy) + 0.5, float(b)]], ["monster_flyer", biggun_foe(dice, self.danger, False, True), biggun_foe(dice, self.danger, True)], 180.0);
+        squad(build, up, [[float(cx) - 8.0, float(cy) + 0.5, float(g + 3)], [float(cx) + 8.0, float(cy) + 0.5, float(g + 3)], [float(cx) + 0.5, float(cy) + 0.5, float(b)]], ["monster_flyer", BIGGUN_FOES.pick(dice, self.danger, False, True), BIGGUN_FOES.pick(dice, self.danger, True)], 180.0);
         onto = build.touch(float(cx - 1), float(cy - 5), float(b), float(cx + 2), float(cy - 3), float(b + 6));
         charges(build, onto, [[float(cx) + 4.0, float(cy) + 4.0, float(b + 2)], [float(cx) - 4.0, float(cy) + 4.0, float(b + 2)], [float(cx) + 4.0, float(cy) - 4.0, float(b + 3)], [float(cx) - 4.0, float(cy) - 4.0, float(b + 3)]], 0.3);
         build.foe(3.0, 3.0, g, "monster_soldier_ss", 0.0, patrol=[[3.0, 3.0], [float(self.long) - 3.0, 3.0], [float(self.long) - 3.0, float(self.wide) - 3.0], [3.0, float(self.wide) - 3.0]]);
         build.foe(float(cx) - 8.5, float(cy) + 0.5, 0, "monster_gunner", 90.0, patrol=[[float(cx) - 8.5, float(cy) - 7.5], [float(cx) - 8.5, float(cy) + 7.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx) + 8.5, float(cy - 6 + index * 6) + 0.5, 0, biggun_foe(dice, self.danger), 180.0);
+            build.foe(float(cx) + 8.5, float(cy - 6 + index * 6) + 0.5, 0, BIGGUN_FOES.pick(dice, self.danger), 180.0);
         }
         sparking(build, dice.uniform(3.0, 5.0), float(cx) - 5.2, float(cy) - 2.0, 3.0, 2);
         build.supply(float(cx) + 0.5, float(cy) + 0.5, b, "ammo_rockets", "q2");
@@ -403,7 +398,7 @@ node GunBay(Prefab) {
         lever = build.push(1.0, float(cy) + 4.5, 1.5, 0);
         lever +>:Fires:+> build.rising_steps(px - p, cy - 1, 0, 0, p, 3);
         build.touch(2.0, float(cy - 3), 0.0, 4.0, float(cy + 4), 6.0, True, "The pad's steps are raised from the switch by the door");
-        key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, p, side, 0, [3, 10], [biggun_foe(dice, self.danger, True), biggun_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, p, side, 0, [3, 10], [BIGGUN_FOES.pick(dice, self.danger, True), BIGGUN_FOES.pick(dice, self.danger)]);
         on_pad = build.touch(float(px), float(cy - 3), float(p), float(px + 2), float(cy + 4), float(p + 6));
         charges(build, on_pad, [[4.0, 3.0, 4.0], [4.0, float(side) - 3.0, 4.0], [float(px) - 4.0, 3.0, 5.0], [float(px) - 8.0, float(side) - 3.0, 5.0], [10.0, float(cy), 7.0]], 0.4);
         squad(build, on_pad, [[float(px) - 3.5, 3.5, 0.0]], ["monster_soldier_ss"], 0.0);
@@ -482,13 +477,13 @@ node GunBreech(Prefab) {
         late = build.delay(4.0);
         control +>:Fires:+> late;
         late +>:Fires:+> door;
-        squad(build, late, [[float(ex) - 3.5, 3.5, 0.0], [float(ex) - 3.5, float(self.wide) - 3.5, 0.0]], [biggun_foe(dice, self.danger, True), "monster_soldier_ss"], 180.0);
+        squad(build, late, [[float(ex) - 3.5, 3.5, 0.0], [float(ex) - 3.5, float(self.wide) - 3.5, 0.0]], [BIGGUN_FOES.pick(dice, self.danger, True), "monster_soldier_ss"], 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, biggun_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, BIGGUN_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(bx) + 6.5, float(cy) + 0.5, 0, biggun_foe(dice, self.danger, True), 180.0);
+        build.foe(float(bx) + 6.5, float(cy) + 0.5, 0, BIGGUN_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(float(bx) - 6.5, 3.5, 0, "monster_soldier_ss", 0.0, patrol=[[float(bx) - 6.5, 3.5], [float(bx) + 6.5, 3.5]]);
-        build.foe(float(bx) + 0.5, float(cy) + 0.5, self.tall - 4, biggun_foe(dice, self.danger, False, True), 180.0);
+        build.foe(float(bx) + 0.5, float(cy) + 0.5, self.tall - 4, BIGGUN_FOES.pick(dice, self.danger, False, True), 180.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
     }
 }

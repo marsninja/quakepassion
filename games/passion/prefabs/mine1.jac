@@ -39,19 +39,14 @@ palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, boulders, stalactites, key_ambush, gate_into, lift }
 import from .minefact { slab, hurt, burning, sparking, stash, charges, timer_off, port_door, sealed }
 
 glob MINE1: str = "q2:mine1";
 
 """mine1's foes: soldiers and gunners, hovers, gladiators deeper in."""
-def mine1_foe(dice: Stream, danger: float, heavy: bool = False, flying: bool = False) -> str {
-    if flying {
-        return "monster_hover";
-    }
-    return q1_foe(dice, q1_palette(["monster_gunner", "monster_gladiator"] if heavy else ["monster_soldier", "monster_soldier", "monster_gunner"], ["monster_mutant"] if heavy else ["monster_gladiator"], danger * 0.5 if heavy else danger * 0.7));
-}
+glob MINE1_FOES: FoeMix = FoeMix(light=["monster_soldier", "monster_soldier", "monster_gunner"], strong=["monster_gladiator"], heavy_light=["monster_gunner", "monster_gladiator"], heavy_strong=["monster_mutant"], scale=0.7, heavy_scale=0.5, flying="monster_hover");
 
 """The start: the foot of the great shaft, a cage up past two galleries."""
 node ShaftFoot(Prefab) {
@@ -138,9 +133,9 @@ node ShaftFoot(Prefab) {
         galleries = build.waiting();
         board +>:Fires:+> galleries;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(10 + index * 5) + 0.5, 3.5, self.mid, mine1_foe(dice, self.danger), 90.0, waits=galleries);
+            build.foe(float(10 + index * 5) + 0.5, 3.5, self.mid, MINE1_FOES.pick(dice, self.danger), 90.0, waits=galleries);
         }
-        build.foe(float(self.long // 2) + 0.5, float(self.wide) - 3.5, self.top, mine1_foe(dice, self.danger, True), 270.0, waits=galleries);
+        build.foe(float(self.long // 2) + 0.5, float(self.wide) - 3.5, self.top, MINE1_FOES.pick(dice, self.danger, True), 270.0, waits=galleries);
         top_y = float(self.wide) - 3.5;
         build.foe(8.5, top_y, self.top, "monster_gunner", 0.0, patrol=[[8.5, top_y], [float(self.long) - 3.5, top_y]]);
         # Stepping off the cage at the top brings more out of the drift.
@@ -148,10 +143,10 @@ node ShaftFoot(Prefab) {
         drift = build.waiting();
         arrive +>:Fires:+> drift;
         for index in range(dice.between(1, 2)) {
-            build.foe(7.5 + float(index) * 3.0, top_y, self.top, mine1_foe(dice, self.danger), 0.0, waits=drift);
+            build.foe(7.5 + float(index) * 3.0, top_y, self.top, MINE1_FOES.pick(dice, self.danger), 0.0, waits=drift);
         }
-        build.foe(float(self.long) - 8.5, float(cy) + 3.5, 0, mine1_foe(dice, self.danger), 180.0);
-        build.foe(float(self.long // 2) + 0.5, float(cy) + 0.5, self.mid + 3, mine1_foe(dice, self.danger, False, True), 180.0);
+        build.foe(float(self.long) - 8.5, float(cy) + 3.5, 0, MINE1_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2) + 0.5, float(cy) + 0.5, self.mid + 3, MINE1_FOES.pick(dice, self.danger, False, True), 180.0);
         build.supply(float(self.long) - 3.5, 3.5, self.mid, Q2_HEALTH, "q2");
         build.supply(8.5, float(self.wide) - 3.5, self.top, "ammo_bullets", "q2");
     }
@@ -224,9 +219,9 @@ node GreatLift(Prefab) {
         (top_switch if self.down else foot_switch) +>:Fires:+> far_end;
         for index in range(dice.between(2, 3)) {
             if self.down {
-                build.foe(float(3 + index * 5) + 0.5, 3.5, 0, mine1_foe(dice, self.danger, index == 0), 90.0, waits=far_end);
+                build.foe(float(3 + index * 5) + 0.5, 3.5, 0, MINE1_FOES.pick(dice, self.danger, index == 0), 90.0, waits=far_end);
             } else {
-                build.foe(float(self.long - 3 - index * 5) + 0.5, float(self.wide) - 3.5, self.up, mine1_foe(dice, self.danger, index == 0), 270.0, waits=far_end);
+                build.foe(float(self.long - 3 - index * 5) + 0.5, float(self.wide) - 3.5, self.up, MINE1_FOES.pick(dice, self.danger, index == 0), 270.0, waits=far_end);
             }
         }
         # Arriving at the other end brings a second wave.
@@ -235,9 +230,9 @@ node GreatLift(Prefab) {
         arrival +>:Fires:+> second;
         for index in range(dice.between(1, 2)) {
             if self.down {
-                build.foe(float(self.long // 2 + index * 3) + 0.5, 4.5, 0, mine1_foe(dice, self.danger), 90.0, waits=second);
+                build.foe(float(self.long // 2 + index * 3) + 0.5, 4.5, 0, MINE1_FOES.pick(dice, self.danger), 90.0, waits=second);
             } else {
-                build.foe(float(self.long) - 3.5, float(self.wide) - 2.5 - 2.0 * float(index), self.up, mine1_foe(dice, self.danger), 180.0, waits=second);
+                build.foe(float(self.long) - 3.5, float(self.wide) - 2.5 - 2.0 * float(index), self.up, MINE1_FOES.pick(dice, self.danger), 180.0, waits=second);
             }
         }
         # A slime sump in the floor's corner.
@@ -247,9 +242,9 @@ node GreatLift(Prefab) {
             build.doorway(shaft, port);
         }
         sparking(build, float(lx) + 5.2, float(self.wide - 12) + 0.5, 3.0, 0, 5.0);
-        build.foe(float(self.long // 2) + 0.5, float(self.wide // 2) - 3.5, 0, mine1_foe(dice, self.danger), 0.0);
-        build.foe(3.5, float(self.wide) - 4.0, self.up, mine1_foe(dice, self.danger), 0.0);
-        build.foe(float(self.long // 2) + 0.5, float(self.wide // 2) - 4.5, self.up // 2, mine1_foe(dice, self.danger, False, True), 90.0);
+        build.foe(float(self.long // 2) + 0.5, float(self.wide // 2) - 3.5, 0, MINE1_FOES.pick(dice, self.danger), 0.0);
+        build.foe(3.5, float(self.wide) - 4.0, self.up, MINE1_FOES.pick(dice, self.danger), 0.0);
+        build.foe(float(self.long // 2) + 0.5, float(self.wide // 2) - 4.5, self.up // 2, MINE1_FOES.pick(dice, self.danger, False, True), 90.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 2.5, float(self.wide) - 3.5, self.up, "ammo_bullets", "q2");
     }
@@ -378,15 +373,15 @@ node BlastGallery(Prefab) {
         beyond = build.waiting();
         crest +>:Fires:+> beyond;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(px + 3 + index * 3) + 0.5, float(self.wide) - 4.5, fz, mine1_foe(dice, self.danger), 180.0, waits=beyond);
+            build.foe(float(px + 3 + index * 3) + 0.5, float(self.wide) - 4.5, fz, MINE1_FOES.pick(dice, self.danger), 180.0, waits=beyond);
         }
         callers = build.waiting();
         stop +>:Fires:+> callers;
-        stop +>:Fires:+> build.summon(self.long - 5, self.wide - 4, zmin - 8, mine1_foe(dice, self.danger, True), float(px + 3) + 0.5, float(self.wide // 2) + 1.5, fz, 180.0);
-        build.foe(float(self.long) - 3.5, float(self.wide // 2) + 1.5, fz, mine1_foe(dice, self.danger, True), 180.0, waits=callers);
+        stop +>:Fires:+> build.summon(self.long - 5, self.wide - 4, zmin - 8, MINE1_FOES.pick(dice, self.danger, True), float(px + 3) + 0.5, float(self.wide // 2) + 1.5, fz, 180.0);
+        build.foe(float(self.long) - 3.5, float(self.wide // 2) + 1.5, fz, MINE1_FOES.pick(dice, self.danger, True), 180.0, waits=callers);
         build.foe(float(5 + self.deck) + 0.5, 2.5, self.deck, "monster_soldier", 0.0, patrol=[[float(5 + self.deck) + 0.5, 2.5], [float(last) - 1.5, 2.5]]);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(rx - 3 - index * 3) + 0.5, float(self.wide // 2) + 1.5, 0, mine1_foe(dice, self.danger), 0.0);
+            build.foe(float(rx - 3 - index * 3) + 0.5, float(self.wide // 2) + 1.5, 0, MINE1_FOES.pick(dice, self.danger), 0.0);
         }
         build.supply(float(rx) + 0.5, 2.5, self.deck, Q2_HEALTH, "q2");
         build.supply(float(px) + 0.5, 5.5, fz + 1, "ammo_bullets", "q2");
@@ -493,17 +488,17 @@ node ValveCavern(Prefab) {
             opened +>:Fires:+> late;
             wave = build.waiting();
             late +>:Fires:+> wave;
-            build.foe(float(self.long // 2 - 3 + index * 3) + 0.5, float(self.wide // 2) + 0.5, 9, mine1_foe(dice, self.danger, False, True), 270.0, waits=wave);
+            build.foe(float(self.long // 2 - 3 + index * 3) + 0.5, float(self.wide // 2) + 0.5, 9, MINE1_FOES.pick(dice, self.danger, False, True), 270.0, waits=wave);
         }
         # Guards on the terraces; a gunner walks the low one.
         build.foe(3.5, 3.0, 4, "monster_gunner", 0.0, patrol=[[3.5, 3.0], [float(east) - 5.5, 3.0]]);
-        build.foe(float(self.long) - 3.5, float(self.wide // 2) + 0.5, 8, mine1_foe(dice, self.danger, True), 180.0);
-        build.foe(float(east) - 3.5, float(self.wide) - 3.0, 12, mine1_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, float(self.wide // 2) + 0.5, 8, MINE1_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(float(east) - 3.5, float(self.wide) - 3.0, 12, MINE1_FOES.pick(dice, self.danger), 180.0);
         step_in = build.touch(1.0, 5.0, 0.0, 5.0, float(self.wide - 5), 6.0);
         floor_wake = build.waiting();
         step_in +>:Fires:+> floor_wake;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(east) - 3.5, float(9 + index * 4) + 0.5, 0, mine1_foe(dice, self.danger), 180.0, waits=floor_wake);
+            build.foe(float(east) - 3.5, float(9 + index * 4) + 0.5, 0, MINE1_FOES.pick(dice, self.danger), 180.0, waits=floor_wake);
         }
         build.supply(float(east) - 2.5, 2.5, 4, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.5, 3.5, 8, "ammo_bullets", "q2");
@@ -591,16 +586,16 @@ node BarrierBridge(Prefab) {
         far_side = build.waiting();
         control +>:Fires:+> far_side;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(x1 + 2) + 0.5, float(cy - 4 + index * 4) + 0.5, 0, mine1_foe(dice, self.danger, index == 0), 180.0, waits=far_side);
+            build.foe(float(x1 + 2) + 0.5, float(cy - 4 + index * 4) + 0.5, 0, MINE1_FOES.pick(dice, self.danger, index == 0), 180.0, waits=far_side);
         }
         foot = build.touch(float(x0 + self.deep), 1.0, float(low), float(x0 + self.deep + 3), 4.0, float(low + 6));
         down_here = build.waiting();
         foot +>:Fires:+> down_here;
-        build.foe(float(x1) - 2.5, float(cy) - 3.5, low, mine1_foe(dice, self.danger), 180.0, waits=down_here);
+        build.foe(float(x1) - 2.5, float(cy) - 3.5, low, MINE1_FOES.pick(dice, self.danger), 180.0, waits=down_here);
         floor_y = float(cy) + 0.5;
         build.foe(float(x0 + self.deep) + 1.5, floor_y, low, "monster_soldier", 0.0, patrol=[[float(x0 + self.deep) + 1.5, floor_y], [float(x1) - 1.5, floor_y], [float(x1) - 1.5, float(self.wide) - 2.5]]);
-        build.foe(float(x0 + x1) * 0.5, float(cy) + 4.5, 5, mine1_foe(dice, self.danger, False, True), 180.0);
-        build.foe(float(x1) + 4.5, float(self.wide) - 3.0, 0, mine1_foe(dice, self.danger), 180.0);
+        build.foe(float(x0 + x1) * 0.5, float(cy) + 4.5, 5, MINE1_FOES.pick(dice, self.danger, False, True), 180.0);
+        build.foe(float(x1) + 4.5, float(self.wide) - 3.0, 0, MINE1_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
         build.supply(float(x1) - 2.5, 2.5, low, "ammo_bullets", "q2");
     }
@@ -663,13 +658,13 @@ node VentControl(Prefab) {
         }
         # The fans' controls along the deck's back wall.
         build.solid(self.long - 2, 3, self.deck, self.long - 1, side - 2, self.deck + 2);
-        key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, self.deck, side, 0, [2, dx - 4], [mine1_foe(dice, self.danger, True), mine1_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, self.deck, side, 0, [2, dx - 4], [MINE1_FOES.pick(dice, self.danger, True), MINE1_FOES.pick(dice, self.danger)]);
         fans = build.waiting();
         build.touch(1.0, float(cy - 2), 0.0, 4.0, float(cy + 3), 6.0) +>:Fires:+> fans;
-        build.foe(float(dx) - 1.5, float(side) - 3.5, 0, mine1_foe(dice, self.danger), 180.0, waits=fans);
+        build.foe(float(dx) - 1.5, float(side) - 3.5, 0, MINE1_FOES.pick(dice, self.danger), 180.0, waits=fans);
         deck_guard = build.waiting();
         build.touch(float(dx), float(cy - 2), float(self.deck), float(dx + 2), float(cy + 3), float(self.deck + 6)) +>:Fires:+> deck_guard;
-        build.foe(float(self.long) - 3.5, 3.5, self.deck, mine1_foe(dice, self.danger, True), 180.0, waits=deck_guard);
+        build.foe(float(self.long) - 3.5, 3.5, self.deck, MINE1_FOES.pick(dice, self.danger, True), 180.0, waits=deck_guard);
         build.foe(8.5, 2.5, 0, "monster_soldier", 90.0, patrol=[[8.5, 2.5], [8.5, float(side) - 2.5]]);
         build.supply(2.5, float(cy) + 3.5, 0, Q2_HEALTH, "q2");
         build.timer(5.0) +>:Fires:+> build.sparks(float(self.long) - 2.2, float(cy) - 3.5, float(self.deck) + 1.5, 2);
@@ -732,7 +727,7 @@ node ToxicExit(Prefab) {
         vent +>:Fires:+> seal;
         chamber = build.waiting();
         vent +>:Fires:+> chamber;
-        build.foe(float(self.long) - 2.5, float(cy) - 3.5, 0, mine1_foe(dice, self.danger, True), 180.0, waits=chamber);
+        build.foe(float(self.long) - 2.5, float(cy) - 3.5, 0, MINE1_FOES.pick(dice, self.danger, True), 180.0, waits=chamber);
         vent +>:Fires:+> build.objective("Ventilation systems active. Leave the mines.");
         vent +>:Fires:+> build.sparks(float(ex) - 0.2, float(cy) - 2.5, 6.0, 2);
         # A slime sump by the north wall.
@@ -742,12 +737,12 @@ node ToxicExit(Prefab) {
         floor_guard = build.waiting();
         come_in +>:Fires:+> floor_guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(ex - 4 - index * 4) + 0.5, float(cy + 2) + 0.5, 0, mine1_foe(dice, self.danger, index == 0), 180.0, waits=floor_guard);
+            build.foe(float(ex - 4 - index * 4) + 0.5, float(cy + 2) + 0.5, 0, MINE1_FOES.pick(dice, self.danger, index == 0), 180.0, waits=floor_guard);
         }
-        build.foe(float(ex) - 3.5, 2.5, self.gantry, mine1_foe(dice, self.danger), 180.0);
-        build.foe(float(self.long) - 3.5, float(cy) + 3.5, 0, mine1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(ex) - 3.5, 2.5, self.gantry, MINE1_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, float(cy) + 3.5, 0, MINE1_FOES.pick(dice, self.danger, True), 180.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, mine1_foe(dice, self.danger), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, MINE1_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
     }

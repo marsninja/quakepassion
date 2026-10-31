@@ -27,10 +27,11 @@ ogre. Raised in q3dm0's own palette.
   undercroft, thrown up to by a jump pad, climbed by a stair or reached
   by a teleporter; climbing to it brings a foe in by teleporter below."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, key_ambush, gate_into, lift }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3low_parts { slab, keep_box, hint, wake_later, pad, flying_stair, sliding_pair, columns }
 
 glob Q3DM0: str = "q3:q3dm0",
@@ -38,9 +39,7 @@ glob Q3DM0: str = "q3:q3dm0",
      Q3DM0_HEAVY: list[str] = ["monster_ogre"];
 
 """A foe for q3dm0's stretches."""
-def q3dm0_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM0_LIGHT, Q3DM0_HEAVY, strong);
-}
+glob Q3DM0_FOES: FoeMix = FoeMix(light=Q3DM0_LIGHT, strong=Q3DM0_HEAVY, heavy_light=Q3DM0_HEAVY, scale=0.5);
 
 """The start: a vestibule behind sliding doors, a hall with a gallery over
 an arcade, climbed by a stair, a lift or a jump pad."""
@@ -129,12 +128,12 @@ node IntroHall(Prefab) {
         wake = build.touch(float(self.long // 2), 5.0, 0.0, float(self.long // 2 + 2), float(self.wide - 1), 6.0);
         guards = wake_later(build, wake, 1.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 3.5 - float(index) * 4.0, 2.5, g, q3dm0_foe(dice, self.danger), 90.0, waits=guards);
+            build.foe(float(self.long) - 3.5 - float(index) * 4.0, 2.5, g, Q3DM0_FOES.pick(dice, self.danger), 90.0, waits=guards);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(vest + 6 + index * 5) + 0.5, float(self.wide) - 3.5, 0, q3dm0_foe(dice, self.danger), 180.0);
+            build.foe(float(vest + 6 + index * 5) + 0.5, float(self.wide) - 3.5, 0, Q3DM0_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(self.long) - 4.5, float(middle) + 0.5, 0, q3dm0_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 4.5, float(middle) + 0.5, 0, Q3DM0_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(self.long) - 3.0, 2.5, g, Q3_ARMOR, "q3");
         build.supply(float(vest) + 2.5, float(self.wide) - 2.5, 0, Q3_HEALTH, "q3");
     }
@@ -203,10 +202,10 @@ node IntroLoop(Prefab) {
         under = build.touch(float(px + 1), 1.0, 0.0, float(px + 3), float(self.wide - 1), 6.0);
         above = wake_later(build, under, 0.5);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 3.0, 3.0 + float(index) * float(self.wide - 6), p, q3dm0_foe(dice, self.danger, index == 0), 180.0, waits=above);
+            build.foe(float(self.long) - 3.0, 3.0 + float(index) * float(self.wide - 6), p, Q3DM0_FOES.pick(dice, self.danger, index == 0), 180.0, waits=above);
         }
-        build.foe(float(px) - 4.5, float(self.wide) - 3.0, 0, q3dm0_foe(dice, self.danger), 180.0);
-        build.foe(float(self.long) - 3.5, float(middle) + 0.5, 0, q3dm0_foe(dice, self.danger), 180.0);
+        build.foe(float(px) - 4.5, float(self.wide) - 3.0, 0, Q3DM0_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, float(middle) + 0.5, 0, Q3DM0_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, p, Q3_HEALTH, "q3");
         build.supply(float(px) + 2.5, float(middle) + 0.5, 0, "ammo_nails");
     }
@@ -298,15 +297,15 @@ node IntroPit(Prefab) {
         }
         hint(build, 7.0, 7.0, 0.0, float(self.long - 7), float(self.wide - 7), 5.0, "The pit is a killing floor", "Get up to the balcony" if self.teleport else "The pad throws you up to the balcony", 2.0, "Mega health lies in the pit");
         # A guard walks the ring; the balcony's wake as the player reaches it.
-        build.foe(3.5, 3.5, r, q3dm0_foe(dice, self.danger), 0.0, patrol=[[3.5, 3.5], [float(self.long) - 3.5, 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5], [3.5, float(self.wide) - 3.5]]);
+        build.foe(3.5, 3.5, r, Q3DM0_FOES.pick(dice, self.danger), 0.0, patrol=[[3.5, 3.5], [float(self.long) - 3.5, 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5], [3.5, float(self.wide) - 3.5]]);
         up = build.touch(float(bx - 2), float(self.wide - 5), float(b), float(bx + 3), float(self.wide - 1), float(b + 6));
         above = wake_later(build, up, 0.5);
-        build.foe(float(self.long) - 4.0, float(self.wide) - 3.0, b, q3dm0_foe(dice, self.danger, True), 180.0, waits=above);
+        build.foe(float(self.long) - 4.0, float(self.wide) - 3.0, b, Q3DM0_FOES.pick(dice, self.danger, True), 180.0, waits=above);
         corners = [[7.5, 7.5], [float(self.long) - 7.5, float(self.wide) - 7.5], [float(self.long) - 7.5, 7.5], [7.5, float(self.wide) - 7.5]];
         for index in range(dice.between(2, 3)) {
-            build.foe(corners[index][0], corners[index][1], 0, q3dm0_foe(dice, self.danger), 0.0);
+            build.foe(corners[index][0], corners[index][1], 0, Q3DM0_FOES.pick(dice, self.danger), 0.0);
         }
-        build.foe(float(self.long) - 3.5, float(cy) + 4.5, r, q3dm0_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, float(cy) + 4.5, r, Q3DM0_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(cx) + 3.5, float(self.wide) - 3.0, b, Q3_ARMOR, "q3");
         build.supply(float(cx) + 2.5, float(cy) + 0.5, 0, "item_health_mega", "q3");
         build.supply(3.5, float(self.wide) - 3.5, r, "ammo_shells", "q2");
@@ -381,10 +380,10 @@ node IntroSwitchback(Prefab) {
         guards = wake_later(build, foot, 1.5);
         hint(build, 2.0, 1.0, 0.0, 4.0, float(self.wide - 1), 6.0, "The deck runs over the hall", "Climb to it", 2.5, "Or keep to the floor");
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 4.0 - float(index) * 6.0, 3.0, d, q3dm0_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(self.long) - 4.0 - float(index) * 6.0, 3.0, d, Q3DM0_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
-        build.foe(float(self.long // 2) + 0.5, 3.5, 0, q3dm0_foe(dice, self.danger), 180.0);
-        build.foe(float(self.long) - 3.5, float(self.wide) - 6.5, 0, q3dm0_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2) + 0.5, 3.5, 0, Q3DM0_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 6.5, 0, Q3DM0_FOES.pick(dice, self.danger), 180.0);
         build.supply(3.0, 3.0, d, Q3_HEALTH, "q3");
         build.supply(float(self.long // 2) - 2.5, 2.5, 0, "ammo_bullets", "q2");
     }
@@ -444,10 +443,10 @@ node IntroVault(Prefab) {
         }
         # An edge of the gallery to drop from.
         keep_box(build, vault, 13, 4, 16, 5, g);
-        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, g, side, 0, [2, far - 5], [q3dm0_foe(dice, self.danger, True), q3dm0_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, g, side, 0, [2, far - 5], [Q3DM0_FOES.pick(dice, self.danger, True), Q3DM0_FOES.pick(dice, self.danger)]);
         hint(build, 3.0, 1.0, 0.0, 5.0, float(side), 6.0, "The key lies on the gallery", "Its guards will come for it", 2.0, "Take it and fight your way back");
-        build.foe(4.5, 3.0, 0, q3dm0_foe(dice, self.danger), 0.0, patrol=[[4.5, 3.0], [float(far) - 2.5, 3.0]]);
-        build.foe(float(self.long) - 3.0, 3.0, g, q3dm0_foe(dice, self.danger, True), 180.0);
+        build.foe(4.5, 3.0, 0, Q3DM0_FOES.pick(dice, self.danger), 0.0, patrol=[[4.5, 3.0], [float(far) - 2.5, 3.0]]);
+        build.foe(float(self.long) - 3.0, 3.0, g, Q3DM0_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(2.5, float(side) - 2.5, 0, Q3_HEALTH, "q3");
     }
 }
@@ -502,11 +501,11 @@ node IntroPortal(Prefab) {
         landing = build.touch(float(px), 1.0, float(p), float(px + 3), float(self.wide - 1), float(p + 6));
         coming = build.delay(1.0);
         landing +>:Fires:+> coming;
-        coming +>:Fires:+> build.summon(wall + 3, 2, -8, q3dm0_foe(dice, self.danger, True), float(px) - 4.0, float(middle) + 0.5, 0, 0.0);
+        coming +>:Fires:+> build.summon(wall + 3, 2, -8, Q3DM0_FOES.pick(dice, self.danger, True), float(px) - 4.0, float(middle) + 0.5, 0, 0.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall + 6 + index * 4) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), 0, q3dm0_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall + 6 + index * 4) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), 0, Q3DM0_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(self.long) - 3.0, 2.5, p, q3dm0_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.0, 2.5, p, Q3DM0_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(px) + 2.5, float(self.wide) - 2.5, 0, Q3_ARMOR, "q3");
     }

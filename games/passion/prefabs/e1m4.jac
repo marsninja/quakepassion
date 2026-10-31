@@ -52,19 +52,14 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from ..space { Space }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, boulders, stalactites, apart, lift }
 import from .e1m2_parts { slab, keep_box, keep_ring, arcade, closets, key_cue, ramp, flood, low_rocks, sump }
 
 glob E1M4: str = "q1:e1m4";
 
 """e1m4's foes: knights and ogres on the rock, scrags in the air."""
-def e1m4_foe(dice: Stream, danger: float, heavy: bool = False, flying: bool = False) -> str {
-    if flying {
-        return "monster_wizard";
-    }
-    return q1_foe(dice, q1_palette(["monster_knight", "monster_knight", "monster_ogre"] if heavy else ["monster_knight", "monster_knight"], ["monster_ogre"] if heavy else ["monster_ogre", "monster_wizard"], danger));
-}
+glob E1M4_FOES: FoeMix = FoeMix(light=["monster_knight", "monster_knight"], strong=["monster_ogre", "monster_wizard"], heavy_light=["monster_knight", "monster_knight", "monster_ogre"], heavy_strong=["monster_ogre"], flying="monster_wizard");
 
 """The start: a shelf high at the back of a cave, a way down, a stream
 across the floor; two shot buttons open a secret."""
@@ -165,10 +160,10 @@ node GrottoMouth(Prefab) {
         below = build.waiting();
         rim +>:Fires:+> below;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(stream_x) + 4.5 + float(index) * 2.0, 3.5 + float(index) * 3.0, 0, e1m4_foe(dice, self.danger, index == 0), 180.0, waits=below);
+            build.foe(float(stream_x) + 4.5 + float(index) * 2.0, 3.5 + float(index) * 3.0, 0, E1M4_FOES.pick(dice, self.danger, index == 0), 180.0, waits=below);
         }
         build.foe(float(stream_x) + 5.5, float(self.wide) - 3.5, 0, "monster_knight", 0.0, patrol=[[float(stream_x) + 5.5, float(self.wide) - 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]]);
-        build.foe(float(stream_x) + 1.5, float(mid) + 0.5, 6, e1m4_foe(dice, self.danger, False, True), 180.0);
+        build.foe(float(stream_x) + 1.5, float(mid) + 0.5, 6, E1M4_FOES.pick(dice, self.danger, False, True), 180.0);
         build.supply(float(edge_x) + 1.5, float(self.wide) - 2.5, 0, "item_health");
     }
 }
@@ -251,17 +246,17 @@ node FloodedCaverns(Prefab) {
             build.foe(float(lake_x0 + 3 + index * 5), float(middle) + 3.5, -6, "monster_fish", 90.0);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(lake_x0 + 4 + index * 4), float(middle) + 0.5, 7, e1m4_foe(dice, self.danger, False, True), 180.0);
+            build.foe(float(lake_x0 + 4 + index * 4), float(middle) + 0.5, 7, E1M4_FOES.pick(dice, self.danger, False, True), 180.0);
         }
         # Halfway over the water, scrags are sent in behind the swimmer; the
         # far shore's guards wake as he climbs out.
         halfway = build.touch(float(cx - 1), 1.0, -8.0, float(cx + 2), float(self.wide - 1), 6.0);
-        halfway +>:Fires:+> build.summon(2, 2, -8, e1m4_foe(dice, self.danger, False, True), float(lake_x0) + 1.5, float(middle) + 0.5, 5, 0.0);
+        halfway +>:Fires:+> build.summon(2, 2, -8, E1M4_FOES.pick(dice, self.danger, False, True), float(lake_x0) + 1.5, float(middle) + 0.5, 5, 0.0);
         out = build.touch(float(lake_x1 - 1), 1.0, -2.0, float(lake_x1 + 2), float(self.wide - 1), 6.0);
         guards = build.waiting();
         out +>:Fires:+> guards;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(lake_x1) + 3.5, 3.5 + float(index) * 3.0, 0, e1m4_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(lake_x1) + 3.5, 3.5 + float(index) * 3.0, 0, E1M4_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         build.foe(float(lake_x1) + 4.5, 2.5, 0, "monster_knight", 90.0, patrol=[[float(lake_x1) + 4.5, 2.5], [float(lake_x1) + 4.5, float(self.wide) - 7.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
@@ -342,19 +337,19 @@ node TeleportGrotto(Prefab) {
         clear = [[0, cy - 3, 5, cy + 3], [cx - 11, cy - 5, cx + 3, cy + 6], [cx - 2, self.wide - 10, cx + 3, self.wide], [cx - 2, 0, cx + 3, 10], [self.long - 10, cy - 9, self.long, cy + 3], [2, 2, 5, self.wide - 2]];
         low_rocks(build, dice, 2, 2, self.long - 2, self.wide - 2, 0, dice.between(5, 8), 2, clear);
         for index in range(dice.between(2, 3)) {
-            build.foe(4.5 + float(index) * 3.0, float(cy) + 4.5, 0, e1m4_foe(dice, self.danger), 0.0);
+            build.foe(4.5 + float(index) * 3.0, float(cy) + 4.5, 0, E1M4_FOES.pick(dice, self.danger), 0.0);
         }
         build.foe(3.5, 3.5, 0, "monster_knight", 90.0, patrol=[[3.5, 3.5], [3.5, float(self.wide) - 3.5]]);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(cx) + 0.5, float(cy) + 0.5, self.ledge + 4, e1m4_foe(dice, self.danger, False, True), 0.0);
+            build.foe(float(cx) + 0.5, float(cy) + 0.5, self.ledge + 4, E1M4_FOES.pick(dice, self.danger, False, True), 0.0);
         }
         # The ledges' guards wake as the player comes up to the pool.
         nearing = build.touch(float(cx - 10), float(cy - 5), 0.0, float(cx - 8), float(cy + 6), 6.0);
         guards = build.waiting();
         nearing +>:Fires:+> guards;
-        build.foe(float(self.long) - 3.0, float(cy) - 3.5, self.ledge, e1m4_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(float(cx) + 4.5, float(self.wide) - 3.0, self.ledge, e1m4_foe(dice, self.danger, True), 270.0, waits=guards);
-        build.foe(float(cx) - 4.5, 3.0, self.ledge, e1m4_foe(dice, self.danger), 90.0, waits=guards);
+        build.foe(float(self.long) - 3.0, float(cy) - 3.5, self.ledge, E1M4_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(cx) + 4.5, float(self.wide) - 3.0, self.ledge, E1M4_FOES.pick(dice, self.danger, True), 270.0, waits=guards);
+        build.foe(float(cx) - 4.5, 3.0, self.ledge, E1M4_FOES.pick(dice, self.danger), 90.0, waits=guards);
         build.supply(float(cx) - 2.5, float(self.wide) - 3.0, self.ledge, "item_health");
         build.supply(float(cx) + 3.5, 3.0, self.ledge, "item_spikes");
     }
@@ -417,12 +412,12 @@ node SilverGrotto(Prefab) {
         # wall, scrags in them, and sends an ogre in behind.
         taken = key_cue(build, self.key, float(ix) + 0.5, float(iy) + 0.5, top);
         starts = [x for x in [lake_x + 2, lake_x + 7, lake_x + 12] if x + 3 < self.long - 2];
-        closets(build, taken, side, starts, 8, 1, [e1m4_foe(dice, self.danger, False, True)]);
-        taken +>:Fires:+> build.summon(2, 2, -8, e1m4_foe(dice, self.danger, True), 4.5, float(side) - 6.5, 0, 0.0);
+        closets(build, taken, side, starts, 8, 1, [E1M4_FOES.pick(dice, self.danger, False, True)]);
+        taken +>:Fires:+> build.summon(2, 2, -8, E1M4_FOES.pick(dice, self.danger, True), 4.5, float(side) - 6.5, 0, 0.0);
         stalactites(build, dice, lake_x, 2, self.long - 2, side - 1, self.tall, dice.between(6, 10));
-        build.foe(float(ix) + 2.5, float(iy) + 2.5, top, e1m4_foe(dice, self.danger, True), 180.0);
+        build.foe(float(ix) + 2.5, float(iy) + 2.5, top, E1M4_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(float(ix) - 5.0, float(iy) + 0.5, -6, "monster_fish", 0.0);
-        build.foe(float(lake_x) + 2.5, float(side) - 2.5, 8, e1m4_foe(dice, self.danger), 0.0, patrol=[[float(lake_x) + 2.5, float(side) - 2.5], [float(self.long) - 3.5, float(side) - 2.5]]);
+        build.foe(float(lake_x) + 2.5, float(side) - 2.5, 8, E1M4_FOES.pick(dice, self.danger), 0.0, patrol=[[float(lake_x) + 2.5, float(side) - 2.5], [float(self.long) - 3.5, float(side) - 2.5]]);
         build.foe(3.5, 3.5, 0, "monster_knight", 0.0, patrol=[[3.5, 3.5], [3.5, float(side) - 6.5]]);
         build.supply(2.5, float(side) - 2.5, 0, "item_health");
     }
@@ -509,11 +504,11 @@ node WaterfallClimb(Prefab) {
         foot = build.touch(float(a), 1.0, 0.0, float(a + 3), 4.0, 6.0);
         landing = build.waiting();
         foot +>:Fires:+> landing;
-        build.foe(float(self.long) - 2.5, 5.5, n, e1m4_foe(dice, self.danger), 180.0, waits=landing);
+        build.foe(float(self.long) - 2.5, 5.5, n, E1M4_FOES.pick(dice, self.danger), 180.0, waits=landing);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long // 2) + 0.5, float(self.wide) - 6.5, 6 + index * 6, e1m4_foe(dice, self.danger, False, True), float(index * 120));
+            build.foe(float(self.long // 2) + 0.5, float(self.wide) - 6.5, 6 + index * 6, E1M4_FOES.pick(dice, self.danger, False, True), float(index * 120));
         }
-        build.foe(float(self.long) - 2.5, 3.5, top, e1m4_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 2.5, 3.5, top, E1M4_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(6.5, float(self.wide) - 2.5, 0, "monster_knight", 0.0, patrol=[[6.5, float(self.wide) - 2.5], [float(self.long) - 3.5, float(self.wide) - 2.5]]);
         build.supply(float(self.long) - 2.5, 2.5, n, "item_health");
     }
@@ -589,7 +584,7 @@ node SecretCave(Prefab) {
         }
         # Scrags are sent in as the wall opens.
         for index in range(2) {
-            count +>:Fires:+> build.summon(3 + index * 5, 2, -8, e1m4_foe(dice, self.danger, False, True), float(w) - 3.5 - float(index) * 3.0, float(mid) + 0.5, 4, 180.0);
+            count +>:Fires:+> build.summon(3 + index * 5, 2, -8, E1M4_FOES.pick(dice, self.danger, False, True), float(w) - 3.5 - float(index) * 3.0, float(mid) + 0.5, 4, 180.0);
         }
         # Beyond: a shelf of rock two lifts up along one side, the ways on.
         build.solid(w + 1, 1, 0, self.long - 1, 5, 2);
@@ -602,14 +597,14 @@ node SecretCave(Prefab) {
         low_rocks(build, dice, 1, 1, w, self.wide - 1, 0, dice.between(3, 5), 2, kept);
         stalactites(build, dice, 3, 3, w - 2, self.wide - 3, self.tall, dice.between(5, 8));
         for index in range(dice.between(2, 3)) {
-            build.foe(float(w) - 4.5 - float(index) * 3.0, 3.5 + float(index) * 3.0, 0, e1m4_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(w) - 4.5 - float(index) * 3.0, 3.5 + float(index) * 3.0, 0, E1M4_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(4.5, float(self.wide) - 3.5, 0, "monster_knight", 0.0, patrol=[[4.5, float(self.wide) - 3.5], [float(w) - 3.5, float(self.wide) - 6.5]]);
-        build.foe(float(w) - 2.5, 3.0, 7, e1m4_foe(dice, self.danger, True), 180.0);
+        build.foe(float(w) - 2.5, 3.0, 7, E1M4_FOES.pick(dice, self.danger, True), 180.0);
         inside = build.waiting();
         count +>:Fires:+> inside;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 3.5, 6.5 + float(index) * 3.0, 0, e1m4_foe(dice, self.danger, True), 180.0, waits=inside);
+            build.foe(float(self.long) - 3.5, 6.5 + float(index) * 3.0, 0, E1M4_FOES.pick(dice, self.danger, True), 180.0, waits=inside);
         }
         build.supply(float(self.long) - 2.5, 2.5, 2, "item_rockets");
         build.supply(2.5, 2.5, 0, "item_health");
@@ -693,7 +688,7 @@ node SunkenTunnel(Prefab) {
             slab(build, wall_x, self.wide - 4, far_x, self.wide - 1, 8);
             build.widen(first, wall_x, self.wide - 4, 8, far_x, self.wide - 1, 13);
         }
-        build.foe(float(wall_x) - 2.5, float(self.wide) - 3.0, 8, e1m4_foe(dice, self.danger), 180.0);
+        build.foe(float(wall_x) - 2.5, float(self.wide) - 3.0, 8, E1M4_FOES.pick(dice, self.danger), 180.0);
         # A gallery along the second cave's far side wall, a lift up to it,
         # a stretch of its edge open to drop from, a way on from its end.
         build.level(second, 8);
@@ -702,7 +697,7 @@ node SunkenTunnel(Prefab) {
         keep_box(build, second, self.long - 5, self.wide - 10, self.long - 1, self.wide - 4, 8);
         keep_box(build, second, self.long - 5, self.wide - 10, self.long - 1, self.wide - 5, 0);
         keep_box(build, second, far_x + 9, self.wide - 5, far_x + 12, self.wide - 4, 8);
-        build.foe(float(far_x) + 4.5, float(self.wide) - 2.5, 8, e1m4_foe(dice, self.danger), 0.0, patrol=[[float(far_x) + 4.5, float(self.wide) - 2.5], [float(self.long) - 6.5, float(self.wide) - 2.5]]);
+        build.foe(float(far_x) + 4.5, float(self.wide) - 2.5, 8, E1M4_FOES.pick(dice, self.danger), 0.0, patrol=[[float(far_x) + 4.5, float(self.wide) - 2.5], [float(self.long) - 6.5, float(self.wide) - 2.5]]);
         build.doorway(first, self.enter);
         for port in self.taken {
             build.doorway(second, port);
@@ -716,14 +711,14 @@ node SunkenTunnel(Prefab) {
         for index in range(dice.between(1, 2)) {
             build.foe(float(13 + index * 4), float(self.lane) + 1.5, -6, "monster_fish", 0.0);
         }
-        build.foe(float(wall_x) - 3.5, 2.5, 0, e1m4_foe(dice, self.danger, True), 180.0);
+        build.foe(float(wall_x) - 3.5, 2.5, 0, E1M4_FOES.pick(dice, self.danger, True), 180.0);
         # The second cave's guards wake as the swimmer comes up out of its
         # pool.
         out = build.touch(float(far_x), float(self.lane - 1), -2.0, float(far_x + 8), float(self.lane + 4), 6.0);
         guards = build.waiting();
         out +>:Fires:+> guards;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 3.5, 2.5 + float(index) * 3.0, 0, e1m4_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(self.long) - 3.5, 2.5 + float(index) * 3.0, 0, E1M4_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         build.foe(float(self.long) - 6.5, 2.5, 0, "monster_knight", 90.0, patrol=[[float(self.long) - 6.5, 2.5], [float(self.long) - 6.5, float(self.wide) - 8.5]]);
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, 0, "item_spikes");
@@ -797,12 +792,12 @@ node GrottoExit(Prefab) {
         nearing = build.touch(float(wall - 6), float(middle - 2), 0.0, float(wall - 3), float(middle + 2), 6.0);
         guards = build.waiting();
         nearing +>:Fires:+> guards;
-        nearing +>:Fires:+> build.summon(2, middle - 1, -8, e1m4_foe(dice, self.danger, True), 3.5, float(middle) + 0.5, 0, 0.0);
+        nearing +>:Fires:+> build.summon(2, middle - 1, -8, E1M4_FOES.pick(dice, self.danger, True), 3.5, float(middle) + 0.5, 0, 0.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 2.5 - float(index) * 3.0, 3.0, 7, e1m4_foe(dice, self.danger, True), 270.0, waits=guards);
+            build.foe(float(wall) - 2.5 - float(index) * 3.0, 3.0, 7, E1M4_FOES.pick(dice, self.danger, True), 270.0, waits=guards);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 5.5 - float(index % 2) * 3.0, float(self.wide) - 2.5 - float(index), 0, e1m4_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 5.5 - float(index % 2) * 3.0, float(self.wide) - 2.5 - float(index), 0, E1M4_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(4.5, float(self.wide) - 2.5, 0, "monster_knight", 0.0, patrol=[[4.5, float(self.wide) - 2.5], [float(wall) - 6.5, float(self.wide) - 2.5]]);
         build.supply(2.5, float(self.wide) - 2.5, 0, "item_health");

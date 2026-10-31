@@ -35,16 +35,14 @@ out. Raised in mine4's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, stalactites, key_ambush, gate_into, lift }
 import from .minefact { slab, hurt, burning, sparking, stash, charges, cart, crusher, quake }
 
 glob MINE4: str = "q2:mine4";
 
 """mine4's foes: gunners and floaters, a tank deeper in."""
-def mine4_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_gunner", "monster_floater"] if heavy else ["monster_gunner", "monster_floater", "monster_soldier"], ["monster_tank"] if heavy else ["monster_floater"], danger * 0.3 if heavy else danger * 0.7));
-}
+glob MINE4_FOES: FoeMix = FoeMix(light=["monster_gunner", "monster_floater", "monster_soldier"], strong=["monster_floater"], heavy_light=["monster_gunner", "monster_floater"], heavy_strong=["monster_tank"], scale=0.7, heavy_scale=0.3);
 
 """Fallen rocks: a lump of rock `size` cells square and two lifts high at
 (x, y) on lift `z` that breaks apart when shot."""
@@ -129,7 +127,7 @@ node LowerLanding(Prefab) {
         floor_y = float(self.wide) - 3.5;
         build.foe(float(lx) + 2.5, floor_y, low, "monster_gunner", 0.0, patrol=[[float(lx) + 2.5, floor_y], [float(self.long) - 2.5, floor_y], [float(self.long) - 2.5, 3.5], [float(lx) + 5.5, 3.5]]);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 3.0, 3.0 + float(index) * 6.0, low, mine4_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long) - 3.0, 3.0 + float(index) * 6.0, low, MINE4_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(float(lx + self.drop) + 1.5, 2.5, low, Q2_HEALTH, "q2");
     }
@@ -194,7 +192,7 @@ node FloodedGallery(Prefab) {
         build.foe(2.5, 2.5, 0, "monster_gunner", 90.0, patrol=[[2.5, 2.5], [2.5, float(self.wide) - 2.5]]);
         build.foe(float(self.long) - 2.5, float(self.wide) - 2.5, 0, "monster_gunner", 270.0, patrol=[[float(self.long) - 2.5, float(self.wide) - 2.5], [float(self.long) - 2.5, 4.5]]);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(x1 - 4 - index * 6) + 0.5, float(middle) + 0.5, 0, mine4_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(x1 - 4 - index * 6) + 0.5, float(middle) + 0.5, 0, MINE4_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         rock_fall(build, 1, self.wide - 3, 0, 2);
         build.supply(2.5, 4.5, 0, Q2_HEALTH, "q2");
@@ -278,7 +276,7 @@ node CaveIn(Prefab) {
         }
         under_y = float(self.wide) - 3.5;
         build.foe(float(east) + 1.5, under_y, low, "monster_gunner", 0.0, patrol=[[float(east) + 1.5, under_y], [float(self.long) - 3.5, under_y], [float(self.long) - 3.5, 3.5], [float(east) + 1.5, 3.5]]);
-        build.foe(float(self.long) - 3.5, float(cy) + 0.5, 0, mine4_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, float(cy) + 0.5, 0, MINE4_FOES.pick(dice, self.danger, True), 180.0);
         rock_fall(build, self.long - 4, 1, low, 2);
         rock_fall(build, self.long - 4, cy - 1, 0, 2);
         build.supply(float(east) + 2.5, 2.5, 0, Q2_HEALTH, "q2");
@@ -347,7 +345,7 @@ node OreCrusher(Prefab) {
         hall_guard = build.waiting();
         come_in +>:Fires:+> hall_guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long - 4 - index * 5) + 0.5, 3.5, 0, mine4_foe(dice, self.danger, index == 0), 180.0, waits=hall_guard);
+            build.foe(float(self.long - 4 - index * 5) + 0.5, 3.5, 0, MINE4_FOES.pick(dice, self.danger, index == 0), 180.0, waits=hall_guard);
         }
         walk_y = float(self.wide) - 2.5;
         build.foe(5.5, walk_y, self.deck, "monster_gunner", 0.0, patrol=[[5.5, walk_y], [float(self.long) - 2.5, walk_y]]);
@@ -430,13 +428,13 @@ node LavaCavern(Prefab) {
             build.foe(float(10 + index * 5) + 0.5, float(middle) + 5.5, 4, "monster_floater", 270.0, waits=over_lava);
         }
         up_top = build.touch(float(self.upper), float(self.wide - 4), float(self.upper), float(self.upper + 3), float(self.wide - 1), float(self.upper + 6));
-        up_top +>:Fires:+> build.summon(self.long - 5, 1, -12, mine4_foe(dice, self.danger, True), float(self.long) - 4.5, float(self.wide) - 2.5, self.upper, 180.0);
+        up_top +>:Fires:+> build.summon(self.long - 5, 1, -12, MINE4_FOES.pick(dice, self.danger, True), float(self.long) - 4.5, float(self.wide) - 2.5, self.upper, 180.0);
         ring = [[3.5, 3.5], [float(self.long) - 3.5, 3.5], [float(self.long) - 3.5, float(self.wide) - 5.5], [3.5, float(self.wide) - 5.5]];
         build.foe(3.5, 3.5, 0, "monster_gunner", 0.0, patrol=ring);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 3.5, 4.5 + float(index) * 5.0, 0, mine4_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long) - 3.5, 4.5 + float(index) * 5.0, 0, MINE4_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(self.long // 2) + 2.5, float(middle) + 0.5, self.walk, mine4_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long // 2) + 2.5, float(middle) + 0.5, self.walk, MINE4_FOES.pick(dice, self.danger, True), 180.0);
         rock_fall(build, 1, 1, 0, 2);
         rock_fall(build, self.long - 3, self.wide - 7, 0, 2);
         build.supply(float(self.long) - 3.0, float(middle) + 0.5, self.walk, Q2_ARMOR, "q2");
@@ -485,7 +483,7 @@ node OreVault(Prefab) {
         build.solid(vx + 1, cy - 2, self.vault + 7, vx + 2, cy + 2, self.tall);
         vault_door = build.opened(float(vx + 1), float(cy - 2), float(self.vault), float(vx + 2), float(cy + 2), float(self.vault + 7));
         build.push(float(vx + 1), float(cy) - 4.0, float(self.vault) + 1.3, 2) +>:Fires:+> vault_door;
-        key_ambush(build, self.key, float(self.long) - 2.5, float(cy) + 0.5, self.vault, side, 0, [2, vx - 5], [mine4_foe(dice, self.danger, True), mine4_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 2.5, float(cy) + 0.5, self.vault, side, 0, [2, vx - 5], [MINE4_FOES.pick(dice, self.danger, True), MINE4_FOES.pick(dice, self.danger)]);
         vault_guard = build.waiting();
         vault_door +>:Fires:+> vault_guard;
         build.foe(float(self.long) - 2.5, float(cy) - 3.0, self.vault, "monster_floater", 180.0, waits=vault_guard);
@@ -541,15 +539,15 @@ node LiftCage(Prefab) {
         charges(build, board, [[float(ux) - 5.5, 3.0, float(self.tall - 2)], [float(ux) - 2.5, float(self.wide) - 3.0, float(self.tall - 2)]], 0.5);
         ledge = build.waiting();
         board +>:Fires:+> ledge;
-        build.foe(float(self.long) - 2.5, 2.5, self.upper, mine4_foe(dice, self.danger, True), 180.0, waits=ledge);
+        build.foe(float(self.long) - 2.5, 2.5, self.upper, MINE4_FOES.pick(dice, self.danger, True), 180.0, waits=ledge);
         come_in = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
         floor_guard = build.waiting();
         come_in +>:Fires:+> floor_guard;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(ux) - 4.5, 2.5 + float(index) * (float(self.wide) - 5.0), 0, mine4_foe(dice, self.danger), 180.0, waits=floor_guard);
+            build.foe(float(ux) - 4.5, 2.5 + float(index) * (float(self.wide) - 5.0), 0, MINE4_FOES.pick(dice, self.danger), 180.0, waits=floor_guard);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, mine4_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, MINE4_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         rock_fall(build, wall + 2, self.wide - 4, 0, 2);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");

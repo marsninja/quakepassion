@@ -39,7 +39,7 @@ own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, key_ambush }
 import from .e4m6 { flood, onward_ports, port_door, fired_secret_door, pool_steps }
 
@@ -47,9 +47,7 @@ glob E4M7: str = "q1:e4m7";
 
 """e4m7's foes: spawn and vores, fiends and hell knights, a shambler
 deeper in."""
-def e4m7_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_demon1", "monster_hell_knight"] if heavy else ["monster_tarbaby", "monster_zombie", "monster_zombie"], ["monster_shalrath", "monster_shambler"] if heavy else ["monster_hell_knight"], danger * 0.3 if heavy else danger * 0.7));
-}
+glob E4M7_FOES: FoeMix = FoeMix(light=["monster_tarbaby", "monster_zombie", "monster_zombie"], strong=["monster_hell_knight"], heavy_light=["monster_demon1", "monster_hell_knight"], heavy_strong=["monster_shalrath", "monster_shambler"], scale=0.7, heavy_scale=0.3);
 
 """A foe whose death counts toward `slain` (a cue its death fires, wired to
 a counter), waking with `waits` when given."""
@@ -166,13 +164,13 @@ node AzureLagoon(Prefab) {
         under = build.waiting();
         climb +>:Fires:+> under;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(x0 + 4 + index * 4) + 0.5, float(self.wide) - 2.5, 0, e4m7_foe(dice, self.danger), 270.0, waits=under);
+            build.foe(float(x0 + 4 + index * 4) + 0.5, float(self.wide) - 2.5, 0, E4M7_FOES.pick(dice, self.danger), 270.0, waits=under);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(x1) + 2.5, 3.5 + float(index) * 5.0, 0, e4m7_foe(dice, self.danger), 180.0);
+            build.foe(float(x1) + 2.5, 3.5 + float(index) * 5.0, 0, E4M7_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(float(x0) + 1.5, 2.5, 0, "monster_hell_knight" if self.danger > 0.3 else "monster_zombie", 0.0, patrol=[[float(x0) + 1.5, 2.5], [float(x1) - 1.5, 2.5]]);
-        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, self.gh, e4m7_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, self.gh, E4M7_FOES.pick(dice, self.danger, True), 180.0);
         for index in range(dice.between(1, 2)) {
             build.foe(float(x0 + 3 + index * 6) + 0.5, float(middle) + 3.5, 1 - self.deep, "monster_fish", 0.0);
         }
@@ -239,13 +237,13 @@ node DrownedPassage(Prefab) {
             slain +>:Fires:+> count;
             count +>:Fires:+> door_a;
             for index in range(2) {
-                counted_foe(build, float(wa) - 3.5, float(middle) + (3.5 if index == 0 else -2.5), 0, e4m7_foe(dice, self.danger, True), 180.0, slain);
+                counted_foe(build, float(wa) - 3.5, float(middle) + (3.5 if index == 0 else -2.5), 0, E4M7_FOES.pick(dice, self.danger, True), 180.0, slain);
             }
             build.touch(1.0, float(middle - 2), 0.0, 4.0, float(middle + 2), 6.0, True, "Its guards hold the door");
         } else {
             shot = build.push(float(wa), float(middle) + 0.5, 9.0, 2, True);
             shot +>:Fires:+> door_a;
-            build.foe(float(wa) - 3.5, float(middle) + 3.5, 0, e4m7_foe(dice, self.danger, True), 180.0);
+            build.foe(float(wa) - 3.5, float(middle) + 3.5, 0, E4M7_FOES.pick(dice, self.danger, True), 180.0);
         }
         # The second door: opened by shooting the button over it, or by a
         # touch.
@@ -299,9 +297,9 @@ node DrownedPassage(Prefab) {
         stirred = build.waiting();
         into +>:Fires:+> stirred;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wb) - 2.5 - float(index) * 2.0, float(self.wide) - 3.5, 0, e4m7_foe(dice, self.danger), 180.0, waits=stirred);
+            build.foe(float(wb) - 2.5 - float(index) * 2.0, float(self.wide) - 3.5, 0, E4M7_FOES.pick(dice, self.danger), 180.0, waits=stirred);
         }
-        build.foe(float(self.long) - 3.5, float(middle) + 4.5, 0, e4m7_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, float(middle) + 4.5, 0, E4M7_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(float(wb) + 2.5, float(self.wide) - 2.5, 0, "monster_hell_knight" if self.danger > 0.3 else "monster_demon1", 0.0, patrol=[[float(wb) + 2.5, float(self.wide) - 2.5], [float(self.long) - 2.5, float(self.wide) - 2.5]]);
         build.supply(2.5, float(self.wide) - 2.5, 0, "item_health");
         build.supply(float(s2) + 2.0, 3.0, -12, "item_artifact_super_damage" if dice.chance(0.3) else "item_rockets");
@@ -398,15 +396,15 @@ node AzureCistern(Prefab) {
         topped = build.touch(1.0, float(self.wide - 6), float(g), 6.0, float(self.wide - 1), float(g + 6));
         guards = build.waiting();
         topped +>:Fires:+> guards;
-        build.foe(float(self.long // 2) + 0.5, float(self.wide) - 3.5, g, e4m7_foe(dice, self.danger, True), 270.0, waits=guards);
-        build.foe(float(self.long) - 3.5, float(middle) + 0.5, g, e4m7_foe(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(self.long // 2) + 0.5, float(self.wide) - 3.5, g, E4M7_FOES.pick(dice, self.danger, True), 270.0, waits=guards);
+        build.foe(float(self.long) - 3.5, float(middle) + 0.5, g, E4M7_FOES.pick(dice, self.danger), 180.0, waits=guards);
         for index in range(dice.between(2, 3)) {
-            build.foe(3.5, 7.5 + float(index) * 3.0, 0, e4m7_foe(dice, self.danger), 0.0);
+            build.foe(3.5, 7.5 + float(index) * 3.0, 0, E4M7_FOES.pick(dice, self.danger), 0.0);
         }
         build.foe(7.5, 2.5, 0, "monster_hell_knight" if self.danger > 0.3 else "monster_demon1", 0.0, patrol=[[7.5, 2.5], [float(self.long - 11) + 0.5, 2.5]]);
         build.foe(float(self.long // 2) + 0.5, float(middle) + 3.5, 1 - self.deep, "monster_fish", 0.0);
         if self.bridge_here {
-            build.foe(float(bx) + 2.0, 3.5, g, e4m7_foe(dice, self.danger), 90.0);
+            build.foe(float(bx) + 2.0, 3.5, g, E4M7_FOES.pick(dice, self.danger), 90.0);
         }
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, g, "item_health");
         build.supply(2.5, float(self.wide) - 12.5, 0, "item_rockets");
@@ -605,7 +603,7 @@ node RisingStair(Prefab) {
         # wall.
         if self.lane + 4 < self.wide - 5 {
             build.solid(x0, self.wide - 5, self.up - 1, fx, self.wide - 1, self.up);
-            build.foe(float(x0) + 2.5, float(self.wide) - 3.0, self.up, e4m7_foe(dice, self.danger, True), 0.0);
+            build.foe(float(x0) + 2.5, float(self.wide) - 3.0, self.up, E4M7_FOES.pick(dice, self.danger, True), 0.0);
             build.supply(float(x0) + 1.5, float(self.wide) - 2.0, self.up, "item_armor2" if dice.chance(0.3) else "item_rockets");
             for y in range(self.wide - 5, self.wide - 1) {
                 build.keep(hall, x0, y, self.up);
@@ -627,7 +625,7 @@ node RisingStair(Prefab) {
         guards = build.waiting();
         button +>:Fires:+> guards;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 3.5, 2.5 + float(index) * 4.0, self.up, e4m7_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(self.long) - 3.5, 2.5 + float(index) * 4.0, self.up, E4M7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         for index in range(dice.between(1, 2)) {
             build.foe(float(x0 + 3 + index * 4) + 0.5, float(middle) + 0.5, 1 - self.deep, "monster_fish", 0.0);
@@ -689,14 +687,14 @@ node AzureIsle(Prefab) {
             for x in range(ix - 2, ix + 2) {
                 build.keep(hall, x, cy - 2, self.gh);
             }
-            build.foe(float(ix) - 6.5, 2.5, self.gh, e4m7_foe(dice, self.danger), 0.0);
+            build.foe(float(ix) - 6.5, 2.5, self.gh, E4M7_FOES.pick(dice, self.danger), 0.0);
             build.supply(float(ix) + 0.5, 2.5, self.gh, "item_rockets");
         }
-        key_ambush(build, self.key, float(ix), float(cy), 0, side, 0, [1], [e4m7_foe(dice, self.danger, True)]);
+        key_ambush(build, self.key, float(ix), float(cy), 0, side, 0, [1], [E4M7_FOES.pick(dice, self.danger, True)]);
         for index in range(dice.between(1, 2)) {
             build.foe(float(x0 + 3 + index * 4) + 0.5, float(cy) + 3.5, 1 - self.deep, "monster_fish", 0.0);
         }
-        build.foe(3.0, float(side) - 2.5, 0, e4m7_foe(dice, self.danger), 0.0);
+        build.foe(3.0, float(side) - 2.5, 0, E4M7_FOES.pick(dice, self.danger), 0.0);
         build.supply(2.5, float(side) - 4.5, 0, "item_health");
     }
 }
@@ -777,7 +775,7 @@ node AzureExit(Prefab) {
         into = build.touch(float(alcove_x + 1), float(middle - 3), 0.0, float(alcove_x + 3), float(middle + 3), 6.0);
         into +>:Fires:+> build.summon(alcove_x + 1, 1, self.tall + 1, "monster_hell_knight", float(x0) + 2.5, float(middle) - 0.5, 0, 0.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, e4m7_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, E4M7_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(float(x0) + 3.5, 3.5, -6, "monster_fish", 0.0);
         build.foe(float(wall) + 1.5, 2.5, 0, "monster_zombie", 90.0, patrol=[[float(wall) + 1.5, 2.5], [float(wall) + 1.5, float(self.wide) - 2.5]]);

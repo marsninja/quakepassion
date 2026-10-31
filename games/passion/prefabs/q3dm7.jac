@@ -28,10 +28,11 @@ q3dm7's are knight, wizard, hell_knight. Raised in q3dm7's own palette.
   comes near, the way out on an altar up a grand stair (or two stairs),
   galleries high on both walls whose guards wake as the player climbs."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, key_ambush, gate_into, lift, spiral, ring_landing, ring_path }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3low_parts { slab, keep_box, hint, wake_later, pad, pad_to, flying_stair }
 
 glob Q3DM7: str = "q3:q3dm7",
@@ -39,9 +40,7 @@ glob Q3DM7: str = "q3:q3dm7",
      Q3DM7_HEAVY: list[str] = ["monster_hell_knight"];
 
 """A foe for q3dm7's stretches."""
-def q3dm7_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM7_LIGHT, Q3DM7_HEAVY, strong);
-}
+glob Q3DM7_FOES: FoeMix = FoeMix(light=Q3DM7_LIGHT, strong=Q3DM7_HEAVY, heavy_light=Q3DM7_HEAVY, scale=0.5);
 
 """A door across the cell line x (to x + 1), from y0 to y1, `high` lifts
 from lift `z`, that rises when a body comes near it from either side and
@@ -126,12 +125,12 @@ node RetributionHall(Prefab) {
         hint(build, 4.0, 1.0, 4.0, 6.0, float(self.wide - 1), 10.0, "The Temple of Retribution", "Its doors open as you come near", 2.5);
         midway = build.touch(float(self.long // 2), 6.0, 0.0, float(self.long // 2 + 2), float(self.wide - 6), 6.0);
         above = wake_later(build, midway, 0.5);
-        build.foe(float(dw) - 3.5, 3.5, g, q3dm7_foe(dice, self.danger), 180.0, waits=above);
-        build.foe(float(dw) - 3.5, float(self.wide) - 3.5, g, q3dm7_foe(dice, self.danger), 180.0, waits=above);
+        build.foe(float(dw) - 3.5, 3.5, g, Q3DM7_FOES.pick(dice, self.danger), 180.0, waits=above);
+        build.foe(float(dw) - 3.5, float(self.wide) - 3.5, g, Q3DM7_FOES.pick(dice, self.danger), 180.0, waits=above);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(13 + index * 3) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, q3dm7_foe(dice, self.danger), 180.0);
+            build.foe(float(13 + index * 3) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, Q3DM7_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(self.long) - 3.5, float(middle) + 0.5, 0, q3dm7_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, float(middle) + 0.5, 0, Q3DM7_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(self.long) - 2.5, 3.5, g, Q3_ARMOR, "q3");
         build.supply(float(self.long) - 3.5, float(middle) + 3.5, 0, Q3_HEALTH, "q3");
     }
@@ -206,12 +205,12 @@ node RetributionBasin(Prefab) {
         down = build.touch(float(bx0), 4.0, -4.0, float(bx1), float(self.wide - 4), 0.0);
         ledge = wake_later(build, down, 0.5);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 3.0, 3.0 + float(index) * float(self.wide - 6), l, q3dm7_foe(dice, self.danger, index == 0), 180.0, waits=ledge);
+            build.foe(float(self.long) - 3.0, 3.0 + float(index) * float(self.wide - 6), l, Q3DM7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=ledge);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(bx0 + 3 + index * 3) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), -4, q3dm7_foe(dice, self.danger), 180.0);
+            build.foe(float(bx0 + 3 + index * 3) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), -4, Q3DM7_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(lx) + 2.5, float(middle) + 0.5, 0, q3dm7_foe(dice, self.danger), 180.0);
+        build.foe(float(lx) + 2.5, float(middle) + 0.5, 0, Q3DM7_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(self.long) - 2.5, float(middle) - 2.5, l, Q3_HEALTH, "q3");
         build.supply(4.5, 3.0, 0, "item_spikes");
     }
@@ -297,11 +296,11 @@ node RetributionCourt(Prefab) {
         down = build.touch(float(cx - 4), float(cy - 4), -8.0, float(cx + 4), float(cy + 4), -2.0);
         pit = wake_later(build, down, 0.5);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx + 3) + 0.5, float(cy - 3 + index * 2) + 0.5, -8, q3dm7_foe(dice, self.danger, index == 0), 180.0, waits=pit);
+            build.foe(float(cx + 3) + 0.5, float(cy - 3 + index * 2) + 0.5, -8, Q3DM7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=pit);
         }
-        build.foe(3.5, 7.5, 0, q3dm7_foe(dice, self.danger), 0.0, patrol=[[3.5, 7.5], [3.5, float(wide) - 8.5]]);
-        build.foe(float(long) - 3.5, 3.5, b, q3dm7_foe(dice, self.danger, True), 180.0);
-        build.foe(float(long) - 3.5, float(wide) - 3.5, b, q3dm7_foe(dice, self.danger), 180.0);
+        build.foe(3.5, 7.5, 0, Q3DM7_FOES.pick(dice, self.danger), 0.0, patrol=[[3.5, 7.5], [3.5, float(wide) - 8.5]]);
+        build.foe(float(long) - 3.5, 3.5, b, Q3DM7_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(float(long) - 3.5, float(wide) - 3.5, b, Q3DM7_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(cx) - 3.5, float(cy) - 0.5, -8, "item_health_mega", "q3");
         build.supply(3.5, 3.5, b, Q3_ARMOR, "q3");
         build.supply(float(long) - 3.5, float(cy) + 3.5, 0, Q3_HEALTH, "q3");
@@ -380,10 +379,10 @@ node RetributionDepths(Prefab) {
         }
         foot = build.touch(4.0, 4.0, 0.0, float(self.long - 4), float(self.wide - 4), 6.0);
         below = wake_later(build, foot, 0.5);
-        build.foe(2.5, cy, 0, q3dm7_foe(dice, self.danger, True), 0.0, waits=below);
-        build.foe(cx + 2.0, cy + 2.0, 0, q3dm7_foe(dice, self.danger), 0.0, waits=below);
+        build.foe(2.5, cy, 0, Q3DM7_FOES.pick(dice, self.danger, True), 0.0, waits=below);
+        build.foe(cx + 2.0, cy + 2.0, 0, Q3DM7_FOES.pick(dice, self.danger), 0.0, waits=below);
         on_stair = ring_path(1, 1, self.long - 1, self.wide - 1, 3)[s // 2];
-        build.foe(float(on_stair[0]) + 0.5, float(on_stair[1] + on_stair[3]) * 0.5, s // 2 + 1, q3dm7_foe(dice, self.danger), 180.0);
+        build.foe(float(on_stair[0]) + 0.5, float(on_stair[1] + on_stair[3]) * 0.5, s // 2 + 1, Q3DM7_FOES.pick(dice, self.danger), 180.0);
         build.supply(cx - 2.0, cy - 2.0, 0, Q3_HEALTH, "q3");
     }
 }
@@ -443,10 +442,10 @@ node RetributionShrine(Prefab) {
         press = build.push(float(self.long - 1), float(cy) - 3.5, float(h) + 1.2, 2);
         build.widen(hall, self.long - 4, 2, h - 1, self.long - 1, 5, h);
         press +>:Fires:+> build.sinking(float(self.long - 4), 2.0, float(self.long - 1), 5.0, h, h);
-        key_ambush(build, self.key, float(self.long) - 2.5, float(cy) + 0.5, h, side, 0, [3, sx - 6], [q3dm7_foe(dice, self.danger, True), q3dm7_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 2.5, float(cy) + 0.5, h, side, 0, [3, sx - 6], [Q3DM7_FOES.pick(dice, self.danger, True), Q3DM7_FOES.pick(dice, self.danger)]);
         hint(build, 2.0, 1.0, 0.0, 4.0, float(side), 6.0, "The shrine holds the key", "The button by it takes you down", 2.0);
-        build.foe(float(self.long) - 3.0, float(side) - 3.0, h, q3dm7_foe(dice, self.danger), 180.0);
-        build.foe(float(sx) - 4.5, float(cy) + 3.5, 0, q3dm7_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.0, float(side) - 3.0, h, Q3DM7_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(sx) - 4.5, float(cy) + 3.5, 0, Q3DM7_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, float(side) - 2.5, 0, Q3_HEALTH, "q3");
     }
 }
@@ -508,12 +507,12 @@ node RetributionAltar(Prefab) {
         climb = build.touch(float(ax - d), 1.0, 0.0, float(ax - d + 2), float(self.wide - 1), 8.0);
         galleries = wake_later(build, climb, 0.3);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(dw + 3 + index * 4) + 0.5, 2.5 if index % 2 == 0 else float(self.wide) - 2.5, 12, q3dm7_foe(dice, self.danger, index == 0), 0.0, waits=galleries);
+            build.foe(float(dw + 3 + index * 4) + 0.5, 2.5 if index % 2 == 0 else float(self.wide) - 2.5, 12, Q3DM7_FOES.pick(dice, self.danger, index == 0), 0.0, waits=galleries);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(ax) + 2.5, 3.5 + float(index) * 3.0, d, q3dm7_foe(dice, self.danger), 180.0);
+            build.foe(float(ax) + 2.5, 3.5 + float(index) * 3.0, d, Q3DM7_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(wall) + 3.5, 3.0, 0, q3dm7_foe(dice, self.danger), 0.0);
+        build.foe(float(wall) + 3.5, 3.0, 0, Q3DM7_FOES.pick(dice, self.danger), 0.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(dw) + 2.5, float(middle) + 3.5, 0, Q3_ARMOR, "q3");
     }

@@ -27,10 +27,11 @@ q3dm12's are enforcers and ogres, fiends as a run goes deeper.
 - `DredExit`: the end (or a gate). A lava moat across the room, bridged;
   the way out on a block at the far end, up a stair or a pad."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pad_to, closets, wake_on, sliding_pair }
 
 glob Q3DM12: str = "q3:q3dm12",
@@ -38,9 +39,7 @@ glob Q3DM12: str = "q3:q3dm12",
      Q3DM12_HEAVY: list[str] = ["monster_demon1"];
 
 """A foe for the Dredwerkz."""
-def dred_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM12_LIGHT, Q3DM12_HEAVY, strong);
-}
+glob DRED_FOES: FoeMix = FoeMix(light=Q3DM12_LIGHT, strong=Q3DM12_HEAVY, heavy_light=Q3DM12_HEAVY, scale=0.5);
 
 """The start: a hall behind a partition with sliding doors, a works floor
 under a gantry, lava in a trough."""
@@ -104,9 +103,9 @@ node DredGate(Prefab) {
         build.supply(2.5, float(mid) - 1.5, 0, "ammo_shells", "q2");
         # At the doors, what waits in the works wakes.
         works = wake_on(build, float(pw - 2), float(mid - 2), float(pw), float(mid + 2), 0.0);
-        build.foe(float(pw) + 5.5, float(mid) + 0.5, 0, dred_foe(dice, self.danger), 180.0, waits=works);
-        build.foe(float(self.long) - 4.5, float(mid) - 2.5, 0, dred_foe(dice, self.danger), 180.0, waits=works);
-        build.foe(float(self.long) - 3.5, float(self.wide) - 2.5, 7, dred_foe(dice, self.danger, True), 180.0);
+        build.foe(float(pw) + 5.5, float(mid) + 0.5, 0, DRED_FOES.pick(dice, self.danger), 180.0, waits=works);
+        build.foe(float(self.long) - 4.5, float(mid) - 2.5, 0, DRED_FOES.pick(dice, self.danger), 180.0, waits=works);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 2.5, 7, DRED_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(5.5, float(mid) + 3.5, 0, "monster_enforcer", 0.0);
         build.foe(float(pw) + 3.5, float(mid) + 3.5, 0, "monster_enforcer", 0.0, patrol=[[float(pw) + 3.5, float(mid) + 3.5], [float(self.long) - 4.5, float(mid) + 3.5]]);
         build.supply(float(self.long) - 3.0, float(self.wide) - 4.5, 7, Q3_ARMOR, "q3");
@@ -187,10 +186,10 @@ node DredLavaPit(Prefab) {
         }
         # Out on the platform, the ledge's guards wake.
         ledge = wake_on(build, float(cx - 3), float(cy - 3), float(cx + 3), float(cy + 3), 0.0);
-        build.foe(float(self.long) - 2.5, 3.5, 8, dred_foe(dice, self.danger), 180.0, waits=ledge);
-        build.foe(float(self.long) - 2.5, float(self.wide) - 6.5, 8, dred_foe(dice, self.danger, True), 180.0, waits=ledge);
-        build.foe(float(cx) - 1.5, float(cy) - 1.5, 0, dred_foe(dice, self.danger, True), 0.0);
-        build.foe(3.5, 3.5, 0, dred_foe(dice, self.danger), 0.0);
+        build.foe(float(self.long) - 2.5, 3.5, 8, DRED_FOES.pick(dice, self.danger), 180.0, waits=ledge);
+        build.foe(float(self.long) - 2.5, float(self.wide) - 6.5, 8, DRED_FOES.pick(dice, self.danger, True), 180.0, waits=ledge);
+        build.foe(float(cx) - 1.5, float(cy) - 1.5, 0, DRED_FOES.pick(dice, self.danger, True), 0.0);
+        build.foe(3.5, 3.5, 0, DRED_FOES.pick(dice, self.danger), 0.0);
         build.foe(float(self.long) - 6.5, float(self.wide) - 3.5, 0, "monster_enforcer", 180.0, patrol=[[float(self.long) - 6.5, float(self.wide) - 3.5], [float(self.long) - 6.5, 6.5]]);
         build.supply(float(cx) + 0.5, float(cy) - 1.5, 0, Q3_ARMOR, "q3");
         build.supply(float(self.long) - 2.5, float(cy) - 3.5, 8, Q3_HEALTH, "q3");
@@ -266,10 +265,10 @@ node DredPumpRoom(Prefab) {
         }
         # Down in the pit, what waits under the upper floor wakes.
         below = wake_on(build, float(dx), 4.0, float(self.long - 1), float(self.wide - 1), float(lo));
-        build.foe(10.5, float(mid) + 0.5, lo, dred_foe(dice, self.danger), 0.0, waits=below);
-        build.foe(float(dx) - 3.5, float(mid) - 3.5, lo, dred_foe(dice, self.danger, True), 180.0, waits=below);
+        build.foe(10.5, float(mid) + 0.5, lo, DRED_FOES.pick(dice, self.danger), 0.0, waits=below);
+        build.foe(float(dx) - 3.5, float(mid) - 3.5, lo, DRED_FOES.pick(dice, self.danger, True), 180.0, waits=below);
         build.foe(float(self.long) - 4.5, float(mid) + 3.5, lo, "monster_enforcer", 180.0);
-        build.foe(float(dx) - 4.5, float(mid) + 0.5, 0, dred_foe(dice, self.danger), 180.0);
+        build.foe(float(dx) - 4.5, float(mid) + 0.5, 0, DRED_FOES.pick(dice, self.danger), 180.0);
         build.foe(4.5, 3.5, 0, "monster_enforcer", 0.0, patrol=[[4.5, 3.5], [float(dx) - 3.5, 3.5]]);
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, lo, Q3_HEALTH, "q3");
         build.supply(3.0, 3.0, lo, Q3_ARMOR, "q3");
@@ -358,11 +357,11 @@ node DredFurnace(Prefab) {
         }
         # Down on the furnace floor, the galleries' guards wake.
         down = wake_on(build, 7.0, 8.0, 10.0, 11.0, -8.0);
-        build.foe(float(cx) + 0.5, 2.5, gal, dred_foe(dice, self.danger), 90.0, waits=down);
-        build.foe(float(cx) - 3.5, float(self.wide) - 2.5, gal, dred_foe(dice, self.danger), 270.0, waits=down);
-        build.foe(float(self.long) - 3.5, float(self.wide) - 4.5, 16, dred_foe(dice, self.danger, True), 180.0);
+        build.foe(float(cx) + 0.5, 2.5, gal, DRED_FOES.pick(dice, self.danger), 90.0, waits=down);
+        build.foe(float(cx) - 3.5, float(self.wide) - 2.5, gal, DRED_FOES.pick(dice, self.danger), 270.0, waits=down);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 4.5, 16, DRED_FOES.pick(dice, self.danger, True), 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx - 3 + index * 3) + 0.5, float(cy) + (4.5 if index % 2 == 0 else -4.5), -8, dred_foe(dice, self.danger, index == 1), 0.0);
+            build.foe(float(cx - 3 + index * 3) + 0.5, float(cy) + (4.5 if index % 2 == 0 else -4.5), -8, DRED_FOES.pick(dice, self.danger, index == 1), 0.0);
         }
         build.foe(4.5, float(cy) + 0.5, 0, "monster_enforcer", 0.0, patrol=[[4.5, float(cy) + 0.5], [4.5, float(self.wide) - 6.5]]);
         build.supply(float(cx) + 0.5, float(cy) + 0.5, -8, Q3_ARMOR, "q3");
@@ -419,7 +418,7 @@ node DredVault(Prefab) {
                 build.solid(cx + 3 + step, cy - 1, -3, cx + 4 + step, cy + 2, 3 - step);
             }
             taken = key_taken(build, self.key, float(cx) + 1.5, float(cy) + 1.5, 4);
-            build.foe(float(cx) + 1.5, float(cy) - 0.5, 4, dred_foe(dice, self.danger), 180.0);
+            build.foe(float(cx) + 1.5, float(cy) - 0.5, 4, DRED_FOES.pick(dice, self.danger), 180.0);
         } else {
             # A lava trough across the room, bridged; beyond it a gantry
             # across the far wall up a stair along the north wall.
@@ -433,15 +432,15 @@ node DredVault(Prefab) {
             stair(build, self.long - 14, side - 3, 0, 0, 7, 3);
             keep_box(build, room, self.long - 6, side - 3, self.long - 5, side, 7);
             taken = key_taken(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, 7);
-            build.foe(float(self.long) - 3.0, 3.0, 7, dred_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long) - 3.0, 3.0, 7, DRED_FOES.pick(dice, self.danger), 180.0);
         }
         if taken is not None {
-            closets(build, taken, side, 0, [1, 8], [dred_foe(dice, self.danger, True), dred_foe(dice, self.danger)]);
+            closets(build, taken, side, 0, [1, 8], [DRED_FOES.pick(dice, self.danger, True), DRED_FOES.pick(dice, self.danger)]);
             late = build.delay(1.5);
             taken +>:Fires:+> late;
             wake = build.waiting();
             late +>:Fires:+> wake;
-            build.foe(float(self.long) - 3.5, float(side) - 2.5, 0, dred_foe(dice, self.danger), 180.0, waits=wake);
+            build.foe(float(self.long) - 3.5, float(side) - 2.5, 0, DRED_FOES.pick(dice, self.danger), 180.0, waits=wake);
         }
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
     }
@@ -496,10 +495,10 @@ node DredExit(Prefab) {
         build.way_out(float(self.long) - 4.0, float(mid), 8);
         # Over the bridge, the block's guards wake.
         guards = wake_on(build, float(wall + 3), float(mid - 1), float(wall + 5), float(mid + 2), 0.0);
-        build.foe(float(self.long) - 3.5, 3.5, 8, dred_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, 8, dred_foe(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.5, 3.5, 8, DRED_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, 8, DRED_FOES.pick(dice, self.danger), 180.0, waits=guards);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, dred_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, DRED_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(float(bx) - 3.5, float(self.wide) - 3.5, 0, "monster_enforcer", 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");

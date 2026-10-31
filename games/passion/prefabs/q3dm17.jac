@@ -39,10 +39,11 @@ them back up to where the stretch was entered.
   over the void, the way out on a floating dais thrown to by a pad; by
   the seed, stepping stones jumped up to the dais too."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, key_ambush, lift }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3late_parts { deck, keep_box, void_floor, throw, wake_later }
 
 glob Q3DM17: str = "q3:q3dm17",
@@ -50,9 +51,7 @@ glob Q3DM17: str = "q3:q3dm17",
      Q3DM17_HEAVY: list[str] = ["monster_hell_knight"];
 
 """A foe for q3dm17's stretches."""
-def yard_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM17_LIGHT, Q3DM17_HEAVY, strong);
-}
+glob YARD_FOES: FoeMix = FoeMix(light=Q3DM17_LIGHT, strong=Q3DM17_HEAVY, heavy_light=Q3DM17_HEAVY, scale=0.5);
 
 """The start: an end base floating over the void, a balcony over the way
 in, pads out over the void to the outer platform."""
@@ -122,7 +121,7 @@ node YardBase(Prefab) {
             keep_box(build, yard, ix + 1, middle + 3, ix + 4, middle + 4, 2);
             throw(build, yard, float(self.lip_x) - 2.5, py, 0, float(ix) + 2.0, py, 2, lip, [ix, middle - 2, ix + 1, middle + 3]);
             throw(build, yard, float(ix) + 4.0, py, 2, float(ox) + 3.0, py, self.outer, [ix + 5, middle - 2, ix + 6, middle + 3], landing);
-            build.foe(float(ix) + 2.5, py + 2.0, 2, yard_foe(dice, self.danger), 180.0);
+            build.foe(float(ix) + 2.5, py + 2.0, 2, YARD_FOES.pick(dice, self.danger), 180.0);
             build.supply(float(ix) + 1.5, py - 2.0, 2, "item_armor_shard", "q3");
         } else {
             throw(build, yard, float(self.lip_x) - 2.5, py, 0, float(ox) + 3.0, py, self.outer, lip, landing);
@@ -140,15 +139,15 @@ node YardBase(Prefab) {
         build.supply(2.5, py - 2.0, 0, "ammo_shells", "q2");
         build.supply(float(self.lip_x) - 4.5, py - 3.0, 0, "ammo_rockets", "q3");
         build.supply(3.0, float(self.wide) - 3.0, self.upper, Q3_ARMOR, "q3");
-        build.foe(4.5, py - 4.0, self.upper, yard_foe(dice, self.danger, True), 0.0);
-        build.foe(float(self.lip_x) - 2.5, py + 4.0, 0, yard_foe(dice, self.danger), 180.0);
+        build.foe(4.5, py - 4.0, self.upper, YARD_FOES.pick(dice, self.danger, True), 0.0);
+        build.foe(float(self.lip_x) - 2.5, py + 4.0, 0, YARD_FOES.pick(dice, self.danger), 180.0);
         # Foes come out onto the outer platform a moment after the landing.
         landed = build.touch(float(ox), float(middle - 4), float(self.outer), float(ox + 3), float(middle + 5), float(self.outer + 6));
         out = wake_later(build, landed, 1.5);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 2.5, py - 3.0 + float(index) * 6.0, self.outer, yard_foe(dice, self.danger), 180.0, waits=out);
+            build.foe(float(self.long) - 2.5, py - 3.0 + float(index) * 6.0, self.outer, YARD_FOES.pick(dice, self.danger), 180.0, waits=out);
         }
-        build.foe(float(self.long) - 3.5, py, self.outer, yard_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, py, self.outer, YARD_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(self.long) - 2.5, py + 3.5, self.outer, Q3_HEALTH, "q3");
     }
 }
@@ -227,7 +226,7 @@ node LongestYard(Prefab) {
             throw(build, yard, float(near) - 2.5, side_y, 0, float(self.cx) + 0.5, side_y, self.cross_z, [near - 1, int(side_y) - 1, near, int(side_y) + 2], [self.cx - 2, int(side_y) - 1, self.cx - 1, int(side_y) + 2]);
             keep_box(build, yard, self.cx - 2, self.lane + 1, self.cx - 1, self.lane + 4, self.cross_z);
             keep_box(build, yard, self.cx + 2, self.lane + 1, self.cx + 3, self.lane + 4, self.cross_z);
-            build.foe(float(self.cx) + 0.5, float(self.wide) - side_y, self.cross_z, yard_foe(dice, self.danger, True), 180.0);
+            build.foe(float(self.cx) + 0.5, float(self.wide) - side_y, self.cross_z, YARD_FOES.pick(dice, self.danger, True), 180.0);
             build.supply(float(self.cx) + 0.5, side_y + (2.0 if side_y < 5.0 else -2.0), self.cross_z, "weapon_rocketlauncher", "q3");
         }
         void_floor(build, 1, 1, self.long - 1, self.wide - 1, low, 3.5, float(middle) + 0.5, 0, 0.0);
@@ -238,13 +237,13 @@ node LongestYard(Prefab) {
         mid = (self.cx + 4 + r1) // 2;
         build.supply(float(mid) + 0.5, ry, self.run_z, Q3_ARMOR, "q3");
         for index in range(dice.between(1, 2)) {
-            build.foe(float(r1 - 4 - index * 6) + 0.5, ry + (1.0 if index % 2 == 0 else -1.0), self.run_z, yard_foe(dice, self.danger), 180.0);
+            build.foe(float(r1 - 4 - index * 6) + 0.5, ry + (1.0 if index % 2 == 0 else -1.0), self.run_z, YARD_FOES.pick(dice, self.danger), 180.0);
         }
         # Halfway along, what waits on the far ledge comes for the runner.
         halfway = build.touch(float(mid - 1), float(self.lane), float(self.run_z), float(mid + 1), float(self.lane + 5), float(self.run_z + 6));
         far_side = wake_later(build, halfway, 1.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 2.5, 2.5 + float(index) * float(self.wide - 5) / 2.0, self.far_z, yard_foe(dice, self.danger, index == 0), 180.0, waits=far_side);
+            build.foe(float(self.long) - 2.5, 2.5 + float(index) * float(self.wide - 5) / 2.0, self.far_z, YARD_FOES.pick(dice, self.danger, index == 0), 180.0, waits=far_side);
         }
         build.supply(float(self.long) - 3.5, float(middle) + 0.5, self.far_z, Q3_HEALTH, "q3");
         build.supply(3.0, 3.0, 0, "ammo_shells", "q2");
@@ -313,7 +312,7 @@ node RailSpire(Prefab) {
             build.level(spire, half);
             throw(build, spire, 7.5, float(perch_y0) + 3.0, 0, float(lx) - 7.0, float(perch_y0) + 3.0, half, None, [lx - 9, perch_y0, lx - 8, perch_y0 + 6]);
             throw(build, spire, float(lx) - 4.5, float(perch_y0) + 3.0, half, float(lx) + 3.0, float(perch_y0) + 3.0, self.rail, None, [lx, perch_y0, lx + 1, perch_y0 + 6]);
-            build.foe(float(lx) - 6.0, float(perch_y0) + 5.0, half, yard_foe(dice, self.danger), 180.0);
+            build.foe(float(lx) - 6.0, float(perch_y0) + 5.0, half, YARD_FOES.pick(dice, self.danger), 180.0);
         }
         throw(build, spire, float(lx) - 9.0, py, 0, float(lx) + 3.5, py, self.rail, None, [lx, middle - 2, lx + 1, middle + 3]);
         if self.tele {
@@ -328,15 +327,15 @@ node RailSpire(Prefab) {
         }
         build.supply(float(self.long) - 3.0, py + 3.0, self.rail, "weapon_railgun", "q3");
         build.supply(float(self.long) - 3.0, py - 3.0, self.rail, "ammo_slugs", "q3");
-        build.foe(float(self.long) - 2.5, 3.5, self.rail, yard_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 2.5, 3.5, self.rail, YARD_FOES.pick(dice, self.danger, True), 180.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(8 + index * 5) + 0.5, py + (3.0 if index % 2 == 0 else -3.0), 0, yard_foe(dice, self.danger), 0.0);
+            build.foe(float(8 + index * 5) + 0.5, py + (3.0 if index % 2 == 0 else -3.0), 0, YARD_FOES.pick(dice, self.danger), 0.0);
         }
         # Landing up there wakes what waits on the deck below.
         top = build.touch(float(lx), 1.0, float(self.rail), float(lx + 5), float(self.wide - 1), float(self.rail + 6));
         below = wake_later(build, top, 1.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(lx) - 3.5 + float(index), 4.5 + float(index) * 4.0, 0, yard_foe(dice, self.danger, index == 0), 0.0, waits=below);
+            build.foe(float(lx) - 3.5 + float(index), 4.5 + float(index) * 4.0, 0, YARD_FOES.pick(dice, self.danger, index == 0), 0.0, waits=below);
         }
         build.supply(float(lx) - 2.5, py, 0, Q3_HEALTH, "q3");
     }
@@ -425,7 +424,7 @@ node BounceIsles(Prefab) {
             lift(build, far, cy, far + 3, cy + 3, 0, self.far_z);
             keep_box(build, isles, far + 3, cy, far + 4, cy + 3, self.far_z);
             build.supply(float(near) + 6.0, float(cy) + 1.5, 0, "item_armor_shard", "q3");
-            build.foe(float(far) - 6.5, float(cy) + 1.5, 0, yard_foe(dice, self.danger), 180.0);
+            build.foe(float(far) - 6.5, float(cy) + 1.5, 0, YARD_FOES.pick(dice, self.danger), 180.0);
         }
         void_floor(build, 1, 1, self.long - 1, self.wide - 1, low, 3.5, float(middle) + 0.5, 0, 0.0);
         build.doorway(isles, self.enter);
@@ -434,7 +433,7 @@ node BounceIsles(Prefab) {
         }
         for (index, spot) in enumerate(spots) {
             if index % 2 == 1 {
-                build.foe(float(spot[0]) + 3.0, float(spot[1]) + 1.5, spot[2], yard_foe(dice, self.danger), 180.0);
+                build.foe(float(spot[0]) + 3.0, float(spot[1]) + 1.5, spot[2], YARD_FOES.pick(dice, self.danger), 180.0);
             } else {
                 build.supply(float(spot[0]) + 3.0, float(spot[1]) + 4.5, spot[2], "item_armor_shard", "q3");
             }
@@ -444,7 +443,7 @@ node BounceIsles(Prefab) {
         bounced = build.touch(float(first[0]), float(first[1]), float(first[2]), float(first[0] + 6), float(first[1] + 6), float(first[2] + 6));
         guards = wake_later(build, bounced, 2.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 2.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, self.far_z, yard_foe(dice, self.danger, index == 1), 180.0, waits=guards);
+            build.foe(float(self.long) - 2.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, self.far_z, YARD_FOES.pick(dice, self.danger, index == 1), 180.0, waits=guards);
         }
         build.supply(float(self.long) - 3.5, float(middle) + 0.5, self.far_z, Q3_HEALTH, "q3");
     }
@@ -527,16 +526,16 @@ node YardHub(Prefab) {
             build.doorway(hub, port);
         }
         # A guard walks the deck's length; others hold the bridge.
-        build.foe(5.5, py + 3.0, 0, yard_foe(dice, self.danger), 0.0, patrol=[[5.5, py + 3.0], [float(self.long) - 4.5, py + 3.0], [float(self.long) - 4.5, py - 3.0], [5.5, py - 3.0]]);
+        build.foe(5.5, py + 3.0, 0, YARD_FOES.pick(dice, self.danger), 0.0, patrol=[[5.5, py + 3.0], [float(self.long) - 4.5, py + 3.0], [float(self.long) - 4.5, py - 3.0], [5.5, py - 3.0]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx) + 0.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, self.bridge, yard_foe(dice, self.danger, index == 1), 90.0);
+            build.foe(float(cx) + 0.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, self.bridge, YARD_FOES.pick(dice, self.danger, index == 1), 90.0);
         }
-        build.foe(float(self.long) - 4.5, py, 0, yard_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 4.5, py, 0, YARD_FOES.pick(dice, self.danger), 180.0);
         # Taking to the armor's island wakes what waits at the deck's end.
         isle = build.touch(float(ix0), float(iy0), float(iz), float(ix1), float(iy1), float(iz + 6));
         ends = wake_later(build, isle, 2.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 2.5, py + 3.0 - float(index) * 6.0, 0, yard_foe(dice, self.danger, True), 180.0, waits=ends);
+            build.foe(float(self.long) - 2.5, py + 3.0 - float(index) * 6.0, 0, YARD_FOES.pick(dice, self.danger, True), 180.0, waits=ends);
         }
         build.supply(float(cx) + 0.5, py, 0, Q3_HEALTH, "q3");
         build.supply(4.0, py - 3.0, 0, "ammo_shells", "q2");
@@ -608,9 +607,9 @@ node ArmorFloat(Prefab) {
         # From the key's island a teleporter back down to the entry deck.
         build.teleporter(float(k0) + 4.5, float(ky) + 4.5, kz, 4.0, float(middle) + 0.5, 0, 0.0);
         void_floor(build, 1, 1, self.long - 1, side, low, 4.0, float(middle) + 0.5, 0, 0.0);
-        key_ambush(build, self.key, float(k0) + 2.0, float(ky) + 2.0, kz, side, 0, [2, 7], [yard_foe(dice, self.danger, True), yard_foe(dice, self.danger)]);
-        build.foe(float(b0) + 5.5, float(yb) + 4.5, 8, yard_foe(dice, self.danger), 180.0);
-        build.foe(float(a0) + 4.5, float(ya) + 1.5, 4, yard_foe(dice, self.danger), 180.0);
+        key_ambush(build, self.key, float(k0) + 2.0, float(ky) + 2.0, kz, side, 0, [2, 7], [YARD_FOES.pick(dice, self.danger, True), YARD_FOES.pick(dice, self.danger)]);
+        build.foe(float(b0) + 5.5, float(yb) + 4.5, 8, YARD_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(a0) + 4.5, float(ya) + 1.5, 4, YARD_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(b0) + 1.5, float(yb) + 1.5, 8, "item_armor_shard", "q3");
     }
@@ -683,10 +682,10 @@ node VoidPortal(Prefab) {
         guards = build.waiting();
         door +>:Fires:+> guards;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(dx) + 2.5 + float(index % 2) * 2.0, py - 3.0 + float(index) * 3.0, self.dais, yard_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(dx) + 2.5 + float(index % 2) * 2.0, py - 3.0 + float(index) * 3.0, self.dais, YARD_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, yard_foe(dice, self.danger), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, YARD_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(ex) - 2.0, 2.5, 0, "item_health_mega", "q3");

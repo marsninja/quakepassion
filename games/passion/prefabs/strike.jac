@@ -30,16 +30,14 @@ airstrike is called in. Raised in strike's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, gate_into, lift, boulders }
 import from .q2_works { deck, keep_box, sparking, blast_chain, stash, squad, rounds, beamed, held_door, key_taken, closets, splashing, barrels }
 
 glob STRIKE: str = "q2:strike";
 
 """strike's foes: elite soldiers and flyers, infantry and gunners."""
-def strike_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_soldier_ss", "monster_gunner"] if heavy else ["monster_soldier_ss", "monster_soldier", "monster_flyer"], ["monster_infantry"] if heavy else ["monster_soldier_ss"], danger * 0.6));
-}
+glob STRIKE_FOES: FoeMix = FoeMix(light=["monster_soldier_ss", "monster_soldier", "monster_flyer"], strong=["monster_soldier_ss"], heavy_light=["monster_soldier_ss", "monster_gunner"], heavy_strong=["monster_infantry"], scale=0.6);
 
 """The start: a landing craft at a jetty over the sea, the beach, a bunker,
 the cliff behind."""
@@ -107,7 +105,7 @@ node Landing(Prefab) {
         hut = build.room(bx + 1, 14, 0, bx + 5, 17, 4);
         build.widen(hut, bx + 2, 13, 0, bx + 4, 14, 4);
         build.rising_door(float(bx + 2), 13.0, 0.0, float(bx + 4), 14.0, 4.0, {"wait": "-1"});
-        build.foe(float(bx) + 3.0, 15.5, 0, strike_foe(dice, self.danger, True), 270.0);
+        build.foe(float(bx) + 3.0, 15.5, 0, STRIKE_FOES.pick(dice, self.danger, True), 270.0);
         build.supply(float(bx) + 2.0, 16.0, 0, Q2_ARMOR, "q2");
         build.doorway(shore, self.enter);
         for port in self.taken {
@@ -126,8 +124,8 @@ node Landing(Prefab) {
         # player climbs it.
         rounds(build, "monster_soldier", [[4.5, 12.0], [float(jx) - 1.5, 12.0]], 0);
         top = build.touch(8.0, float(self.wide - 6), float(c - 3), 12.0, float(self.wide - 1), float(c + 6));
-        squad(build, top, [[float(self.long) - 4.5, float(self.wide) - 3.5, float(c)], [20.5, float(self.wide) - 3.0, float(c)]], [strike_foe(dice, self.danger), "monster_soldier_ss"], 180.0);
-        build.foe(float(self.long) - 4.5, 13.5, 0, strike_foe(dice, self.danger), 180.0);
+        squad(build, top, [[float(self.long) - 4.5, float(self.wide) - 3.5, float(c)], [20.5, float(self.wide) - 3.0, float(c)]], [STRIKE_FOES.pick(dice, self.danger), "monster_soldier_ss"], 180.0);
+        build.foe(float(self.long) - 4.5, 13.5, 0, STRIKE_FOES.pick(dice, self.danger), 180.0);
         sparking(build, float(bx) - 0.2, 15.5, 3.0, 2, 5.0);
         build.supply(4.5, float(self.wide) - 8.0, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, c, "ammo_bullets", "q2");
@@ -207,7 +205,7 @@ node SeaCliffs(Prefab) {
         # Guards come onto the cliff top as the player climbs; one on the sea
         # stack; the flippers in the sea.
         climb = build.touch(6.0, float(oy - 3), 3.0, 9.0, float(oy), 9.0);
-        squad(build, climb, [[float(self.long) - 4.5, float(self.wide) - 3.5, float(top)], [16.5, float(self.wide) - 3.0, float(top)]], [strike_foe(dice, self.danger, True), "monster_soldier_ss"], 180.0);
+        squad(build, climb, [[float(self.long) - 4.5, float(self.wide) - 3.5, float(top)], [16.5, float(self.wide) - 3.0, float(top)]], [STRIKE_FOES.pick(dice, self.danger, True), "monster_soldier_ss"], 180.0);
         build.foe(float(sx) + 2.0, 4.5, top if self.arch else 3, "monster_soldier_ss", 270.0);
         for index in range(dice.between(2, 3)) {
             build.foe(6.5 + float(index) * 7.0, 4.0, -self.deep + 2, "monster_flipper", 0.0);
@@ -302,12 +300,12 @@ node Canyon(Prefab) {
         # Guards come onto the far path as the player starts over the bridge;
         # flyers come in over the canyon; a soldier walks its floor.
         over = build.touch(float(bx), float(y0), 0.0, float(bx + 3), float(y0 + 3), 6.0);
-        squad(build, over, [[float(bx) + 8.5, float(self.wide) - 3.5, float(fp)], [float(self.long) - 4.5, float(self.wide) - 3.5, float(fp)]], [strike_foe(dice, self.danger, True), "monster_soldier_ss"], 270.0);
+        squad(build, over, [[float(bx) + 8.5, float(self.wide) - 3.5, float(fp)], [float(self.long) - 4.5, float(self.wide) - 3.5, float(fp)]], [STRIKE_FOES.pick(dice, self.danger, True), "monster_soldier_ss"], 270.0);
         come_in = build.touch(1.0, 1.0, 0.0, 4.0, float(y0), 8.0);
         squad(build, come_in, [[float(self.long // 2), float(cy), 6.0], [float(self.long) - 6.0, float(cy) + 2.0, 8.0]], ["monster_flyer"], 180.0);
-        rounds(build, strike_foe(dice, self.danger), [[3.5, float(cy) + 4.5], [float(self.long) - 10.5, float(cy) + 4.5]], -8);
-        build.foe(float(self.long) - 4.5, 3.5, 0, strike_foe(dice, self.danger), 180.0);
-        build.foe(float(bx) + 1.5, float(cy) - 4.0, -8, strike_foe(dice, self.danger, True), 90.0);
+        rounds(build, STRIKE_FOES.pick(dice, self.danger), [[3.5, float(cy) + 4.5], [float(self.long) - 10.5, float(cy) + 4.5]], -8);
+        build.foe(float(self.long) - 4.5, 3.5, 0, STRIKE_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(bx) + 1.5, float(cy) - 4.0, -8, STRIKE_FOES.pick(dice, self.danger, True), 90.0);
         splashing(build, 10.5, float(cy), -9.0, 4.0);
         sparking(build, float(self.long) - 1.2, float(cy) + 4.0, -6.0, 2, 5.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
@@ -374,7 +372,7 @@ node Outpost(Prefab) {
         broken = stash(build, bx + 1, yb + 3, 0, 0, Q2_ARMOR, 5);
         broken +>:Fires:+> build.explosion(float(bx) + 5.0, float(yb) + 4.0, 1.0);
         inside = build.touch(float(bx + 10), float(yb + 2), 0.0, float(bx + 12), float(yb + 6), 6.0);
-        squad(build, inside, [[float(bx) + 7.0, float(yb) + 2.0, 0.0], [float(bx) + 7.0, float(yb) + 6.0, 0.0]], [strike_foe(dice, self.danger, True), "monster_soldier"], 0.0);
+        squad(build, inside, [[float(bx) + 7.0, float(yb) + 2.0, 0.0], [float(bx) + 7.0, float(yb) + 6.0, 0.0]], [STRIKE_FOES.pick(dice, self.danger, True), "monster_soldier"], 0.0);
         # The watchtower against the far wall, up a lift; or a second bunker.
         if self.tower {
             build.solid(self.long - 5, self.wide - 6, 0, self.long - 1, self.wide - 2, 12);
@@ -386,7 +384,7 @@ node Outpost(Prefab) {
             build.solid(self.long - 8, self.wide - 7, 0, self.long - 2, self.wide - 2, 5);
             build.room(self.long - 7, self.wide - 6, 0, self.long - 3, self.wide - 3, 4);
             build.widen(yard, self.long - 6, self.wide - 7, 0, self.long - 4, self.wide - 6, 4);
-            build.foe(float(self.long) - 5.0, float(self.wide) - 4.5, 0, strike_foe(dice, self.danger), 270.0);
+            build.foe(float(self.long) - 5.0, float(self.wide) - 4.5, 0, STRIKE_FOES.pick(dice, self.danger), 270.0);
         }
         # A walkway along the far wall, bridged to from the bunker's roof.
         deck(build, 9, self.wide - 5, self.long - 9, self.wide - 1, 8);
@@ -401,11 +399,11 @@ node Outpost(Prefab) {
         clear = [[0, 0, self.long, 6], [0, middle - 3, 5, middle + 3], [bx - 1, yb - 4, bx + 13, yb + 9], [self.long - 9, self.wide - 8, self.long, self.wide], [self.long - 5, middle - 7, self.long, middle - 1], [3, self.wide - 4, 10, self.wide], [self.long - 11, 0, self.long - 5, 4]];
         barrels(build, dice, 2, 2, self.long - 2, self.wide - 2, 0, dice.between(3, 4), clear);
         # A gunner on the roof, soldiers walking the yard.
-        build.foe(float(bx) + 5.0, float(yb) + 4.0, 8, strike_foe(dice, self.danger, True), 180.0);
+        build.foe(float(bx) + 5.0, float(yb) + 4.0, 8, STRIKE_FOES.pick(dice, self.danger, True), 180.0);
         rounds(build, "monster_soldier", [[3.5, 7.0], [float(self.long) - 3.5, 7.0]], 0);
-        rounds(build, strike_foe(dice, self.danger), [[float(bx) - 2.5, float(self.wide) - 3.5], [float(self.long) - 10.5, float(self.wide) - 3.5]], 0);
+        rounds(build, STRIKE_FOES.pick(dice, self.danger), [[float(bx) - 2.5, float(self.wide) - 3.5], [float(self.long) - 10.5, float(self.wide) - 3.5]], 0);
         come_in = build.touch(1.0, float(middle - 3), 0.0, 4.0, float(middle + 3), 8.0);
-        beamed(build, come_in, 2, self.wide - 6, -8, strike_foe(dice, self.danger), float(bx) + 12.5, float(yb) - 2.5, 0, 180.0);
+        beamed(build, come_in, 2, self.wide - 6, -8, STRIKE_FOES.pick(dice, self.danger), float(bx) + 12.5, float(yb) - 2.5, 0, 180.0);
         sparking(build, float(bx) + 0.2, float(yb) + 6.5, 4.0, 2, 4.0);
         build.supply(2.5, 7.0, 0, Q2_HEALTH, "q2");
         build.supply(float(bx) + 8.5, float(yb) + 6.5, 8, "ammo_bullets", "q2");
@@ -464,11 +462,11 @@ node MarkerSite(Prefab) {
         }
         taken = key_taken(build, self.key, float(self.long) - 4.0, float(cy) + 0.5, self.level);
         taken +>:Fires:+> build.objective("Place the airstrike marker in the target area");
-        closets(build, taken, side, 0, [3, dx - 5], [strike_foe(dice, self.danger, True), strike_foe(dice, self.danger)]);
+        closets(build, taken, side, 0, [3, dx - 5], [STRIKE_FOES.pick(dice, self.danger, True), STRIKE_FOES.pick(dice, self.danger)]);
         squad(build, taken, [[float(dx) - 4.0, float(cy) + 0.5, 6.0], [6.0, float(cy) - 2.5, 6.0]], ["monster_flyer"], 0.0);
-        beamed(build, taken, 2, 2, -8, strike_foe(dice, self.danger, True), 6.5, float(cy) + 0.5, 0, 0.0);
+        beamed(build, taken, 2, 2, -8, STRIKE_FOES.pick(dice, self.danger, True), 6.5, float(cy) + 0.5, 0, 0.0);
         rounds(build, "monster_soldier_ss", [[float(dx) + 2.5, 3.0], [float(dx) + 2.5, float(side) - 3.0]], self.level);
-        build.foe(float(dx) - 4.5, float(side) - 3.5, 0, strike_foe(dice, self.danger), 180.0);
+        build.foe(float(dx) - 4.5, float(side) - 3.5, 0, STRIKE_FOES.pick(dice, self.danger), 180.0);
         sparking(build, float(self.long) - 2.2, float(cy) - 3.5, float(self.level) + 1.5, 2, 3.0);
         sparking(build, float(self.long) - 2.2, float(cy) + 4.5, float(self.level) + 2.0, 2, 4.5);
         build.supply(2.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
@@ -534,10 +532,10 @@ node StrikeZone(Prefab) {
         # Guards come out onto the ledge and the yard as the player comes out;
         # flyers come in with the strike.
         out = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
-        squad(build, out, [[float(self.long) - 10.5, float(self.wide) - 3.0, float(self.ledge)], [float(tx) + 6.5, 3.5, 0.0]], [strike_foe(dice, self.danger, True), "monster_soldier_ss"], 180.0);
+        squad(build, out, [[float(self.long) - 10.5, float(self.wide) - 3.0, float(self.ledge)], [float(tx) + 6.5, 3.5, 0.0]], [STRIKE_FOES.pick(dice, self.danger, True), "monster_soldier_ss"], 180.0);
         squad(build, placed, [[float(tx), 4.0, 8.0], [float(tx), float(self.wide) - 8.0, 9.0]], ["monster_flyer"], 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, strike_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, STRIKE_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         sparking(build, float(ex) - 0.2, float(middle) + 3.5, 4.0, 2, 3.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");

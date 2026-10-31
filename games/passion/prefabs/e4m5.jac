@@ -30,7 +30,7 @@ palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, pillars, key_ambush, lift, key_item }
 import from .e3m5 { keep_run, sealed_way, bursting }
 import from .e3m6 { rounds }
@@ -40,9 +40,7 @@ glob E4M5: str = "q1:e4m5";
 
 """e4m5's foes: the dead and spawn, fiends, hell knights and vores deeper
 in."""
-def e4m5_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_hell_knight", "monster_demon1"] if heavy else ["monster_zombie", "monster_zombie", "monster_tarbaby"], ["monster_shalrath"] if heavy else ["monster_hell_knight"], danger * 0.5 if heavy else danger));
-}
+glob E4M5_FOES: FoeMix = FoeMix(light=["monster_zombie", "monster_zombie", "monster_tarbaby"], strong=["monster_hell_knight"], heavy_light=["monster_hell_knight", "monster_demon1"], heavy_strong=["monster_shalrath"], heavy_scale=0.5);
 
 """A block of the prefab's cells x0..x0+5, y0..y0+5 (eight lifts high)
 holding a closet whose door, on the block's face `face` (1 its +y face,
@@ -119,7 +117,7 @@ node AtriumCourt(Prefab) {
         loose = build.waiting();
         burst +>:Fires:+> loose;
         burst_block(build, long - 7, 2, 1, burst, loose, "monster_hell_knight");
-        burst_block(build, long - 7, wide - 7, 3, burst, loose, e4m5_foe(dice, self.danger, True));
+        burst_block(build, long - 7, wide - 7, 3, burst, loose, E4M5_FOES.pick(dice, self.danger, True));
         # The atrium's gates opened by a target shot high on the far wall.
         shot = build.cue([build.button(float(long - 1), float(cy) + 0.5, 9.0, 2, "", True)], "button");
         build.touch(1.0, 1.0, 0.0, 4.0, float(wide - 1), 6.0, True, "Shoot the target over the far gate");
@@ -132,9 +130,9 @@ node AtriumCourt(Prefab) {
         # The dead walk the ring of columns; spawn lie in wait by the
         # fountain.
         rounds(build, "monster_zombie", float(cx - 9) + 0.5, float(cy - 9) + 0.5, float(cx + 4) + 0.5, float(cy - 9) + 0.5, 0);
-        rounds(build, e4m5_foe(dice, self.danger), float(cx + 4) + 0.5, float(cy + 9) + 0.5, float(cx - 9) + 0.5, float(cy + 9) + 0.5, 0);
+        rounds(build, E4M5_FOES.pick(dice, self.danger), float(cx + 4) + 0.5, float(cy + 9) + 0.5, float(cx - 9) + 0.5, float(cy + 9) + 0.5, 0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(cx) + 4.5, float(cy) + 4.5 - float(index) * 9.0, 0, e4m5_foe(dice, self.danger), 180.0, waits=loose);
+            build.foe(float(cx) + 4.5, float(cy) + 4.5 - float(index) * 9.0, 0, E4M5_FOES.pick(dice, self.danger), 180.0, waits=loose);
         }
         build.supply(float(long) - 2.5, float(cy) + 0.5, 0, "item_health");
     }
@@ -207,9 +205,9 @@ node AtriumStairs(Prefab) {
         guard = build.waiting();
         landed +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(long) - 3.5, 3.5 + float(index) * 3.0, self.flight, e4m5_foe(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(float(long) - 3.5, 3.5 + float(index) * 3.0, self.flight, E4M5_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
-        rounds(build, e4m5_foe(dice, self.danger), 3.5, float(wide) - 3.0, float(lx - self.flight) - 2.5, float(wide) - 3.0, top);
+        rounds(build, E4M5_FOES.pick(dice, self.danger), 3.5, float(wide) - 3.0, float(lx - self.flight) - 2.5, float(wide) - 3.0, top);
         build.supply(3.5, float(middle) + 2.0, top, "item_health");
         build.supply(2.5, 2.5, 0, "item_spikes");
     }
@@ -290,10 +288,10 @@ node AtriumHall(Prefab) {
         dead = build.waiting();
         come +>:Fires:+> dead;
         for index in range(dice.between(3, 4)) {
-            build.foe(float(8 + index * 4) + 0.5, float(middle) + (4.5 if index % 2 == 0 else -4.5), 0, e4m5_foe(dice, self.danger), 0.0, waits=dead);
+            build.foe(float(8 + index * 4) + 0.5, float(middle) + (4.5 if index % 2 == 0 else -4.5), 0, E4M5_FOES.pick(dice, self.danger), 0.0, waits=dead);
         }
         rounds(build, "monster_hell_knight", 6.5, 2.5, float(long) - 3.5, 2.5, g);
-        rounds(build, e4m5_foe(dice, self.danger), float(long) - 3.5, float(wide) - 2.5, 6.5, float(wide) - 2.5, g);
+        rounds(build, E4M5_FOES.pick(dice, self.danger), float(long) - 3.5, float(wide) - 2.5, 6.5, float(wide) - 2.5, g);
         build.supply(2.5, 2.5, g, "item_health");
         build.supply(float(long) - 6.5, float(middle) - 5.5, 0, "item_rockets");
     }
@@ -371,7 +369,7 @@ node AtriumPit(Prefab) {
         below = build.waiting();
         down +>:Fires:+> below;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(16 + index * 3) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), low, "monster_demon1" if index == 0 and self.danger > 0.3 else e4m5_foe(dice, self.danger), 180.0, waits=below);
+            build.foe(float(16 + index * 3) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), low, "monster_demon1" if index == 0 and self.danger > 0.3 else E4M5_FOES.pick(dice, self.danger), 180.0, waits=below);
         }
         rounds(build, "monster_tarbaby", float(long) - 6.5, 6.5, float(long) - 6.5, float(wide) - 6.5, low);
         rounds(build, "monster_zombie", 9.5, 2.5, float(long) - 9.5, 2.5, 0);
@@ -427,8 +425,8 @@ node LavaIsle(Prefab) {
             build.teleporter(3.5, float(cy) + 0.5, 0, float(cx) + 0.5, float(cy) - 0.5, 0, 0.0);
             build.teleporter(float(cx) + 0.5, float(cy) + 1.0, 0, 3.0, 3.0, 0, 180.0);
         }
-        key_ambush(build, self.key, float(cx) + 0.5, float(cy) + 0.5, 0, side, 0, [2, long - 6], [e4m5_foe(dice, self.danger, True), e4m5_foe(dice, self.danger)]);
-        rounds(build, e4m5_foe(dice, self.danger), float(long) - 2.5, 2.0, float(long) - 2.5, float(side) - 2.0, 0);
+        key_ambush(build, self.key, float(cx) + 0.5, float(cy) + 0.5, 0, side, 0, [2, long - 6], [E4M5_FOES.pick(dice, self.danger, True), E4M5_FOES.pick(dice, self.danger)]);
+        rounds(build, E4M5_FOES.pick(dice, self.danger), float(long) - 2.5, 2.0, float(long) - 2.5, float(side) - 2.0, 0);
         build.foe(3.0, 2.5, 0, "monster_zombie", 0.0);
         build.supply(2.5, float(side) - 2.5, 0, "item_health");
     }
@@ -484,13 +482,13 @@ node AtriumExit(Prefab) {
             build.room(at, side + 1, 0, at + 3, side + 4, 7);
             build.widen(court, at, side, 0, at + 3, side + 1, 6);
             burst +>:Fires:+> bursting(build, float(at), float(side), 0.0, float(at + 3), float(side + 1), 6.0);
-            build.foe(float(at) + 1.5, float(side) + 2.5, 0, e4m5_foe(dice, self.danger, at == wall + 2), 270.0, waits=loose);
+            build.foe(float(at) + 1.5, float(side) + 2.5, 0, E4M5_FOES.pick(dice, self.danger, at == wall + 2), 270.0, waits=loose);
         }
         hall_in = build.touch(1.0, float(middle - 2), 0.0, 3.0, float(middle + 2), 6.0);
         hall_guard = build.waiting();
         hall_in +>:Fires:+> hall_guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, e4m5_foe(dice, self.danger, index == 0), 180.0, waits=hall_guard);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, E4M5_FOES.pick(dice, self.danger, index == 0), 180.0, waits=hall_guard);
         }
         if dice.chance(0.7) {
             build.room(2, side + 1, 0, 5, side + 4, 4);

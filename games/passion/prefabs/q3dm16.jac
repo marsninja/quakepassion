@@ -24,10 +24,11 @@ own; q3dm16's are grunts and scrags, ogres as a run goes deeper.
 - `BounceExit`: the end (or a gate). Past the door, platforms rising to
   the way out over a hurting ground, a pad from each up to the next."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { gate_into }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pit_fall, pad_to, closets, wake_on }
 
 glob Q3DM16: str = "q3:q3dm16",
@@ -35,9 +36,7 @@ glob Q3DM16: str = "q3:q3dm16",
      Q3DM16_HEAVY: list[str] = ["monster_ogre"];
 
 """A foe for the Bouncy Map."""
-def bounce_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM16_LIGHT, Q3DM16_HEAVY, strong);
-}
+glob BOUNCE_FOES: FoeMix = FoeMix(light=Q3DM16_LIGHT, strong=Q3DM16_HEAVY, heavy_light=Q3DM16_HEAVY, scale=0.5);
 
 """The start: three platforms over a hurting ground, a perch, ledges."""
 node BounceLanding(Prefab) {
@@ -123,9 +122,9 @@ node BounceLanding(Prefab) {
         # On the middle platform, what waits on the far one wakes.
         middle = build.touch(11.0, float(mid - 3), 0.0, float(p1x), float(mid + 3), 6.0);
         middle +>:Fires:+> guards;
-        build.foe(float(self.long) - 3.5, float(mid) - 2.5, 0, bounce_foe(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.5, float(mid) - 2.5, 0, BOUNCE_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
         build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, 6, "monster_wizard", 180.0, waits=guards);
-        build.foe(float(self.long) - 4.5, float(mid) + 1.5, 0, bounce_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 4.5, float(mid) + 1.5, 0, BOUNCE_FOES.pick(dice, self.danger), 180.0);
         build.foe(13.5, float(mid) - 1.5, 0, "monster_army", 180.0);
         build.foe(4.5, 3.5, 0, "monster_army", 0.0, patrol=[[4.5, 3.5], [4.5, float(self.wide) - 3.5]]);
         build.supply(float(self.long) - 3.0, float(self.wide) - 6.0, 6, Q3_ARMOR, "q3");
@@ -209,10 +208,10 @@ node BounceSteps(Prefab) {
         }
         top = build.touch(19.0, float(self.wide - 8), 8.0, 26.0, float(self.wide - 1), 14.0);
         top +>:Fires:+> guards;
-        build.foe(float(self.long) - 3.5, 3.5, 12, bounce_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, 12, bounce_foe(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.5, 3.5, 12, BOUNCE_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, 12, BOUNCE_FOES.pick(dice, self.danger), 180.0, waits=guards);
         build.foe(12.5, 2.5, 4, "monster_army", 0.0);
-        build.foe(22.5, float(self.wide) - 2.5, 8, bounce_foe(dice, self.danger), 180.0);
+        build.foe(22.5, float(self.wide) - 2.5, 8, BOUNCE_FOES.pick(dice, self.danger), 180.0);
         build.foe(float(mid) + 4.0, float(mid) + 2.5, 2, "monster_wizard", 0.0);
         build.supply(12.5, 6.0, 4, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 5.5, float(mid) + 3.5, 12, Q3_HEALTH, "q3");
@@ -289,9 +288,9 @@ node BounceRing(Prefab) {
         }
         # On the tower's top, what waits on the base wakes.
         base = wake_on(build, float(cx - 2), float(cy - 2), float(cx + 2), float(cy + 2), 8.0);
-        build.foe(float(cx) - 4.5, float(cy) + 4.5, 0, bounce_foe(dice, self.danger), 0.0, waits=base);
-        build.foe(float(cx) + 4.5, float(cy) - 4.5, 0, bounce_foe(dice, self.danger, True), 180.0, waits=base);
-        build.foe(float(cx) + 0.5, 2.5, 8, bounce_foe(dice, self.danger), 90.0);
+        build.foe(float(cx) - 4.5, float(cy) + 4.5, 0, BOUNCE_FOES.pick(dice, self.danger), 0.0, waits=base);
+        build.foe(float(cx) + 4.5, float(cy) - 4.5, 0, BOUNCE_FOES.pick(dice, self.danger, True), 180.0, waits=base);
+        build.foe(float(cx) + 0.5, 2.5, 8, BOUNCE_FOES.pick(dice, self.danger), 90.0);
         build.foe(3.5, float(cy) + 4.5, 0, "monster_army", 0.0, patrol=[[3.5, float(cy) + 4.5], [3.5, float(cy) - 4.5]]);
         build.foe(float(cx) + 0.5, float(cy) + 6.5, 4, "monster_wizard", 180.0);
         build.supply(float(cx) + 0.5, float(cy) + 0.5, 8, Q3_ARMOR, "q3");
@@ -371,10 +370,10 @@ node BounceArena(Prefab) {
         # On the middle platform, the walkways' guards wake.
         middle = build.touch(float(cx - 4), float(cy - 4), 0.0, float(cx + 4), float(cy + 4), 6.0);
         middle +>:Fires:+> guards;
-        build.foe(float(cx) + 5.5, 2.5, 8, bounce_foe(dice, self.danger), 90.0, waits=guards);
-        build.foe(float(cx) - 5.5, float(self.wide) - 2.5, 8, bounce_foe(dice, self.danger, True), 270.0, waits=guards);
-        build.foe(float(cx) + 2.5, float(cy) - 2.5, 0, bounce_foe(dice, self.danger, True), 180.0);
-        build.foe(float(self.long) - 3.5, float(cy) + 0.5, 0, bounce_foe(dice, self.danger), 180.0);
+        build.foe(float(cx) + 5.5, 2.5, 8, BOUNCE_FOES.pick(dice, self.danger), 90.0, waits=guards);
+        build.foe(float(cx) - 5.5, float(self.wide) - 2.5, 8, BOUNCE_FOES.pick(dice, self.danger, True), 270.0, waits=guards);
+        build.foe(float(cx) + 2.5, float(cy) - 2.5, 0, BOUNCE_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, float(cy) + 0.5, 0, BOUNCE_FOES.pick(dice, self.danger), 180.0);
         build.foe(4.5, 4.5, 0, "monster_army", 0.0);
         build.foe(float(cx) + 0.5, float(cy) + 7.5, 4, "monster_wizard", 0.0);
         build.supply(float(cx) - 2.5, float(cy) + 0.5, 0, Q3_ARMOR, "q3");
@@ -436,7 +435,7 @@ node BounceVault(Prefab) {
             keep_box(build, room, self.long - 6, cy - 1, self.long - 5, cy + 2, 12);
             keep_box(build, room, self.long - 6, side - 4, self.long - 5, side - 1, 12);
             taken = key_taken(build, self.key, float(self.long) - 3.0, float(side) - 3.0, 12);
-            build.foe(float(self.long) - 10.5, float(side) - 3.5, 6, bounce_foe(dice, self.danger), 180.0, waits=guards);
+            build.foe(float(self.long) - 10.5, float(side) - 3.5, 6, BOUNCE_FOES.pick(dice, self.danger), 180.0, waits=guards);
         } else {
             build.solid(9, 1, lo, 17, 8, 4);
             build.solid(19, side - 8, lo, self.long - 1, side, 8);
@@ -451,15 +450,15 @@ node BounceVault(Prefab) {
             keep_box(build, room, 6, side - 5, 7, side - 1, 0);
             taken = key_taken(build, self.key, float(self.long) - 3.0, float(side) - 3.0, 8);
             build.foe(12.5, 3.5, 4, "monster_army", 0.0);
-            build.foe(float(self.long) - 3.5, float(side) - 6.5, 8, bounce_foe(dice, self.danger), 180.0, waits=guards);
+            build.foe(float(self.long) - 3.5, float(side) - 6.5, 8, BOUNCE_FOES.pick(dice, self.danger), 180.0, waits=guards);
             build.foe(14.0, float(side) - 3.0, 2, "monster_wizard", 0.0);
         }
         if taken is not None {
-            closets(build, taken, side, 0, [2], [bounce_foe(dice, self.danger, True)]);
+            closets(build, taken, side, 0, [2], [BOUNCE_FOES.pick(dice, self.danger, True)]);
         }
         if taken is not None {
             taken +>:Fires:+> guards;
-            taken +>:Fires:+> build.summon(8, side + 1, 0, bounce_foe(dice, self.danger), 3.5, float(cy) + 0.5, 0, 0.0);
+            taken +>:Fires:+> build.summon(8, side + 1, 0, BOUNCE_FOES.pick(dice, self.danger), 3.5, float(cy) + 0.5, 0, 0.0);
         }
         build.foe(5.5, 2.5, 0, "monster_army", 0.0, waits=guards);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
@@ -528,10 +527,10 @@ node BounceExit(Prefab) {
         keep_box(build, room, 14, int(gy) - 2, 15, int(gy) + 2, 0);
         inside = build.touch(float(wall + 1), float(mid - 2), 0.0, float(wall + 3), float(mid + 2), 6.0);
         inside +>:Fires:+> guards;
-        build.foe(float(self.long) - 3.0, 3.0, 12, bounce_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(22.0, py - 2.0, 6, bounce_foe(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.0, 3.0, 12, BOUNCE_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(22.0, py - 2.0, 6, BOUNCE_FOES.pick(dice, self.danger), 180.0, waits=guards);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, bounce_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, BOUNCE_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(21.0, float(self.wide) - 3.0, 4, "monster_wizard", 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");

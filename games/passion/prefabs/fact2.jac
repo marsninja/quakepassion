@@ -32,7 +32,7 @@ out. Raised in fact2's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush, gate_into, lift }
 import from .minefact { slab, hurt, burning, sparking, stash, charges, port_door, press, crusher }
 
@@ -40,9 +40,7 @@ glob FACT2: str = "q2:fact2";
 
 """fact2's foes: light and shotgun guards, gunners, infantry, parasites,
 gladiators and tanks deeper in."""
-def fact2_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_gunner", "monster_parasite"] if heavy else ["monster_soldier_light", "monster_soldier_ss", "monster_gunner"], ["monster_gladiator", "monster_tank"] if heavy else ["monster_infantry"], danger * 0.4 if heavy else danger * 0.7));
-}
+glob FACT2_FOES: FoeMix = FoeMix(light=["monster_soldier_light", "monster_soldier_ss", "monster_gunner"], strong=["monster_infantry"], heavy_light=["monster_gunner", "monster_parasite"], heavy_strong=["monster_gladiator", "monster_tank"], scale=0.7, heavy_scale=0.4);
 
 """Hooks riding a track under the roof from x0 to x1 along the line y on
 lift z and back, `count` of them spaced along it (each a train of its
@@ -141,11 +139,11 @@ node PlantGate(Prefab) {
         office = build.waiting();
         build.touch(9.0, float(self.wide - 7), float(d), 14.0, float(self.wide - 5), float(d + 6)) +>:Fires:+> office;
         build.touch(float(self.long - 8), float(self.wide - 7), float(d), float(self.long - 4), float(self.wide - 5), float(d + 6)) +>:Fires:+> office;
-        build.foe(3.5, float(self.wide) - 3.5, d, fact2_foe(dice, self.danger), 0.0, waits=office);
+        build.foe(3.5, float(self.wide) - 3.5, d, FACT2_FOES.pick(dice, self.danger), 0.0, waits=office);
         floor_y = float(cy) + 1.5;
         build.foe(5.5, floor_y, 0, "monster_soldier_light", 0.0, patrol=[[5.5, floor_y], [float(self.long) - 5.5, floor_y]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 6.5, 4.5 + float(index) * 6.0, 0, fact2_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long) - 6.5, 4.5 + float(index) * 6.0, 0, FACT2_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(float(self.long) - 3.5, float(self.wide) - 2.5, 0, Q2_HEALTH, "q2");
     }
@@ -220,12 +218,12 @@ node GrinderPit(Prefab) {
         halfway = build.touch(float(self.long // 2 - 1), float(middle - 1), 0.0, float(self.long // 2 + 1), float(middle + 2), 6.0);
         far_end = build.waiting();
         halfway +>:Fires:+> far_end;
-        build.foe(float(x1) + 2.5, float(middle) + 0.5, 0, fact2_foe(dice, self.danger, True), 180.0, waits=far_end);
-        build.foe(float(x1) - 2.5, 2.5, self.deck, fact2_foe(dice, self.danger), 180.0, waits=far_end);
+        build.foe(float(x1) + 2.5, float(middle) + 0.5, 0, FACT2_FOES.pick(dice, self.danger, True), 180.0, waits=far_end);
+        build.foe(float(x1) - 2.5, 2.5, self.deck, FACT2_FOES.pick(dice, self.danger), 180.0, waits=far_end);
         ledge_y = float(self.wide) - 2.5;
         build.foe(float(x0) + 0.5, ledge_y, 0, "monster_soldier_ss", 0.0, patrol=[[float(x0) + 0.5, ledge_y], [float(x1) - 0.5, ledge_y]]);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(x0 + 3 + index * 6) + 0.5, 2.5, 0, fact2_foe(dice, self.danger), 0.0);
+            build.foe(float(x0 + 3 + index * 6) + 0.5, 2.5, 0, FACT2_FOES.pick(dice, self.danger), 0.0);
         }
         build.supply(2.5, float(self.wide) - 2.5, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, 0, "ammo_bullets", "q2");
@@ -328,12 +326,12 @@ node ControlTower(Prefab) {
         # Up on the tower its guard wakes; one walks round its foot.
         top = build.waiting();
         build.touch(float(cx - 3), float(cy - 3), float(t), float(cx - 2), float(cy), float(t + 4)) +>:Fires:+> top;
-        build.foe(float(cx) + 0.5, float(cy) + 0.5, t, fact2_foe(dice, self.danger, True), 180.0, waits=top);
-        build.foe(float(self.long) - 3.5, float(cy) + 0.5, t, fact2_foe(dice, self.danger), 180.0, waits=top);
+        build.foe(float(cx) + 0.5, float(cy) + 0.5, t, FACT2_FOES.pick(dice, self.danger, True), 180.0, waits=top);
+        build.foe(float(self.long) - 3.5, float(cy) + 0.5, t, FACT2_FOES.pick(dice, self.danger), 180.0, waits=top);
         ring = [[float(cx) - 6.5, float(cy) + 6.5], [float(cx) + 6.5, float(cy) + 6.5], [float(cx) + 6.5, float(cy) - 6.5], [float(cx) - 7.5, float(cy) - 6.5]];
         build.foe(ring[0][0], ring[0][1], 0, "monster_soldier_ss", 0.0, patrol=ring);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(4 + index * 7) + 0.5, float(self.wide) - 3.5, 0, fact2_foe(dice, self.danger), 0.0);
+            build.foe(float(4 + index * 7) + 0.5, float(self.wide) - 3.5, 0, FACT2_FOES.pick(dice, self.danger), 0.0);
         }
         build.supply(float(cx) - 1.5, float(cy) + 1.5, t, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.0, 3.0, 0, Q2_HEALTH, "q2");
@@ -404,7 +402,7 @@ node HookLine(Prefab) {
         line_guard = build.waiting();
         come_in +>:Fires:+> line_guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long - 5 - index * 5) + 0.5, 3.5, 0, fact2_foe(dice, self.danger, index == 0), 180.0, waits=line_guard);
+            build.foe(float(self.long - 5 - index * 5) + 0.5, 3.5, 0, FACT2_FOES.pick(dice, self.danger, index == 0), 180.0, waits=line_guard);
         }
         walk_y = float(self.wide) - 3.0;
         build.foe(8.5, walk_y, d, "monster_gunner", 0.0, patrol=[[8.5, walk_y], [float(self.long) - 8.5, walk_y]]);
@@ -448,10 +446,10 @@ node PlantVault(Prefab) {
         build.widen(room, vx, cy - 2, 0, vx + 1, cy + 2, 7);
         vault = build.opened(float(vx), float(cy - 2), 0.0, float(vx + 1), float(cy + 2), 7.0);
         build.push(float(vx), float(cy) + 3.5, 1.3, 2) +>:Fires:+> vault;
-        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, 0, side, 0, [3, vx - 5], [fact2_foe(dice, self.danger, True), fact2_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, 0, side, 0, [3, vx - 5], [FACT2_FOES.pick(dice, self.danger, True), FACT2_FOES.pick(dice, self.danger)]);
         inside = build.waiting();
         vault +>:Fires:+> inside;
-        build.foe(float(self.long) - 2.5, 2.5, 0, fact2_foe(dice, self.danger), 180.0, waits=inside);
+        build.foe(float(self.long) - 2.5, 2.5, 0, FACT2_FOES.pick(dice, self.danger), 180.0, waits=inside);
         build.foe(3.5, 2.5, 0, "monster_soldier_ss", 0.0, patrol=[[3.5, 2.5], [float(vx) - 2.5, 2.5]]);
         hooks(build, 2.0, float(vx - 2), float(cy) + 0.5, float(self.tall - 3), 2);
         steam(build, [[float(vx) - 0.1, float(cy) - 4.5, 4.0], [1.1, float(side) - 3.5, 3.0]], 2);
@@ -504,7 +502,7 @@ node DoorCorridor(Prefab) {
             passed = build.touch(float(x + 1), float(middle - 2), 0.0, float(x + 2), float(middle + 2), 6.0);
             behind = build.waiting();
             passed +>:Fires:+> behind;
-            build.foe(float(x + 2) + 0.5, float(middle) + 3.5, 0, fact2_foe(dice, self.danger, index == 2), 180.0, waits=behind);
+            build.foe(float(x + 2) + 0.5, float(middle) + 3.5, 0, FACT2_FOES.pick(dice, self.danger, index == 2), 180.0, waits=behind);
             steam(build, [[float(x) - 0.1, float(middle) - 3.5, 4.0]], 2);
         }
         # Grinders in pits of slime beside the corridor between the doors.
@@ -515,7 +513,7 @@ node DoorCorridor(Prefab) {
         build.way_out(float(self.long) - 3.0, float(middle), 0);
         build.breakable(float(wall + 11), float(self.wide - 3), 0.0, float(wall + 13), float(self.wide - 1), 2.0, 20);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.0, 2.5 + float(index) * 3.5, 0, fact2_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.0, 2.5 + float(index) * 3.5, 0, FACT2_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
     }

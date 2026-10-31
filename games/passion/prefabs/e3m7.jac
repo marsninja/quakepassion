@@ -37,7 +37,7 @@ from its crypts. Raised in e3m7's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, pillars, key_ambush, lift, key_item, apart }
 import from .e3m5 { keep_run, sealed_way, bursting }
 import from .e3m6 { rounds }
@@ -46,9 +46,7 @@ glob E3M7: str = "q1:e3m7";
 
 """e3m7's foes: ogres and the dead, scrags, hell knights and vores deeper
 in."""
-def e3m7_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_ogre", "monster_hell_knight"] if heavy else ["monster_ogre", "monster_zombie", "monster_zombie"], ["monster_shalrath"] if heavy else ["monster_wizard"], danger * 0.5 if heavy else danger));
-}
+glob E3M7_FOES: FoeMix = FoeMix(light=["monster_ogre", "monster_zombie", "monster_zombie"], strong=["monster_wizard"], heavy_light=["monster_ogre", "monster_hell_knight"], heavy_strong=["monster_shalrath"], heavy_scale=0.5);
 
 """A secret door (as `secret_door`) that fires its cue as it opens (e3m7's
 secret doors that open the floor behind them)."""
@@ -181,7 +179,7 @@ node HauntedFoyer(Prefab) {
                 build.doorway(foyer, port);
             }
         }
-        press +>:Fires:+> build.summon(1, 1, -7, e3m7_foe(dice, self.danger, True), 6.5, float(middle) + 0.5, 0, 0.0);
+        press +>:Fires:+> build.summon(1, 1, -7, E3M7_FOES.pick(dice, self.danger, True), 6.5, float(middle) + 0.5, 0, 0.0);
         build.start(2.5, float(middle) + 0.5, 0, 0.0);
         build.supply(2.5, float(middle) - 2.5, 0, "item_shells");
         # The dead lie in wait about the floor, stirring as a body reaches
@@ -195,8 +193,8 @@ node HauntedFoyer(Prefab) {
         reached = build.touch(float(top[0]), float(top[1]), float(g), float(top[2]), float(top[3]), float(g + 6));
         guard = build.waiting();
         reached +>:Fires:+> guard;
-        build.foe(float(long) - 3.0, float(wide) - 2.5, g, e3m7_foe(dice, self.danger, True), 180.0, waits=guard);
-        rounds(build, e3m7_foe(dice, self.danger), 10.5, float(wide) - 2.5, float(long) - 7.5, float(wide) - 2.5, g);
+        build.foe(float(long) - 3.0, float(wide) - 2.5, g, E3M7_FOES.pick(dice, self.danger, True), 180.0, waits=guard);
+        rounds(build, E3M7_FOES.pick(dice, self.danger), 10.5, float(wide) - 2.5, float(long) - 7.5, float(wide) - 2.5, g);
         build.supply(float(long) - 3.0, 2.5, g, "item_health");
     }
 }
@@ -289,9 +287,9 @@ node DrawbridgeHall(Prefab) {
         guard = build.waiting();
         fell +>:Fires:+> guard;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(x1) + 3.5, 4.5 + float(index) * 5.0, 0, e3m7_foe(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(float(x1) + 3.5, 4.5 + float(index) * 5.0, 0, E3M7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
-        rounds(build, e3m7_foe(dice, self.danger), float(x0) + 2.5, float(middle) + 0.5, float(x1) - 5.5, float(middle) + 0.5, low);
+        rounds(build, E3M7_FOES.pick(dice, self.danger), float(x0) + 2.5, float(middle) + 0.5, float(x1) - 5.5, float(middle) + 0.5, low);
         build.supply(2.5, float(wide) - 2.5, 0, "item_health");
         build.supply(float(long) - 2.5, 2.5, 0, "item_spikes");
     }
@@ -373,9 +371,9 @@ node SlimeLifts(Prefab) {
         rising = build.touch(float(wx0 - 3), float(middle - 2), float(u - 2), float(wx0 + 2), float(middle + 1), float(u + 4));
         guard = build.waiting();
         rising +>:Fires:+> guard;
-        build.foe(float(tx0 + tx1) * 0.5, float(middle) - 0.5, u, e3m7_foe(dice, self.danger, True), 180.0, waits=guard);
+        build.foe(float(tx0 + tx1) * 0.5, float(middle) - 0.5, u, E3M7_FOES.pick(dice, self.danger, True), 180.0, waits=guard);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(tx1) + 5.5 + float(index % 2) * 2.0, 3.5 + float(index) * 3.0, 0, e3m7_foe(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(float(tx1) + 5.5 + float(index % 2) * 2.0, 3.5 + float(index) * 3.0, 0, E3M7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
         rounds(build, "monster_zombie", float(tx1) + 2.5, 2.5, float(tx1) + 2.5, float(wide) - 3.5, 0);
         build.supply(2.5, float(wide) - 2.5, 0, "item_health");
@@ -471,8 +469,8 @@ node StairOfDoors(Prefab) {
         up = build.touch(float(lx), float(wide - 5), float(h), float(lx + 3), float(wide - 1), float(h + 6));
         guard = build.waiting();
         up +>:Fires:+> guard;
-        build.foe(float(long) - 5.5, 2.5, h, e3m7_foe(dice, self.danger, True), 180.0, waits=guard);
-        up +>:Fires:+> build.summon(1, 1, -h - 2, e3m7_foe(dice, self.danger), 5.5, float(middle) + 0.5, 0, 0.0);
+        build.foe(float(long) - 5.5, 2.5, h, E3M7_FOES.pick(dice, self.danger, True), 180.0, waits=guard);
+        up +>:Fires:+> build.summon(1, 1, -h - 2, E3M7_FOES.pick(dice, self.danger), 5.5, float(middle) + 0.5, 0, 0.0);
         rounds(build, "monster_ogre", 4.5, float(middle) + 0.5, float(lx) - 3.5, float(middle) + 0.5, 0);
         build.supply(2.5, 2.5, 0, "item_shells");
         build.supply(float(long) - 2.5, float(wide) - 2.5, h, "item_health");
@@ -574,9 +572,9 @@ node SpikeRhythm(Prefab) {
         guard = build.waiting();
         zone +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(long) - 8.5 - float(index) * 6.0, float(wide) - 2.5, u, e3m7_foe(dice, self.danger, index == 0), 270.0, waits=guard);
+            build.foe(float(long) - 8.5 - float(index) * 6.0, float(wide) - 2.5, u, E3M7_FOES.pick(dice, self.danger, index == 0), 270.0, waits=guard);
         }
-        rounds(build, e3m7_foe(dice, self.danger, True), float(long) - 5.5, 3.5, 9.5, 3.5, 0);
+        rounds(build, E3M7_FOES.pick(dice, self.danger, True), float(long) - 5.5, 3.5, 9.5, 3.5, 0);
         build.supply(float(long) - 2.5, float(wide) - 2.5, u, "item_health");
     }
 }
@@ -672,15 +670,15 @@ node PadGallery(Prefab) {
             guard = build.waiting();
             arrived +>:Fires:+> guard;
             if index == 0 {
-                build.foe(float(cx) + 5.5, float(wide) - 2.5, self.north, e3m7_foe(dice, self.danger), 180.0, waits=guard);
+                build.foe(float(cx) + 5.5, float(wide) - 2.5, self.north, E3M7_FOES.pick(dice, self.danger), 180.0, waits=guard);
             } elif index == 1 {
-                build.foe(float(long) - 2.5, float(cy) + 4.5, self.east, e3m7_foe(dice, self.danger, True), 270.0, waits=guard);
+                build.foe(float(long) - 2.5, float(cy) + 4.5, self.east, E3M7_FOES.pick(dice, self.danger, True), 270.0, waits=guard);
             } else {
-                build.foe(float(cx) - 4.5, 2.5, self.south, e3m7_foe(dice, self.danger, True), 0.0, waits=guard);
+                build.foe(float(cx) - 4.5, 2.5, self.south, E3M7_FOES.pick(dice, self.danger, True), 0.0, waits=guard);
             }
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(4.5 + float(index) * 3.0, float(cy) + 4.5, 0, e3m7_foe(dice, self.danger), 0.0);
+            build.foe(4.5 + float(index) * 3.0, float(cy) + 4.5, 0, E3M7_FOES.pick(dice, self.danger), 0.0);
         }
         rounds(build, "monster_zombie", 4.5, 4.5, 4.5, float(wide) - 6.5, 0);
         build.foe(float(cx) + 0.5, float(cy) + 0.5, 8, "monster_wizard", 0.0);
@@ -754,7 +752,7 @@ node HauntedCrypt(Prefab) {
             build.room(at, side + 1, low, at + 3, side + 4, low + 7);
             build.widen(crypt, at, side, low, at + 3, side + 1, low + 6);
             taken +>:Fires:+> bursting(build, float(at), float(side), float(low), float(at + 3), float(side + 1), float(low + 6));
-            build.foe(float(at) + 1.5, float(side) + 2.5, low, e3m7_foe(dice, self.danger, True) if index == 0 else "monster_zombie", 270.0);
+            build.foe(float(at) + 1.5, float(side) + 2.5, low, E3M7_FOES.pick(dice, self.danger, True) if index == 0 else "monster_zombie", 270.0);
         }
         taken +>:Fires:+> build.summon(1, 1, low - 7, "monster_zombie", 3.5, 3.5, 0, 0.0);
         # A secret alcove off the crypt's floor behind a wall that opens
@@ -767,7 +765,7 @@ node HauntedCrypt(Prefab) {
         fell = build.touch(6.0, 1.0, float(low), float(long - 1), float(side), float(low + 4));
         dead = build.waiting();
         fell +>:Fires:+> dead;
-        build.foe(float(long) - 2.5, float(side) - 2.5, low, e3m7_foe(dice, self.danger), 180.0, waits=dead);
+        build.foe(float(long) - 2.5, float(side) - 2.5, low, E3M7_FOES.pick(dice, self.danger), 180.0, waits=dead);
         rounds(build, "monster_zombie", 10.5, float(cy) + 3.5, float(long) - 7.5, float(cy) + 3.5, low);
         build.supply(2.5, 2.5, 0, "item_health");
     }
@@ -841,10 +839,10 @@ node HauntedExit(Prefab) {
         guard = build.waiting();
         through +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall + 3 + index * 4) + 0.5, float(wide) - 2.5, b, e3m7_foe(dice, self.danger, index == 0), 270.0, waits=guard);
+            build.foe(float(wall + 3 + index * 4) + 0.5, float(wide) - 2.5, b, E3M7_FOES.pick(dice, self.danger, index == 0), 270.0, waits=guard);
         }
         through +>:Fires:+> build.summon(1, 1, -7, "monster_zombie", 4.5, float(middle) + 0.5, 0, 0.0);
-        rounds(build, e3m7_foe(dice, self.danger), float(wall) + 2.5, float(middle) + 0.5, float(ax) - 2.5, float(middle) + 0.5, 0);
+        rounds(build, E3M7_FOES.pick(dice, self.danger), float(wall) + 2.5, float(middle) + 0.5, float(ax) - 2.5, float(middle) + 0.5, 0);
         build.supply(2.5, 2.5, 0, "item_health");
     }
 }

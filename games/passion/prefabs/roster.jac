@@ -26,6 +26,43 @@ def q1_palette(light: list[str], heavy: list[str], danger: float) -> dict[str, f
     return found;
 }
 
+"""An original's foes as data: its `light` kinds always, its `strong` ones
+growing with a stretch's danger (by `scale`), and for a heavy pick kinds and a
+scale of their own (`q1_palette`'s weights over them); a flyer, when one is
+asked for, is `flying` (or `flying_other` as often as `flying_odds`)."""
+obj FoeMix {
+    has light: list[str],
+        strong: list[str],
+        heavy_light: list[str] | None = None,
+        heavy_strong: list[str] | None = None,
+        scale: float = 1.0,
+        heavy_scale: float | None = None,
+        flying: str = "",
+        flying_other: str = "",
+        flying_odds: float = 0.0;
+
+    """A foe by a stretch's danger, heavy or a flyer when asked."""
+    def pick(dice: Stream, danger: float, heavy: bool = False, flying: bool = False) -> str {
+        if flying {
+            if self.flying_other {
+                return self.flying_other if dice.chance(self.flying_odds) else self.flying;
+            }
+            return self.flying;
+        }
+        if heavy {
+            common = self.heavy_light if self.heavy_light is not None else self.light;
+            growing = self.heavy_strong if self.heavy_strong is not None else self.strong;
+            return q1_foe(dice, q1_palette(common, growing, danger * (self.heavy_scale if self.heavy_scale is not None else self.scale)));
+        }
+        return q1_foe(dice, q1_palette(self.light, self.strong, danger * self.scale));
+    }
+
+    """`count` foes, the first heavy when `heavy`."""
+    def squad(dice: Stream, danger: float, count: int, heavy: bool = False) -> list[str] {
+        return [self.pick(dice, danger, heavy and index == 0) for index in range(count)];
+    }
+}
+
 """Quake II's supplies by what they restore: health, the ammunition its
 foes' weapons want, armor."""
 glob Q2_HEALTH: str = "item_health_large",

@@ -26,11 +26,12 @@ palette.
 - `TowerTop`: the end (or a gate, the door a key's). A hall, the tower's
   last room, the way out on its roof up a pad (and by the seed a stair)."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from ..space { Space }
 import from .common { stair, key_ambush, lift }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3late_parts { deck, keep_box, throw, wake_later, floor_slab, slide_door, columns }
 
 glob Q3TOURNEY4: str = "q3:q3tourney4",
@@ -38,9 +39,7 @@ glob Q3TOURNEY4: str = "q3:q3tourney4",
      Q3TOURNEY4_HEAVY: list[str] = ["monster_shambler"];
 
 """A foe for q3tourney4's stretches."""
-def tower_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3TOURNEY4_LIGHT, Q3TOURNEY4_HEAVY, strong);
-}
+glob TOWER_FOES: FoeMix = FoeMix(light=Q3TOURNEY4_LIGHT, strong=Q3TOURNEY4_HEAVY, heavy_light=Q3TOURNEY4_HEAVY, scale=0.5);
 
 """A torch flaring now and then at (x, y), `z` lifts up (the original's
 timers)."""
@@ -106,12 +105,12 @@ node TowerBase(Prefab) {
         build.supply(4.0, py, 10, "weapon_railgun", "q3");
         build.supply(6.0, py + 2.0, 10, "ammo_slugs", "q3");
         torch(build, 1.5, float(middle) - 3.5, 4.0, 5.0);
-        build.foe(float(self.long) - 4.5, py + (3.0 if self.shaft_side == 0 else -3.0), 0, tower_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 4.5, py + (3.0 if self.shaft_side == 0 else -3.0), 0, TOWER_FOES.pick(dice, self.danger), 180.0);
         # Halfway up the stair, the floor above stirs.
         climb = build.touch(9.0, float(wy), 1.0, 11.0, float(wy + 3), 12.0);
         above = wake_later(build, climb, 1.0);
-        build.foe(10.5, py, 10, tower_foe(dice, self.danger), 180.0, waits=above);
-        build.foe(float(self.long) - 3.5, float(self.wide) - float(sy) - 3.0, 10, tower_foe(dice, self.danger), 180.0);
+        build.foe(10.5, py, 10, TOWER_FOES.pick(dice, self.danger), 180.0, waits=above);
+        build.foe(float(self.long) - 3.5, float(self.wide) - float(sy) - 3.0, 10, TOWER_FOES.pick(dice, self.danger), 180.0);
     }
 }
 
@@ -174,13 +173,13 @@ node ClimbShaft(Prefab) {
             build.doorway(shaft, port);
         }
         torch(build, float(self.long) - 1.5, float(middle) + 0.5, 12.0, 6.0);
-        build.foe(5.5, float(middle) + 0.5, 0, tower_foe(dice, self.danger), 0.0);
-        build.foe(float(self.long) - 3.5, float(ay0) + 2.0, 8, tower_foe(dice, self.danger), 180.0);
-        build.foe(3.5, float(by0) + 2.0, 16, tower_foe(dice, self.danger), 0.0);
+        build.foe(5.5, float(middle) + 0.5, 0, TOWER_FOES.pick(dice, self.danger), 0.0);
+        build.foe(float(self.long) - 3.5, float(ay0) + 2.0, 8, TOWER_FOES.pick(dice, self.danger), 180.0);
+        build.foe(3.5, float(by0) + 2.0, 16, TOWER_FOES.pick(dice, self.danger), 0.0);
         # On the second ledge, the top one's guard comes to its edge.
         second = build.touch(1.0, float(by0), 16.0, float(self.long - 1), float(by0 + 4), 22.0);
         top = wake_later(build, second, 1.0);
-        build.foe(float(self.long) - 3.5, float(ay0) + 2.0, 24, tower_foe(dice, self.danger, True), 180.0, waits=top);
+        build.foe(float(self.long) - 3.5, float(ay0) + 2.0, 24, TOWER_FOES.pick(dice, self.danger, True), 180.0, waits=top);
         build.supply(3.0, float(by0) + 2.0, 16, "weapon_rocketlauncher", "q3");
         build.supply(3.0, float(ay0) + 2.0, 24, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 3.0, float(by0) + 2.0, 16, Q3_HEALTH, "q3");
@@ -243,13 +242,13 @@ node StackedHalls(Prefab) {
         build.solid(12, middle, 20, 14, middle + 2, 21);
         torch(build, float(back) - 0.5, 1.5, 4.0, 5.0);
         torch(build, float(back) - 0.5, float(self.wide) - 1.5, 24.0, 6.5);
-        build.foe(float(self.long) - 3.5, py, 0, tower_foe(dice, self.danger), 180.0);
-        build.foe(float(self.long // 2) + 0.5, py + 3.0, 10, tower_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, py, 0, TOWER_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2) + 0.5, py + 3.0, 10, TOWER_FOES.pick(dice, self.danger), 180.0);
         # At the first flight's head, the top floor stirs.
         head = build.touch(12.0, float(f1), 8.0, 16.0, float(f1 + 3), 16.0);
         top = wake_later(build, head, 1.5);
-        build.foe(float(self.long // 2) + 0.5, py, 20, tower_foe(dice, self.danger), 180.0, waits=top);
-        build.foe(float(self.long) - 3.5, py, 20, tower_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2) + 0.5, py, 20, TOWER_FOES.pick(dice, self.danger), 180.0, waits=top);
+        build.foe(float(self.long) - 3.5, py, 20, TOWER_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(self.long) - 3.0, 3.0, 10, Q3_HEALTH, "q3");
         build.supply(3.0, py, 20, Q3_ARMOR, "q3");
         build.supply(3.0, py + 3.0, 10, Q3_HEALTH, "q3");
@@ -306,14 +305,14 @@ node TowerCore(Prefab) {
         torch(build, float(cx) - 5.5, float(cy) - 4.5, 2.0, 4.0);
         torch(build, float(cx) + 5.5, float(cy) + 4.5, 12.0, 5.5);
         build.supply(float(cx) - 11.0, float(cy) + 0.5, 20, "item_health_mega", "q3");
-        build.foe(float(cx) - 7.5, float(cy) - 6.5, 0, tower_foe(dice, self.danger), 0.0, patrol=[[float(cx) - 7.5, float(cy) - 6.5], [float(cx) + 7.5, float(cy) - 6.5], [float(cx) + 7.5, float(cy) + 6.5], [float(cx) - 7.5, float(cy) + 6.5]]);
-        build.foe(float(self.long) - 4.5, float(cy) + 0.5, 0, tower_foe(dice, self.danger), 180.0);
-        build.foe(float(cx) + 0.5, float(self.wide) - 3.0, 10, tower_foe(dice, self.danger), 270.0);
+        build.foe(float(cx) - 7.5, float(cy) - 6.5, 0, TOWER_FOES.pick(dice, self.danger), 0.0, patrol=[[float(cx) - 7.5, float(cy) - 6.5], [float(cx) + 7.5, float(cy) - 6.5], [float(cx) + 7.5, float(cy) + 6.5], [float(cx) - 7.5, float(cy) + 6.5]]);
+        build.foe(float(self.long) - 4.5, float(cy) + 0.5, 0, TOWER_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(cx) + 0.5, float(self.wide) - 3.0, 10, TOWER_FOES.pick(dice, self.danger), 270.0);
         # Thrown up the atrium, the top gallery's guard comes on.
         thrown = build.touch(float(cx), float(cy - 1), 0.0, float(cx + 2), float(cy + 2), 4.0);
         top = wake_later(build, thrown, 1.0);
-        build.foe(float(cx) - 10.0, float(cy) + 4.0, 20, tower_foe(dice, self.danger, True), 0.0, waits=top);
-        build.foe(float(self.long) - 3.5, 3.0, 20, tower_foe(dice, self.danger), 180.0);
+        build.foe(float(cx) - 10.0, float(cy) + 4.0, 20, TOWER_FOES.pick(dice, self.danger, True), 0.0, waits=top);
+        build.foe(float(self.long) - 3.5, 3.0, 20, TOWER_FOES.pick(dice, self.danger), 180.0);
         build.supply(3.0, float(self.wide) - 3.0, 0, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 3.0, 3.0, 10, Q3_HEALTH, "q3");
         build.supply(3.0, float(cy) + 0.5, 10, "ammo_cells", "q3");
@@ -359,11 +358,11 @@ node TopVault(Prefab) {
         throw(build, vault, float(self.long) - 4.5, float(cy) + 0.5, 10, float(self.long) - 10.0, float(cy) + 0.5, 20, None, [self.long - 8, cy - 2, self.long - 7, cy + 3]);
         # The key behind a sliding door at the third floor's near end.
         door_wall(build, vault, 6, side + 1, 20, cy - 2);
-        key_ambush(build, self.key, 3.0, float(cy) + 0.5, 20, side, 0, [2, 7], [tower_foe(dice, self.danger, True), tower_foe(dice, self.danger)]);
+        key_ambush(build, self.key, 3.0, float(cy) + 0.5, 20, side, 0, [2, 7], [TOWER_FOES.pick(dice, self.danger, True), TOWER_FOES.pick(dice, self.danger)]);
         build.teleporter(3.0, float(cy) + 3.5, 20, float(self.long) - 4.0, float(cy) + 0.5, 0, 180.0);
         torch(build, 1.5, float(cy) - 2.5, 24.0, 4.0);
-        build.foe(float(self.long) - 9.5, float(cy) + 3.5, 20, tower_foe(dice, self.danger), 180.0);
-        build.foe(10.0, float(cy) + 0.5, 10, tower_foe(dice, self.danger), 0.0);
+        build.foe(float(self.long) - 9.5, float(cy) + 3.5, 20, TOWER_FOES.pick(dice, self.danger), 180.0);
+        build.foe(10.0, float(cy) + 0.5, 10, TOWER_FOES.pick(dice, self.danger), 0.0);
         build.supply(2.5, float(cy) + 3.5, 0, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 3.0, 3.0, 10, Q3_HEALTH, "q3");
     }
@@ -423,10 +422,10 @@ node TowerTop(Prefab) {
         guards = build.waiting();
         door +>:Fires:+> guards;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 6.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, 10, tower_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(self.long) - 6.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, 10, TOWER_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, tower_foe(dice, self.danger), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, TOWER_FOES.pick(dice, self.danger), 180.0);
         }
         torch(build, float(rx) - 0.5, 1.5, 4.0, 4.5);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");

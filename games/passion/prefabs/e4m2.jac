@@ -32,7 +32,7 @@ e4m2's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, pillars, key_ambush, spiral, ring_landing, lift }
 import from .e3m5 { keep_run, sealed_way }
 import from .e3m6 { rounds }
@@ -41,9 +41,7 @@ import from .e3m7 { relayed, held_lift, secret_opener }
 glob E4M2: str = "q1:e4m2";
 
 """e4m2's foes: knights and ogres, hell knights and vores deeper in."""
-def e4m2_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_ogre", "monster_hell_knight"] if heavy else ["monster_knight", "monster_knight", "monster_ogre"], ["monster_shalrath"] if heavy else ["monster_hell_knight"], danger * 0.5 if heavy else danger));
-}
+glob E4M2_FOES: FoeMix = FoeMix(light=["monster_knight", "monster_knight", "monster_ogre"], strong=["monster_hell_knight"], heavy_light=["monster_ogre", "monster_hell_knight"], heavy_strong=["monster_shalrath"], heavy_scale=0.5);
 
 """A door of the prefab's cells x0..x1, y0..y1, z0..z1 that opens (rising)
 only when shot (e4m2's doors with health)."""
@@ -138,7 +136,7 @@ node DespairTower(Prefab) {
             build.solid(at - 1, 1, 0, at + 4, 5, 8);
             build.room(at, 1, 0, at + 3, 5, 6);
             opened +>:Fires:+> build.sinking(float(at), 4.0, float(at + 3), 5.0, 6, 6);
-            build.foe(float(at) + 1.5, 2.5, 0, "monster_knight" if index % 2 == 0 else e4m2_foe(dice, self.danger), 90.0, waits=loose);
+            build.foe(float(at) + 1.5, 2.5, 0, "monster_knight" if index % 2 == 0 else E4M2_FOES.pick(dice, self.danger), 90.0, waits=loose);
         }
         # The window high on the east wall: shot, it opens a closet in the
         # wall by the way in (a secret).
@@ -154,9 +152,9 @@ node DespairTower(Prefab) {
         }
         # Knights walk the court; the tower's guard wakes halfway up.
         rounds(build, "monster_knight", float(long) - 3.5, 7.5, float(long) - 3.5, float(side) - 3.5, 0);
-        rounds(build, e4m2_foe(dice, self.danger), 7.5, float(side) + 1.5, float(long) - 6.5, float(side) + 1.5, 0);
-        build.foe(float(cx) + 0.5, float(cy) + 0.5, self.steps, e4m2_foe(dice, self.danger, True), 180.0);
-        build.foe(float(cx + 5) + 0.5, float(cy) + 0.5, 14, e4m2_foe(dice, self.danger), 180.0);
+        rounds(build, E4M2_FOES.pick(dice, self.danger), 7.5, float(side) + 1.5, float(long) - 6.5, float(side) + 1.5, 0);
+        build.foe(float(cx) + 0.5, float(cy) + 0.5, self.steps, E4M2_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(float(cx + 5) + 0.5, float(cy) + 0.5, 14, E4M2_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(cx) - 2.5, float(cy) + 2.5, self.steps, "item_health");
     }
 }
@@ -227,7 +225,7 @@ node DespairTeleports(Prefab) {
             arrived = build.touch(x - 1.5, y - 1.5, float(z), x + 1.5, y + 1.5, float(z + 6));
             guard = build.waiting();
             arrived +>:Fires:+> guard;
-            build.foe(x - 5.0 if x > 6.0 else x + 5.0, y, z, e4m2_foe(dice, self.danger, z == second), 180.0, waits=guard);
+            build.foe(x - 5.0 if x > 6.0 else x + 5.0, y, z, E4M2_FOES.pick(dice, self.danger, z == second), 180.0, waits=guard);
         }
         rounds(build, "monster_knight", 3.5, float(wide // 2) + 0.5, float(long) - 6.5, float(wide // 2) + 0.5, 0);
         build.supply(2.5, float(wide) - 2.5, 0, "item_health");
@@ -320,11 +318,11 @@ node DespairHall(Prefab) {
         pit = build.waiting();
         into +>:Fires:+> pit;
         for index in range(dice.between(3, 4)) {
-            build.foe(float(11 + index * 2) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), -3, e4m2_foe(dice, self.danger), 0.0, waits=pit);
+            build.foe(float(11 + index * 2) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), -3, E4M2_FOES.pick(dice, self.danger), 0.0, waits=pit);
         }
         rounds(build, "monster_knight", 8.5, float(wide) - 2.5, float(long) - 5.5, float(wide) - 2.5, g);
-        rounds(build, e4m2_foe(dice, self.danger), 3.5, 3.5, 3.5, float(wide) - 8.5, 0);
-        build.foe(float(long) - 2.5, float(middle) + 0.5, g, e4m2_foe(dice, self.danger, True), 180.0);
+        rounds(build, E4M2_FOES.pick(dice, self.danger), 3.5, 3.5, 3.5, float(wide) - 8.5, 0);
+        build.foe(float(long) - 2.5, float(middle) + 0.5, g, E4M2_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(long) - 2.5, float(wide) - 2.5, g, "item_health");
         build.supply(3.0, 3.0, 0, "item_spikes");
     }
@@ -400,11 +398,11 @@ node ShotGates(Prefab) {
         # Knights walk round the dais; the gallery's guard wakes as a body
         # is set down there.
         rounds(build, "monster_knight", float(cx) - 5.5, float(cy) - 5.5, float(cx) + 6.5, float(cy) - 5.5, 0);
-        rounds(build, e4m2_foe(dice, self.danger), float(cx) + 6.5, float(cy) + 6.5, float(cx) - 5.5, float(cy) + 6.5, 0);
+        rounds(build, E4M2_FOES.pick(dice, self.danger), float(cx) + 6.5, float(cy) + 6.5, float(cx) - 5.5, float(cy) + 6.5, 0);
         arrived = build.touch(float(long - 5), float(cy - 2), float(g), float(long - 2), float(cy + 3), float(g + 6));
         guard = build.waiting();
         arrived +>:Fires:+> guard;
-        build.foe(float(gx) + 1.5, 2.5, g, e4m2_foe(dice, self.danger, True), 90.0, waits=guard);
+        build.foe(float(gx) + 1.5, 2.5, g, E4M2_FOES.pick(dice, self.danger, True), 90.0, waits=guard);
         build.foe(float(cx) + 0.5, float(cy) + 0.5, 12, "monster_wizard", 0.0, waits=guard);
         build.supply(3.0, 3.0, 0, "item_shells");
         build.supply(float(long) - 2.5, float(cy) + 3.5, g, "item_health");
@@ -455,7 +453,7 @@ node DespairSummit(Prefab) {
             keep_run(build, hall, cx + 1, cy - 1, cx + 2, cy + 2, self.steps);
             keep_run(build, hall, cx + 2, cy - 2, cx + 6, cy + 3, 0);
         }
-        key_ambush(build, self.key, float(cx) - 0.5, float(cy) - 0.5, self.steps, side, 0, [2, long - 5], [e4m2_foe(dice, self.danger, True), e4m2_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(cx) - 0.5, float(cy) - 0.5, self.steps, side, 0, [2, long - 5], [E4M2_FOES.pick(dice, self.danger, True), E4M2_FOES.pick(dice, self.danger)]);
         # A teleporter on the top back down by the way in.
         build.teleporter(float(cx) + 0.5, float(cy) + 0.5, self.steps, 3.0, 3.0, 0, 0.0);
         # A closet in the east wall behind a wall that opens when shot.
@@ -464,9 +462,9 @@ node DespairSummit(Prefab) {
         halfway = build.touch(float(cx - 4), float(cy - 4), 3.0, float(cx + 4), float(cy + 4), float(self.steps));
         up = build.waiting();
         halfway +>:Fires:+> up;
-        build.foe(float(cx) + 0.5, float(cy) + 1.0, self.steps, e4m2_foe(dice, self.danger), 180.0, waits=up);
+        build.foe(float(cx) + 0.5, float(cy) + 1.0, self.steps, E4M2_FOES.pick(dice, self.danger), 180.0, waits=up);
         rounds(build, "monster_knight", 3.5, float(side) - 2.5, float(long) - 5.5, float(side) - 2.5, 0);
-        build.foe(float(long) - 2.5, float(side) - 4.5, 0, e4m2_foe(dice, self.danger), 180.0);
+        build.foe(float(long) - 2.5, float(side) - 4.5, 0, E4M2_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, float(side) - 4.5, 0, "item_health");
     }
 }
@@ -543,14 +541,14 @@ node DespairExit(Prefab) {
                 build.room(at, side + 1, low, at + 3, side + 4, low + 7);
                 build.widen(pit, at, side, low, at + 3, side + 1, low + 6);
                 burst +>:Fires:+> build.cue([build_burst(build, at, side, low)], "door");
-                build.foe(float(at) + 1.5, float(side) + 2.5, low, e4m2_foe(dice, self.danger, at == x0 + 3), 270.0);
+                build.foe(float(at) + 1.5, float(side) + 2.5, low, E4M2_FOES.pick(dice, self.danger, at == x0 + 3), 270.0);
             }
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(x0 + 6 + index * 4) + 0.5, float(side) - 2.5, low, e4m2_foe(dice, self.danger), 180.0, waits=below);
+            build.foe(float(x0 + 6 + index * 4) + 0.5, float(side) - 2.5, low, E4M2_FOES.pick(dice, self.danger), 180.0, waits=below);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 3.0, 0, e4m2_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 3.0, 0, E4M2_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         rounds(build, "monster_knight", float(x0 + 2) + 0.5, 3.5, float(x1) - 1.5, 3.5, low);
         build.supply(2.5, 2.5, 0, "item_health");

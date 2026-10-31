@@ -32,10 +32,11 @@ knights and ogres, hell knights as a run goes deeper.
   a jump pad; the way out on the battlements, its guards woken by the
   door."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pit_fall, pad_to }
 
 glob Q3DM9: str = "q3:q3dm9",
@@ -43,9 +44,7 @@ glob Q3DM9: str = "q3:q3dm9",
      Q3DM9_HEAVY: list[str] = ["monster_hell_knight"];
 
 """A foe for Hero's Keep."""
-def keep_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM9_LIGHT, Q3DM9_HEAVY, strong);
-}
+glob KEEP_FOES: FoeMix = FoeMix(light=Q3DM9_LIGHT, strong=Q3DM9_HEAVY, heavy_light=Q3DM9_HEAVY, scale=0.5);
 
 """The start: a hall under one or two galleries over arcades."""
 node KeepGatehouse(Prefab) {
@@ -137,17 +136,17 @@ node KeepGatehouse(Prefab) {
         up = build.touch(float(up_x - 2), 1.0, float(gal), float(up_x + 3), 6.0, float(gal + 6));
         guards = build.waiting();
         up +>:Fires:+> guards;
-        build.foe(float(self.long) - 4.5, 3.5, gal, keep_foe(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(self.long) - 4.5, 3.5, gal, KEEP_FOES.pick(dice, self.danger), 180.0, waits=guards);
         if self.both {
-            build.foe(float(self.long) - 4.5, float(self.wide) - 3.5, gal, keep_foe(dice, self.danger, True), 180.0, waits=guards);
+            build.foe(float(self.long) - 4.5, float(self.wide) - 3.5, gal, KEEP_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
             build.supply(float(self.span_x) + 1.5, float(middle) + 0.5, gal, Q3_ARMOR, "q3");
         } else {
             build.supply(float(self.long) - 3.0, 2.5, gal, Q3_ARMOR, "q3");
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long // 2 + index * 3) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -1.5), 0, keep_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long // 2 + index * 3) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -1.5), 0, KEEP_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(self.long) - 3.5, float(middle) - 2.5, 0, keep_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, float(middle) - 2.5, 0, KEEP_FOES.pick(dice, self.danger, True), 180.0);
         # A knight walks the hall's length.
         build.foe(10.5, float(middle) + 4.0, 0, "monster_knight", 0.0, patrol=[[10.5, float(middle) + 4.0], [float(self.long) - 9.5, float(middle) + 4.0]]);
         build.supply(float(self.long) - 3.0, float(middle) - 2.5, 0, Q3_HEALTH, "q3");
@@ -222,7 +221,7 @@ node KeepPit(Prefab) {
             keep_box(build, hall, px1 - 6, 2, px1 - 5, 9, -self.shelf);
             pad_to(build, float(px1 - 3), 3.0, -self.shelf, float(px1) + 2.0, 3.0, 0);
             keep_box(build, hall, px1, 1, px1 + 1, 6, 0);
-            build.foe(float(px1) - 2.5, 7.5, -self.shelf, keep_foe(dice, self.danger), 180.0, waits=guards);
+            build.foe(float(px1) - 2.5, 7.5, -self.shelf, KEEP_FOES.pick(dice, self.danger), 180.0, waits=guards);
         } else {
             py = y0 + 2;
             pad_to(build, float(px1 - 3), float(py), low, float(px1) + 2.0, float(py), 0);
@@ -239,7 +238,7 @@ node KeepPit(Prefab) {
         keep_box(build, hall, px0, self.wide - 4, px0 + 1, self.wide - 1, hl);
         keep_box(build, hall, px1 - 1, self.wide - 4, px1, self.wide - 1, hl);
         build.supply(float(cx) + 0.5, float(self.wide) - 2.5, hl, Q3_HEALTH, "q3");
-        build.foe(float(px1) - 3.5, float(self.wide) - 2.5, hl, keep_foe(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(px1) - 3.5, float(self.wide) - 2.5, hl, KEEP_FOES.pick(dice, self.danger), 180.0, waits=guards);
         # The crossing: a bridge, or pads to an island and on.
         if self.crossing == 0 {
             deck(build, px0, mid - 1, px1, mid + 2, 0);
@@ -265,10 +264,10 @@ node KeepPit(Prefab) {
             build.doorway(hall, port);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(px1) + 3.5, float(mid) + (3.5 if index == 0 else -3.5), 0, keep_foe(dice, self.danger, index == 1), 180.0, waits=guards);
+            build.foe(float(px1) + 3.5, float(mid) + (3.5 if index == 0 else -3.5), 0, KEEP_FOES.pick(dice, self.danger, index == 1), 180.0, waits=guards);
         }
-        build.foe(3.5, float(mid) + 4.5, 0, keep_foe(dice, self.danger), 0.0);
-        build.foe(float(self.long) - 2.5, float(mid) + 0.5, 0, keep_foe(dice, self.danger, True), 180.0);
+        build.foe(3.5, float(mid) + 4.5, 0, KEEP_FOES.pick(dice, self.danger), 0.0);
+        build.foe(float(self.long) - 2.5, float(mid) + 0.5, 0, KEEP_FOES.pick(dice, self.danger, True), 180.0);
         if self.ring {
             build.foe(float(cx) + 0.5, 2.5, 0, "monster_knight", 0.0, patrol=[[float(px0) - 2.5, 2.5], [float(px1) + 2.5, 2.5]]);
         }
@@ -363,11 +362,11 @@ node KeepTrench(Prefab) {
         below = build.touch(float(foot), float(ty0), float(low), float(foot + 2), float(ty1), float(low + 6));
         banks = build.waiting();
         below +>:Fires:+> banks;
-        build.foe(float(self.long) - 4.5, float(ty0) - 2.5, 0, keep_foe(dice, self.danger), 180.0, waits=banks);
-        build.foe(float(self.long) - 6.5, float(ty1) + 2.5, 0, keep_foe(dice, self.danger, True), 180.0, waits=banks);
+        build.foe(float(self.long) - 4.5, float(ty0) - 2.5, 0, KEEP_FOES.pick(dice, self.danger), 180.0, waits=banks);
+        build.foe(float(self.long) - 6.5, float(ty1) + 2.5, 0, KEEP_FOES.pick(dice, self.danger, True), 180.0, waits=banks);
         build.foe(float(foot) + 2.5, float(mid) + 0.5, low, "monster_knight", 0.0, patrol=[[float(foot) + 2.5, float(mid) + 0.5], [float(pad_x) - 2.0, float(mid) + 0.5]]);
-        build.foe(5.5, float(mid) + 4.5, 0, keep_foe(dice, self.danger), 0.0);
-        build.foe(float(self.long) - 3.5, float(ty0) + 2.5, low, keep_foe(dice, self.danger, True), 180.0);
+        build.foe(5.5, float(mid) + 4.5, 0, KEEP_FOES.pick(dice, self.danger), 0.0);
+        build.foe(float(self.long) - 3.5, float(ty0) + 2.5, low, KEEP_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(self.long) - 3.0, float(ty0) + 1.0, low, Q3_HEALTH, "q3");
         build.supply(float(spots[0]) + 1.5, float(mid) + 0.5, 0, Q3_ARMOR, "q3");
     }
@@ -446,7 +445,7 @@ node KeepCourt(Prefab) {
             pit_fall(build, cx - 3, cy + 6, cx + 3, self.wide - 2, -9, "The pit's floor burns", guards);
             pad_to(build, float(cx), float(self.wide - 4), -9, float(cx) + 5.0, float(self.wide - 4), 0);
             keep_box(build, court, cx + 3, cy + 6, cx + 4, self.wide - 2, 0);
-            build.foe(float(gx) + 2.5, float(self.wide) - 4.5, tw, keep_foe(dice, self.danger), 180.0, waits=guards);
+            build.foe(float(gx) + 2.5, float(self.wide) - 4.5, tw, KEEP_FOES.pick(dice, self.danger), 180.0, waits=guards);
         }
         # With the tower padded, its south side is clear for a second pit.
         if self.padded {
@@ -455,7 +454,7 @@ node KeepCourt(Prefab) {
             pit_fall(build, cx - 9, 2, cx - 4, cy - 6, -9, "The pit's floor burns", south);
             pad_to(build, float(cx - 7), 4.5, -9, float(cx) - 2.0, 4.5, 0);
             keep_box(build, court, cx - 4, 2, cx - 3, cy - 6, 0);
-            build.foe(float(cx) + 2.5, 3.5, 0, keep_foe(dice, self.danger), 180.0, waits=south);
+            build.foe(float(cx) + 2.5, 3.5, 0, KEEP_FOES.pick(dice, self.danger), 180.0, waits=south);
         }
         build.doorway(court, self.enter);
         for port in self.taken {
@@ -465,12 +464,12 @@ node KeepCourt(Prefab) {
         top = build.touch(float(cx - 4), float(cy - 4), float(tw), float(cx + 4), float(cy + 4), float(tw + 6));
         gallery = build.waiting();
         top +>:Fires:+> gallery;
-        build.foe(float(gx) + 2.5, 3.5, tw, keep_foe(dice, self.danger), 180.0, waits=gallery);
-        build.foe(float(gx) + 2.5, float(cy) + 0.5, tw, keep_foe(dice, self.danger, True), 180.0, waits=gallery);
-        build.foe(float(cx) + 1.5, float(cy) + 1.5, tw, keep_foe(dice, self.danger, True), 180.0);
+        build.foe(float(gx) + 2.5, 3.5, tw, KEEP_FOES.pick(dice, self.danger), 180.0, waits=gallery);
+        build.foe(float(gx) + 2.5, float(cy) + 0.5, tw, KEEP_FOES.pick(dice, self.danger, True), 180.0, waits=gallery);
+        build.foe(float(cx) + 1.5, float(cy) + 1.5, tw, KEEP_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(4.5, float(cy + 5) + 0.5, 0, "monster_knight", 0.0, patrol=[[4.5, float(cy + 5) + 0.5], [float(cx - 6) + 0.5, float(cy + 5) + 0.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(4.5 + float(index) * 3.0, float(self.wide) - 3.5, 0, keep_foe(dice, self.danger), 270.0);
+            build.foe(4.5 + float(index) * 3.0, float(self.wide) - 3.5, 0, KEEP_FOES.pick(dice, self.danger), 270.0);
         }
         build.supply(float(cx) - 1.5, float(cy) - 1.5, tw, Q3_ARMOR, "q3");
         build.supply(float(self.long) - 2.5, float(self.wide) - 3.0, tw, Q3_HEALTH, "q3");
@@ -523,8 +522,8 @@ node KeepReliquary(Prefab) {
             pad_to(build, float(self.long - 8), float(cy), -10, float(self.long) - 3.0, float(cy), 0);
             keep_box(build, hall, self.long - 5, cy - 2, self.long - 4, cy + 3, 0);
             taken = key_taken(build, self.key, float(self.long) - 6.5, float(side) - 5.5, -10);
-            build.foe(9.5, float(cy) + 0.5, -10, keep_foe(dice, self.danger), 0.0);
-            build.foe(float(self.long) - 2.5, float(side) - 2.5, 0, keep_foe(dice, self.danger), 180.0, waits=ambush);
+            build.foe(9.5, float(cy) + 0.5, -10, KEEP_FOES.pick(dice, self.danger), 0.0);
+            build.foe(float(self.long) - 2.5, float(side) - 2.5, 0, KEEP_FOES.pick(dice, self.danger), 180.0, waits=ambush);
             build.supply(8.0, float(side) - 5.0, -10, Q3_HEALTH, "q3");
         } else {
             # A gallery along the south wall over its arcade, up a stair; from
@@ -549,16 +548,16 @@ node KeepReliquary(Prefab) {
             # Lava in a channel behind the spire.
             build.pool(self.long - 3, 7, -2, self.long - 1, side, 0, 4, False, False);
             hurt(build, float(self.long - 3), 7.0, -2.0, float(self.long - 1), float(side), 0.0);
-            build.foe(float(self.long) - 2.5, 2.5, gal, keep_foe(dice, self.danger), 180.0, waits=ambush);
+            build.foe(float(self.long) - 2.5, 2.5, gal, KEEP_FOES.pick(dice, self.danger), 180.0, waits=ambush);
             build.supply(2.5, 2.5, gal, Q3_HEALTH, "q3");
         }
         # Taken, the key brings foes in by teleporter and wakes the rest.
         taken +>:Fires:+> ambush;
-        taken +>:Fires:+> build.summon(2, side + 1, 0, keep_foe(dice, self.danger, True), 3.5, float(cy) + 0.5, 0, 0.0);
+        taken +>:Fires:+> build.summon(2, side + 1, 0, KEEP_FOES.pick(dice, self.danger, True), 3.5, float(cy) + 0.5, 0, 0.0);
         late = build.delay(1.5);
         taken +>:Fires:+> late;
-        late +>:Fires:+> build.summon(8, side + 1, 0, keep_foe(dice, self.danger), 3.5, float(side) - 2.5, 0, 0.0);
-        build.foe(float(self.long) - 3.5, 2.5, 0, keep_foe(dice, self.danger), 180.0);
+        late +>:Fires:+> build.summon(8, side + 1, 0, KEEP_FOES.pick(dice, self.danger), 3.5, float(side) - 2.5, 0, 0.0);
+        build.foe(float(self.long) - 3.5, 2.5, 0, KEEP_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
     }
 }
@@ -623,12 +622,12 @@ node KeepBattlements(Prefab) {
         # Through the door, the battlements' guards wake.
         inside = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
         inside +>:Fires:+> guards;
-        build.foe(float(self.long) - 3.0, 3.0, bh, keep_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(float(self.long) - 3.0, float(self.wide) - 3.0, bh, keep_foe(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.0, 3.0, bh, KEEP_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.0, float(self.wide) - 3.0, bh, KEEP_FOES.pick(dice, self.danger), 180.0, waits=guards);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, keep_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, KEEP_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(bx) - 4.5, float(middle) + 3.5, 0, keep_foe(dice, self.danger), 180.0);
+        build.foe(float(bx) - 4.5, float(middle) + 3.5, 0, KEEP_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(bx) + 2.0, float(middle) + 3.5, bh, Q3_ARMOR, "q3");
     }

@@ -35,11 +35,12 @@ floor burns whoever falls, and teleporters on it send them back up.
   over the void, the way out on an island across it: a pad over, and by
   the seed a platform shuttling across too."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from ..space { Space }
 import from .common { stair, key_ambush, spiral, ring_path }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3late_parts { deck, keep_box, throw, wake_later, void_pads }
 
 glob Q3DM19: str = "q3:q3dm19",
@@ -47,9 +48,7 @@ glob Q3DM19: str = "q3:q3dm19",
      Q3DM19_HEAVY: list[str] = ["monster_shalrath"];
 
 """A foe for q3dm19's stretches."""
-def apocalypse_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM19_LIGHT, Q3DM19_HEAVY, strong);
-}
+glob APOCALYPSE_FOES: FoeMix = FoeMix(light=Q3DM19_LIGHT, strong=Q3DM19_HEAVY, heavy_light=Q3DM19_HEAVY, scale=0.5);
 
 """A platform bobbing up and down a shaft of the cells x..x+4, y..y+4,
 its top flush with lift `bottom` at its foot and `top` at its head, and
@@ -148,14 +147,14 @@ node VoidLanding(Prefab) {
         build.supply(2.5, py - 2.0, 0, "ammo_shells", "q2");
         build.supply(3.0, float(self.wide) - float(bs) - 2.0, b, Q3_ARMOR, "q3");
         build.supply(22.0, float(ty) + 1.5, -6, "weapon_plasmagun", "q3");
-        build.foe(3.5, py, b, apocalypse_foe(dice, self.danger, True), 0.0);
-        build.foe(12.0, py, 0, apocalypse_foe(dice, self.danger), 180.0);
-        build.foe(16.5, float(ty) + 6.0, -6, apocalypse_foe(dice, self.danger), 0.0);
+        build.foe(3.5, py, b, APOCALYPSE_FOES.pick(dice, self.danger, True), 0.0);
+        build.foe(12.0, py, 0, APOCALYPSE_FOES.pick(dice, self.danger), 180.0);
+        build.foe(16.5, float(ty) + 6.0, -6, APOCALYPSE_FOES.pick(dice, self.danger), 0.0);
         # From the terrace's lip, what holds the far ledge comes on.
         brink = build.touch(19.0, float(ty), -6.0, 24.0, float(ty + 8), 0.0);
         far_side = wake_later(build, brink, 1.5);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 2.5, 3.5 + float(index) * float(self.wide - 7), self.far_z, apocalypse_foe(dice, self.danger), 180.0, waits=far_side);
+            build.foe(float(self.long) - 2.5, 3.5 + float(index) * float(self.wide - 7), self.far_z, APOCALYPSE_FOES.pick(dice, self.danger), 180.0, waits=far_side);
         }
         build.supply(float(self.long) - 3.5, py, self.far_z, Q3_HEALTH, "q3");
     }
@@ -227,14 +226,14 @@ node BobbingCrossing(Prefab) {
             build.doorway(void, port);
         }
         build.supply(15.0, float(ay) + 2.0, hi, Q3_ARMOR, "q3");
-        build.foe(17.0, float(ay) + 3.5, hi, apocalypse_foe(dice, self.danger), 180.0);
-        build.foe(float(far) - 8.0, float(low_y) + 1.5, -4, apocalypse_foe(dice, self.danger), 180.0, patrol=[[float(far) - 8.0, float(low_y) + 1.5], [17.0, float(low_y) + 1.5]]);
+        build.foe(17.0, float(ay) + 3.5, hi, APOCALYPSE_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(far) - 8.0, float(low_y) + 1.5, -4, APOCALYPSE_FOES.pick(dice, self.danger), 180.0, patrol=[[float(far) - 8.0, float(low_y) + 1.5], [17.0, float(low_y) + 1.5]]);
         build.supply(float(far) - 6.0, float(low_y) + 4.5, -4, "ammo_rockets", "q3");
         # Landing on the low island wakes what waits on the far ledge.
         landed = build.touch(13.0, float(low_y), -4.0, 18.0, float(low_y + 6), 2.0);
         far_side = wake_later(build, landed, 2.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 2.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, fz, apocalypse_foe(dice, self.danger, index == 1), 180.0, waits=far_side);
+            build.foe(float(self.long) - 2.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, fz, APOCALYPSE_FOES.pick(dice, self.danger, index == 1), 180.0, waits=far_side);
         }
         build.supply(float(self.long) - 3.5, py, fz, Q3_HEALTH, "q3");
     }
@@ -325,16 +324,16 @@ node SpireStair(Prefab) {
         half = path[(self.start + self.steps // 2) % lap];
         hx = float(half[0] + half[2]) * 0.5;
         hy = float(half[1] + half[3]) * 0.5;
-        build.foe(hx, hy, self.steps // 2 + 1, apocalypse_foe(dice, self.danger), 180.0);
+        build.foe(hx, hy, self.steps // 2 + 1, APOCALYPSE_FOES.pick(dice, self.danger), 180.0);
         quarter = path[(self.start + self.steps // 4) % lap];
         build.supply(float(quarter[0] + quarter[2]) * 0.5, float(quarter[1] + quarter[3]) * 0.5, self.steps // 4 + 1, Q3_ARMOR, "q3");
         # Halfway up, the high ledge's guards come out.
         climbed = build.touch(float(half[0]), float(half[1]), float(self.steps // 2 + 1), float(half[2]), float(half[3]), float(self.steps // 2 + 7));
         guards = wake_later(build, climbed, 1.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 2.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, self.steps, apocalypse_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(self.long) - 2.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, self.steps, APOCALYPSE_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
-        build.foe(4.0, 3.5, 0, apocalypse_foe(dice, self.danger), 0.0);
+        build.foe(4.0, 3.5, 0, APOCALYPSE_FOES.pick(dice, self.danger), 0.0);
         build.supply(float(self.long) - 2.5, py, self.steps, Q3_HEALTH, "q3");
         build.supply(4.0, float(self.wide) - 3.5, 0, "ammo_cells", "q3");
     }
@@ -418,18 +417,18 @@ node ApocalypseKeep(Prefab) {
             build.doorway(void, port);
         }
         build.supply(float(cx) + 0.5, float(cy) + 0.5, kt, "item_quad", "q3");
-        build.foe(float(cx) + 2.5, float(cy) - 2.5, kt, apocalypse_foe(dice, self.danger, True), 180.0);
+        build.foe(float(cx) + 2.5, float(cy) - 2.5, kt, APOCALYPSE_FOES.pick(dice, self.danger, True), 180.0);
         # A knight walks round the keep; others hold the island.
         walk_y = float(cy) + 6.5 if self.train_side == 0 else float(cy) - 6.0;
         build.foe(float(cx) - 6.5, walk_y, 0, "monster_knight", 0.0, patrol=[[float(cx) - 6.5, walk_y], [float(cx) + 6.5, walk_y]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 4.5, 6.5 + float(index) * float(self.wide - 13) / 2.0, 0, apocalypse_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long) - 4.5, 6.5 + float(index) * float(self.wide - 13) / 2.0, 0, APOCALYPSE_FOES.pick(dice, self.danger), 180.0);
         }
         # Up on the keep, what holds the bridges lets loose.
         landed = build.touch(float(cx - 4), float(cy - 4), float(kt), float(cx + 4), float(cy + 4), float(kt + 6));
         bridges = wake_later(build, landed, 1.0);
-        build.foe(float(self.long) - 3.0, float(cy) + 0.5, kt, apocalypse_foe(dice, self.danger), 180.0, waits=bridges);
-        build.foe(float(cx) + 0.5, float(self.wide) - 3.0 if self.train_side == 0 else 3.0, kt, apocalypse_foe(dice, self.danger), 270.0 if self.train_side == 0 else 90.0, waits=bridges);
+        build.foe(float(self.long) - 3.0, float(cy) + 0.5, kt, APOCALYPSE_FOES.pick(dice, self.danger), 180.0, waits=bridges);
+        build.foe(float(cx) + 0.5, float(self.wide) - 3.0 if self.train_side == 0 else 3.0, kt, APOCALYPSE_FOES.pick(dice, self.danger), 270.0 if self.train_side == 0 else 90.0, waits=bridges);
         build.supply(4.0, float(cy) + 3.5, 0, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 3.0, float(cy) + 1.5, kt, Q3_HEALTH, "q3");
         build.supply(4.0, float(cy) - 3.5, 0, "ammo_rockets", "q3");
@@ -498,9 +497,9 @@ node SkyAltar(Prefab) {
         throw(build, room, 19.5, float(my) + 3.0, mz, float(ax) + 3.5, float(ay) + 3.5, az, [20, my, 21, my + 6], None);
         build.teleporter(float(self.long) - 3.5, float(ay) + 5.5, az, 4.0, float(cy) + 0.5, 0, 0.0);
         void_pads(build, room, 1, 1, self.long - 1, side, low, [[13.0, float(cy) + 0.5, 6.0, float(cy) + 0.5, 0.0]], [[10, cy - 1, 11, cy + 2, 0]]);
-        key_ambush(build, self.key, float(self.long) - 4.5, float(ay) + 2.0, az, side, 0, [2, 7], [apocalypse_foe(dice, self.danger, True), apocalypse_foe(dice, self.danger)]);
-        build.foe(float(ax) + 2.0, float(ay) + 5.0, az, apocalypse_foe(dice, self.danger), 180.0);
-        build.foe(18.0, float(my) + 1.5, mz, apocalypse_foe(dice, self.danger), 180.0);
+        key_ambush(build, self.key, float(self.long) - 4.5, float(ay) + 2.0, az, side, 0, [2, 7], [APOCALYPSE_FOES.pick(dice, self.danger, True), APOCALYPSE_FOES.pick(dice, self.danger)]);
+        build.foe(float(ax) + 2.0, float(ay) + 5.0, az, APOCALYPSE_FOES.pick(dice, self.danger), 180.0);
+        build.foe(18.0, float(my) + 1.5, mz, APOCALYPSE_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(16.0, float(my) + 4.5, mz, "ammo_rockets", "q3");
     }
@@ -565,10 +564,10 @@ node VoidGate(Prefab) {
         guards = build.waiting();
         door +>:Fires:+> guards;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(ix) + 2.5 + float(index % 2) * 2.0, py - 3.0 + float(index) * 3.0, self.exit_z, apocalypse_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(ix) + 2.5 + float(index % 2) * 2.0, py - 3.0 + float(index) * 3.0, self.exit_z, APOCALYPSE_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, apocalypse_foe(dice, self.danger), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, APOCALYPSE_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(ex) - 2.0, float(self.wide) - 2.5, 0, Q3_HEALTH, "q3");

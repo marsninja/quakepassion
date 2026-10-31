@@ -52,19 +52,14 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires, RockWant }
 import from ..kits { level_district, kit_of }
 import from ..space { Space }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, key_item, lift }
 
 glob E2M4: str = "q1:e2m4";
 
 """e2m4's foes: the dead and ogres, fiends and hell knights deeper in,
 scrags in the air."""
-def e2m4_foe(dice: Stream, danger: float, heavy: bool = False, flying: bool = False) -> str {
-    if flying {
-        return "monster_wizard";
-    }
-    return q1_foe(dice, q1_palette(["monster_ogre", "monster_ogre", "monster_knight"] if heavy else ["monster_zombie", "monster_ogre", "monster_zombie", "monster_knight"], ["monster_demon1", "monster_hell_knight"] if heavy else ["monster_ogre"], danger));
-}
+glob E2M4_FOES: FoeMix = FoeMix(light=["monster_zombie", "monster_ogre", "monster_zombie", "monster_knight"], strong=["monster_ogre"], heavy_light=["monster_ogre", "monster_ogre", "monster_knight"], heavy_strong=["monster_demon1", "monster_hell_knight"], flying="monster_wizard");
 
 """Bars across a way: a door of the prefab's cells x0..x1, y0..y1 from lift
 `z`, `high` lifts tall, that sinks into the floor when its cue fires
@@ -293,7 +288,7 @@ node MoatGate(Prefab) {
         wake = build.waiting();
         press +>:Fires:+> wake;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 3.5 - float(index) * 2.0, float(gy) - 0.5 + float(index), 0, e2m4_foe(dice, self.danger, index == 0), 180.0, waits=wake);
+            build.foe(float(self.long) - 3.5 - float(index) * 2.0, float(gy) - 0.5 + float(index), 0, E2M4_FOES.pick(dice, self.danger, index == 0), 180.0, waits=wake);
         }
         late = build.delay(1.5);
         press +>:Fires:+> late;
@@ -330,7 +325,7 @@ node MoatGate(Prefab) {
         }
         build.start(2.5, float(middle) + 0.5, 0, 0.0);
         build.supply(2.5, float(middle) - 1.5, 0, "item_shells");
-        build.foe(float(mx0) - 2.5, float(middle) + 2.5, 0, e2m4_foe(dice, self.danger), 180.0);
+        build.foe(float(mx0) - 2.5, float(middle) + 2.5, 0, E2M4_FOES.pick(dice, self.danger), 180.0);
         build.foe(float(mx0 + mx1) * 0.5, float(middle) + 0.5, 6, "monster_wizard", 180.0);
         build.supply(float(wx) - 1.5, float(gy) + 3.5, 0, "item_health");
         build.supply(float(self.long) - 3.5, float(self.wide) - 3.5, top, "item_rockets");
@@ -445,19 +440,19 @@ node CryptUndercroft(Prefab) {
         north_x = 13 + dice.below(3);
         build.room(south_x, 1, 0, south_x + 3, 3, 6);
         into +>:Fires:+> e2m4_wall_opens(build, float(south_x), 3.0, 0.0, float(south_x + 3), 4.0, 6.0, 3);
-        build.foe(float(south_x) + 1.5, 2.0, 0, e2m4_foe(dice, self.danger, True), 90.0, waits=stirred);
+        build.foe(float(south_x) + 1.5, 2.0, 0, E2M4_FOES.pick(dice, self.danger, True), 90.0, waits=stirred);
         build.room(north_x, self.wide - 3, 0, north_x + 3, self.wide - 1, 6);
         into +>:Fires:+> e2m4_wall_opens(build, float(north_x), float(self.wide - 4), 0.0, float(north_x + 3), float(self.wide - 3), 6.0, 1);
-        build.foe(float(north_x) + 1.5, float(self.wide) - 2.0, 0, e2m4_foe(dice, self.danger), 270.0, waits=stirred);
+        build.foe(float(north_x) + 1.5, float(self.wide) - 2.0, 0, E2M4_FOES.pick(dice, self.danger), 270.0, waits=stirred);
         for index in range(dice.between(2, 3)) {
             build.foe(float(well[0] + 2 + index * 3) + 0.5, float(well[3]) - 1.5, 0, "monster_zombie", 270.0, waits=stirred);
         }
         late = build.delay(2.0);
         into +>:Fires:+> late;
-        late +>:Fires:+> build.summon(2, 6, -8, e2m4_foe(dice, self.danger, True), float(well[0]) + 1.5, float(middle) + 0.5, 0, 0.0);
+        late +>:Fires:+> build.summon(2, 6, -8, E2M4_FOES.pick(dice, self.danger, True), float(well[0]) + 1.5, float(middle) + 0.5, 0, 0.0);
         # A knight walks the gallery's far side; an ogre keeps its end.
         build.foe(3.5, float(self.wide) - 2.5, g, "monster_knight", 0.0, patrol=[[3.5, float(self.wide) - 2.5], [float(self.long) - 3.5, float(self.wide) - 2.5]]);
-        build.foe(float(self.long) - 3.5, 6.5, g, e2m4_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, 6.5, g, E2M4_FOES.pick(dice, self.danger, True), 180.0);
         if self.stash {
             build.solid(1, 1, g, 8, 6, g + 8);
             e2m4_stash(build, 3, 2, 6, 4, g, 0, "item_artifact_super_damage");
@@ -567,7 +562,7 @@ node TrainChasm(Prefab) {
                 build.keep(hall, nx - 1, y, u);
                 build.keep(hall, fx, y, u);
             }
-            build.foe(float(fx) + 2.5, float(self.wide) - 2.5, u, e2m4_foe(dice, self.danger, True), 180.0);
+            build.foe(float(fx) + 2.5, float(self.wide) - 2.5, u, E2M4_FOES.pick(dice, self.danger, True), 180.0);
             build.supply(2.5, 2.5, u, "item_health");
         }
         build.doorway(hall, self.enter);
@@ -579,13 +574,13 @@ node TrainChasm(Prefab) {
         guard = build.waiting();
         press +>:Fires:+> guard;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(fx) + 2.5 + float(index), float(self.wide) - 3.5 - float(index) * 3.0, h, e2m4_foe(dice, self.danger, True), 180.0, waits=guard);
+            build.foe(float(fx) + 2.5 + float(index), float(self.wide) - 3.5 - float(index) * 3.0, h, E2M4_FOES.pick(dice, self.danger, True), 180.0, waits=guard);
         }
         build.foe(float(fx) + 1.5, 2.5, h, "monster_knight", 90.0, patrol=[[float(fx) + 1.5, 2.5], [float(fx) + 1.5, float(self.wide) - 2.5]]);
         for index in range(dice.between(2, 3)) {
             build.foe(float(nx + 4 + index * 5) + 0.5, float(self.wide // 2) + 0.5, h + 3, "monster_wizard", 180.0);
         }
-        build.foe(float(nx) + 2.5, float(ly) - 1.5, 0, e2m4_foe(dice, self.danger), 0.0);
+        build.foe(float(nx) + 2.5, float(ly) - 1.5, 0, E2M4_FOES.pick(dice, self.danger), 0.0);
         # A niche under the near ledge, behind a wall that opens when shot.
         if self.nook {
             e2m4_stash(build, nx - 4, 1, nx - 2, 3, 0, 0, "item_artifact_envirosuit");
@@ -676,9 +671,9 @@ node KeepShaft(Prefab) {
         onto = build.touch(float(self.long - 6), float(self.wide - 5), float(b), float(self.long - 4), float(self.wide - 2), float(b + 6));
         keeper = build.waiting();
         onto +>:Fires:+> keeper;
-        build.foe(float(self.long) - 3.5, 4.5, b, e2m4_foe(dice, self.danger, True), 90.0, waits=keeper);
-        build.foe(4.5, float(self.wide) - 3.0, a, e2m4_foe(dice, self.danger), 0.0, patrol=[[4.5, float(self.wide) - 3.0], [float(self.long) - 11.5, float(self.wide) - 3.0]]);
-        build.foe(float(self.long // 2) - 1.5, 4.5, 0, e2m4_foe(dice, self.danger), 90.0);
+        build.foe(float(self.long) - 3.5, 4.5, b, E2M4_FOES.pick(dice, self.danger, True), 90.0, waits=keeper);
+        build.foe(4.5, float(self.wide) - 3.0, a, E2M4_FOES.pick(dice, self.danger), 0.0, patrol=[[4.5, float(self.wide) - 3.0], [float(self.long) - 11.5, float(self.wide) - 3.0]]);
+        build.foe(float(self.long // 2) - 1.5, 4.5, 0, E2M4_FOES.pick(dice, self.danger), 90.0);
         build.supply(float(self.long) - 2.5, float(self.wide) - 9.5, b, "item_health");
         build.supply(2.5, float(self.wide) - 3.5, a, "item_rockets");
         build.supply(2.5, 2.5, 0, "item_spikes");
@@ -799,16 +794,16 @@ node EbonHall(Prefab) {
         # Knights walk the floor; an ogre the lower gallery; what keeps the
         # upper gallery wakes as the player comes up to it.
         build.foe(12.5, 4.5, 0, "monster_knight", 0.0, patrol=[[12.5, 4.5], [float(self.long) - 4.5, 4.5]]);
-        build.foe(float(self.long) - 6.5, float(middle) + 0.5, 0, e2m4_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 6.5, float(middle) + 0.5, 0, E2M4_FOES.pick(dice, self.danger), 180.0);
         build.foe(float(self.long) - 4.5, float(gy) + 1.5, low, "monster_ogre", 180.0, patrol=[[float(self.long) - 4.5, float(gy) + 1.5], [14.5, float(gy) + 1.5]]);
         coming = build.touch(float(self.long - 8), float(self.wide - 5), float(up), float(self.long - 1), float(self.wide - 1), float(up + 6)) if self.stacked else build.touch(float(self.long - 6), float(self.wide - 8), float(up), float(self.long - 1), float(self.wide - 1), float(up + 6));
         guard = build.waiting();
         coming +>:Fires:+> guard;
         for index in range(dice.between(1, 2)) {
             if self.stacked {
-                build.foe(float(14 + index * 4) + 0.5, float(self.wide) - 3.0, up, e2m4_foe(dice, self.danger, True), 0.0, waits=guard);
+                build.foe(float(14 + index * 4) + 0.5, float(self.wide) - 3.0, up, E2M4_FOES.pick(dice, self.danger, True), 0.0, waits=guard);
             } else {
-                build.foe(float(self.long) - 3.5, 4.5 + float(index) * 4.0, up, e2m4_foe(dice, self.danger, True), 90.0, waits=guard);
+                build.foe(float(self.long) - 3.5, 4.5 + float(index) * 4.0, up, E2M4_FOES.pick(dice, self.danger, True), 90.0, waits=guard);
             }
         }
         build.supply(float(self.long) - 2.5, float(self.wide) - 3.0, up, "item_health");
@@ -907,7 +902,7 @@ node SilverKeep(Prefab) {
         # The cage's keeper wakes as the bars go down.
         keeper = build.waiting();
         bars +>:Fires:+> keeper;
-        build.foe(float(self.long) - 2.5, float(cy) + 3.5, k, e2m4_foe(dice, self.danger, True), 180.0, waits=keeper);
+        build.foe(float(self.long) - 2.5, float(cy) + 3.5, k, E2M4_FOES.pick(dice, self.danger, True), 180.0, waits=keeper);
         # The key; taking it opens the closets along the side wall below.
         taken = e2m4_key(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, k);
         out = build.waiting();
@@ -918,12 +913,12 @@ node SilverKeep(Prefab) {
             fields = {"wait": "-1"};
             build.rising_door(float(at), float(side), 0.0, float(at + 3), float(side + 1), 6.0, fields);
             taken +>:Fires:+> build.cue([fields], "door");
-            build.foe(float(at) + 1.5, float(side) + 2.5, 0, e2m4_foe(dice, self.danger, index == 0), 270.0, waits=out);
+            build.foe(float(at) + 1.5, float(side) + 2.5, 0, E2M4_FOES.pick(dice, self.danger, index == 0), 270.0, waits=out);
         }
         if self.stash and self.up == 0 {
             e2m4_stash(build, kx + 2, side - 3, kx + 4, side - 1, 0, 2, "item_artifact_super_damage");
         }
-        build.foe(float(far) + 2.5, 2.5, 0, e2m4_foe(dice, self.danger), 180.0);
+        build.foe(float(far) + 2.5, 2.5, 0, E2M4_FOES.pick(dice, self.danger), 180.0);
         build.foe(float(far) - 3.5, float(cy) + 3.5, 6, "monster_wizard", 180.0);
         build.supply(2.5, 2.5, 0, "item_health");
         build.supply(float(kx) + 1.5, float(cy) + 0.5, k, "item_rockets");
@@ -1028,13 +1023,13 @@ node SwitchVault(Prefab) {
         below = build.waiting();
         floor_touch +>:Fires:+> below;
         for index in range(dice.between(2, 4)) {
-            build.foe(float(ax) - 2.5 - float(index % 2) * 3.0, 3.5 + float(index) * 3.0, 0, e2m4_foe(dice, self.danger, index == 0), 180.0, waits=below);
+            build.foe(float(ax) - 2.5 - float(index % 2) * 3.0, 3.5 + float(index) * 3.0, 0, E2M4_FOES.pick(dice, self.danger, index == 0), 180.0, waits=below);
         }
         late = build.delay(1.5);
         floor_touch +>:Fires:+> late;
-        late +>:Fires:+> build.summon(bx + 3, 2, -8, e2m4_foe(dice, self.danger, True), float(ax) - 4.5, float(middle) + 0.5, 0, 180.0);
+        late +>:Fires:+> build.summon(bx + 3, 2, -8, E2M4_FOES.pick(dice, self.danger, True), float(ax) - 4.5, float(middle) + 0.5, 0, 180.0);
         build.foe(float(bx + 6) + 0.5, float(middle) + 0.5, t, "monster_wizard", 180.0);
-        build.foe(float(bx) - 2.5, 2.5, t, e2m4_foe(dice, self.danger), 0.0);
+        build.foe(float(bx) - 2.5, 2.5, t, E2M4_FOES.pick(dice, self.danger), 0.0);
         build.supply(2.5, float(middle) + 0.5, t, "item_health");
         build.supply(float(bx) + 4.5, float(self.wide) - 2.5, 0, "item_rockets");
     }

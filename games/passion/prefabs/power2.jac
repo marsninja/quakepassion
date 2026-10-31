@@ -33,7 +33,7 @@ Raised in power2's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush }
 import from .plant_parts { key_doors, open_ways, charges, sparking, shelling, stash, crate_pile, squad, keep_box, plat, port_door, hurting, laser, quake }
 
@@ -41,12 +41,7 @@ glob POWER2: str = "q2:power2";
 
 """power2's foes: gunners and berserkers, iron maidens and flyers,
 gladiators deeper in."""
-def power2_foe(dice: Stream, danger: float, heavy: bool = False, flying: bool = False) -> str {
-    if flying {
-        return "monster_flyer";
-    }
-    return q1_foe(dice, q1_palette(["monster_gladiator", "monster_berserk"] if heavy else ["monster_gunner", "monster_berserk", "monster_chick"], ["monster_gladiator"] if heavy else ["monster_gladiator"], danger * 0.4 if heavy else danger * 0.5));
-}
+glob POWER2_FOES: FoeMix = FoeMix(light=["monster_gunner", "monster_berserk", "monster_chick"], strong=["monster_gladiator"], heavy_light=["monster_gladiator", "monster_berserk"], scale=0.5, heavy_scale=0.4, flying="monster_flyer");
 
 """The start: a lobby, a slime pit across it, the control balcony across
 its far end, a laser fence under the balcony."""
@@ -122,7 +117,7 @@ node ReactorLobby(Prefab) {
         mission +>:Fires:+> build.objective("Go to the Cooling Facility.\nLower coolant for reactor.", False);
         # Guards appear on the balcony as the player nears its stair.
         near = build.touch(float(bx - b - 2), 1.0, 0.0, float(bx - b), float(self.wide - 1), 6.0);
-        squad(build, near, [[float(self.long) - 4.5, float(cy) - 3.5, float(b)], [float(self.long) - 3.5, float(cy) + 2.5, float(b)]], [power2_foe(dice, self.danger), power2_foe(dice, self.danger, True)], 180.0);
+        squad(build, near, [[float(self.long) - 4.5, float(cy) - 3.5, float(b)], [float(self.long) - 3.5, float(cy) + 2.5, float(b)]], [POWER2_FOES.pick(dice, self.danger), POWER2_FOES.pick(dice, self.danger, True)], 180.0);
         sparking(build, dice.uniform(3.0, 5.0), float(bx) + 0.5, 1.2, float(b) - 2.5, 1);
         # Up on the balcony a panel blows and flyers come in over the lobby.
         above = build.touch(float(bx), 1.0, float(b), float(bx + 2), float(self.wide - 1), float(b + 6));
@@ -130,7 +125,7 @@ node ReactorLobby(Prefab) {
         squad(build, above, [[float(bx) - 6.5, float(cy) + 0.5, float(b)]], ["monster_flyer"], 0.0);
         crate_pile(build, bx + 1, self.wide - 3, 0, 0, 1);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(bx - 4 - index * 3) + 0.5, float(cy) + (5.5 if index % 2 == 0 else -5.5), 0, power2_foe(dice, self.danger), 180.0);
+            build.foe(float(bx - 4 - index * 3) + 0.5, float(cy) + (5.5 if index % 2 == 0 else -5.5), 0, POWER2_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(float(bx) + 1.5, 3.0, 0, "monster_gunner", 90.0, patrol=[[float(bx) + 1.5, 3.0], [float(bx) + 1.5, float(self.wide) - 6.0]]);
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, b, Q2_HEALTH, "q2");
@@ -199,15 +194,15 @@ node CoolantChannel(Prefab) {
         charges(build, halfway, [[float(self.long // 2 + 3), float(cy), -1.0], [float(self.long // 2 + 7), float(cy), -1.0], [float(self.long // 2 + 11), float(cy), -1.0]], 0.3);
         squad(build, halfway, [[float(self.long) - 6.5, float(cy) - 1.0, 4.0], [float(self.long) - 9.5, float(cy) + 1.0, 5.0]], ["monster_flyer"], 180.0);
         up = build.touch(10.0, float(self.wide - 5), float(g), 13.0, float(self.wide - 1), float(g + 6));
-        squad(build, up, [[float(self.long) - 4.5, float(self.wide) - 3.0, float(g)]], [power2_foe(dice, self.danger, True)], 180.0);
+        squad(build, up, [[float(self.long) - 4.5, float(self.wide) - 3.0, float(g)]], [POWER2_FOES.pick(dice, self.danger, True)], 180.0);
         sparking(build, dice.uniform(3.0, 5.0), float(self.long) - 1.2, float(cy) - 4.0, 2.5, 2);
         sparking(build, dice.uniform(4.0, 6.0), 11.5, float(self.wide) - 5.2, float(g) - 2.0, 3);
         crate_pile(build, 13, self.wide - 3, 0, 0, 2);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long // 2 + index * 4) + 0.5, float(cy) + (4.5 if index % 2 == 0 else -4.5), 0, power2_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long // 2 + index * 4) + 0.5, float(cy) + (4.5 if index % 2 == 0 else -4.5), 0, POWER2_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(4.5, float(cy) + 4.5, 0, "monster_berserk", 0.0, patrol=[[4.5, float(cy) + 4.5], [float(self.long) - 4.5, float(cy) + 4.5]]);
-        build.foe(float(self.long) - 6.5, float(self.wide) - 3.0, g, power2_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 6.5, float(self.wide) - 3.0, g, POWER2_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(self.long) - 3.0, float(cy) + 4.5, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long // 2) + 0.5, float(self.wide) - 3.0, g, "ammo_bullets", "q2");
     }
@@ -304,14 +299,14 @@ node CoreChamber(Prefab) {
         }
         late = build.delay(1.5);
         both +>:Fires:+> late;
-        squad(build, late, [[float(self.long) - 3.0, float(cy) + 3.5, float(g)], [float(cx) + 9.5, float(cy) - 9.5, 0.0], [float(cx) - 9.5, float(cy) + 9.5, 0.0]], [power2_foe(dice, self.danger, True), power2_foe(dice, self.danger)], 180.0);
+        squad(build, late, [[float(self.long) - 3.0, float(cy) + 3.5, float(g)], [float(cx) + 9.5, float(cy) - 9.5, 0.0], [float(cx) - 9.5, float(cy) + 9.5, 0.0]], [POWER2_FOES.pick(dice, self.danger, True), POWER2_FOES.pick(dice, self.danger)], 180.0);
         up = build.touch(float(self.long - 6), 1.0, float(g), float(self.long - 1), 5.0, float(g + 6));
-        squad(build, up, [[float(self.long) - 3.0, float(self.wide) - 4.5, float(g)]], [power2_foe(dice, self.danger)], 270.0);
+        squad(build, up, [[float(self.long) - 3.0, float(self.wide) - 4.5, float(g)]], [POWER2_FOES.pick(dice, self.danger)], 270.0);
         pulse = build.timer(dice.uniform(4.0, 6.0));
         pulse +>:Fires:+> build.sparks(float(cx) - 2.2, float(cy) + 1.5, 2.0, 2);
         pulse +>:Fires:+> build.sparks(float(cx) + 2.2, float(cy) - 1.5, 2.0, 0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx - 3 + index * 3) + 0.5, float(cy) + 3.0, 0, power2_foe(dice, self.danger), 270.0);
+            build.foe(float(cx - 3 + index * 3) + 0.5, float(cy) + 3.0, 0, POWER2_FOES.pick(dice, self.danger), 270.0);
         }
         build.foe(float(self.long) - 3.0, 4.5, g, "monster_gunner", 90.0, patrol=[[float(self.long) - 3.0, 4.5], [float(self.long) - 3.0, float(self.wide) - 4.5]]);
         build.foe(float(cx) + 0.5, float(cy) + 9.5, 6, "monster_flyer", 270.0);
@@ -408,15 +403,15 @@ node VentShaft(Prefab) {
             stash(build, 5, 3, 0, False, 1, Q2_ARMOR);
         }
         open_ways(build, shaft, self);
-        squad(build, touched, [[float(self.long // 2), float(cy) - 2.0, float(f1 + 3)], [float(self.long // 2) + 2.0, float(cy) + 3.0, float(f2 + 2)]], ["monster_flyer", power2_foe(dice, self.danger, False, True)], 180.0);
+        squad(build, touched, [[float(self.long // 2), float(cy) - 2.0, float(f1 + 3)], [float(self.long // 2) + 2.0, float(cy) + 3.0, float(f2 + 2)]], ["monster_flyer", POWER2_FOES.pick(dice, self.danger, False, True)], 180.0);
         top_floor = build.touch(1.0, 1.0, float(f2), float(self.long - 1), float(self.wide - 1), float(f2 + 6));
         charges(build, top_floor, [[float(self.long // 2), float(cy), float(f1 + 2)], [float(self.long // 2) - 3.0, float(cy) + 3.0, float(f1 + 4)]], 0.4);
         sparking(build, dice.uniform(3.0, 5.0), 1.2, float(cy) + 2.5, float(f1) + 2.0, 0);
         sparking(build, dice.uniform(3.0, 6.0), float(self.long) - 1.2, float(cy) - 2.5, float(f2) + 2.0, 2);
-        build.foe(float(self.long) - 4.5, float(cy) + 2.5, 0, power2_foe(dice, self.danger), 180.0);
-        build.foe(4.5, float(cy) - 2.5, f1 if not self.flip else f2, power2_foe(dice, self.danger), 0.0);
+        build.foe(float(self.long) - 4.5, float(cy) + 2.5, 0, POWER2_FOES.pick(dice, self.danger), 180.0);
+        build.foe(4.5, float(cy) - 2.5, f1 if not self.flip else f2, POWER2_FOES.pick(dice, self.danger), 0.0);
         far_floor = f2 if not self.flip else f1;
-        build.foe(float(self.long) - 4.5, float(cy) - 2.5, far_floor, power2_foe(dice, self.danger, True), 180.0, patrol=[[float(self.long) - 4.5, float(cy) - 2.5], [11.5, float(cy) - 2.5]]);
+        build.foe(float(self.long) - 4.5, float(cy) - 2.5, far_floor, POWER2_FOES.pick(dice, self.danger, True), 180.0, patrol=[[float(self.long) - 4.5, float(cy) - 2.5], [11.5, float(cy) - 2.5]]);
         build.supply(float(self.long) - 3.0, 3.0, far_floor, Q2_HEALTH, "q2");
         build.supply(float(self.long // 2), float(self.wide) - 3.0, 0, "ammo_grenades", "q2");
     }
@@ -471,15 +466,15 @@ node DataVault(Prefab) {
                 build.solid(x, 6, 0, x + 1, side - 5, 4);
             }
         }
-        key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, m, side, 0, [3, mx - 6], [power2_foe(dice, self.danger, True), power2_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, m, side, 0, [3, mx - 6], [POWER2_FOES.pick(dice, self.danger, True), POWER2_FOES.pick(dice, self.danger)]);
         coming = build.touch(1.0, float(cy - 2), 0.0, 3.0, float(cy + 3), 8.0);
         squad(build, coming, [[float(mx) - 2.0, float(cy) + 0.5, float(m + 2)]], ["monster_flyer"], 180.0);
         up = build.touch(float(mx), 1.0, float(m), float(mx + 2), float(side), float(m + 6));
         charges(build, up, [[float(mx) - 4.0, float(cy), 3.0], [float(mx) - 8.0, float(cy) + 3.0, 3.0]], 0.4);
-        squad(build, up, [[4.5, 3.5, 0.0], [4.5, float(side) - 3.5, 0.0]], [power2_foe(dice, self.danger), "monster_berserk"], 0.0);
+        squad(build, up, [[4.5, 3.5, 0.0], [4.5, float(side) - 3.5, 0.0]], [POWER2_FOES.pick(dice, self.danger), "monster_berserk"], 0.0);
         sparking(build, dice.uniform(4.0, 6.0), float(self.long) - 1.2, 3.5, float(m) + 2.0, 2);
-        build.foe(float(self.long) - 3.5, 3.5, m, power2_foe(dice, self.danger, True), 180.0);
-        build.foe(float(mx) + 3.5, 3.5, 0, power2_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, 3.5, m, POWER2_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(float(mx) + 3.5, 3.5, 0, POWER2_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
     }
 }
@@ -558,9 +553,9 @@ node MeltdownRun(Prefab) {
         midway +>:Fires:+> build.sparks(float(far) - 3.0, 1.2, 3.0, 1);
         landed = build.touch(float(far), 1.0, 0.0, float(far + 2), float(self.wide - 1), 6.0);
         landed +>:Fires:+> quake(build, float(far), float(cy), 2.0, 3);
-        squad(build, landed, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 3.5, float(self.wide) - 3.5, 0.0]], [power2_foe(dice, self.danger, True), power2_foe(dice, self.danger)], 180.0);
+        squad(build, landed, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 3.5, float(self.wide) - 3.5, 0.0]], [POWER2_FOES.pick(dice, self.danger, True), POWER2_FOES.pick(dice, self.danger)], 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, power2_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, POWER2_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(float(far) - 6.5, float(cy) + 5.5, 4, "monster_flyer", 180.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");

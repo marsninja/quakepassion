@@ -37,18 +37,13 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from ..space { Space }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, lift, key_item }
 
 glob E3M5: str = "q1:e3m5";
 
 """e3m5's foes: scrags above all, ogres and fiends, hell knights deeper in."""
-def e3m5_foe(dice: Stream, danger: float, heavy: bool = False, flying: bool = False) -> str {
-    if flying {
-        return "monster_wizard";
-    }
-    return q1_foe(dice, q1_palette(["monster_ogre", "monster_demon1"] if heavy else ["monster_ogre", "monster_wizard"], ["monster_hell_knight"], danger));
-}
+glob E3M5_FOES: FoeMix = FoeMix(light=["monster_ogre", "monster_wizard"], strong=["monster_hell_knight"], heavy_light=["monster_ogre", "monster_demon1"], flying="monster_wizard");
 
 """Whether two ports are the same way (face, floor and place along it)."""
 def same_port(a: Port, b: Port) -> bool {
@@ -162,7 +157,7 @@ node TubeFoot(Prefab) {
                 build.secret(float(long - 4), 1.0, 0.0, float(long - 2), 3.0, 3.0);
                 build.supply(float(long) - 3.0, 2.0, 0, "item_artifact_envirosuit");
             }
-            build.foe(float(gx) - 1.5, float(wide) - 2.5, 0, e3m5_foe(dice, self.danger), 180.0);
+            build.foe(float(gx) - 1.5, float(wide) - 2.5, 0, E3M5_FOES.pick(dice, self.danger), 180.0);
         } else {
             # The gallery along a side wall the length of the hall, the wind
             # tube up to its middle.
@@ -187,7 +182,7 @@ node TubeFoot(Prefab) {
                 build.secret(float(long - 4), float(wide - 3), 0.0, float(long - 2), float(wide - 1), 3.0);
                 build.supply(float(long) - 3.0, float(wide) - 2.0, 0, "item_artifact_envirosuit");
             }
-            build.foe(float(px) - 3.5, 2.5, 0, e3m5_foe(dice, self.danger), 90.0);
+            build.foe(float(px) - 3.5, 2.5, 0, E3M5_FOES.pick(dice, self.danger), 90.0);
         }
         build.doorway(hall, self.enter);
         for port in self.taken {
@@ -200,7 +195,7 @@ node TubeFoot(Prefab) {
         guard = build.waiting();
         landed +>:Fires:+> guard;
         for index in range(dice.between(1, 2)) {
-            build.foe(rest[0] - float(index) * 3.0, rest[1] + (float(index) * 3.0 if self.form == 0 else 0.0), g, e3m5_foe(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(rest[0] - float(index) * 3.0, rest[1] + (float(index) * 3.0 if self.form == 0 else 0.0), g, E3M5_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
         # A scrag circling over the hall.
         high = g - 3;
@@ -316,12 +311,12 @@ node FloodedTube(Prefab) {
         guard = build.waiting();
         shore +>:Fires:+> guard;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(xm) + 4.5 + float(index) * 4.0, float(wide) - 2.5 if index == 0 else 2.5, u, e3m5_foe(dice, self.danger, index == 0), 0.0, waits=guard);
+            build.foe(float(xm) + 4.5 + float(index) * 4.0, float(wide) - 2.5 if index == 0 else 2.5, u, E3M5_FOES.pick(dice, self.danger, index == 0), 0.0, waits=guard);
         }
         if self.ambush {
-            shore +>:Fires:+> build.summon(1, 1, -deep - 1, e3m5_foe(dice, self.danger, True), float(long) - 3.5, 3.5, 0, 180.0);
+            shore +>:Fires:+> build.summon(1, 1, -deep - 1, E3M5_FOES.pick(dice, self.danger, True), float(long) - 3.5, 3.5, 0, 180.0);
         }
-        build.foe(float(long) - 2.5, float(wy) - 5.5, 0, e3m5_foe(dice, self.danger), 180.0);
+        build.foe(float(long) - 2.5, float(wy) - 5.5, 0, E3M5_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, 2.5, 0, "item_spikes");
         build.supply(float(long) - 2.5, float(wide) - 2.5, u, "item_health");
     }
@@ -400,7 +395,7 @@ node WindChamber(Prefab) {
             build.solid(1, 5, h2 - 1, 6, 12, h2);
             keep_run(build, chamber, 2, 11, 5, 12, h2);
             build.supply(2.5, 8.5, h2, "item_armor2");
-            build.foe(3.5, 6.5, h2, e3m5_foe(dice, self.danger, True), 0.0);
+            build.foe(3.5, 6.5, h2, E3M5_FOES.pick(dice, self.danger, True), 0.0);
         }
         if self.catwalk {
             # The wind from the floor to the low ledge, and a catwalk from it
@@ -426,7 +421,7 @@ node WindChamber(Prefab) {
             }
         }
         if self.ambush {
-            press +>:Fires:+> build.summon(1, 1, -self.deep - 2, e3m5_foe(dice, self.danger, True), float(long) - 3.5, float(wide // 2) + 0.5, h2, 180.0);
+            press +>:Fires:+> build.summon(1, 1, -self.deep - 2, E3M5_FOES.pick(dice, self.danger, True), float(long) - 3.5, float(wide // 2) + 0.5, h2, 180.0);
         }
         # The scrags hang in the air over the pool.
         for index in range(dice.between(2, 3)) {
@@ -436,9 +431,9 @@ node WindChamber(Prefab) {
         up = build.touch(1.0, float(ay), float(h1), float(long - 7), float(ay + 2), float(h1 + 6));
         guard = build.waiting();
         up +>:Fires:+> guard;
-        build.foe(float(long // 3) + 4.5, float(wide) - 2.5, h1, e3m5_foe(dice, self.danger), 270.0, waits=guard);
-        build.foe(float(long) - 3.5, 3.5, h2, e3m5_foe(dice, self.danger, True), 180.0, waits=guard);
-        build.foe(float(long) - 4.5, 3.5, 0, e3m5_foe(dice, self.danger, True), 180.0);
+        build.foe(float(long // 3) + 4.5, float(wide) - 2.5, h1, E3M5_FOES.pick(dice, self.danger), 270.0, waits=guard);
+        build.foe(float(long) - 3.5, 3.5, h2, E3M5_FOES.pick(dice, self.danger, True), 180.0, waits=guard);
+        build.foe(float(long) - 4.5, 3.5, 0, E3M5_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(3.5, 3.5, 0, "item_rockets");
         build.supply(float(long) - 2.5, float(wide) - 2.5, h2, "item_health");
         build.supply(2.5, float(wide) - 2.5, h1, "item_spikes");
@@ -528,9 +523,9 @@ node SpikeGallery(Prefab) {
         guard = build.waiting();
         zone +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(long) - 8.5 - float(index) * 5.0, float(wide) - 2.5, u, e3m5_foe(dice, self.danger, index == 0), 270.0, waits=guard);
+            build.foe(float(long) - 8.5 - float(index) * 5.0, float(wide) - 2.5, u, E3M5_FOES.pick(dice, self.danger, index == 0), 270.0, waits=guard);
         }
-        build.foe(float(long) - 3.5, 3.5, 0, e3m5_foe(dice, self.danger), 180.0, patrol=[[float(long) - 3.5, 3.5], [float(long) - 3.5, float(gy) - 4.5]]);
+        build.foe(float(long) - 3.5, 3.5, 0, E3M5_FOES.pick(dice, self.danger), 180.0, patrol=[[float(long) - 3.5, 3.5], [float(long) - 3.5, float(gy) - 4.5]]);
         build.foe(float(long // 2) + 0.5, float(gy // 2) + 0.5, 6, "monster_wizard", 180.0);
         build.supply(float(long) - 2.5, float(wide) - 2.5, u, "item_health");
         build.supply(3.5, float(gy) + 2.5, 0, "item_spikes");
@@ -607,15 +602,15 @@ node QuadPillar(Prefab) {
             keep_run(build, hall, px1 - 1, cy - 3, px1 + 4, cy + 3, p);
         }
         keep_run(build, hall, 10, wide - 5, 13, wide - 4, p);
-        build.foe(float(long) - 3.5, float(wide) - 2.5, p, e3m5_foe(dice, self.danger), 180.0);
+        build.foe(float(long) - 3.5, float(wide) - 2.5, p, E3M5_FOES.pick(dice, self.danger), 180.0);
         # The pillar's edges kept open, to drop back into the water.
         keep_run(build, hall, cx - 2, cy - 2, cx + 2, cy + 2, p);
         fields: dict[str, str] = {"classname": key_item(self.key), "asset_game": "q1"};
         build.put_at(fields, float(cx), float(cy), p);
         taken = build.cue([fields], "key");
-        taken +>:Fires:+> build.summon(1, 1, -deep - 2, e3m5_foe(dice, self.danger, True), 3.5, 2.5, 0, 0.0);
+        taken +>:Fires:+> build.summon(1, 1, -deep - 2, E3M5_FOES.pick(dice, self.danger, True), 3.5, 2.5, 0, 0.0);
         if dice.chance(0.6) {
-            taken +>:Fires:+> build.summon(1, wide - 5, -deep - 2, e3m5_foe(dice, self.danger), 3.5, float(wide) - 2.5, 0, 0.0);
+            taken +>:Fires:+> build.summon(1, wide - 5, -deep - 2, E3M5_FOES.pick(dice, self.danger), 3.5, float(wide) - 2.5, 0, 0.0);
         }
         # A secret alcove under the water off the pool's south side.
         ax = 10 + dice.below(max(1, px1 - 14));
@@ -632,7 +627,7 @@ node QuadPillar(Prefab) {
         for index in range(dice.between(2, 3)) {
             build.foe(float(cx) - 1.5 + float(index) * 2.0, float(cy) + 0.5, p + 3 + index, "monster_wizard", 180.0);
         }
-        build.foe(float(long) - 3.5, 2.5, 0, e3m5_foe(dice, self.danger), 180.0, patrol=[[float(long) - 3.5, 2.5], [float(long) - 3.5, float(wide) - 2.5]]);
+        build.foe(float(long) - 3.5, 2.5, 0, E3M5_FOES.pick(dice, self.danger), 180.0, patrol=[[float(long) - 3.5, 2.5], [float(long) - 3.5, float(wide) - 2.5]]);
         build.supply(2.5, float(wide) - 2.5, 0, "item_health");
     }
 }
@@ -795,7 +790,7 @@ node WindTower(Prefab) {
             guard = build.waiting();
             landed +>:Fires:+> guard;
             gx = float(span[0]) + 2.5 if land > float(long // 2) else float(span[1]) - 2.5;
-            build.foe(gx, float(y0 + y1) * 0.5, z, e3m5_foe(dice, self.danger, k == n), 0.0 if land > float(long // 2) else 180.0, waits=guard);
+            build.foe(gx, float(y0 + y1) * 0.5, z, E3M5_FOES.pick(dice, self.danger, k == n), 0.0 if land > float(long // 2) else 180.0, waits=guard);
         }
         build.supply(2.5, float(wide) - 2.5, 0, "item_shells");
         top = self.ledge_span(n);
@@ -876,13 +871,13 @@ node WindExit(Prefab) {
             build.room(at, side + 1, -d, at + 3, side + 4, -d + 7);
             build.widen(shaft, at, side, -d, at + 3, side + 1, -d + 6);
             burst +>:Fires:+> bursting(build, float(at), float(side), float(-d), float(at + 3), float(side + 1), float(-d + 6));
-            build.foe(float(at) + 1.5, float(side) + 2.5, -d, e3m5_foe(dice, self.danger, index == 0), 270.0, waits=loose);
+            build.foe(float(at) + 1.5, float(side) + 2.5, -d, E3M5_FOES.pick(dice, self.danger, index == 0), 270.0, waits=loose);
         }
         for index in range(dice.between(1, 2)) {
             build.foe(float(long) - 8.5, 3.5 + float(index) * 4.0, -d + 6, "monster_wizard", 180.0, waits=loose);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, e3m5_foe(dice, self.danger), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, E3M5_FOES.pick(dice, self.danger), 180.0);
         }
         if self.secret_in {
             build.room(3, side + 1, 0, 6, side + 4, 4);

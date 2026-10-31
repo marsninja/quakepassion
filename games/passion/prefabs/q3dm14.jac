@@ -30,10 +30,11 @@ knights as a run goes deeper.
   dungeon's depth, under the near floor too; a stair down or a bobbing
   platform; the way out at the bottom."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, gate_into, lift }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3tiers { keep_box, deck, hurt, key_taken, pad_to, closets, wake_on, sliding_pair }
 
 glob Q3DM14: str = "q3:q3dm14",
@@ -41,9 +42,7 @@ glob Q3DM14: str = "q3:q3dm14",
      Q3DM14_HEAVY: list[str] = ["monster_hell_knight"];
 
 """A foe for the Grim Dungeons."""
-def grim_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM14_LIGHT, Q3DM14_HEAVY, strong);
-}
+glob GRIM_FOES: FoeMix = FoeMix(light=Q3DM14_LIGHT, strong=Q3DM14_HEAVY, heavy_light=Q3DM14_HEAVY, scale=0.5);
 
 """The start: a hall over a dungeon, a shaft down, a pad back up."""
 node GrimHall(Prefab) {
@@ -104,11 +103,11 @@ node GrimHall(Prefab) {
         build.supply(2.5, float(mid) - 1.5, 0, "ammo_shells", "q2");
         # Down in the dungeon, what waits there wakes.
         below = wake_on(build, 9.0, 6.0, float(self.long - 11), float(self.wide - 6), -10.0);
-        build.foe(5.5, float(self.wide) - 4.5, -10, grim_foe(dice, self.danger), 0.0, waits=below);
-        build.foe(float(self.long) - 5.5, 4.5, -10, grim_foe(dice, self.danger, True), 180.0, waits=below);
+        build.foe(5.5, float(self.wide) - 4.5, -10, GRIM_FOES.pick(dice, self.danger), 0.0, waits=below);
+        build.foe(float(self.long) - 5.5, 4.5, -10, GRIM_FOES.pick(dice, self.danger, True), 180.0, waits=below);
         build.foe(5.5, 4.5, -10, "monster_zombie", 0.0, patrol=[[5.5, 4.5], [5.5, float(self.wide) - 4.5]]);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(cx) + 0.5 + float(index) * 3.0, float(self.wide) - 3.5, 0, grim_foe(dice, self.danger), 270.0);
+            build.foe(float(cx) + 0.5 + float(index) * 3.0, float(self.wide) - 3.5, 0, GRIM_FOES.pick(dice, self.danger), 270.0);
         }
         build.foe(float(self.long) - 7.5, 2.5, 0, "monster_knight", 90.0);
         build.supply(float(cx) - 2.5, float(mid) + 0.5, -10, Q3_ARMOR, "q3");
@@ -180,10 +179,10 @@ node GrimShaft(Prefab) {
             build.doorway(shaft, port);
         }
         bottom = wake_on(build, 9.0, 6.0, float(self.long - 1), float(self.wide - 6), -24.0);
-        build.foe(float(self.long) - 4.5, float(mid) + 0.5, -24, grim_foe(dice, self.danger, True), 180.0, waits=bottom);
+        build.foe(float(self.long) - 4.5, float(mid) + 0.5, -24, GRIM_FOES.pick(dice, self.danger, True), 180.0, waits=bottom);
         build.foe(12.5, float(mid) + 0.5, -24, "monster_zombie", 0.0);
-        build.foe(float(self.long) - 3.5, 3.0, -8, grim_foe(dice, self.danger), 180.0);
-        build.foe(float(self.long) - 3.5, float(self.wide) - 3.0, -16, grim_foe(dice, self.danger), 180.0, waits=bottom);
+        build.foe(float(self.long) - 3.5, 3.0, -8, GRIM_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 3.0, -16, GRIM_FOES.pick(dice, self.danger), 180.0, waits=bottom);
         build.foe(3.5, 3.5, 0, "monster_knight", 0.0);
         build.supply(float(self.long) - 6.0, float(self.wide) - 2.5, -16, Q3_ARMOR, "q3");
         build.supply(14.0, 3.0, -8, Q3_HEALTH, "q3");
@@ -257,10 +256,10 @@ node GrimCells(Prefab) {
         for x in range(5, self.long - 6, 8) {
             build.foe(float(x) + 1.5, 2.5, lo, "monster_zombie", 90.0, waits=cells);
         }
-        build.foe(float(cut) + 4.5, float(mid) + 2.5, lo, grim_foe(dice, self.danger, True), 180.0);
+        build.foe(float(cut) + 4.5, float(mid) + 2.5, lo, GRIM_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(4.5, float(mid) + 2.5, lo, "monster_knight", 0.0, patrol=[[4.5, float(mid) + 2.5], [float(cut) - 2.5, float(mid) + 2.5]]);
-        build.foe(float(cut) + 0.5, 3.0, 0, grim_foe(dice, self.danger), 180.0);
-        build.foe(float(self.long) - 6.5, float(self.wide) - 3.0, 0, grim_foe(dice, self.danger), 180.0);
+        build.foe(float(cut) + 0.5, 3.0, 0, GRIM_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 6.5, float(self.wide) - 3.0, 0, GRIM_FOES.pick(dice, self.danger), 180.0);
         build.supply(10.5, 2.5, lo, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 3.0, 3.0, 0, Q3_ARMOR, "q3");
     }
@@ -336,13 +335,13 @@ node GrimUndercroft(Prefab) {
         # Out on the bridge (or down on the dungeon floor), the walkways'
         # guards wake.
         bridge = wake_on(build, float(cx - 2), float(cy - 1), float(cx + 2), float(cy + 2), 0.0) if self.bridged else wake_on(build, 7.0, 6.0, float(cx - 5), float(self.wide - 6), -10.0);
-        build.foe(float(cx) + 3.5, 3.0, 0, grim_foe(dice, self.danger), 90.0, waits=bridge);
-        build.foe(float(cx) - 3.5, float(self.wide) - 3.0, 0, grim_foe(dice, self.danger, True), 270.0, waits=bridge);
+        build.foe(float(cx) + 3.5, 3.0, 0, GRIM_FOES.pick(dice, self.danger), 90.0, waits=bridge);
+        build.foe(float(cx) - 3.5, float(self.wide) - 3.0, 0, GRIM_FOES.pick(dice, self.danger, True), 270.0, waits=bridge);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx - 6 + index * 6) + 0.5, float(cy) + (6.5 if index % 2 == 0 else -6.5), -10, grim_foe(dice, self.danger), 0.0);
+            build.foe(float(cx - 6 + index * 6) + 0.5, float(cy) + (6.5 if index % 2 == 0 else -6.5), -10, GRIM_FOES.pick(dice, self.danger), 0.0);
         }
         build.foe(8.5, 8.5, -10, "monster_zombie", 0.0, patrol=[[8.5, 8.5], [8.5, float(self.wide) - 8.5]]);
-        build.foe(float(self.long) - 7.0, 3.5, 0, grim_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 7.0, 3.5, 0, GRIM_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(cx) + 0.5, float(cy) + 0.5, 0, Q3_ARMOR, "q3");
         build.supply(float(cx) - 6.5, float(cy) - 6.0, -10, Q3_HEALTH, "q3");
         build.supply(3.0, 3.0, 0, Q3_HEALTH, "q3");
@@ -400,12 +399,12 @@ node GrimOubliette(Prefab) {
             taken = key_taken(build, self.key, 8.5, float(cy) + 2.5, -16);
         }
         if taken is not None {
-            closets(build, taken, side, 0, [2, 8], [grim_foe(dice, self.danger, True), grim_foe(dice, self.danger)]);
+            closets(build, taken, side, 0, [2, 8], [GRIM_FOES.pick(dice, self.danger, True), GRIM_FOES.pick(dice, self.danger)]);
             late = build.delay(1.5);
             taken +>:Fires:+> late;
             wake = build.waiting();
             late +>:Fires:+> wake;
-            build.foe(float(self.long) - 3.0, 2.5, 0, grim_foe(dice, self.danger), 180.0, waits=wake);
+            build.foe(float(self.long) - 3.0, 2.5, 0, GRIM_FOES.pick(dice, self.danger), 180.0, waits=wake);
         }
         build.foe(10.5, float(cy) - 1.5, -16, "monster_zombie", 0.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
@@ -453,11 +452,11 @@ node GrimGate(Prefab) {
         }
         build.way_out(float(self.long) - 3.0, float(mid), -10);
         below = wake_on(build, 13.0, 4.0, float(self.long - 6), float(self.wide - 4), -10.0);
-        build.foe(float(self.long) - 4.5, 3.5, -10, grim_foe(dice, self.danger, True), 180.0, waits=below);
-        build.foe(float(self.long) - 4.5, float(self.wide) - 3.5, -10, grim_foe(dice, self.danger), 180.0, waits=below);
+        build.foe(float(self.long) - 4.5, 3.5, -10, GRIM_FOES.pick(dice, self.danger, True), 180.0, waits=below);
+        build.foe(float(self.long) - 4.5, float(self.wide) - 3.5, -10, GRIM_FOES.pick(dice, self.danger), 180.0, waits=below);
         build.foe(10.5, float(mid) + 3.5, -10, "monster_zombie", 0.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, grim_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, GRIM_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 6.0, float(mid) + 3.5, -10, Q3_HEALTH, "q3");

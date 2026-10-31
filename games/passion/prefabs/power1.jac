@@ -34,7 +34,7 @@ lift, a switchyard to leave by. Raised in power1's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush }
 import from .plant_parts { key_doors, open_ways, charges, sparking, shelling, stash, crate_pile, squad, keep_box, plat }
 
@@ -42,12 +42,7 @@ glob POWER1: str = "q2:power1";
 
 """power1's foes: berserkers and iron maidens, flyers and hovers, gladiators
 deeper in."""
-def power1_foe(dice: Stream, danger: float, heavy: bool = False, flying: bool = False) -> str {
-    if flying {
-        return "monster_hover" if dice.chance(0.4) else "monster_flyer";
-    }
-    return q1_foe(dice, q1_palette(["monster_berserk", "monster_chick"] if heavy else ["monster_berserk", "monster_chick", "monster_soldier"], ["monster_gladiator"] if heavy else ["monster_chick"], danger * 0.5 if heavy else danger * 0.7));
-}
+glob POWER1_FOES: FoeMix = FoeMix(light=["monster_berserk", "monster_chick", "monster_soldier"], strong=["monster_chick"], heavy_light=["monster_berserk", "monster_chick"], heavy_strong=["monster_gladiator"], scale=0.7, heavy_scale=0.5, flying="monster_flyer", flying_other="monster_hover", flying_odds=0.4);
 
 """The start: a shelf over a yard, the plant's porch across its end, a
 gantry high along one wall."""
@@ -133,14 +128,14 @@ node PlantGate(Prefab) {
         sparking(build, 4.0, float(self.long) - 1.2, float(cy) + 3.5, float(self.porch) + 3.0, 2);
         # Guards appear on the porch as the player crosses the yard.
         crossing = build.touch(float(self.long // 2 - 1), 5.0, 0.0, float(self.long // 2 + 1), float(self.wide - 1), 6.0);
-        squad(build, crossing, [[float(self.long) - 4.5, float(cy) - 4.5, float(self.porch)], [float(self.long) - 3.5, float(cy) + 4.5, float(self.porch)]], [power1_foe(dice, self.danger, True), power1_foe(dice, self.danger)], 180.0);
+        squad(build, crossing, [[float(self.long) - 4.5, float(cy) - 4.5, float(self.porch)], [float(self.long) - 3.5, float(cy) + 4.5, float(self.porch)]], [POWER1_FOES.pick(dice, self.danger, True), POWER1_FOES.pick(dice, self.danger)], 180.0);
         crossing +>:Fires:+> build.explosion(float(px) - 1.0, float(cy) + 5.5, 2.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long // 2 - 3 + index * 4) + 0.5, float(cy) + 3.5 - float(index % 2) * 6.0, 0, power1_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long // 2 - 3 + index * 4) + 0.5, float(cy) + 3.5 - float(index % 2) * 6.0, 0, POWER1_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(10.5, float(cy) + 1.5, 0, "monster_soldier", 0.0, patrol=[[10.5, float(cy) + 1.5], [float(px) - 5.5, float(cy) + 1.5], [float(px) - 5.5, float(self.wide) - 6.5], [14.5, float(self.wide) - 6.5]]);
-        build.foe(float(self.long) - 4.5, 3.0, self.gantry, power1_foe(dice, self.danger), 180.0);
-        build.foe(float(self.long // 2) + 0.5, float(cy) + 0.5, self.gantry + 4, power1_foe(dice, self.danger, False, True), 180.0);
+        build.foe(float(self.long) - 4.5, 3.0, self.gantry, POWER1_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2) + 0.5, float(cy) + 0.5, self.gantry + 4, POWER1_FOES.pick(dice, self.danger, False, True), 180.0);
         build.supply(float(self.long) - 2.5, 2.5, self.porch, Q2_HEALTH, "q2");
     }
 }
@@ -248,7 +243,7 @@ node TurbineHall(Prefab) {
         charges(build, halfway, [[float(mid + 4), 5.5, float(base + 2)], [float(mid + 8), float(self.wide - 6), float(base + 2)]], 0.2);
         later = build.delay(0.4);
         halfway +>:Fires:+> later;
-        squad(build, later, [[float(self.long) - 4.5, float(cy) - 6.5, 0.0], [float(self.long) - 4.5, float(cy) + 6.5, 0.0]], ["monster_chick", power1_foe(dice, self.danger)], 180.0);
+        squad(build, later, [[float(self.long) - 4.5, float(cy) - 6.5, 0.0], [float(self.long) - 4.5, float(cy) + 6.5, 0.0]], ["monster_chick", POWER1_FOES.pick(dice, self.danger)], 180.0);
         crane = build.train([3.0, 4.0, 1.0], [[5.0, float(cy - 2), float(self.tall - 3)], [float(self.long - 8), float(cy - 2), float(self.tall - 3)]], 90.0, 2.0, True);
         start_crane = build.delay(1.0);
         halfway +>:Fires:+> start_crane;
@@ -260,16 +255,16 @@ node TurbineHall(Prefab) {
         controls +>:Fires:+> build.sparks(float(self.long) - 11.5, 1.2, float(self.walk) + 2.0, 1);
         # Guards appear along the catwalk as the player climbs.
         top = build.touch(float(start_x - 2), 1.0, float(self.walk), float(start_x + 1), 5.0, float(self.walk + 6));
-        squad(build, top, [[float(self.long) - 4.5, 3.0, float(self.walk)], [float(self.long // 2) + 2.5, 3.0, float(self.walk)]], [power1_foe(dice, self.danger), "monster_gunner"], 180.0);
+        squad(build, top, [[float(self.long) - 4.5, 3.0, float(self.walk)], [float(self.long // 2) + 2.5, 3.0, float(self.walk)]], [POWER1_FOES.pick(dice, self.danger), "monster_gunner"], 180.0);
         for at in self.turbines[:2] {
             sparking(build, dice.uniform(3.0, 5.0), float(at) + 2.0, float(cy) + 2.2, float(base + 3), 1);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(8 + index * 6) + 0.5, float(cy) + (5.5 if index % 2 == 0 else -5.5), 0, power1_foe(dice, self.danger), 180.0);
+            build.foe(float(8 + index * 6) + 0.5, float(cy) + (5.5 if index % 2 == 0 else -5.5), 0, POWER1_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(4.5, float(cy) + 5.5, 0, "monster_berserk", 0.0, patrol=[[4.5, float(cy) + 5.5], [float(self.long) - 4.5, float(cy) + 5.5], [float(self.long) - 4.5, float(cy) - 5.5], [14.5, float(cy) - 5.5]]);
         if self.both {
-            build.foe(float(self.long) - 4.5, float(self.wide) - 3.0, self.walk, power1_foe(dice, self.danger, True), 180.0);
+            build.foe(float(self.long) - 4.5, float(self.wide) - 3.0, self.walk, POWER1_FOES.pick(dice, self.danger, True), 180.0);
         }
         build.supply(float(self.long) - 2.5, float(cy) + 3.5, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long // 2) + 0.5, 3.0, self.walk, "ammo_bullets", "q2");
@@ -343,12 +338,12 @@ node FanShaft(Prefab) {
         open_ways(build, shaft, self);
         # Flyers come in as the player reaches the bottom.
         bottom = build.touch(8.0, 5.0, 0.0, float(far - 1), float(self.wide - 5), 6.0);
-        squad(build, bottom, [[float(far) - 2.5, float(cy) - 2.5, float(top - 4)], [float(far) - 6.5, float(cy) + 3.5, float(top - 3)]], ["monster_flyer", power1_foe(dice, self.danger, False, True)], 180.0);
+        squad(build, bottom, [[float(far) - 2.5, float(cy) - 2.5, float(top - 4)], [float(far) - 6.5, float(cy) + 3.5, float(top - 3)]], ["monster_flyer", POWER1_FOES.pick(dice, self.danger, False, True)], 180.0);
         sparking(build, dice.uniform(3.0, 6.0), float(far) + 0.5, float(cy) + 0.5, float(top) - 1.6, 2);
-        build.foe(float(far) + 3.5, float(cy) + 0.5, top, power1_foe(dice, self.danger, True), 180.0);
-        build.foe(3.5, float(cy) + 0.5, top if self.upward else 0, power1_foe(dice, self.danger), 0.0);
+        build.foe(float(far) + 3.5, float(cy) + 0.5, top, POWER1_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(3.5, float(cy) + 0.5, top if self.upward else 0, POWER1_FOES.pick(dice, self.danger), 0.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(far) - 6.5 + float(index) * 3.0, float(self.wide) - 3.5, 0, power1_foe(dice, self.danger), 180.0);
+            build.foe(float(far) - 6.5 + float(index) * 3.0, float(self.wide) - 3.5, 0, POWER1_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(float(self.long // 2) + 0.5, 3.0, top, Q2_HEALTH, "q2");
     }
@@ -452,13 +447,13 @@ node ReactorHall(Prefab) {
         up_lift +>:Fires:+> crew;
         up_stair +>:Fires:+> crew;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx - 4 + index * 4) + 0.5, float(cy) - 5.0, g + 2, power1_foe(dice, self.danger, False, True), 90.0, waits=crew);
+            build.foe(float(cx - 4 + index * 4) + 0.5, float(cy) - 5.0, g + 2, POWER1_FOES.pick(dice, self.danger, False, True), 90.0, waits=crew);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx - 3 + index * 3) + 0.5, float(cy) + 4.5, low, power1_foe(dice, self.danger), 0.0);
+            build.foe(float(cx - 3 + index * 3) + 0.5, float(cy) + 4.5, low, POWER1_FOES.pick(dice, self.danger), 0.0);
         }
-        build.foe(float(cx) + 0.5, float(cy) + 0.5, g + 2, power1_foe(dice, self.danger, True), 180.0);
-        build.foe(float(self.long) - 3.0, float(cy) + 6.5, g, power1_foe(dice, self.danger), 180.0);
+        build.foe(float(cx) + 0.5, float(cy) + 0.5, g + 2, POWER1_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.0, float(cy) + 6.5, g, POWER1_FOES.pick(dice, self.danger), 180.0);
         build.foe(9.5, 3.0, 0, "monster_berserk", 0.0, patrol=[[9.5, 3.0], [float(self.long) - 3.5, 3.0], [float(self.long) - 3.5, float(self.wide) - 3.0], [9.5, float(self.wide) - 3.0]]);
         build.supply(float(cx) + 4.5, float(cy) - 4.5, low, Q2_HEALTH, "q2");
         build.supply(3.0, 3.0, g, "ammo_cells", "q2");
@@ -511,16 +506,16 @@ node KeyVault(Prefab) {
         # The dais at the far end, the key on it.
         build.solid(self.long - 6, cy - 3, low, self.long - 1, cy + 4, low + 2);
         stair(build, self.long - 8, cy - 1, low, 0, 2, 3);
-        key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, low + 2, side, low, [10, self.long - 8], [power1_foe(dice, self.danger, True), power1_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, low + 2, side, low, [10, self.long - 8], [POWER1_FOES.pick(dice, self.danger, True), POWER1_FOES.pick(dice, self.danger)]);
         # Climbing onto the dais sets off the charges round the vault.
         on_dais = build.touch(float(self.long - 6), float(cy - 3), float(low + 2), float(self.long - 4), float(cy + 4), float(low + 8));
         charges(build, on_dais, [[float(self.long) - 2.0, 2.5, float(low + 6)], [12.0, 2.5, float(low + 7)], [12.0, float(side) - 2.0, float(low + 6)]], 0.4);
         # Guards appear on the floor as the player reaches it.
         landed = build.touch(8.0, 4.0, float(low), 12.0, float(side - 1), float(low + 6));
-        squad(build, landed, [[float(self.long) - 9.5, 3.5, float(low)], [float(self.long) - 9.5, float(side) - 3.5, float(low)]], [power1_foe(dice, self.danger), "monster_chick"], 180.0);
+        squad(build, landed, [[float(self.long) - 9.5, 3.5, float(low)], [float(self.long) - 9.5, float(side) - 3.5, float(low)]], [POWER1_FOES.pick(dice, self.danger), "monster_chick"], 180.0);
         guard = "monster_supertank" if self.danger > 0.75 else ("monster_tank" if self.danger > 0.3 else "monster_gladiator");
         build.foe(float(self.long) - 9.5, float(cy) + 0.5, low, guard, 180.0);
-        build.foe(4.0, 3.5, 0, power1_foe(dice, self.danger), 0.0);
+        build.foe(4.0, 3.5, 0, POWER1_FOES.pick(dice, self.danger), 0.0);
         sparking(build, 5.0, float(self.long) - 1.2, float(cy) - 4.5, float(low + 4), 2);
         build.supply(3.0, float(side) - 3.0, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 9.5, float(cy) + 3.5, low, "ammo_rockets", "q2");
@@ -580,7 +575,7 @@ node Switchyard(Prefab) {
             build.way_out(float(self.long) - 7.0, float(cy), 6);
             on_top = build.touch(float(tx), float(cy - 4), 6.0, float(tx + 2), float(cy + 4), 12.0);
             charges(build, on_top, [[float(tx) - 3.0, 3.0, 4.0], [float(tx) - 3.0, float(self.wide) - 3.0, 4.0], [float(tx) - 8.0, float(cy), 6.0]], 0.3);
-            build.foe(float(self.long) - 5.5, float(cy) + 2.5, 6, power1_foe(dice, self.danger, True), 180.0);
+            build.foe(float(self.long) - 5.5, float(cy) + 2.5, 6, POWER1_FOES.pick(dice, self.danger, True), 180.0);
         } else {
             # A fence across the yard, its gap barred by a block that sinks
             # when the button over it is shot; the way out beyond.
@@ -591,15 +586,15 @@ node Switchyard(Prefab) {
             build.push(float(fx), float(cy) + 4.5, 6.0, 2, True) +>:Fires:+> barrier;
             build.touch(float(fx - 4), 1.0, 0.0, float(fx - 3), float(self.wide - 1), 8.0, True, "Shoot the switch to drop the barrier");
             build.way_out(float(self.long) - 4.0, float(cy), 0);
-            build.foe(float(self.long) - 4.5, float(cy) + 5.5, 0, power1_foe(dice, self.danger, True), 180.0);
+            build.foe(float(self.long) - 4.5, float(cy) + 5.5, 0, POWER1_FOES.pick(dice, self.danger, True), 180.0);
         }
         # Guards appear in the yard as the player comes through the door.
         through = build.touch(float(wall + 1), float(cy - 2), 0.0, float(wall + 3), float(cy + 2), 6.0);
-        squad(build, through, [[float(self.long) - 12.5, float(cy) - 1.5, 0.0], [float(self.long) - 12.5, float(cy) + 2.5, 0.0]], [power1_foe(dice, self.danger), power1_foe(dice, self.danger)], 180.0);
+        squad(build, through, [[float(self.long) - 12.5, float(cy) - 1.5, 0.0], [float(self.long) - 12.5, float(cy) + 2.5, 0.0]], [POWER1_FOES.pick(dice, self.danger), POWER1_FOES.pick(dice, self.danger)], 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, power1_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, POWER1_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(self.long) - 6.5, float(cy) + 0.5, 9, power1_foe(dice, self.danger, False, True), 180.0);
+        build.foe(float(self.long) - 6.5, float(cy) + 0.5, 9, POWER1_FOES.pick(dice, self.danger, False, True), 180.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
     }
 }

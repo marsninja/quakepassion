@@ -31,16 +31,14 @@ gate are drawn from its vaults. Raised in e3m4's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, pillars, lift, ring_path }
 import from .e2m4 { e2m4_bars, e2m4_key, e2m4_moat, e2m4_stash, e2m4_closets }
 
 glob E3M4: str = "q1:e3m4";
 
 """e3m4's foes: ogres above all, the dead and scrags, fiends deeper in."""
-def e3m4_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_ogre", "monster_ogre"] if heavy else ["monster_ogre", "monster_zombie", "monster_wizard"], ["monster_demon1"] if heavy else ["monster_ogre"], danger));
-}
+glob E3M4_FOES: FoeMix = FoeMix(light=["monster_ogre", "monster_zombie", "monster_wizard"], strong=["monster_ogre"], heavy_light=["monster_ogre", "monster_ogre"], heavy_strong=["monster_demon1"]);
 
 """The start: a hall over black water, a pier across it, galleries over it,
 a dais at the far end up steps a shot button raises."""
@@ -121,7 +119,7 @@ node DarkPier(Prefab) {
         guard = build.waiting();
         onto +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(fx) + 2.5, float(middle) - 5.5 + float(index) * 5.5, 0, e3m4_foe(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(float(fx) + 2.5, float(middle) - 5.5 + float(index) * 5.5, 0, E3M4_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
         build.foe(7.5, 3.0, 9, "monster_ogre", 0.0, patrol=[[7.5, 3.0], [float(self.long) - 3.5, 3.0]]);
         build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, 5, "monster_wizard", 180.0);
@@ -200,12 +198,12 @@ node ElevatorTower(Prefab) {
         onto = build.touch(float(self.long - 5), 5.0, 21.0, float(self.long - 2), 7.0, 27.0);
         keeper = build.waiting();
         onto +>:Fires:+> keeper;
-        build.foe(4.5, 3.5, 21, e3m4_foe(dice, self.danger, True), 0.0, waits=keeper);
+        build.foe(4.5, 3.5, 21, E3M4_FOES.pick(dice, self.danger, True), 0.0, waits=keeper);
         late = build.delay(1.0);
         onto +>:Fires:+> late;
-        late +>:Fires:+> build.summon(7, 7, -7, e3m4_foe(dice, self.danger), float(self.long // 2) + 0.5, 3.5, 21, 0.0);
-        build.foe(4.5, float(self.wide) - 3.0, 7, e3m4_foe(dice, self.danger), 0.0, patrol=[[4.5, float(self.wide) - 3.0], [float(self.long) - 11.5, float(self.wide) - 3.0]]);
-        build.foe(float(self.long) - 3.5, 13.5, 14, e3m4_foe(dice, self.danger), 270.0);
+        late +>:Fires:+> build.summon(7, 7, -7, E3M4_FOES.pick(dice, self.danger), float(self.long // 2) + 0.5, 3.5, 21, 0.0);
+        build.foe(4.5, float(self.wide) - 3.0, 7, E3M4_FOES.pick(dice, self.danger), 0.0, patrol=[[4.5, float(self.wide) - 3.0], [float(self.long) - 11.5, float(self.wide) - 3.0]]);
+        build.foe(float(self.long) - 3.5, 13.5, 14, E3M4_FOES.pick(dice, self.danger), 270.0);
         build.supply(float(self.long) - 2.5, float(self.wide) - 3.5, 14, "item_health");
         build.supply(float(self.long // 2) + 0.5, 3.5, 21, "item_rockets");
         build.supply(2.5, 2.5, 0, "item_health");
@@ -292,10 +290,10 @@ node DelightAltar(Prefab) {
         late = build.delay(1.0);
         onto +>:Fires:+> late;
         for index in range(2) {
-            late +>:Fires:+> build.summon(1, 6 + index * 5, -8, "monster_wizard" if index == 0 else e3m4_foe(dice, self.danger, True), float(cx) - 6.5 + float(index) * 13.0, float(cy) - 6.5, 3 if index == 0 else 0, 0.0);
+            late +>:Fires:+> build.summon(1, 6 + index * 5, -8, "monster_wizard" if index == 0 else E3M4_FOES.pick(dice, self.danger, True), float(cx) - 6.5 + float(index) * 13.0, float(cy) - 6.5, 3 if index == 0 else 0, 0.0);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx) - 2.5 + float(index) * 2.0, float(cy) + 1.5, a, e3m4_foe(dice, self.danger, index == 0), 270.0, waits=guard);
+            build.foe(float(cx) - 2.5 + float(index) * 2.0, float(cy) + 1.5, a, E3M4_FOES.pick(dice, self.danger, index == 0), 270.0, waits=guard);
         }
         build.foe(2.5, 2.5, 0, "monster_ogre", 0.0, patrol=[[2.5, 2.5], [float(self.long) - 2.5, 2.5], [float(self.long) - 2.5, float(self.wide) - 6.5]]);
         for index in range(dice.between(1, 2)) {
@@ -307,8 +305,8 @@ node DelightAltar(Prefab) {
         off = build.touch(float(self.long - 6), float(cy - 2), float(a), float(self.long - 4), float(cy + 2), float(a + 6));
         gallery_guard = build.waiting();
         off +>:Fires:+> gallery_guard;
-        build.foe(float(self.long) - 2.5, 4.5, a, e3m4_foe(dice, self.danger), 90.0, waits=gallery_guard);
-        build.foe(2.5, float(self.wide) - 6.5, a, e3m4_foe(dice, self.danger), 270.0, patrol=[[2.5, float(self.wide) - 6.5], [2.5, 6.5]]);
+        build.foe(float(self.long) - 2.5, 4.5, a, E3M4_FOES.pick(dice, self.danger), 90.0, waits=gallery_guard);
+        build.foe(2.5, float(self.wide) - 6.5, a, E3M4_FOES.pick(dice, self.danger), 270.0, patrol=[[2.5, float(self.wide) - 6.5], [2.5, 6.5]]);
         build.supply(2.5, float(cy) + 0.5, 0, "item_shells");
     }
 }
@@ -366,7 +364,7 @@ node BlackCrossing(Prefab) {
         far_touch = build.touch(float(fx), 1.0, 0.0, float(fx + 2), float(self.wide - 1), 6.0);
         far_wake = build.waiting();
         far_touch +>:Fires:+> far_wake;
-        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, 9, e3m4_foe(dice, self.danger, True), 180.0, waits=far_wake);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, 9, E3M4_FOES.pick(dice, self.danger, True), 180.0, waits=far_wake);
         # The far landing's way on opened by a button on its south wall.
         press = build.push(float(fx) + 0.6, 1.0, 1.2, 1);
         build.doorway(hall, self.enter);
@@ -380,14 +378,14 @@ node BlackCrossing(Prefab) {
         }
         late = build.delay(2.0);
         dock +>:Fires:+> late;
-        late +>:Fires:+> build.summon(1, 2, -8, e3m4_foe(dice, self.danger, True), float(fx) + 3.5, float(middle) + 0.5, 0, 180.0);
+        late +>:Fires:+> build.summon(1, 2, -8, E3M4_FOES.pick(dice, self.danger, True), float(fx) + 3.5, float(middle) + 0.5, 0, 180.0);
         build.solid(1, 1, 0, 6, 5, 8);
         e2m4_stash(build, 2, 1, 4, 3, 0, 1, "item_artifact_envirosuit");
         # The far landing's keepers wake as the platform sets out.
         guard = build.waiting();
         dock +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(fx) + 2.5, 3.5 + float(index) * 3.0, 0, e3m4_foe(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(float(fx) + 2.5, 3.5 + float(index) * 3.0, 0, E3M4_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
         build.foe(10.5, float(self.wide) - 2.5, 9, "monster_ogre", 0.0, patrol=[[10.5, float(self.wide) - 2.5], [float(self.long) - 6.5, float(self.wide) - 2.5]]);
         build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, 5, "monster_wizard", 180.0);
@@ -446,20 +444,20 @@ node DivedVault(Prefab) {
         }
         lift_gap = [5, x0];
         build.solid(lift_gap[0], side - 4, 6, lift_gap[1], side, 7);
-        build.foe(float(wall) - 2.5, float(side) - 2.0, 7, e3m4_foe(dice, self.danger), 180.0);
+        build.foe(float(wall) - 2.5, float(side) - 2.0, 7, E3M4_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(x0) + 1.5, float(side) - 2.0, 7, "item_artifact_super_damage");
         # The key; taking it opens the closets on the near side and brings a
         # fiend in.
         taken = e2m4_key(build, self.key, float(self.long) - 2.5, float(cy) + 0.5, 1);
         out = build.waiting();
         taken +>:Fires:+> out;
-        e2m4_closets(build, [2, x1 + 1], side, 0, taken, out, [e3m4_foe(dice, self.danger, True), "monster_ogre"]);
+        e2m4_closets(build, [2, x1 + 1], side, 0, taken, out, [E3M4_FOES.pick(dice, self.danger, True), "monster_ogre"]);
         late = build.delay(1.0);
         taken +>:Fires:+> late;
-        late +>:Fires:+> build.summon(1, 2, -8, e3m4_foe(dice, self.danger, True), float(x1) + 1.5, 2.5, 0, 180.0);
+        late +>:Fires:+> build.summon(1, 2, -8, E3M4_FOES.pick(dice, self.danger, True), float(x1) + 1.5, 2.5, 0, 180.0);
         late +>:Fires:+> build.summon(1, 6, -8, "monster_wizard", float(wall) + 2.5, float(cy) + 0.5, 3, 180.0);
         build.foe(float(wall) + 2.5, float(cy) + 0.5, -d + 1, "monster_fish", 0.0);
-        build.foe(float(self.long) - 2.5, 2.5, 0, e3m4_foe(dice, self.danger), 180.0, patrol=[[float(self.long) - 2.5, 2.5], [float(self.long) - 2.5, float(side) - 2.5]]);
+        build.foe(float(self.long) - 2.5, 2.5, 0, E3M4_FOES.pick(dice, self.danger), 180.0, patrol=[[float(self.long) - 2.5, 2.5], [float(self.long) - 2.5, float(side) - 2.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
     }
 }
@@ -523,13 +521,13 @@ node DelightExit(Prefab) {
             build.foe(float(wall + 8 + index * 6) + 0.5, float(self.wide) - 2.5, 8, "monster_ogre", 270.0, waits=wake);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, e3m4_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, E3M4_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(self.long) - 3.5, 3.5, 4, e3m4_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, 3.5, 4, E3M4_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(float(wall + 8) + 0.5, 3.5, -4, "monster_fish", 0.0);
         late = build.delay(1.5);
         across +>:Fires:+> late;
-        late +>:Fires:+> build.summon(1, 6, -8, e3m4_foe(dice, self.danger, True), float(dx) - 2.5, float(middle) + 3.5, 0, 180.0);
+        late +>:Fires:+> build.summon(1, 6, -8, E3M4_FOES.pick(dice, self.danger, True), float(dx) - 2.5, float(middle) + 3.5, 0, 180.0);
         build.solid(1, 1, 0, 6, 5, 8);
         e2m4_stash(build, 2, 1, 4, 3, 0, 1, "item_artifact_super_damage");
         build.supply(2.5, 2.5, 0, "item_health");

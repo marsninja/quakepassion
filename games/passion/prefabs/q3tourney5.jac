@@ -23,10 +23,11 @@ are knight, zombie, ogre. Raised in q3tourney5's own palette.
 - `InstinctEnd`: the end (or a gate, the door a key's). A hall, a sunken
   chamber down steps, the way out on a dais at its far end."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, key_ambush }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3late_parts { deck, keep_box, wake_later, flying_stair, columns, floor_slab }
 
 glob Q3TOURNEY5: str = "q3:q3tourney5",
@@ -34,9 +35,7 @@ glob Q3TOURNEY5: str = "q3:q3tourney5",
      Q3TOURNEY5_HEAVY: list[str] = ["monster_ogre"];
 
 """A foe for q3tourney5's stretches."""
-def instinct_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3TOURNEY5_LIGHT, Q3TOURNEY5_HEAVY, strong);
-}
+glob INSTINCT_FOES: FoeMix = FoeMix(light=Q3TOURNEY5_LIGHT, strong=Q3TOURNEY5_HEAVY, heavy_light=Q3TOURNEY5_HEAVY, scale=0.5);
 
 """The start: a ledge over a sunken hall, a ledge along one wall, a walk
 high along the other."""
@@ -91,12 +90,12 @@ node InstinctGate(Prefab) {
         build.supply(2.5, py - 2.0, 0, "ammo_shells", "q2");
         build.supply(float(self.long) - 3.0, py, -4, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 3.0, float(wy) + 2.0, 8, "weapon_plasmagun", "q3");
-        build.foe(float(self.long // 2) + 0.5, py, -4, instinct_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2) + 0.5, py, -4, INSTINCT_FOES.pick(dice, self.danger), 180.0);
         # Down the stair, a moment on, the walk's guards come to its edge.
         down = build.touch(7.0, float(middle - 1), -4.0, 11.0, float(middle + 2), 2.0);
         guards = wake_later(build, down, 3.0);
-        build.foe(float(self.long) - 5.5, float(wy) + 2.0, 8, instinct_foe(dice, self.danger), 180.0, waits=guards);
-        build.foe(float(self.long) - 4.5, float(sy) + 2.0, 0, instinct_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 5.5, float(wy) + 2.0, 8, INSTINCT_FOES.pick(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(self.long) - 4.5, float(sy) + 2.0, 0, INSTINCT_FOES.pick(dice, self.danger), 180.0);
     }
 }
 
@@ -156,13 +155,13 @@ node SunkenCourt(Prefab) {
             build.doorway(court, port);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx - 5 + index * 4) + 0.5, float(cy) + (5.0 if index % 2 == 0 else -5.0), -4, instinct_foe(dice, self.danger), 180.0);
+            build.foe(float(cx - 5 + index * 4) + 0.5, float(cy) + (5.0 if index % 2 == 0 else -5.0), -4, INSTINCT_FOES.pick(dice, self.danger), 180.0);
         }
         # Down in the court, a moment on, the walk's guards come round.
         down = build.touch(9.0, 6.0, -4.0, float(self.long - 9), float(self.wide - 6), 0.0);
         guards = wake_later(build, down, 3.0);
-        build.foe(float(self.long) - 3.0, float(cy) + 0.5, 8, instinct_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(18.5, 3.5, 8, instinct_foe(dice, self.danger), 90.0, waits=guards);
+        build.foe(float(self.long) - 3.0, float(cy) + 0.5, 8, INSTINCT_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(18.5, 3.5, 8, INSTINCT_FOES.pick(dice, self.danger), 90.0, waits=guards);
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.5, 8, Q3_ARMOR, "q3");
         build.supply(3.0, 3.0, 0, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 3.0, 3.0, 0, "ammo_cells", "q3");
@@ -225,13 +224,13 @@ node PillarHall(Prefab) {
         for port in self.taken {
             build.doorway(hall, port);
         }
-        build.foe(float(self.long) - 4.5, py, 0, instinct_foe(dice, self.danger), 180.0);
-        build.foe(3.5, float(middle) + 3.5, 0, instinct_foe(dice, self.danger), 0.0, patrol=[[3.5, float(middle) + 3.5], [float(self.long) - 4.5, float(middle) + 3.5]]);
+        build.foe(float(self.long) - 4.5, py, 0, INSTINCT_FOES.pick(dice, self.danger), 180.0);
+        build.foe(3.5, float(middle) + 3.5, 0, INSTINCT_FOES.pick(dice, self.danger), 0.0, patrol=[[3.5, float(middle) + 3.5], [float(self.long) - 4.5, float(middle) + 3.5]]);
         # On the bridge, a moment on, the mezzanines' guards come on.
         bridge = build.touch(float(bx - 2), 6.0, 8.0, float(bx + 2), float(self.wide - 6), 14.0);
         guards = wake_later(build, bridge, 2.0);
-        build.foe(float(self.long) - 3.5, 3.5, 8, instinct_foe(dice, self.danger), 180.0, waits=guards);
-        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, 8, instinct_foe(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.5, 3.5, 8, INSTINCT_FOES.pick(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 3.5, 8, INSTINCT_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
         build.supply(3.0, 3.5, 8, Q3_HEALTH, "q3");
         build.supply(3.0, float(self.wide) - 3.5, 8, "weapon_rocketlauncher", "q3");
         build.supply(float(bx) + 0.5, py, 8, Q3_ARMOR, "q3");
@@ -288,16 +287,16 @@ node InstinctCourt(Prefab) {
             build.doorway(court, port);
         }
         build.supply(float(cx) + 0.5, float(cy) + 0.5, -2, "item_quad", "q3");
-        build.foe(float(cx) - 5.5, float(cy) - 4.5, -4, instinct_foe(dice, self.danger), 0.0, patrol=[[float(cx) - 5.5, float(cy) - 4.5], [float(cx) + 5.5, float(cy) - 4.5], [float(cx) + 5.5, float(cy) + 4.5], [float(cx) - 5.5, float(cy) + 4.5]]);
+        build.foe(float(cx) - 5.5, float(cy) - 4.5, -4, INSTINCT_FOES.pick(dice, self.danger), 0.0, patrol=[[float(cx) - 5.5, float(cy) - 4.5], [float(cx) + 5.5, float(cy) - 4.5], [float(cx) + 5.5, float(cy) + 4.5], [float(cx) - 5.5, float(cy) + 4.5]]);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(cx + 4 * index) + 0.5, float(cy) + 3.0, -4, instinct_foe(dice, self.danger), 180.0);
+            build.foe(float(cx + 4 * index) + 0.5, float(cy) + 3.0, -4, INSTINCT_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(self.long) - 3.0, float(cy) + 0.5, 0, instinct_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.0, float(cy) + 0.5, 0, INSTINCT_FOES.pick(dice, self.danger), 180.0);
         # In the pit, a moment on, the gallery's guards come to its rail.
         pit = build.touch(6.0, 6.0, -4.0, float(self.long - 6), float(self.wide - 6), 0.0);
         guards = wake_later(build, pit, 3.0);
-        build.foe(float(cx) + 0.5, 3.0, 10, instinct_foe(dice, self.danger, True), 90.0, waits=guards);
-        build.foe(float(cx) + 0.5, float(self.wide) - 3.0, 10, instinct_foe(dice, self.danger), 270.0, waits=guards);
+        build.foe(float(cx) + 0.5, 3.0, 10, INSTINCT_FOES.pick(dice, self.danger, True), 90.0, waits=guards);
+        build.foe(float(cx) + 0.5, float(self.wide) - 3.0, 10, INSTINCT_FOES.pick(dice, self.danger), 270.0, waits=guards);
         build.supply(3.0, 3.0, 10, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, 0, Q3_HEALTH, "q3");
         build.supply(3.0, float(self.wide) - 3.0, 10, Q3_ARMOR, "q3");
@@ -346,9 +345,9 @@ node QuadShrine(Prefab) {
         flying_stair(build, self.long - 15, 1, -4, 0, 10, 3, 2);
         keep_box(build, shrine, self.long - 5, 1, self.long - 4, 4, 6);
         keep_box(build, shrine, self.long - 5, side - 4, self.long - 4, side - 1, 6);
-        key_ambush(build, self.key, float(self.long) - 6.0, float(cy) + 0.5, -2, side, 0, [2, 6], [instinct_foe(dice, self.danger, True), instinct_foe(dice, self.danger)]);
-        build.foe(float(self.long) - 3.0, float(cy) + 3.5, 6, instinct_foe(dice, self.danger), 180.0);
-        build.foe(float(self.long) - 11.0, float(cy) + 4.0, -4, instinct_foe(dice, self.danger), 180.0);
+        key_ambush(build, self.key, float(self.long) - 6.0, float(cy) + 0.5, -2, side, 0, [2, 6], [INSTINCT_FOES.pick(dice, self.danger, True), INSTINCT_FOES.pick(dice, self.danger)]);
+        build.foe(float(self.long) - 3.0, float(cy) + 3.5, 6, INSTINCT_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 11.0, float(cy) + 4.0, -4, INSTINCT_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(self.long) - 3.0, 3.0, 6, "ammo_rockets", "q3");
     }
@@ -399,11 +398,11 @@ node InstinctEnd(Prefab) {
         door = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
         guards = wake_later(build, door, 2.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 4.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, 0, instinct_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(self.long) - 4.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, 0, INSTINCT_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
-        build.foe(float(self.long // 2) + 0.5, py + 3.0, -4, instinct_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2) + 0.5, py + 3.0, -4, INSTINCT_FOES.pick(dice, self.danger), 180.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, instinct_foe(dice, self.danger), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, INSTINCT_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(self.long // 2) + 0.5, 3.0, -4, Q3_HEALTH, "q3");

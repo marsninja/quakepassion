@@ -36,16 +36,14 @@ e3m6's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, pillars, key_ambush, lift }
 import from .e3m5 { keep_run, sealed_way, bursting }
 
 glob E3M6: str = "q1:e3m6";
 
 """e3m6's foes: ogres and scrags, hell knights, vores deeper in."""
-def e3m6_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_ogre", "monster_ogre", "monster_hell_knight"] if heavy else ["monster_ogre", "monster_ogre", "monster_wizard"], ["monster_shalrath"] if heavy else ["monster_hell_knight"], danger * 0.3 if heavy else danger * 0.7));
-}
+glob E3M6_FOES: FoeMix = FoeMix(light=["monster_ogre", "monster_ogre", "monster_wizard"], strong=["monster_hell_knight"], heavy_light=["monster_ogre", "monster_ogre", "monster_hell_knight"], heavy_strong=["monster_shalrath"], scale=0.7, heavy_scale=0.3);
 
 """A foe walking its round along a line from (x0, y0) to (x1, y1) on lift
 z and back (e3m6's ogres on their paths)."""
@@ -132,14 +130,14 @@ node TormentYard(Prefab) {
             build.room(at, side + 1, low, at + 3, side + 4, low + 7);
             build.widen(yard, at, side, low, at + 3, side + 1, low + 6);
             burst +>:Fires:+> bursting(build, float(at), float(side), float(low), float(at + 3), float(side + 1), float(low + 6));
-            build.foe(float(at) + 1.5, float(side) + 2.5, low, "monster_demon1" if index == 0 else e3m6_foe(dice, self.danger, True), 270.0, waits=loose);
+            build.foe(float(at) + 1.5, float(side) + 2.5, low, "monster_demon1" if index == 0 else E3M6_FOES.pick(dice, self.danger, True), 270.0, waits=loose);
         }
         # Ogres walking the walkways, a scrag over the yard, a guard woken
         # in the yard.
         rounds(build, "monster_ogre", 9.5, 3.5, float(long) - 3.5, 3.5, 0);
         rounds(build, "monster_ogre", 3.5, 3.5, 3.5, float(side) - 2.5, 0);
         build.foe(float(long // 2) + 0.5, float(mid) + 0.5, 4, "monster_wizard", 180.0, patrol=[[float(long // 2) + 0.5, float(mid) + 0.5], [float(long) - 4.5, float(mid) + 0.5]]);
-        build.foe(float(long) - 3.5, float(mid) + 2.5, low, e3m6_foe(dice, self.danger), 180.0, waits=loose);
+        build.foe(float(long) - 3.5, float(mid) + 2.5, low, E3M6_FOES.pick(dice, self.danger), 180.0, waits=loose);
         if self.quad {
             # A closet under the south walkway, its door sunk by the button
             # on the yard's east wall: the quad damage.
@@ -149,7 +147,7 @@ node TormentYard(Prefab) {
             press +>:Fires:+> build.sinking(float(qx), 5.0, float(qx + 3), 6.0, -1, self.sunk - 1);
             build.secret(float(qx), 2.0, float(low), float(qx + 3), 5.0, float(low + 3));
             build.supply(float(qx) + 1.5, 3.5, low, "item_artifact_super_damage");
-            press +>:Fires:+> build.summon(1, 7, low - 4, e3m6_foe(dice, self.danger, True), 3.5, float(side) - 3.5, 0, 0.0);
+            press +>:Fires:+> build.summon(1, 7, low - 4, E3M6_FOES.pick(dice, self.danger, True), 3.5, float(side) - 3.5, 0, 0.0);
         }
         build.supply(float(long) - 2.5, float(side) - 2.5, low, "item_health");
     }
@@ -223,12 +221,12 @@ node TormentBridge(Prefab) {
         # Ogres walk the chasm's floor; those on the far ledge wake as the
         # player reaches the bridge's middle.
         rounds(build, "monster_ogre", float(x0 + self.deep) + 1.5, float(wide) - 3.5, float(x1) - 1.5, float(wide) - 3.5, low);
-        rounds(build, e3m6_foe(dice, self.danger, True), float(x1) - 1.5, 5.5, float(x0 + self.deep) + 1.5, 5.5, low);
+        rounds(build, E3M6_FOES.pick(dice, self.danger, True), float(x1) - 1.5, 5.5, float(x0 + self.deep) + 1.5, 5.5, low);
         crossing = build.touch(float(m - 1), float(lane), 0.0, float(m + 2), float(lane + 3), 6.0);
         guard = build.waiting();
         crossing +>:Fires:+> guard;
         # Behind the player as the bridge is crossed, a foe teleported in.
-        crossing +>:Fires:+> build.summon(1, 1, low - 1, e3m6_foe(dice, self.danger), 3.5, float(middle) + 0.5, 0, 0.0);
+        crossing +>:Fires:+> build.summon(1, 1, low - 1, E3M6_FOES.pick(dice, self.danger), 3.5, float(middle) + 0.5, 0, 0.0);
         if not self.island {
             # A teleporter on the chasm's floor back up to the near ledge.
             build.teleporter(float(x1) - 2.5, float(middle) + 0.5, low, 3.0, float(middle) + 2.5, 0, 0.0);
@@ -240,7 +238,7 @@ node TormentBridge(Prefab) {
         build.secret(3.0, float(wide - 5), float(low), 5.0, float(wide - 2), float(low + 3));
         build.supply(4.0, float(wide) - 3.5, low, "item_artifact_super_damage" if dice.chance(0.4) else "item_armor2");
         for index in range(dice.between(2, 3)) {
-            build.foe(float(x1) + 3.5, 3.5 + float(index) * 4.0, 0, e3m6_foe(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(float(x1) + 3.5, 3.5 + float(index) * 4.0, 0, E3M6_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
         build.foe(float(m) + 0.5, float(middle) + 3.5, 3, "monster_wizard", 180.0, waits=guard);
         build.supply(float(x0 + 13) + 0.5, 3.0, low, "item_health");
@@ -321,13 +319,13 @@ node TrainPit(Prefab) {
         }
         # Hell knights walk the pit's floor; the far ledge's guard wakes as
         # a body rides over.
-        rounds(build, e3m6_foe(dice, self.danger, True), float(x0 + self.deep) + 1.5, 4.5, float(x1) - 5.5, 4.5, low);
+        rounds(build, E3M6_FOES.pick(dice, self.danger, True), float(x0 + self.deep) + 1.5, 4.5, float(x1) - 5.5, 4.5, low);
         rounds(build, "monster_hell_knight", float(x1) - 5.5, float(wide) - 3.5, float(x0 + self.deep) + 1.5, float(wide) - 3.5, low);
         over = build.touch(float(x0 + 3), float(ty), -1.0, float(x1 - 3), float(ty + 3), 5.0);
         guard = build.waiting();
         over +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(x1) + 3.5, 3.5 + float(index) * 4.0, 0, e3m6_foe(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(float(x1) + 3.5, 3.5 + float(index) * 4.0, 0, E3M6_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
         build.foe(float(long // 2) + 0.5, float(ty) + 1.5, 4, "monster_wizard", 180.0, waits=guard);
         build.supply(3.5, float(wide) - 3.5, 0, "item_spikes");
@@ -418,18 +416,18 @@ node SpikeCage(Prefab) {
             build.secret(float(long - 3), float(mid - 2), float(g), float(long - 1), float(mid + 2), float(g + 4));
             inside = build.waiting();
             shot +>:Fires:+> inside;
-            shot +>:Fires:+> build.summon(1, 1, -8, e3m6_foe(dice, self.danger, True), float(long) - 5.5, float(wide) - 3.0, g, 180.0);
+            shot +>:Fires:+> build.summon(1, 1, -8, E3M6_FOES.pick(dice, self.danger, True), float(long) - 5.5, float(wide) - 3.0, g, 180.0);
             build.foe(float(long) - 2.0, float(mid) - 0.5, g, "monster_hell_knight", 180.0, waits=inside);
             build.supply(float(long) - 2.0, float(mid) + 1.0, g, "item_armor2");
         }
         # Ogres walking the floor and the galleries, those on the galleries
         # woken by the spikes' first volley.
         rounds(build, "monster_ogre", 9.5, float(mid) + 0.5, float(long) - 9.5, float(mid) + 0.5, 0);
-        rounds(build, e3m6_foe(dice, self.danger), float(long) - 4.5, 7.5, float(long) - 4.5, float(wide) - 7.5, g);
+        rounds(build, E3M6_FOES.pick(dice, self.danger), float(long) - 4.5, 7.5, float(long) - 4.5, float(wide) - 7.5, g);
         guard = build.waiting();
         zone +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(12 + index * 5) + 0.5, float(wide) - 2.5 if index % 2 == 0 else 3.0, g, e3m6_foe(dice, self.danger, index == 0), 270.0, waits=guard);
+            build.foe(float(12 + index * 5) + 0.5, float(wide) - 2.5 if index % 2 == 0 else 3.0, g, E3M6_FOES.pick(dice, self.danger, index == 0), 270.0, waits=guard);
         }
         build.supply(2.5, float(wide) - 2.5, 0, "item_health");
         build.supply(float(long) - 3.0, 3.0, g, "item_spikes");
@@ -515,15 +513,15 @@ node ButtonHall(Prefab) {
         }
         # The last button brings in an ambush; the pit's dead wake as a
         # body drops in.
-        count +>:Fires:+> build.summon(1, 1, low - 2, e3m6_foe(dice, self.danger, True), float(long) - 4.5, float(wide // 2) + 0.5, 0, 180.0);
+        count +>:Fires:+> build.summon(1, 1, low - 2, E3M6_FOES.pick(dice, self.danger, True), float(long) - 4.5, float(wide // 2) + 0.5, 0, 180.0);
         dropped = build.touch(float(px0), 1.0, float(low), float(long - 1), 9.0, float(low + 4));
         pit_guard = build.waiting();
         dropped +>:Fires:+> pit_guard;
-        build.foe(float(long) - 3.5, 7.5, low, e3m6_foe(dice, self.danger, True), 180.0, waits=pit_guard);
-        build.foe(float(px0) + 2.5, 2.5, low, e3m6_foe(dice, self.danger), 0.0, waits=pit_guard);
+        build.foe(float(long) - 3.5, 7.5, low, E3M6_FOES.pick(dice, self.danger, True), 180.0, waits=pit_guard);
+        build.foe(float(px0) + 2.5, 2.5, low, E3M6_FOES.pick(dice, self.danger), 0.0, waits=pit_guard);
         rounds(build, "monster_ogre", 3.5, float(wide) - 3.5, float(long) - 3.5, float(wide) - 3.5, b);
         rounds(build, "monster_hell_knight", 12.5, float(bal_y) - 3.5, float(long) - 4.5, float(bal_y) - 3.5, 0);
-        rounds(build, e3m6_foe(dice, self.danger), 3.5, 11.5, float(px0) - 3.5, 11.5, 0);
+        rounds(build, E3M6_FOES.pick(dice, self.danger), 3.5, 11.5, float(px0) - 3.5, 11.5, 0);
         build.foe(float(long // 2) + 0.5, float(wide // 2) + 0.5, 6, "monster_wizard", 90.0);
         build.supply(3.5, float(wide) - 2.5, b, "item_rockets");
         build.supply(float(long) - 2.5, 2.5, low, "item_health");
@@ -589,13 +587,13 @@ node TormentPillar(Prefab) {
             build.teleporter(3.5, float(cy) + 0.5, 0, float(cx) - 1.0, float(cy) - 1.0, 0, 0.0);
             build.teleporter(float(cx) - 0.5, float(cy) + 1.0, 0, 3.0, 3.0, 0, 180.0);
         }
-        key_ambush(build, self.key, float(cx) - 0.5, float(cy) - 1.0, 0, side, 0, [2, long - 6], [e3m6_foe(dice, self.danger, True), e3m6_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(cx) - 0.5, float(cy) - 1.0, 0, side, 0, [2, long - 6], [E3M6_FOES.pick(dice, self.danger, True), E3M6_FOES.pick(dice, self.danger)]);
         dropped = build.touch(float(x0), 4.0, float(low), float(x1), float(side - 3), float(low + 4));
         below = build.waiting();
         dropped +>:Fires:+> below;
-        build.foe(float(x1) - 2.5, float(cy) + 0.5, low, e3m6_foe(dice, self.danger, True), 180.0, waits=below);
+        build.foe(float(x1) - 2.5, float(cy) + 0.5, low, E3M6_FOES.pick(dice, self.danger, True), 180.0, waits=below);
         rounds(build, "monster_hell_knight", float(x0) + 6.5, 5.5, float(x1) - 1.5, 5.5, low);
-        rounds(build, e3m6_foe(dice, self.danger), float(x1) - 1.5, float(side) - 4.5, float(x0) + 6.5, float(side) - 4.5, low);
+        rounds(build, E3M6_FOES.pick(dice, self.danger), float(x1) - 1.5, float(side) - 4.5, float(x0) + 6.5, float(side) - 4.5, low);
         rounds(build, "monster_ogre", float(x0) + 1.5, float(side) - 1.5, float(x1) - 1.5, float(side) - 1.5, 0);
         build.foe(float(cx) + 0.5, float(cy) + 0.5, 5, "monster_wizard", 180.0);
         build.supply(2.5, float(side) - 2.5, 0, "item_health");
@@ -671,11 +669,11 @@ node TormentExit(Prefab) {
         through = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
         guard = build.waiting();
         through +>:Fires:+> guard;
-        through +>:Fires:+> build.summon(1, 1, -9, e3m6_foe(dice, self.danger, True), 4.5, float(middle) + 0.5, 0, 0.0);
+        through +>:Fires:+> build.summon(1, 1, -9, E3M6_FOES.pick(dice, self.danger, True), 4.5, float(middle) + 0.5, 0, 0.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(bx0 + 1 + index * 3) + 0.5, float(wide) - 2.5, b, "monster_ogre" if index > 0 else e3m6_foe(dice, self.danger, True), 270.0, waits=guard);
+            build.foe(float(bx0 + 1 + index * 3) + 0.5, float(wide) - 2.5, b, "monster_ogre" if index > 0 else E3M6_FOES.pick(dice, self.danger, True), 270.0, waits=guard);
         }
-        rounds(build, e3m6_foe(dice, self.danger), float(wall) + 3.5, float(middle) - 3.5, float(gate_x) - 2.5, float(middle) - 3.5, 0);
+        rounds(build, E3M6_FOES.pick(dice, self.danger), float(wall) + 3.5, float(middle) - 3.5, float(gate_x) - 2.5, float(middle) - 3.5, 0);
         rounds(build, "monster_ogre", 3.5, 2.5, 3.5, float(wide) - 3.5, 0);
         build.supply(2.5, 2.5, 0, "item_health");
         build.supply(float(long) - 9.5, float(wide) - 2.5, b, "item_rockets");

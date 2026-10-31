@@ -32,24 +32,15 @@ tower. Raised in jail5's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, spiral, boulders, apart }
 import from .warejail_parts { shutter, auto_shutters, key_cue, sparking, guards, charges, stash, keep_row, called_lift, closets, gate_pair, post_button, laser, bars, drip, hurt, merlons }
 
 glob JAIL5: str = "q2:jail5";
 
 """jail5's foes: soldiers and flyers, mutants and a tank deeper in."""
-def jail5_foe(dice: Stream, danger: float, heavy: bool = False, flying: bool = False) -> str {
-    if flying {
-        return "monster_flyer";
-    }
-    return q1_foe(dice, q1_palette(["monster_soldier_ss", "monster_mutant"] if heavy else ["monster_soldier", "monster_soldier_ss", "monster_soldier_light"], ["monster_tank"] if heavy else ["monster_mutant", "monster_infantry"], danger * 0.5 if heavy else danger));
-}
+glob JAIL5_FOES: FoeMix = FoeMix(light=["monster_soldier", "monster_soldier_ss", "monster_soldier_light"], strong=["monster_mutant", "monster_infantry"], heavy_light=["monster_soldier_ss", "monster_mutant"], heavy_strong=["monster_tank"], heavy_scale=0.5, flying="monster_flyer");
 
-"""`count` of jail5's foes, the first heavy when `heavy`."""
-def jail5_foes(dice: Stream, danger: float, count: int, heavy: bool = False) -> list[str] {
-    return [jail5_foe(dice, danger, heavy and index == 0) for index in range(count)];
-}
 
 """Crates heaped about a floor (the box x0..x1, y0..y1 on lift `z`): `count`
 stacks two cells square, one to three lifts high, clear of `clear`."""
@@ -126,7 +117,7 @@ node GuardCourtyard(Prefab) {
             if index > 0 and index % 2 == 1 {
                 cell_bars = bars(build, float(x - 3), 4.0, 0.0, float(x), 5.0, 5.0);
                 build.push(float(x) + 0.5, 4.0, 1.0, 1) +>:Fires:+> cell_bars;
-                build.foe(float(x) - 1.5, 2.5, 0, jail5_foe(dice, self.danger), 90.0);
+                build.foe(float(x) - 1.5, 2.5, 0, JAIL5_FOES.pick(dice, self.danger), 90.0);
             }
         }
         # The wall-walk along the north wall, a slab over the yard, up a lift
@@ -139,7 +130,7 @@ node GuardCourtyard(Prefab) {
         # A watchtower on the walk's far end, up a stair along the wall.
         build.solid(px - 5, wy, self.walk, px - 1, self.wide - 1, self.walk + 5);
         stair(build, px - 10, self.wide - 4, self.walk, 0, 5, 3);
-        guards(build, build.touch(3.0, float(wy), float(self.walk), 7.0, float(self.wide - 1), float(self.walk + 6)), [[float(px) - 3.0, float(self.wide) - 3.0]], self.walk + 5, jail5_foes(dice, self.danger, 1), 180.0);
+        guards(build, build.touch(3.0, float(wy), float(self.walk), 7.0, float(self.wide - 1), float(self.walk + 6)), [[float(px) - 3.0, float(self.wide) - 3.0]], self.walk + 5, JAIL5_FOES.squad(dice, self.danger, 1), 180.0);
         crate_heaps(build, dice, 6, 6, px - 2, wy - 1, 0, dice.between(3, 5), [[0, middle - 3, 5, middle + 3], [cx - 5, middle - 5, cx + 5, middle + 5], [px - p - 2, middle - 3, px, middle + 3], [2, wy - 5, 9, wy]]);
         build.doorway(yard, self.enter);
         for port in self.taken {
@@ -147,18 +138,18 @@ node GuardCourtyard(Prefab) {
         }
         auto_shutters(build, dice, self, self.taken, 0.5);
         porch = build.touch(float(px - p), float(middle - 2), 0.0, float(px), float(middle + 2), 6.0);
-        guards(build, porch, [[float(self.long) - 3.5, float(middle) + 4.5], [float(self.long) - 3.5, float(middle) - 4.5]], p, jail5_foes(dice, self.danger, 2), 180.0);
+        guards(build, porch, [[float(self.long) - 3.5, float(middle) + 4.5], [float(self.long) - 3.5, float(middle) - 4.5]], p, JAIL5_FOES.squad(dice, self.danger, 2), 180.0);
         build.start(2.5, float(middle) + 0.5, 0, 0.0);
         build.supply(2.5, float(middle) - 1.5, 0, "ammo_shells", "q2");
         build.touch(1.0, 1.0, 0.0, 4.0, float(self.wide - 1), 8.0) +>:Fires:+> build.objective("Locate the pyramid key, then return");
         # At the fountain, guards appear on the wall-walk.
         fountain = build.touch(float(cx - 5), float(middle - 5), 0.0, float(cx - 3), float(middle + 5), 6.0);
-        guards(build, fountain, [[float(cx) + 0.5, float(self.wide) - 3.0], [float(px) - 11.5, float(self.wide) - 3.0]], self.walk, jail5_foes(dice, self.danger, 2), 270.0);
+        guards(build, fountain, [[float(cx) + 0.5, float(self.wide) - 3.0], [float(px) - 11.5, float(self.wide) - 3.0]], self.walk, JAIL5_FOES.squad(dice, self.danger, 2), 270.0);
         build.foe(float(cx) - 4.5, float(middle) - 4.5, 0, "monster_soldier", 0.0, patrol=[[float(cx) - 4.5, float(middle) - 4.5], [float(cx) + 4.5, float(middle) - 4.5], [float(cx) + 4.5, float(middle) + 4.5], [float(cx) - 4.5, float(middle) + 4.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 3.5, 3.5 + float(index) * 5.0, p, jail5_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(self.long) - 3.5, 3.5 + float(index) * 5.0, p, JAIL5_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(cx) + 0.5, 8.5, 12, jail5_foe(dice, self.danger, False, True), 180.0);
+        build.foe(float(cx) + 0.5, 8.5, 12, JAIL5_FOES.pick(dice, self.danger, False, True), 180.0);
         build.supply(float(px) - 2.5, 7.5, 0, Q2_HEALTH, "q2");
     }
 }
@@ -226,17 +217,17 @@ node Battlement(Prefab) {
         }
         auto_shutters(build, dice, self, self.taken, 0.4);
         into = build.touch(1.0, 1.0, 0.0, 4.0, 8.0, 6.0);
-        guards(build, into, [[float(self.long // 2) + 0.5, 6.5], [float(self.long // 2) + 4.5, 7.5]], 0, jail5_foes(dice, self.danger, 2), 180.0);
+        guards(build, into, [[float(self.long // 2) + 0.5, 6.5], [float(self.long // 2) + 4.5, 7.5]], 0, JAIL5_FOES.squad(dice, self.danger, 2), 180.0);
         # Up on the walk, snipers appear on the far tower; more in the
         # passage.
         up = build.touch(11.0, float(wy), float(w), 15.0, float(self.wide - 1), float(w + 6));
-        guards(build, up, [[float(self.long) - 3.5, float(wy) - 1.5]], w + 4, jail5_foes(dice, self.danger, 1), 180.0);
-        guards(build, up, [[float(self.long) - 10.5, float(wy) + 3.5]], 0, jail5_foes(dice, self.danger, 1, True), 180.0);
+        guards(build, up, [[float(self.long) - 3.5, float(wy) - 1.5]], w + 4, JAIL5_FOES.squad(dice, self.danger, 1), 180.0);
+        guards(build, up, [[float(self.long) - 10.5, float(wy) + 3.5]], 0, JAIL5_FOES.squad(dice, self.danger, 1, True), 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(8 + index * 6) + 0.5, 6.5, 0, jail5_foe(dice, self.danger), 90.0);
+            build.foe(float(8 + index * 6) + 0.5, 6.5, 0, JAIL5_FOES.pick(dice, self.danger), 90.0);
         }
         build.foe(9.5, float(self.wide) - 3.5, w, "monster_soldier", 0.0, patrol=[[9.5, float(self.wide) - 3.5], [float(self.long) - 12.5, float(self.wide) - 3.5]]);
-        build.foe(float(self.long // 2) + 0.5, 5.5, w + 5, jail5_foe(dice, self.danger, False, True), 90.0);
+        build.foe(float(self.long // 2) + 0.5, 5.5, w + 5, JAIL5_FOES.pick(dice, self.danger, False, True), 90.0);
         build.supply(3.5, float(wy) - 1.5, w + 4, Q2_ARMOR, "q2");
         build.supply(float(self.long // 2) + 0.5, float(wy) + 3.5, 0, Q2_HEALTH, "q2");
     }
@@ -298,7 +289,7 @@ node Barracks(Prefab) {
             for y in [7, self.wide - 9] {
                 build.solid(x, y, 0, x + 2, y + 2, 2);
                 if (index + y) % 3 == 0 {
-                    build.foe(float(x) + 1.0, float(y) + 1.0, 2, jail5_foe(dice, self.danger), 90.0, waits=sleepers);
+                    build.foe(float(x) + 1.0, float(y) + 1.0, 2, JAIL5_FOES.pick(dice, self.danger), 90.0, waits=sleepers);
                 }
             }
         }
@@ -319,10 +310,10 @@ node Barracks(Prefab) {
         }
         auto_shutters(build, dice, self, self.taken, 0.5);
         up = build.touch(float(self.long - 8), 1.0, float(g), float(self.long - 5), 5.0, float(g + 6));
-        guards(build, up, [[float(self.long) - 3.0, float(middle) + 0.5]], g, jail5_foes(dice, self.danger, 1, True), 180.0);
+        guards(build, up, [[float(self.long) - 3.0, float(middle) + 0.5]], g, JAIL5_FOES.squad(dice, self.danger, 1, True), 180.0);
         build.foe(6.5, float(self.wide) - 3.0, g, "monster_soldier", 0.0, patrol=[[6.5, float(self.wide) - 3.0], [float(self.long) - 3.0, float(self.wide) - 3.0], [float(self.long) - 3.0, 3.0], [12.5, 3.0]]);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 7.5, float(middle) - 2.5 + float(index) * 5.0, 0, jail5_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(self.long) - 7.5, float(middle) - 2.5 + float(index) * 5.0, 0, JAIL5_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.supply(float(self.long) - 3.0, 3.0, g, Q2_HEALTH, "q2");
         drip(build, float(self.long // 2) + 0.5, float(middle) + 0.5, float(self.tall) - 0.5, 3.0);
@@ -409,10 +400,10 @@ node PowerTrench(Prefab) {
         # Coming in, a guard appears in the booth; crossing, guards appear
         # on the far side.
         coming = build.touch(1.0, 1.0, 0.0, 4.0, float(self.wide - 1), 6.0);
-        guards(build, coming, [[6.5, 4.5]], self.booth, jail5_foes(dice, self.danger, 1), 0.0);
+        guards(build, coming, [[6.5, 4.5]], self.booth, JAIL5_FOES.squad(dice, self.danger, 1), 0.0);
         over = build.touch(float(tx + 6), float(lane), 0.0, float(tx + 8), float(lane + 4), 6.0);
-        guards(build, over, [[float(self.long) - 3.5, 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]], 0, jail5_foes(dice, self.danger, 2, True), 180.0);
-        build.foe(5.5, float(self.wide) - 3.5, self.booth, jail5_foe(dice, self.danger), 0.0);
+        guards(build, over, [[float(self.long) - 3.5, 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]], 0, JAIL5_FOES.squad(dice, self.danger, 2, True), 180.0);
+        build.foe(5.5, float(self.wide) - 3.5, self.booth, JAIL5_FOES.pick(dice, self.danger), 0.0);
         build.foe(float(tx + 8) + 0.5, 3.5, 0, "monster_soldier", 90.0, patrol=[[float(tx + 8) + 0.5, 3.5], [float(tx + 8) + 0.5, float(self.wide) - 3.5]]);
         build.supply(float(self.long) - 2.5, float(middle) + 3.5, 0, Q2_HEALTH, "q2");
         build.supply(float(tx) + 3.5, float(self.wide) - 3.5, -d, "ammo_cells", "q2");
@@ -487,7 +478,7 @@ node Armory(Prefab) {
         }
         if alarm {
             charges(build, alarm[0], [[float(self.long // 2) + 0.5, float(middle) + 0.5, 1.0], [8.5, float(middle) + 3.5, 1.0]], 0.5);
-            guards(build, alarm[0], [[float(self.long) - 3.0, float(middle) + 0.5], [float(self.long // 2) + 0.5, float(self.wide) - 5.0]], g, jail5_foes(dice, self.danger, 2, True), 180.0);
+            guards(build, alarm[0], [[float(self.long) - 3.0, float(middle) + 0.5], [float(self.long // 2) + 0.5, float(self.wide) - 5.0]], g, JAIL5_FOES.squad(dice, self.danger, 2, True), 180.0);
         }
         crate_heaps(build, dice, 8, 8, self.long - 11, self.wide - 8, 0, dice.between(2, 4), [[0, middle - 3, 9, middle + 3]]);
         # A live panel by a broken console on the floor.
@@ -500,7 +491,7 @@ node Armory(Prefab) {
         }
         auto_shutters(build, dice, self, self.taken, 0.5);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(10 + index * 5) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, jail5_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(10 + index * 5) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, JAIL5_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(7.5, 5.0, g, "monster_soldier", 0.0, patrol=[[7.5, 5.0], [float(self.long) - 3.0, 5.0]]);
         build.supply(2.5, float(self.wide) - 2.5, 0, Q2_HEALTH, "q2");
@@ -549,13 +540,13 @@ node CaptainQuarters(Prefab) {
             build.room(x, 1, 0, x + 3, side, 7);
             front = build.breakable(float(x), float(side), 0.0, float(x + 3), float(side + 1), 6.0, 30);
             taken +>:Fires:+> front;
-            build.foe(float(x) + 1.5, 2.5, 0, jail5_foe(dice, self.danger, index == 0), 90.0);
+            build.foe(float(x) + 1.5, 2.5, 0, JAIL5_FOES.pick(dice, self.danger, index == 0), 90.0);
         }
         charges(build, taken, [[float(cx) - 6.5, float(cy) + 0.5, 1.0], [float(cx) + 6.5, float(cy) + 0.5, 1.0]], 0.6);
         taken +>:Fires:+> build.objective("Pyramid key acquired. Return with it");
-        guards(build, taken, [[2.5, float(self.wide) - 3.5]], 0, jail5_foes(dice, self.danger, 1, True), 0.0);
+        guards(build, taken, [[2.5, float(self.wide) - 3.5]], 0, JAIL5_FOES.squad(dice, self.danger, 1, True), 0.0);
         build.foe(float(cx) + 0.5, float(cy) + 6.5, 0, "monster_soldier", 180.0, patrol=[[float(cx) + 6.5, float(cy) + 6.5], [float(cx) - 5.5, float(cy) + 6.5]]);
-        build.foe(float(cx) + 1.0, float(cy) + 1.0, self.steps, jail5_foe(dice, self.danger), 180.0);
+        build.foe(float(cx) + 1.0, float(cy) + 1.0, self.steps, JAIL5_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, float(side) + 2.5, 0, Q2_HEALTH, "q2");
     }
 }
@@ -600,12 +591,12 @@ node GuardExit(Prefab) {
         sparking(build, float(dx) - 4.0, 4.0, -1.0, 1, 1.5);
         # Coming out, guards appear by the dais.
         come_out = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
-        guards(build, come_out, [[float(self.long) - 3.5, float(middle) + 5.5], [float(self.long) - 3.5, float(middle) - 5.5], [float(dx) + 3.0, float(middle) + 2.5]], 0, jail5_foes(dice, self.danger, 3, True), 180.0);
+        guards(build, come_out, [[float(self.long) - 3.5, float(middle) + 5.5], [float(self.long) - 3.5, float(middle) - 5.5], [float(dx) + 3.0, float(middle) + 2.5]], 0, JAIL5_FOES.squad(dice, self.danger, 3, True), 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, jail5_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, JAIL5_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(float(wall) + 3.5, float(self.wide) - 3.5, 0, "monster_soldier", 0.0, patrol=[[float(wall) + 3.5, float(self.wide) - 3.5], [float(dx) - 2.5, float(self.wide) - 3.5]]);
-        build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, 12, jail5_foe(dice, self.danger, False, True), 180.0);
+        build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, 12, JAIL5_FOES.pick(dice, self.danger, False, True), 180.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
     }
 }

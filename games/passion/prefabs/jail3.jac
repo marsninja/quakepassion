@@ -31,7 +31,7 @@ jail3's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, spiral, ring_landing }
 import from .warejail_parts { shutter, auto_shutters, key_cue, sparking, guards, charges, stash, keep_row, called_lift, closets, gate_pair, post_button, laser, laser_grid, bars, drip }
 
@@ -39,17 +39,8 @@ glob JAIL3: str = "q2:jail3";
 
 """jail3's foes: infantry and gunners, flyers in the open, gladiators and
 a tank deeper in."""
-def jail3_foe(dice: Stream, danger: float, heavy: bool = False, flying: bool = False) -> str {
-    if flying {
-        return "monster_flyer";
-    }
-    return q1_foe(dice, q1_palette(["monster_gunner", "monster_gladiator"] if heavy else ["monster_infantry", "monster_gunner", "monster_soldier_ss"], ["monster_tank"] if heavy else ["monster_gladiator"], danger * 0.5 if heavy else danger));
-}
+glob JAIL3_FOES: FoeMix = FoeMix(light=["monster_infantry", "monster_gunner", "monster_soldier_ss"], strong=["monster_gladiator"], heavy_light=["monster_gunner", "monster_gladiator"], heavy_strong=["monster_tank"], heavy_scale=0.5, flying="monster_flyer");
 
-"""`count` of jail3's foes, the first heavy when `heavy`."""
-def jail3_foes(dice: Stream, danger: float, count: int, heavy: bool = False) -> list[str] {
-    return [jail3_foe(dice, danger, heavy and index == 0) for index in range(count)];
-}
 
 """The start: a hall, a booth raised by one wall, a barrier across its far
 end barred by lasers."""
@@ -121,17 +112,17 @@ node Checkpoint(Prefab) {
             build.touch(float(bx - 3), float(middle - 3), 0.0, float(bx - 1), float(middle + 3), 6.0, True, "The gate is worked from the booth");
         }
         press +>:Fires:+> build.objective("Proceed to the security pyramid");
-        guards(build, press, [[float(bx) + 3.5, float(middle) + 3.5], [float(bx) + 3.5, float(middle) - 3.5]], 0, jail3_foes(dice, self.danger, 2, True), 180.0);
+        guards(build, press, [[float(bx) + 3.5, float(middle) + 3.5], [float(bx) + 3.5, float(middle) - 3.5]], 0, JAIL3_FOES.squad(dice, self.danger, 2, True), 180.0);
         auto_shutters(build, dice, self, self.taken, 0.5);
         build.start(2.5, float(middle) + 0.5, 0, 0.0);
         build.supply(2.5, float(middle) - 1.5, 0, "ammo_shells", "q2");
         build.touch(1.0, 1.0, 0.0, 4.0, float(self.wide - 1), 8.0) +>:Fires:+> build.objective("Find the security pass and get it past the checkpoint");
         # Up the booth's steps, guards appear on the walkway.
         steps = build.touch(float(6 - b), 1.0, 0.0, 6.0, 4.0, 6.0);
-        guards(build, steps, [[float(bx) - 2.5, float(self.wide) - 3.0], [float(bx) - 7.5, float(self.wide) - 3.0]], self.walk, jail3_foes(dice, self.danger, 2), 270.0);
-        build.foe(10.5, 3.5, b, jail3_foe(dice, self.danger), 90.0);
+        guards(build, steps, [[float(bx) - 2.5, float(self.wide) - 3.0], [float(bx) - 7.5, float(self.wide) - 3.0]], self.walk, JAIL3_FOES.squad(dice, self.danger, 2), 270.0);
+        build.foe(10.5, 3.5, b, JAIL3_FOES.pick(dice, self.danger), 90.0);
         build.foe(8.5, float(middle) + 2.5, 0, "monster_infantry", 0.0, patrol=[[8.5, float(middle) + 2.5], [float(bx) - 2.5, float(middle) + 2.5]]);
-        build.foe(float(self.long) - 3.5, float(middle) + 0.5, 0, jail3_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, float(middle) + 0.5, 0, JAIL3_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(bx) - 2.5, 2.5, 0, Q2_HEALTH, "q2");
         for x in [9.5, 16.5, float(bx) - 1.5] {
             drip(build, x, float(middle) + 0.5, float(self.tall) - 0.5, 2.0 + x * 0.1);
@@ -215,13 +206,13 @@ node CliffRamps(Prefab) {
         auto_shutters(build, dice, self, self.taken, 0.4);
         # Starting up, snipers appear on the ledges.
         start_up = build.touch(float(self.long - 2 - f), float(bands[0] - 3), 0.0, float(self.long - f), float(bands[0]), 6.0);
-        guards(build, start_up, [[float(self.long) - 4.5, float(bands[0]) + 1.5], [float(self.long) - 8.5, float(bands[0]) + 1.5]], f, jail3_foes(dice, self.danger, 2), 270.0);
-        guards(build, start_up, [[4.5, float(bands[1]) + 1.5]], 2 * f, jail3_foes(dice, self.danger, 1, True), 270.0);
+        guards(build, start_up, [[float(self.long) - 4.5, float(bands[0]) + 1.5], [float(self.long) - 8.5, float(bands[0]) + 1.5]], f, JAIL3_FOES.squad(dice, self.danger, 2), 270.0);
+        guards(build, start_up, [[4.5, float(bands[1]) + 1.5]], 2 * f, JAIL3_FOES.squad(dice, self.danger, 1, True), 270.0);
         build.foe(float(self.long // 2) + 0.5, float(self.wide) - 2.5, top, "monster_infantry", 0.0, patrol=[[8.5, float(self.wide) - 2.5], [float(self.long) - 3.5, float(self.wide) - 2.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(6 + index * 5) + 0.5, 4.5, 0, jail3_foe(dice, self.danger), 90.0);
+            build.foe(float(6 + index * 5) + 0.5, 4.5, 0, JAIL3_FOES.pick(dice, self.danger), 90.0);
         }
-        build.foe(float(self.long // 2) + 0.5, 3.5, 14, jail3_foe(dice, self.danger, False, True), 90.0);
+        build.foe(float(self.long // 2) + 0.5, 3.5, 14, JAIL3_FOES.pick(dice, self.danger, False, True), 90.0);
         build.supply(3.5, float(bands[0]) - 2.5, top, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.5, 2.5, 0, "ammo_bullets", "q2");
     }
@@ -298,14 +289,14 @@ node ComplexCore(Prefab) {
         # Coming to the shaft's rim, guards appear on the ring; pipes drip
         # into the pit.
         rim = build.touch(float(cx - 6), float(cy - 6), 0.0, float(cx - 4), float(cy + 6), 6.0);
-        guards(build, rim, [[float(cx) + 0.5, 3.5], [float(cx) + 0.5, float(self.wide) - 3.5], [float(self.long) - 3.5, float(cy) + 0.5]], self.upper, jail3_foes(dice, self.danger, 3, True), 180.0);
+        guards(build, rim, [[float(cx) + 0.5, 3.5], [float(cx) + 0.5, float(self.wide) - 3.5], [float(self.long) - 3.5, float(cy) + 0.5]], self.upper, JAIL3_FOES.squad(dice, self.danger, 3, True), 180.0);
         for spot in [[cx - 2, cy - 2], [cx + 2, cy + 1], [cx - 1, cy + 2]] {
             drip(build, float(spot[0]) + 0.5, float(spot[1]) + 0.5, float(self.tall) - 0.5, 2.0 + float(spot[0] % 3));
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx + 6) + 0.5, float(cy - 3 + index * 3) + 0.5, 0, jail3_foe(dice, self.danger), 180.0);
+            build.foe(float(cx + 6) + 0.5, float(cy - 3 + index * 3) + 0.5, 0, JAIL3_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(cx) + 0.5, float(cy) - 2.5, -6, jail3_foe(dice, self.danger, True), 90.0);
+        build.foe(float(cx) + 0.5, float(cy) - 2.5, -6, JAIL3_FOES.pick(dice, self.danger, True), 90.0);
         build.foe(3.5, 3.5, self.upper, "monster_infantry", 0.0, patrol=[[3.5, 3.5], [float(self.long) - 3.5, 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5], [3.5, float(self.wide) - 3.5]]);
         build.supply(float(cx) + 2.5, float(cy) - 2.5, -6, Q2_HEALTH, "q2");
         build.supply(3.5, float(self.wide) - 3.5, self.upper, Q2_ARMOR, "q2");
@@ -388,11 +379,11 @@ node SecurityPyramid(Prefab) {
         # Climbing, guards appear on the tiers; opening the chamber, more
         # behind the pyramid.
         climbing = build.touch(float(sx), float(cy - 1), 0.0, float(sx + 2), float(cy + 2), 6.0);
-        guards(build, climbing, [[float(cx) - 6.5, float(cy) - 6.5], [float(cx) + 6.5, float(cy) + 6.5]], 2 * h, jail3_foes(dice, self.danger, 2), 180.0);
-        guards(build, press, [[float(self.long) - 4.5, float(cy) - 4.5], [float(self.long) - 4.5, float(cy) + 4.5]], 0, jail3_foes(dice, self.danger, 2, True), 180.0);
-        build.foe(float(cx) + 3.5, float(cy) + 1.5, 0, jail3_foe(dice, self.danger, True), 0.0);
+        guards(build, climbing, [[float(cx) - 6.5, float(cy) - 6.5], [float(cx) + 6.5, float(cy) + 6.5]], 2 * h, JAIL3_FOES.squad(dice, self.danger, 2), 180.0);
+        guards(build, press, [[float(self.long) - 4.5, float(cy) - 4.5], [float(self.long) - 4.5, float(cy) + 4.5]], 0, JAIL3_FOES.squad(dice, self.danger, 2, True), 180.0);
+        build.foe(float(cx) + 3.5, float(cy) + 1.5, 0, JAIL3_FOES.pick(dice, self.danger, True), 0.0);
         build.foe(4.5, 3.5, 0, "monster_infantry", 0.0, patrol=[[4.5, 3.5], [float(self.long) - 4.5, 3.5], [float(self.long) - 4.5, float(self.wide) - 3.5], [4.5, float(self.wide) - 3.5]]);
-        build.foe(float(cx) - 8.0, float(cy) + 6.5, h, jail3_foe(dice, self.danger), 180.0);
+        build.foe(float(cx) - 8.0, float(cy) + 6.5, h, JAIL3_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(cx) + 1.5, float(cy) - 1.5, 0, Q2_ARMOR, "q2");
         build.supply(float(cx) - 0.5, float(cy) + 2.5, top, Q2_HEALTH, "q2");
         for spot in [[cx - 7, 3], [cx + 7, self.wide - 4]] {
@@ -457,10 +448,10 @@ node TramShaft(Prefab) {
         auto_shutters(build, dice, self, [port for port in self.taken if port.floor == 0], 0.5);
         # Reaching the top, guards below wake and come.
         topped = build.touch(float(2 + b - 3), 2.0, float(self.climb), float(2 + b), float(2 + b), float(self.climb + 6));
-        guards(build, topped, [[float(self.long) - 3.5, 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]], 0, jail3_foes(dice, self.danger, 2, True), 180.0);
-        build.foe(float(self.long) - 4.5, float(cy) + 0.5, 0, jail3_foe(dice, self.danger), 180.0);
+        guards(build, topped, [[float(self.long) - 3.5, 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]], 0, JAIL3_FOES.squad(dice, self.danger, 2, True), 180.0);
+        build.foe(float(self.long) - 4.5, float(cy) + 0.5, 0, JAIL3_FOES.pick(dice, self.danger), 180.0);
         build.foe(float(cx) + 3.5, float(cy) + 3.5, 0, "monster_infantry", 0.0, patrol=[[float(cx) + 3.5, float(cy) + 3.5], [float(cx) - 2.5, float(cy) + 3.5]]);
-        build.foe(float(cx) + 0.5, float(cy) + 0.5, self.climb + 3, jail3_foe(dice, self.danger, False, True), 0.0);
+        build.foe(float(cx) + 0.5, float(cy) + 0.5, self.climb + 3, JAIL3_FOES.pick(dice, self.danger, False, True), 0.0);
         build.supply(float(self.long) - 3.5, float(self.wide) - 2.5, 0, Q2_HEALTH, "q2");
         for spot in [[cx - 1, cy + 1], [cx + 1, cy - 1]] {
             drip(build, float(spot[0]) + 0.5, float(spot[1]) + 0.5, float(self.tall) - 0.5, 2.5);
@@ -521,13 +512,13 @@ node ButtonCage(Prefab) {
         }
         build.touch(float(dx - 3), float(middle - 3), 0.0, float(dx - 1), float(middle + 4), 6.0, True, "The cage is worked from elsewhere");
         taken = key_cue(build, self.key, float(dx) + 3.0, float(middle) + 0.5, 3);
-        closets(build, taken, [3, 8, 13] if dice.chance(0.5) else [4, 11], side, -1, 0, jail3_foes(dice, self.danger, 3, True), 90.0);
+        closets(build, taken, [3, 8, 13] if dice.chance(0.5) else [4, 11], side, -1, 0, JAIL3_FOES.squad(dice, self.danger, 3, True), 90.0);
         for x in [6.5, 12.5] {
             taken +>:Fires:+> laser(build, x, float(side) + 1.2, 2.0, 1, False);
         }
         taken +>:Fires:+> build.objective("Security pass taken. Get it to its door");
-        guards(build, taken, [[float(self.long) - 2.5, float(self.wide) - 3.5]], 0, jail3_foes(dice, self.danger, 1, True), 180.0);
-        build.foe(float(dx) - 4.5, float(middle) + 5.5, 0, jail3_foe(dice, self.danger), 0.0);
+        guards(build, taken, [[float(self.long) - 2.5, float(self.wide) - 3.5]], 0, JAIL3_FOES.squad(dice, self.danger, 1, True), 180.0);
+        build.foe(float(dx) - 4.5, float(middle) + 5.5, 0, JAIL3_FOES.pick(dice, self.danger), 0.0);
         build.foe(4.5, float(side) + 3.5, 0, "monster_infantry", 0.0, patrol=[[4.5, float(side) + 3.5], [float(dx) - 3.5, float(side) + 3.5]]);
         build.supply(2.5, float(self.wide) - 2.5, 0, Q2_HEALTH, "q2");
         sparking(build, float(self.long) - 1.2, float(middle) - 3.5, 4.0, 2, 4.0);
@@ -576,9 +567,9 @@ node ComplexExit(Prefab) {
         build.way_out(float(self.long) - 3.5, float(middle), self.landing);
         # Coming in, guards appear on the landing; pipes drip.
         come_in = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
-        guards(build, come_in, [[float(lx) + 2.5, float(self.wide) - 3.5], [float(lx) + 2.5, 3.5]], self.landing, jail3_foes(dice, self.danger, 2, True), 180.0);
+        guards(build, come_in, [[float(lx) + 2.5, float(self.wide) - 3.5], [float(lx) + 2.5, 3.5]], self.landing, JAIL3_FOES.squad(dice, self.danger, 2, True), 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, jail3_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, JAIL3_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(float(wall) + 3.5, float(middle) + 0.5, 0, "monster_infantry", 0.0, patrol=[[float(wall) + 3.5, float(middle) + 0.5], [float(lx) - 2.5, float(middle) + 0.5]]);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");

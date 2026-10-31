@@ -26,10 +26,11 @@ q3dm1's own palette.
   both walls to it, climbed by a grand stair, stairs at the galleries'
   feet or a jump pad; its guards wake as the player comes up."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, key_ambush, gate_into, lift }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3low_parts { slab, slab_except, keep_box, hint, wake_later, pad, flying_stair }
 
 glob Q3DM1: str = "q3:q3dm1",
@@ -37,9 +38,7 @@ glob Q3DM1: str = "q3:q3dm1",
      Q3DM1_HEAVY: list[str] = ["monster_ogre"];
 
 """A foe for q3dm1's stretches."""
-def q3dm1_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM1_LIGHT, Q3DM1_HEAVY, strong);
-}
+glob Q3DM1_FOES: FoeMix = FoeMix(light=Q3DM1_LIGHT, strong=Q3DM1_HEAVY, heavy_light=Q3DM1_HEAVY, scale=0.5);
 
 """The start: a terrace, stairs down to a court cut by the great gate's
 arch, a far terrace beyond reached by a jump pad or along a high ledge."""
@@ -120,14 +119,14 @@ node GateCourt(Prefab) {
         arch = build.touch(float(gx), float(middle - 3), 0.0, float(gx + 2), float(middle + 3), 8.0);
         guards = wake_later(build, arch, 0.5);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 3.5, 3.0 + float(index) * float(self.wide - 6), t, q3dm1_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(self.long) - 3.5, 3.0 + float(index) * float(self.wide - 6), t, Q3DM1_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(8 + t) + 1.5, 3.5 + float(index) * float(self.wide - 8), 0, q3dm1_foe(dice, self.danger), 0.0);
+            build.foe(float(8 + t) + 1.5, 3.5 + float(index) * float(self.wide - 8), 0, Q3DM1_FOES.pick(dice, self.danger), 0.0);
         }
-        build.foe(float(gx + 4) + 0.5, float(middle) + 3.5, 0, q3dm1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(gx + 4) + 0.5, float(middle) + 3.5, 0, Q3DM1_FOES.pick(dice, self.danger, True), 180.0);
         if self.ledge {
-            build.foe(float(gx - 2) + 0.5, float(self.wide) - 2.5, t, q3dm1_foe(dice, self.danger), 0.0);
+            build.foe(float(gx - 2) + 0.5, float(self.wide) - 2.5, t, Q3DM1_FOES.pick(dice, self.danger), 0.0);
         }
         build.supply(float(self.long) - 3.0, float(middle) + 0.5, t, Q3_ARMOR, "q3");
         build.supply(float(gx + 3) + 0.5, 2.5, 0, Q3_HEALTH, "q3");
@@ -196,10 +195,10 @@ node GatePit(Prefab) {
         over = build.touch(float(self.long // 2 - 1), float(lane), 0.0, float(self.long // 2 + 1), float(lane + 3), 6.0) if self.cross < 2 else build.touch(float(x0), float(middle - 2), float(low), float(x0 + 2), float(middle + 2), float(low + 6));
         below = wake_later(build, over, 0.3);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(x1) - 2.5 - float(index) * 3.0, 2.5 + float(index % 2) * 2.0, low, q3dm1_foe(dice, self.danger), 0.0, waits=below);
+            build.foe(float(x1) - 2.5 - float(index) * 3.0, 2.5 + float(index % 2) * 2.0, low, Q3DM1_FOES.pick(dice, self.danger), 0.0, waits=below);
         }
-        build.foe(float(x1) + 3.0, float(middle) + 0.5, 0, q3dm1_foe(dice, self.danger, True), 180.0);
-        build.foe(3.5, 3.5, 0, q3dm1_foe(dice, self.danger), 0.0);
+        build.foe(float(x1) + 3.0, float(middle) + 0.5, 0, Q3DM1_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(3.5, 3.5, 0, Q3DM1_FOES.pick(dice, self.danger), 0.0);
         build.supply(float(x1) - 2.5, float(middle) + 0.5, low, Q3_ARMOR, "q3");
         build.supply(float(self.long) - 3.0, 2.5, 0, Q3_HEALTH, "q3");
     }
@@ -294,13 +293,13 @@ node GateNave(Prefab) {
         # middle; a guard walks the -y aisle.
         midway = build.touch(float(self.long // 2 - 1), 6.0, 0.0, float(self.long // 2 + 1), float(north), 6.0);
         above = wake_later(build, midway, 0.5);
-        build.foe(float(self.long) - 3.5, 3.5, g, q3dm1_foe(dice, self.danger, True), 180.0, waits=above);
-        build.foe(float(self.long) - 6.5, float(self.wide) - 3.5, g, q3dm1_foe(dice, self.danger), 180.0, waits=above);
-        build.foe(float(gs) + 1.5, 4.5, 0, q3dm1_foe(dice, self.danger), 0.0, patrol=[[float(gs) + 1.5, 4.5], [float(ax) - 2.5, 4.5]]);
+        build.foe(float(self.long) - 3.5, 3.5, g, Q3DM1_FOES.pick(dice, self.danger, True), 180.0, waits=above);
+        build.foe(float(self.long) - 6.5, float(self.wide) - 3.5, g, Q3DM1_FOES.pick(dice, self.danger), 180.0, waits=above);
+        build.foe(float(gs) + 1.5, 4.5, 0, Q3DM1_FOES.pick(dice, self.danger), 0.0, patrol=[[float(gs) + 1.5, 4.5], [float(ax) - 2.5, 4.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(8 + index * 5) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, q3dm1_foe(dice, self.danger), 0.0);
+            build.foe(float(8 + index * 5) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, Q3DM1_FOES.pick(dice, self.danger), 0.0);
         }
-        build.foe(float(self.long) - 3.5, float(middle) + 0.5, -a, q3dm1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, float(middle) + 0.5, -a, Q3DM1_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(self.long) - 3.0, float(middle) + 3.5, -a, Q3_ARMOR, "q3");
         build.supply(float(ax) - 1.5, 3.5, g, Q3_HEALTH, "q3");
         build.supply(3.5, float(middle) + 0.5, 0, "ammo_shells", "q2");
@@ -385,11 +384,11 @@ node GateCloister(Prefab) {
         foot = build.touch(6.0, 1.0, 0.0, 9.0, 5.0, 6.0) if not self.east else build.touch(float(long - 5), 5.0, 0.0, float(long - 1), 8.0, 6.0);
         above = wake_later(build, foot, 1.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(long - 3) - float(index) * 7.0, float(wide) - 3.0, u, q3dm1_foe(dice, self.danger, index == 0), 180.0, waits=above);
+            build.foe(float(long - 3) - float(index) * 7.0, float(wide) - 3.0, u, Q3DM1_FOES.pick(dice, self.danger, index == 0), 180.0, waits=above);
         }
-        build.foe(3.0, 3.0, 0, q3dm1_foe(dice, self.danger), 0.0, patrol=[[3.0, 3.0], [3.0, float(wide) - 3.0], [float(long) - 7.0, float(wide) - 3.0]]);
+        build.foe(3.0, 3.0, 0, Q3DM1_FOES.pick(dice, self.danger), 0.0, patrol=[[3.0, 3.0], [3.0, float(wide) - 3.0], [float(long) - 7.0, float(wide) - 3.0]]);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(long // 2) + 0.5, float(wide // 2) + (2.5 if index == 0 else -2.5), 0, q3dm1_foe(dice, self.danger), 90.0);
+            build.foe(float(long // 2) + 0.5, float(wide // 2) + (2.5 if index == 0 else -2.5), 0, Q3DM1_FOES.pick(dice, self.danger), 90.0);
         }
         build.supply(float(long // 2) + 0.5, float(wide // 2) + 0.5, 0, Q3_HEALTH, "q3");
         build.supply(3.0, 3.0, u, Q3_HEALTH, "q3");
@@ -461,12 +460,12 @@ node GateCrypt(Prefab) {
             # The ledge's edge to drop from, back into the crypt.
             keep_box(build, vault, far, side - 4, far + 1, side - 1, 0);
         }
-        key_ambush(build, self.key, key_x, float(cy) + 0.5, key_z, side, c, [9, far - 3], [q3dm1_foe(dice, self.danger, True), q3dm1_foe(dice, self.danger)]);
+        key_ambush(build, self.key, key_x, float(cy) + 0.5, key_z, side, c, [9, far - 3], [Q3DM1_FOES.pick(dice, self.danger, True), Q3DM1_FOES.pick(dice, self.danger)]);
         hint(build, 3.0, 1.0, 0.0, 6.0, float(side), 6.0, "The crypt", "Its dead do not rest", 2.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(9.5 + float(index) * 3.0, float(cy) + 3.5, c, q3dm1_foe(dice, self.danger), 180.0);
+            build.foe(9.5 + float(index) * 3.0, float(cy) + 3.5, c, Q3DM1_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(3.5, 3.5, 0, q3dm1_foe(dice, self.danger), 0.0);
+        build.foe(3.5, 3.5, 0, Q3DM1_FOES.pick(dice, self.danger), 0.0);
         build.supply(2.5, float(side) - 2.5, 0, Q3_HEALTH, "q3");
     }
 }
@@ -531,12 +530,12 @@ node GateDais(Prefab) {
         up = build.touch(float(dx), 1.0, float(d), float(dx + 2), float(self.wide - 1), float(d + 6));
         guards = wake_later(build, up, 0.5);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(dx + 3) + 0.5, 3.0 + float(index) * 3.5, d, q3dm1_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(dx + 3) + 0.5, 3.0 + float(index) * 3.5, d, Q3DM1_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall + 4 + index * 3) + 0.5, float(middle) + (4.5 if index % 2 == 0 else -4.5), 0, q3dm1_foe(dice, self.danger), 180.0);
+            build.foe(float(wall + 4 + index * 3) + 0.5, float(middle) + (4.5 if index % 2 == 0 else -4.5), 0, Q3DM1_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(gs) + 2.5, 3.0, d, q3dm1_foe(dice, self.danger, True), 0.0);
+        build.foe(float(gs) + 2.5, 3.0, d, Q3DM1_FOES.pick(dice, self.danger, True), 0.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(gs) + 1.5, float(self.wide) - 3.0, d, Q3_ARMOR, "q3");
     }

@@ -42,16 +42,14 @@ the climb to the surface. Raised in hangar2's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush, gate_into, lift, spiral, ring_path }
 import from .q2_works { deck, keep_box, sparking, blast_chain, stash, hidden_closet, squad, held_door, rounds, beamed }
 
 glob HANGAR2: str = "q2:hangar2";
 
 """hangar2's foes: gunners and berserkers, hovers and brains deeper in."""
-def hangar2_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_berserk", "monster_gunner"] if heavy else ["monster_gunner", "monster_gunner", "monster_hover"], ["monster_brain"] if heavy else ["monster_berserk"], danger * 0.4 if heavy else danger * 0.6));
-}
+glob HANGAR2_FOES: FoeMix = FoeMix(light=["monster_gunner", "monster_gunner", "monster_hover"], strong=["monster_berserk"], heavy_light=["monster_berserk", "monster_gunner"], heavy_strong=["monster_brain"], scale=0.6, heavy_scale=0.4);
 
 """The start: a hall, a control booth over its floor, the way on down a
 well or a pit."""
@@ -152,14 +150,14 @@ node FanHall(Prefab) {
         # halfway down the hall.
         sparking(build, float(self.long) - 1.2, float(self.wide) - 3.5, float(self.booth) + 1.5, 2, 4.0);
         halfway = build.touch(float(self.long // 2 - 1), 1.0, 0.0, float(self.long // 2 + 1), float(by0), 8.0);
-        squad(build, halfway, [[float(self.long) - 5.5, float(self.wide) - 3.5, float(self.booth)], [float(bx0) + 4.5, float(self.wide) - 2.5, float(self.booth)]], [hangar2_foe(dice, self.danger), "monster_gunner"], 270.0);
+        squad(build, halfway, [[float(self.long) - 5.5, float(self.wide) - 3.5, float(self.booth)], [float(bx0) + 4.5, float(self.wide) - 2.5, float(self.booth)]], [HANGAR2_FOES.pick(dice, self.danger), "monster_gunner"], 270.0);
         rounds(build, "monster_gunner", [[10.5, float(middle) - 1.5], [float(self.pit_x) - 2.5, float(middle) - 1.5], [float(self.pit_x) - 2.5, float(by0) - 1.5], [10.5, float(by0) - 1.5]], 0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.pit_x) - 3.5, 3.5 + float(index) * 4.0, 0, hangar2_foe(dice, self.danger), 180.0);
+            build.foe(float(self.pit_x) - 3.5, 3.5 + float(index) * 4.0, 0, HANGAR2_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, 6, "monster_hover", 180.0);
         if self.winding {
-            build.foe(float(self.pit_x) + 5.5, 5.5, -self.drop, hangar2_foe(dice, self.danger, True), 90.0);
+            build.foe(float(self.pit_x) + 5.5, 5.5, -self.drop, HANGAR2_FOES.pick(dice, self.danger, True), 90.0);
             build.supply(float(self.pit_x) + 5.5, 6.5, -self.drop, Q2_HEALTH, "q2");
         } else {
             build.supply(float(self.pit_x) - 2.5, float(self.well_y) + 1.5, 0, Q2_HEALTH, "q2");
@@ -270,10 +268,10 @@ node BlastPens(Prefab) {
         # A guard on the mezzanine wakes as the player reaches the stair's
         # top; a gunner walks the floor.
         top = build.touch(float(mx0 - 2), 1.0, float(self.mez), float(mx0 + 1), 4.0, float(self.mez + 6));
-        squad(build, top, [[float(self.long) - 4.5, 3.5, float(self.mez)]], [hangar2_foe(dice, self.danger, True)], 180.0);
+        squad(build, top, [[float(self.long) - 4.5, 3.5, float(self.mez)]], [HANGAR2_FOES.pick(dice, self.danger, True)], 180.0);
         rounds(build, "monster_gunner", [[4.5, 8.5], [float(self.long) - 3.5, 8.5], [float(self.long) - 3.5, float(side) - 2.5], [4.5, float(side) - 2.5]], 0);
-        build.foe(float(mx0) + 6.5, 3.5, self.mez, hangar2_foe(dice, self.danger), 0.0);
-        build.foe(float(self.long) - 4.5, float(side) - 3.5, 0, hangar2_foe(dice, self.danger, True), 180.0);
+        build.foe(float(mx0) + 6.5, 3.5, self.mez, HANGAR2_FOES.pick(dice, self.danger), 0.0);
+        build.foe(float(self.long) - 4.5, float(side) - 3.5, 0, HANGAR2_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
         sparking(build, float(self.long) - 1.2, float(side) - 6.5, 3.0, 2, 5.0);
     }
@@ -352,14 +350,14 @@ node TurbineShaft(Prefab) {
         blast_chain(build, press, [[float(hx) + 2.0, float(middle) - 2.5, 3.0], [float(hx) + 2.0, float(middle) + 2.5, 6.0], [float(hx) + 2.0, float(middle) - 1.5, float(self.top)]], 0.4);
         squad(build, press, [[float(hx) + 2.0, float(middle) - 5.0, float(self.top - 3)], [float(hx) + 2.0, float(middle) + 5.0, float(self.top - 3)]], ["monster_hover"], 0.0);
         sparking(build, float(hx) + 4.2, float(middle) + 0.5, 1.0, 0, 2.5);
-        beamed(build, press, 2, 2, -8, hangar2_foe(dice, self.danger, True), float(gx) - 6.5, float(middle) + 5.5, 0, 0.0);
+        beamed(build, press, 2, 2, -8, HANGAR2_FOES.pick(dice, self.danger, True), float(gx) - 6.5, float(middle) + 5.5, 0, 0.0);
         # Guards appear on the gallery as the player lands on it.
         landing = build.touch(float(gx), float(middle - 3), float(self.top), float(self.long - 1), float(middle + 3), float(self.top + 6));
-        squad(build, landing, [[float(self.long) - 6.5, 3.0, float(self.top)], [float(self.long) - 6.5, float(self.wide) - 3.0, float(self.top)]], [hangar2_foe(dice, self.danger), "monster_gunner"], 0.0);
+        squad(build, landing, [[float(self.long) - 6.5, 3.0, float(self.top)], [float(self.long) - 6.5, float(self.wide) - 3.0, float(self.top)]], [HANGAR2_FOES.pick(dice, self.danger), "monster_gunner"], 0.0);
         rounds(build, "monster_gunner", [[8.5, 3.0], [float(self.long) - 3.0, 3.0], [float(self.long) - 3.0, float(self.wide) - 3.0], [8.5, float(self.wide) - 3.0]], self.top);
         build.foe(float(hx) + 2.0, float(middle) + 4.5, 8, "monster_hover", 0.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(gx) - 2.5, float(self.wide) - 3.5 - float(index) * 3.0, 0, hangar2_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(gx) - 2.5, float(self.wide) - 3.5 - float(index) * 3.0, 0, HANGAR2_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.supply(3.0, 3.0, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, self.top, "ammo_bullets", "q2");
@@ -475,12 +473,12 @@ node LowerWorks(Prefab) {
         # Gunners come onto the far gallery as the player comes in; one
         # walks the near gallery, another the floor.
         come_in = build.touch(1.0, 3.0, 0.0, 4.0, float(ty0), 8.0);
-        beamed(build, come_in, 2, self.wide - 6, -8, hangar2_foe(dice, self.danger, True), float(fx) + 1.5, float(ty1) + 2.5, 0, 180.0);
-        squad(build, come_in, [[14.5, float(self.wide) - 2.5, float(self.walk)], [float(self.long) - 5.5, float(self.wide) - 2.5, float(self.walk)]], ["monster_gunner", hangar2_foe(dice, self.danger)], 270.0);
+        beamed(build, come_in, 2, self.wide - 6, -8, HANGAR2_FOES.pick(dice, self.danger, True), float(fx) + 1.5, float(ty1) + 2.5, 0, 180.0);
+        squad(build, come_in, [[14.5, float(self.wide) - 2.5, float(self.walk)], [float(self.long) - 5.5, float(self.wide) - 2.5, float(self.walk)]], ["monster_gunner", HANGAR2_FOES.pick(dice, self.danger)], 270.0);
         rounds(build, "monster_gunner", [[10.5, 2.5], [float(self.long) - 3.5, 2.5]], self.walk);
-        rounds(build, hangar2_foe(dice, self.danger), [[3.5, float(ty1) + 2.5], [float(dx) - 1.5, float(self.wide) - 2.5]], 0);
+        rounds(build, HANGAR2_FOES.pick(dice, self.danger), [[3.5, float(ty1) + 2.5], [float(dx) - 1.5, float(self.wide) - 2.5]], 0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(fx) + 1.5, float(ty0) - 2.5 + float(index % 2) * 9.0, 0, hangar2_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(fx) + 1.5, float(ty0) - 2.5 + float(index % 2) * 9.0, 0, HANGAR2_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         sparking(build, float(self.long) - 1.2, 5.5, 2.0, 2, 3.5);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
@@ -566,11 +564,11 @@ node GiantLift(Prefab) {
         if self.gallery {
             spots.append([float(self.long) - 3.5, float(middle) + 0.5, float(mid)]);
         }
-        squad(build, press, spots, [hangar2_foe(dice, self.danger), "monster_gunner", hangar2_foe(dice, self.danger, True)], 180.0);
+        squad(build, press, spots, [HANGAR2_FOES.pick(dice, self.danger), "monster_gunner", HANGAR2_FOES.pick(dice, self.danger, True)], 180.0);
         down = build.touch(6.0, float(s0), float(bottom + 2), 12.0, float(s1), float(bottom + 8));
         down +>:Fires:+> build.sparks(12.2, float(middle), float(bottom) + 3.0, 0);
         build.foe(18.5, float(middle) + 0.5, bottom + 6, "monster_hover", 180.0);
-        build.foe(float(self.long) - 8.5, 3.5, bottom, hangar2_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 8.5, 3.5, bottom, HANGAR2_FOES.pick(dice, self.danger, True), 180.0);
         sparking(build, 6.2, float(s0) + 1.0, float(bottom) + 4.0, 0, 3.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 5.5, float(self.wide) - 3.5, bottom, "ammo_shells", "q2");
@@ -675,12 +673,12 @@ node HangarBay(Prefab) {
         # guards on the galleries woken as the player comes in.
         rounds(build, "monster_gunner", [[float(sx) - 7.5, float(sy) - 1.5], [float(sx) + 15.5, float(sy) - 1.5], [float(sx) + 15.5, float(sy) + 9.5], [float(sx) - 7.5, float(sy) + 9.5]], 0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(sx) + 3.5 + float(index) * 4.0, float(sy) + 4.0, self.roof, hangar2_foe(dice, self.danger), 180.0);
+            build.foe(float(sx) + 3.5 + float(index) * 4.0, float(sy) + 4.0, self.roof, HANGAR2_FOES.pick(dice, self.danger), 180.0);
         }
         come_in = build.touch(1.0, float(middle - 3), 0.0, 4.0, float(middle + 3), 8.0);
-        squad(build, come_in, [[float(self.long) - 4.5, 3.0, float(g)], [float(wx) + 1.5, float(self.wide) - 3.0, float(g)]], [hangar2_foe(dice, self.danger), "monster_gunner"], 180.0);
-        beamed(build, come_in, 2, 2, -8, hangar2_foe(dice, self.danger, True), float(sx) + 6.0, float(sy) - 2.5, 0, 180.0);
-        build.foe(float(self.long) - 3.5, float(middle) + 6.5, 0, hangar2_foe(dice, self.danger, True), 180.0);
+        squad(build, come_in, [[float(self.long) - 4.5, 3.0, float(g)], [float(wx) + 1.5, float(self.wide) - 3.0, float(g)]], [HANGAR2_FOES.pick(dice, self.danger), "monster_gunner"], 180.0);
+        beamed(build, come_in, 2, 2, -8, HANGAR2_FOES.pick(dice, self.danger, True), float(sx) + 6.0, float(sy) - 2.5, 0, 180.0);
+        build.foe(float(self.long) - 3.5, float(middle) + 6.5, 0, HANGAR2_FOES.pick(dice, self.danger, True), 180.0);
         sparking(build, float(self.long) - 1.2, 3.0, float(g) + 1.5, 2, 4.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
         build.supply(float(sx) + 6.0, float(sy) + 4.0, self.roof, "ammo_rockets", "q2");
@@ -736,10 +734,10 @@ node HangarControl(Prefab) {
         }
         broken = stash(build, self.long - 6, side - 5, 0, 2, "ammo_cells", self.level - 1);
         broken +>:Fires:+> build.sparks(float(self.long) - 6.2, float(side) - 3.0, 2.0, 2);
-        key_ambush(build, self.key, float(self.long) - 4.5, float(cy) + 0.5, self.level, side, 0, [3, dx - 5], [hangar2_foe(dice, self.danger, True), hangar2_foe(dice, self.danger)]);
-        build.foe(float(self.long) - 4.5, 3.5, self.level, hangar2_foe(dice, self.danger), 180.0);
+        key_ambush(build, self.key, float(self.long) - 4.5, float(cy) + 0.5, self.level, side, 0, [3, dx - 5], [HANGAR2_FOES.pick(dice, self.danger, True), HANGAR2_FOES.pick(dice, self.danger)]);
+        build.foe(float(self.long) - 4.5, 3.5, self.level, HANGAR2_FOES.pick(dice, self.danger), 180.0);
         rounds(build, "monster_gunner", [[float(dx) + 2.5, 3.5], [float(dx) + 2.5, float(side) - 3.5]], 0);
-        build.foe(5.5, float(cy) + 3.5, 0, hangar2_foe(dice, self.danger), 0.0);
+        build.foe(5.5, float(cy) + 3.5, 0, HANGAR2_FOES.pick(dice, self.danger), 0.0);
         sparking(build, float(self.long) - 2.2, float(cy) - 2.5, float(self.level) + 1.5, 2, 3.0);
         sparking(build, float(dx) + 0.5, float(side) - 0.2, 2.0, 3, 5.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
@@ -799,9 +797,9 @@ node SurfaceExit(Prefab) {
         blast_chain(build, up, [[float(x0) + 2.0, 2.0, 0.5], [float(x1) - 2.0, float(self.wide) - 2.0, 0.5], [float(x0) + 6.0, float(middle), 0.5]], 0.4);
         squad(build, up, [[float(x0) + 6.0, float(middle) - 2.0, float(self.climb + 4)], [float(x1) - 4.0, float(middle) + 2.0, float(self.climb + 4)]], ["monster_hover"], 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, hangar2_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, HANGAR2_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(x0) + 6.5, float(middle) + 0.5, 0, hangar2_foe(dice, self.danger, True), 180.0);
+        build.foe(float(x0) + 6.5, float(middle) + 0.5, 0, HANGAR2_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
         build.supply(float(wall) + 3.0, float(middle) + 0.5, 0, "ammo_rockets", "q2");
     }

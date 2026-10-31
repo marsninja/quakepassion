@@ -25,10 +25,11 @@ own palette.
   out on the presbytery raised at its end, climbed by stairs or thrown up
   to by a jump pad, galleries high over the aisles whose guards wake."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, key_ambush, gate_into, lift, spiral, ring_landing }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3low_parts { slab, keep_box, hint, wake_later, pad_to, flying_stair, sliding_pair }
 
 glob Q3DM8: str = "q3:q3dm8",
@@ -36,9 +37,7 @@ glob Q3DM8: str = "q3:q3dm8",
      Q3DM8_HEAVY: list[str] = ["monster_ogre"];
 
 """A foe for q3dm8's stretches."""
-def q3dm8_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3DM8_LIGHT, Q3DM8_HEAVY, strong);
-}
+glob Q3DM8_FOES: FoeMix = FoeMix(light=Q3DM8_LIGHT, strong=Q3DM8_HEAVY, heavy_light=Q3DM8_HEAVY, scale=0.5);
 
 """The start: a vestibule behind great sliding doors, a hall with a flooded
 channel under galleries round three walls."""
@@ -108,10 +107,10 @@ node AbbeyGate(Prefab) {
         hint(build, 7.0, float(middle - 3), 0.0, 9.0, float(middle + 3), 6.0, "Brimstone Abbey", "The pads throw you up to its galleries", 2.5);
         midway = build.touch(float(self.long // 2), 5.0, 0.0, float(self.long // 2 + 2), float(self.wide - 5), 6.0);
         above = wake_later(build, midway, 0.5);
-        build.foe(float(self.long) - 3.0, float(middle) + 0.5, g, q3dm8_foe(dice, self.danger, True), 180.0, waits=above);
-        build.foe(float(self.long) - 8.5, 3.0, g, q3dm8_foe(dice, self.danger), 180.0, waits=above);
+        build.foe(float(self.long) - 3.0, float(middle) + 0.5, g, Q3DM8_FOES.pick(dice, self.danger, True), 180.0, waits=above);
+        build.foe(float(self.long) - 8.5, 3.0, g, Q3DM8_FOES.pick(dice, self.danger), 180.0, waits=above);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(13 + index * 4) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), 0, q3dm8_foe(dice, self.danger), 180.0);
+            build.foe(float(13 + index * 4) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), 0, Q3DM8_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(float(self.long) - 3.0, 3.0, g, Q3_ARMOR, "q3");
         build.supply(float(self.long) - 4.5, float(middle) + 0.5, 0, Q3_HEALTH, "q3");
@@ -199,12 +198,12 @@ node AbbeyNave(Prefab) {
         }
         up = build.touch(9.0, float(middle - 3), float(n), 11.0, float(middle + 3), float(n + 6));
         walks = wake_later(build, up, 1.0);
-        build.foe(float(dx) - 4.5, 3.0, c, q3dm8_foe(dice, self.danger), 180.0, waits=walks);
-        build.foe(float(dx) - 8.5, float(self.wide) - 3.0, c, q3dm8_foe(dice, self.danger), 180.0, waits=walks);
+        build.foe(float(dx) - 4.5, 3.0, c, Q3DM8_FOES.pick(dice, self.danger), 180.0, waits=walks);
+        build.foe(float(dx) - 8.5, float(self.wide) - 3.0, c, Q3DM8_FOES.pick(dice, self.danger), 180.0, waits=walks);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(12 + index * 4) + 0.5, float(middle) + 0.5, n, q3dm8_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(12 + index * 4) + 0.5, float(middle) + 0.5, n, Q3DM8_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(self.long) - 3.0, float(middle) + 0.5, n, q3dm8_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.0, float(middle) + 0.5, n, Q3DM8_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(self.long) - 2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(dx) - 1.5, 3.0, c, "item_rockets");
     }
@@ -281,12 +280,12 @@ node AbbeyCrossing(Prefab) {
         hint(build, 2.0, 6.0, 0.0, 4.0, float(wide - 6), 6.0, "The crossing under the tower", "Its pads throw you up to the deck", 2.5);
         up = build.touch(float(cx - 5), 4.0, float(g), float(cx), 9.0, float(g + 6));
         deck = wake_later(build, up, 0.5);
-        build.foe(float(long) - 3.0, 3.0, d, q3dm8_foe(dice, self.danger, True), 180.0, waits=deck);
-        build.foe(3.0, float(wide) - 3.0, d, q3dm8_foe(dice, self.danger), 0.0, waits=deck);
+        build.foe(float(long) - 3.0, 3.0, d, Q3DM8_FOES.pick(dice, self.danger, True), 180.0, waits=deck);
+        build.foe(3.0, float(wide) - 3.0, d, Q3DM8_FOES.pick(dice, self.danger), 0.0, waits=deck);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx - 4 + index * 4) + 0.5, float(wide // 2) + 0.5, 0, q3dm8_foe(dice, self.danger), 0.0);
+            build.foe(float(cx - 4 + index * 4) + 0.5, float(wide // 2) + 0.5, 0, Q3DM8_FOES.pick(dice, self.danger), 0.0);
         }
-        build.foe(float(long) - 9.5, 6.5, g, q3dm8_foe(dice, self.danger), 180.0);
+        build.foe(float(long) - 9.5, 6.5, g, Q3DM8_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(cx) + 0.5, float(wide // 2) + 3.5, 0, Q3_HEALTH, "q3");
         build.supply(float(cx) + 0.5, 2.5, d, "item_armor_body", "q3");
         build.supply(9.5, 6.5, g, "item_rockets");
@@ -358,9 +357,9 @@ node AbbeyCrypt(Prefab) {
         foot = build.touch(float(7 + self.deep), 1.0, float(low), float(10 + self.deep), 4.0, float(low + 6));
         dead = wake_later(build, foot, 0.5);
         for index in range(dice.between(3, 4)) {
-            build.foe(float(13 + index * 3) + 0.5, float(middle) + (4.5 if index % 2 == 0 else -4.5), low, "monster_zombie" if index > 0 else q3dm8_foe(dice, self.danger, True), 180.0, waits=dead);
+            build.foe(float(13 + index * 3) + 0.5, float(middle) + (4.5 if index % 2 == 0 else -4.5), low, "monster_zombie" if index > 0 else Q3DM8_FOES.pick(dice, self.danger, True), 180.0, waits=dead);
         }
-        build.foe(float(self.long) - 3.5, float(self.wide) - 3.0, 0, q3dm8_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, float(self.wide) - 3.0, 0, Q3DM8_FOES.pick(dice, self.danger), 180.0);
         build.supply(float(self.long) - 3.0, float(middle) + 0.5, low, Q3_HEALTH, "q3");
         build.supply(3.0, float(self.wide) - 3.0, 0, "item_rockets");
     }
@@ -423,18 +422,18 @@ node AbbeyBelfry(Prefab) {
             pad_to(build, tower, float(fx) + 2.0, 8.0, half, float(fx) + 2.0, 3.0, s, fx, 4, fx + 4, 5);
             keep_box(build, tower, fx, 1, fx + 1, 4, s);
             keep_box(build, tower, fx, 6, fx + 1, side - 7, half);
-            key_ambush(build, self.key, float(self.long) - 2.5, 2.5, s, side, 0, [4, fx - 4], [q3dm8_foe(dice, self.danger, True), q3dm8_foe(dice, self.danger)]);
+            key_ambush(build, self.key, float(self.long) - 2.5, 2.5, s, side, 0, [4, fx - 4], [Q3DM8_FOES.pick(dice, self.danger, True), Q3DM8_FOES.pick(dice, self.danger)]);
         } else {
             landing = spiral(build, 1, 1, self.long - 1, side, 0, s, 3, 5);
             for cell in landing {
                 keep_box(build, tower, cell[0], cell[1], cell[2], cell[3], s);
             }
             middle = landing[2];
-            key_ambush(build, self.key, float(middle[0] + middle[2]) * 0.5, float(middle[1] + middle[3]) * 0.5, s, side, 0, [5, self.long - 9], [q3dm8_foe(dice, self.danger, True), q3dm8_foe(dice, self.danger)]);
+            key_ambush(build, self.key, float(middle[0] + middle[2]) * 0.5, float(middle[1] + middle[3]) * 0.5, s, side, 0, [5, self.long - 9], [Q3DM8_FOES.pick(dice, self.danger, True), Q3DM8_FOES.pick(dice, self.danger)]);
         }
         hint(build, 2.0, 1.0, 0.0, 4.0, float(side), 6.0, "The bell tower", "The key waits at its top", 2.0);
-        build.foe(float(self.long // 2) + 0.5, float(side // 2) + 0.5, 0, q3dm8_foe(dice, self.danger), 0.0);
-        build.foe(float(self.long // 2) - 2.5, float(side // 2) + 2.5, 0, q3dm8_foe(dice, self.danger), 0.0);
+        build.foe(float(self.long // 2) + 0.5, float(side // 2) + 0.5, 0, Q3DM8_FOES.pick(dice, self.danger), 0.0);
+        build.foe(float(self.long // 2) - 2.5, float(side // 2) + 2.5, 0, Q3DM8_FOES.pick(dice, self.danger), 0.0);
         build.supply(2.5, float(side) - 2.5, 0, Q3_HEALTH, "q3");
     }
 }
@@ -492,12 +491,12 @@ node AbbeyChoir(Prefab) {
         inside = build.touch(float(dw + 1), 4.0, 0.0, float(dw + 3), float(self.wide - 4), 6.0);
         galleries = wake_later(build, inside, 1.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(dw + 4 + index * 4) + 0.5, 2.5 if index % 2 == 0 else float(self.wide) - 2.5, 14, q3dm8_foe(dice, self.danger, index == 0), 0.0, waits=galleries);
+            build.foe(float(dw + 4 + index * 4) + 0.5, 2.5 if index % 2 == 0 else float(self.wide) - 2.5, 14, Q3DM8_FOES.pick(dice, self.danger, index == 0), 0.0, waits=galleries);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(px) + 2.5, 5.5 + float(index) * 3.0, p, q3dm8_foe(dice, self.danger), 180.0);
+            build.foe(float(px) + 2.5, 5.5 + float(index) * 3.0, p, Q3DM8_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(wall) + 2.5, 3.0, 0, q3dm8_foe(dice, self.danger), 0.0);
+        build.foe(float(wall) + 2.5, 3.0, 0, Q3DM8_FOES.pick(dice, self.danger), 0.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(dw) + 3.5, float(middle) + 3.5, 0, Q3_ARMOR, "q3");
     }

@@ -30,7 +30,7 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from ..space { Space }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, gate_into, lift, pillars }
 import from .q2_works { deck, keep_box, sparking, blast_chain, stash, hidden_closet, squad, rounds, beamed, held_door, key_taken, closets, barrels, pad_to, hurting }
 import from .city2 { double_doors, laser_fence, random_sparks }
@@ -39,9 +39,7 @@ glob CITY3: str = "q2:city3";
 
 """city3's foes: soldiers and gunners, iron maidens and floaters, tank
 commanders deeper in."""
-def city3_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_gunner", "monster_chick"] if heavy else ["monster_soldier_ss", "monster_soldier", "monster_chick"], ["monster_tank_commander"] if heavy else ["monster_floater"], danger * 0.3 if heavy else danger * 0.5));
-}
+glob CITY3_FOES: FoeMix = FoeMix(light=["monster_soldier_ss", "monster_soldier", "monster_chick"], strong=["monster_floater"], heavy_light=["monster_gunner", "monster_chick"], heavy_strong=["monster_tank_commander"], scale=0.5, heavy_scale=0.3);
 
 """Steps rising out of a floor one after another when `cue` fires, `gap`
 seconds apart (city3's stair): `count` steps from the cell (x, y) on lift
@@ -129,14 +127,14 @@ node UpperGate(Prefab) {
         build.touch(1.0, 1.0, 0.0, 4.0, float(self.wide - 1), 8.0) +>:Fires:+> build.objective("Find the security pass. The upper palace is sealed by its force fields");
         # Guards on the gallery come forward as the stair rises; a gunner
         # walks the floor; a stash in an outcrop by the way in.
-        squad(build, raise_it, [[float(gx) + 3.0, 3.0, float(g)], [float(gx) + 3.0, float(self.wide) - 3.0, float(g)], [14.5, float(self.wide) - 2.5, float(g)]], [city3_foe(dice, self.danger, True), "monster_soldier_ss", city3_foe(dice, self.danger)], 180.0);
-        beamed(build, raise_it, 2, 2, -8, city3_foe(dice, self.danger), float(gx) - 3.5, 3.5, 0, 180.0);
+        squad(build, raise_it, [[float(gx) + 3.0, 3.0, float(g)], [float(gx) + 3.0, float(self.wide) - 3.0, float(g)], [14.5, float(self.wide) - 2.5, float(g)]], [CITY3_FOES.pick(dice, self.danger, True), "monster_soldier_ss", CITY3_FOES.pick(dice, self.danger)], 180.0);
+        beamed(build, raise_it, 2, 2, -8, CITY3_FOES.pick(dice, self.danger), float(gx) - 3.5, 3.5, 0, 180.0);
         rounds(build, "monster_soldier", [[6.5, 3.5], [float(gx) - 3.5, 3.5]], 0);
         stash(build, 4, self.wide - 6, 0, 3, Q2_ARMOR, 6) +>:Fires:+> build.sparks(6.0, float(self.wide) - 6.2, 3.0, 3);
         random_sparks(build, [[float(self.long) - 1.2, 3.0, float(g) + 3.0, 2.0], [float(self.long) - 1.2, float(self.wide) - 3.0, float(g) + 3.0, 2.0], [1.2, 3.0, 4.0, 0.0]], 3.5);
         barrels(build, dice, 5, 1, gx - g - 3, self.wide - 1, 0, 2, [[0, middle - 3, 5, middle + 3], [3, self.wide - 7, 9, self.wide], [gx - g - 4, middle - 3, gx, middle + 5]]);
         alarm = build.push(float(self.long - 1), float(middle) + 0.5, float(g) + 1.5, 2);
-        squad(build, alarm, [[6.5, 3.5, 0.0], [6.5, float(self.wide) - 8.5, 0.0]], ["monster_soldier", city3_foe(dice, self.danger)], 0.0);
+        squad(build, alarm, [[6.5, 3.5, 0.0], [6.5, float(self.wide) - 8.5, 0.0]], ["monster_soldier", CITY3_FOES.pick(dice, self.danger)], 0.0);
         alarm +>:Fires:+> build.objective("The alarm is raised", False);
         build.touch(float(gx), float(middle - 2), float(g), float(gx + 2), float(middle + 2), float(g + 6), True, "The gate of the upper palace");
         build.supply(float(self.long) - 3.0, float(middle) + 0.5, g, Q2_HEALTH, "q2");
@@ -206,18 +204,18 @@ node PalaceStairs(Prefab) {
         }
         # Guards come out on each landing as the player reaches the one before.
         first = build.touch(float(l1), 1.0, float(f), float(l1 + 2), 6.0, float(f + 6));
-        squad(build, first, [[3.0, 3.0, float(2 * f)], [3.5, float(self.wide) - 3.0, float(2 * f)]], [city3_foe(dice, self.danger), "monster_soldier_ss"], 0.0);
+        squad(build, first, [[3.0, 3.0, float(2 * f)], [3.5, float(self.wide) - 3.0, float(2 * f)]], [CITY3_FOES.pick(dice, self.danger), "monster_soldier_ss"], 0.0);
         second = build.touch(float(top2 - 3), float(self.wide - 6), float(2 * f), float(top2), float(self.wide - 1), float(2 * f + 6));
-        squad(build, second, [[float(self.long) - 3.0, 3.0, float(3 * f)], [float(self.long) - 8.0, 3.0, float(3 * f)]], [city3_foe(dice, self.danger, True), "monster_soldier"], 180.0);
-        beamed(build, second, 2, 2, -8, city3_foe(dice, self.danger), float(self.long // 2), float(self.wide // 2), 0, 90.0);
+        squad(build, second, [[float(self.long) - 3.0, 3.0, float(3 * f)], [float(self.long) - 8.0, 3.0, float(3 * f)]], [CITY3_FOES.pick(dice, self.danger, True), "monster_soldier"], 180.0);
+        beamed(build, second, 2, 2, -8, CITY3_FOES.pick(dice, self.danger), float(self.long // 2), float(self.wide // 2), 0, 90.0);
         alarm = build.push(float(self.long - 1), 3.0, float(3 * f) + 1.5, 2);
-        squad(build, alarm, [[3.0, 3.0, float(2 * f)], [float(self.long) - 3.0, float(self.wide) - 3.0, float(f)]], ["monster_soldier_ss", city3_foe(dice, self.danger, True)], 0.0);
+        squad(build, alarm, [[3.0, 3.0, float(2 * f)], [float(self.long) - 3.0, float(self.wide) - 3.0, float(f)]], ["monster_soldier_ss", CITY3_FOES.pick(dice, self.danger, True)], 0.0);
         build.touch(1.0, float(self.wide // 2 - 2), 0.0, 3.0, float(self.wide // 2 + 2), 6.0, True, "The palace stairs climb to the upper halls");
         # Charges go off down the stairwell as the top is reached.
         top = build.touch(float(6 + f), 1.0, float(3 * f), float(8 + f), 5.0, float(3 * f + 6));
         blast_chain(build, top, [[float(self.long // 2), float(self.wide // 2), 2.0], [float(self.long) - 3.0, float(self.wide // 2), float(f) + 2.0]], 0.4);
         rounds(build, "monster_soldier", [[3.5, float(self.wide // 2)], [float(self.long) - 8.5, float(self.wide // 2)]], 0);
-        build.foe(float(self.long) - 3.0, float(self.wide) - 3.0, f, city3_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.0, float(self.wide) - 3.0, f, CITY3_FOES.pick(dice, self.danger), 180.0);
         random_sparks(build, [[1.2, float(self.wide // 2), 4.0, 0.0], [float(self.long) - 1.2, float(self.wide // 2), float(f) + 3.0, 2.0], [1.2, 3.0, float(3 * f) + 2.0, 0.0]], 3.0);
         build.supply(2.5, float(self.wide // 2) - 2.0, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.0, 3.0, 3 * f, "ammo_bullets", "q2");
@@ -275,8 +273,8 @@ node GunGallery(Prefab) {
         for port in self.taken {
             build.doorway(hall, port);
         }
-        squad(build, walking, [[float(self.long) - 6.0, 3.0, float(b)], [float(self.long // 2), 3.0, float(b)]], ["monster_gunner", city3_foe(dice, self.danger)], 180.0);
-        beamed(build, shot, 2, 2, -8, city3_foe(dice, self.danger, True), float(self.long // 2) + 0.5, float(middle) + 0.5, 0, 0.0);
+        squad(build, walking, [[float(self.long) - 6.0, 3.0, float(b)], [float(self.long // 2), 3.0, float(b)]], ["monster_gunner", CITY3_FOES.pick(dice, self.danger)], 180.0);
+        beamed(build, shot, 2, 2, -8, CITY3_FOES.pick(dice, self.danger, True), float(self.long // 2) + 0.5, float(middle) + 0.5, 0, 0.0);
         rounds(build, "monster_soldier_ss", [[6.5, float(middle)], [float(self.long) - 6.5, float(middle)]], 0);
         stash(build, 8, self.wide - 6, 0, 3, Q2_ARMOR, 5) +>:Fires:+> build.sparks(10.0, float(self.wide) - 6.2, 2.0, 3);
         for index in range(2) {
@@ -284,7 +282,7 @@ node GunGallery(Prefab) {
         }
         build.touch(1.0, float(middle - 2), 0.0, 3.0, float(middle + 2), 6.0, True, "Gun ports line the gallery");
         alarm = build.push(float(self.long - 1), 3.0, float(b) + 1.5, 2);
-        squad(build, alarm, [[6.5, float(self.wide) - 3.0, 0.0], [float(self.long // 2), float(self.wide) - 3.0, 0.0]], ["monster_soldier", city3_foe(dice, self.danger)], 0.0);
+        squad(build, alarm, [[6.5, float(self.wide) - 3.0, 0.0], [float(self.long // 2), float(self.wide) - 3.0, 0.0]], ["monster_soldier", CITY3_FOES.pick(dice, self.danger)], 0.0);
         alarm +>:Fires:+> build.objective("The guards are called", False);
         random_sparks(build, [[1.2, float(middle), 3.0, 0.0], [float(self.long) - 1.2, 3.0, float(b) + 2.0, 2.0]], 3.0);
         build.supply(2.5, float(self.wide) - 2.5, 0, Q2_HEALTH, "q2");
@@ -363,20 +361,20 @@ node Rotunda(Prefab) {
         keep_box(build, hall, cx + 3, 4, cx + 7, 5, g);
         # The five soldiers come on as the player crosses the floor.
         crossing = build.touch(float(cx - 7), 5.0, 0.0, float(cx - 5), float(self.wide - 5), 6.0);
-        squad(build, crossing, [[float(cx) + 7.0, 6.5, 0.0], [float(cx) + 7.0, float(self.wide) - 6.5, 0.0], [float(cx), 3.0, float(g)], [float(cx), float(self.wide) - 3.0, float(g)], [float(self.long) - 3.0, float(cy) + 3.0, float(u)]], ["monster_soldier", "monster_soldier", "monster_soldier_ss", "monster_soldier", city3_foe(dice, self.danger, True)], 180.0);
-        beamed(build, crossing, 2, cy - 2, -8, city3_foe(dice, self.danger), float(cx) - 7.0, float(cy) + 0.5, 0, 0.0);
+        squad(build, crossing, [[float(cx) + 7.0, 6.5, 0.0], [float(cx) + 7.0, float(self.wide) - 6.5, 0.0], [float(cx), 3.0, float(g)], [float(cx), float(self.wide) - 3.0, float(g)], [float(self.long) - 3.0, float(cy) + 3.0, float(u)]], ["monster_soldier", "monster_soldier", "monster_soldier_ss", "monster_soldier", CITY3_FOES.pick(dice, self.danger, True)], 180.0);
+        beamed(build, crossing, 2, cy - 2, -8, CITY3_FOES.pick(dice, self.danger), float(cx) - 7.0, float(cy) + 0.5, 0, 0.0);
         hidden_closet(build, self.long - 9, self.wide - 9, 0, 3, Q2_ARMOR, 6);
         vault = build.room(2, 2, 0, 4, 4, 5);
         build.widen(vault, 4, 2, 0, 5, 4, 5);
         opener = build.push(float(self.long - 4), float(self.wide) - 6.5, float(u) + 1.5, 2);
         opener +>:Fires:+> build.opened(4.0, 2.0, 0.0, 5.0, 4.0, 5.0);
         build.supply(3.0, 3.0, 0, "item_health_mega", "q2");
-        squad(build, opener, [[float(cx) - 7.0, float(cy) + 7.0, 0.0]], [city3_foe(dice, self.danger)], 0.0);
+        squad(build, opener, [[float(cx) - 7.0, float(cy) + 7.0, 0.0]], [CITY3_FOES.pick(dice, self.danger)], 0.0);
         for (index, at) in enumerate([[cx - 8, cy - 8], [cx + 6, cy + 6]]) {
             build.breakable(float(at[0]), float(at[1]), 0.0, float(at[0] + 2), float(at[1] + 2), 2.0, 10);
         }
         rounds(build, "monster_chick", [[6.5, 3.0], [float(self.long) - 6.5, 3.0], [float(self.long) - 3.0, float(cy) - 3.0]], g);
-        build.foe(float(cx) + 0.5, float(cy) + 7.5, 0, city3_foe(dice, self.danger), 270.0);
+        build.foe(float(cx) + 0.5, float(cy) + 7.5, 0, CITY3_FOES.pick(dice, self.danger), 270.0);
         build.foe(float(cx) + 0.5, float(cy) + 0.5, 8, "monster_floater", 0.0);
         random_sparks(build, [[1.2, float(cy) + 6.0, 3.0, 0.0], [float(self.long) - 1.2, float(cy) - 6.0, float(g) + 2.0, 2.0], [float(cx) + 1.2, float(cy), 2.0, 0.0]], 3.0);
         build.supply(2.5, float(cy) + 3.0, 0, Q2_HEALTH, "q2");
@@ -453,10 +451,10 @@ node SecurityHall(Prefab) {
         }
         late = build.delay(2.0);
         lever +>:Fires:+> late;
-        squad(build, late, [[float(fx) + 3.0, 3.5, 0.0], [float(self.long) - 4.0, float(self.wide) - 3.0, float(-self.sunk)]], [city3_foe(dice, self.danger, True), "monster_soldier_ss"], 180.0);
-        beamed(build, late, 2, 2, -2 * self.sunk + 1, city3_foe(dice, self.danger), float(fx) + 3.0, float(middle) - 4.0, 0, 180.0);
+        squad(build, late, [[float(fx) + 3.0, 3.5, 0.0], [float(self.long) - 4.0, float(self.wide) - 3.0, float(-self.sunk)]], [CITY3_FOES.pick(dice, self.danger, True), "monster_soldier_ss"], 180.0);
+        beamed(build, late, 2, 2, -2 * self.sunk + 1, CITY3_FOES.pick(dice, self.danger), float(fx) + 3.0, float(middle) - 4.0, 0, 180.0);
         up = build.touch(float(4 + g), 1.0, float(g), float(6 + g), 5.0, float(g + 6), True, "The field's lever lies behind the lasers");
-        squad(build, up, [[float(fx) - 2.0, 3.0, float(g)]], [city3_foe(dice, self.danger)], 180.0);
+        squad(build, up, [[float(fx) - 2.0, 3.0, float(g)]], [CITY3_FOES.pick(dice, self.danger)], 180.0);
         rounds(build, "monster_soldier", [[3.5, float(middle) + 3.0], [float(fx) - 3.5, float(middle) + 3.0]], 0);
         random_sparks(build, [[float(fx) - 0.2, float(middle) - 4.0, 4.0, 2.0], [float(fx) + 1.2, float(middle) + 4.0, 4.0, 0.0], [float(self.long) - 1.2, float(middle) + 5.0, -2.0, 2.0]], 1.5);
         barrels(build, dice, 1, middle + 1, fx - 1, self.wide - 1, 0, 1, [[0, middle - 3, 4, middle + 3], [fx - 4, middle - 3, fx, middle + 3]]);
@@ -512,16 +510,16 @@ node RoyalChamber(Prefab) {
         keep_box(build, room, 7, 1, 8, 4, 9);
         taken = key_taken(build, self.key, float(self.long) - 3.5, float(cy), self.dais);
         taken +>:Fires:+> build.objective("Security pass taken", False);
-        closets(build, taken, side, 0, [3, self.long - 9], [city3_foe(dice, self.danger, True), city3_foe(dice, self.danger)]);
-        squad(build, taken, [[4.5, 3.0, 9.0], [4.5, float(side) - 3.0, 9.0]], ["monster_soldier_ss", city3_foe(dice, self.danger)], 0.0);
-        beamed(build, taken, 2, 2, -8, city3_foe(dice, self.danger, True), 11.5, float(cy) + 0.5, 0, 0.0);
+        closets(build, taken, side, 0, [3, self.long - 9], [CITY3_FOES.pick(dice, self.danger, True), CITY3_FOES.pick(dice, self.danger)]);
+        squad(build, taken, [[4.5, 3.0, 9.0], [4.5, float(side) - 3.0, 9.0]], ["monster_soldier_ss", CITY3_FOES.pick(dice, self.danger)], 0.0);
+        beamed(build, taken, 2, 2, -8, CITY3_FOES.pick(dice, self.danger, True), 11.5, float(cy) + 0.5, 0, 0.0);
         build.touch(float(px - 8), 1.0, 0.0, float(px - 6), float(side), 6.0, True, "The steps rise at the button by the dais");
         rounds(build, "monster_soldier", [[11.5, 2.5], [float(px) - 2.5, 2.5]], 0);
         call = build.push(1.0, float(cy) + 0.5, 10.5, 0);
         squad(build, call, [[float(px) - 4.0, float(cy) + 4.0, 0.0]], ["monster_chick"], 180.0);
         build.breakable(12.0, float(side) - 3.0, 0.0, 14.0, float(side) - 1.0, 2.0, 10);
         build.touch(1.0, float(cy - 2), 0.0, 3.0, float(cy + 2), 6.0, True, "The royal chamber");
-        build.foe(float(self.long) - 3.5, float(cy) + 2.0, self.dais, city3_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.5, float(cy) + 2.0, self.dais, CITY3_FOES.pick(dice, self.danger), 180.0);
         random_sparks(build, [[float(self.long) - 1.2, float(cy) - 2.0, float(self.dais) + 2.0, 2.0], [1.2, float(cy), 3.0, 0.0], [1.2, float(cy) + 3.0, 11.0, 0.0]], 3.0);
         build.supply(10.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
     }
@@ -572,9 +570,9 @@ node SummitBalcony(Prefab) {
         # the balcony.
         climb = build.touch(float(wall + 1), 1.0, 1.0, float(wall + 4), 4.0, 7.0);
         blast_chain(build, climb, [[float(wall) + 10.0, 8.0, -5.0], [float(self.long) - 6.0, float(self.wide) - 4.0, -5.0], [float(wall) + 14.0, float(self.wide) - 6.0, -5.0]], 0.4);
-        squad(build, climb, [[float(self.long) - 10.0, 3.0, float(b)], [float(wall) + 12.0, float(self.wide) - 4.0, -6.0]], [city3_foe(dice, self.danger, True), "monster_floater"], 180.0);
+        squad(build, climb, [[float(self.long) - 10.0, 3.0, float(b)], [float(wall) + 12.0, float(self.wide) - 4.0, -6.0]], [CITY3_FOES.pick(dice, self.danger, True), "monster_floater"], 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, city3_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, CITY3_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         rounds(build, "monster_soldier_ss", [[float(wall) + 3.5, float(middle)], [float(wall) + 5.5, float(self.wide) - 3.0]], 0);
         random_sparks(build, [[float(wall) + 1.2, float(self.wide) - 3.0, 3.0, 0.0], [float(self.long) - 1.2, 3.0, float(b) + 2.0, 2.0]], 3.0);

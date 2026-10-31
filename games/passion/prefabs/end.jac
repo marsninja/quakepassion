@@ -33,7 +33,7 @@ telefrag). Raised in end's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette }
+import from .roster { FoeMix }
 import from .common { stair, key_ambush, spiral, ring_path, ring_landing }
 import from .e4m6 { flood, onward_ports, port_door, pool_steps }
 import from .e4m7 { counted_foe }
@@ -41,9 +41,7 @@ import from .e4m7 { counted_foe }
 glob END: str = "q1:end";
 
 """end's foes: vores and shamblers, scrags and fiends."""
-def end_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_demon1", "monster_demon1", "monster_shalrath"] if heavy else ["monster_wizard", "monster_wizard", "monster_demon1"], ["monster_shambler", "monster_shalrath"] if heavy else ["monster_shalrath"], danger * 0.3));
-}
+glob END_FOES: FoeMix = FoeMix(light=["monster_wizard", "monster_wizard", "monster_demon1"], strong=["monster_shalrath"], heavy_light=["monster_demon1", "monster_demon1", "monster_shalrath"], heavy_strong=["monster_shambler", "monster_shalrath"], scale=0.3);
 
 """A hurting volume of the prefab's cells (Quake's trigger_hurt), `damage`
 a touch."""
@@ -146,7 +144,7 @@ node PitApproach(Prefab) {
             build.foe(float(x0 + 3 + index * 6) + 0.5, float(middle) + 3.5, 2 - self.deep, "monster_fish", 0.0);
         }
         build.foe(float(x1) + 3.5, 2.5, 0, "monster_demon1" if self.danger > 0.2 else "monster_wizard", 90.0, patrol=[[float(x1) + 3.5, 2.5], [float(x1) + 3.5, float(self.wide) - 2.5]]);
-        build.foe(float(x1) + 2.5, float(middle) + 3.5, 0, end_foe(dice, self.danger, True), 180.0);
+        build.foe(float(x1) + 2.5, float(middle) + 3.5, 0, END_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(self.long) - 2.5, 2.5, 0, "item_health");
     }
 }
@@ -233,9 +231,9 @@ node TeleportIslands(Prefab) {
         for index in range(dice.between(2, 3)) {
             build.foe(float(x0 + 3 + index * 4) + 0.5, 2.5 + float(index % 2) * float(self.wide - 5), 5, "monster_wizard", 90.0, waits=scrags);
         }
-        build.foe(float(last[0]) + 1.5, float(last[1]) - 1.5, 1, end_foe(dice, self.danger), 180.0);
+        build.foe(float(last[0]) + 1.5, float(last[1]) - 1.5, 1, END_FOES.pick(dice, self.danger), 180.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(x1) + 3.0, float(self.wide) - 8.0 - float(index) * 2.5, 0, end_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(x1) + 3.0, float(self.wide) - 8.0 - float(index) * 2.5, 0, END_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.supply(2.5, float(self.wide) - 2.5, 0, "item_health");
         build.supply(float(self.long) - 2.5, float(middle) + 0.5, 0, "item_cells");
@@ -313,11 +311,11 @@ node ShubHall(Prefab) {
         above = build.waiting();
         island +>:Fires:+> above;
         build.foe(float(cx) + 4.5, float(self.wide) - 2.5, self.balcony, "monster_shalrath" if self.danger > 0.3 else "monster_wizard", 270.0, waits=above);
-        build.foe(float(cx) + 4.5, 2.5, self.balcony, end_foe(dice, self.danger), 90.0, waits=above);
+        build.foe(float(cx) + 4.5, 2.5, self.balcony, END_FOES.pick(dice, self.danger), 90.0, waits=above);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx + 9) + 0.5, 3.5 + float(index) * 5.0, 0, end_foe(dice, self.danger), 180.0);
+            build.foe(float(cx + 9) + 0.5, 3.5 + float(index) * 5.0, 0, END_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(cx) - 1.5, float(cy) - 1.5, 1, end_foe(dice, self.danger, True), 180.0);
+        build.foe(float(cx) - 1.5, float(cy) - 1.5, 1, END_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(3.5, 6.5, 0, "monster_demon1" if self.danger > 0.2 else "monster_wizard", 90.0, patrol=[[3.5, 6.5], [3.5, float(self.wide) - 6.5]]);
         build.supply(float(cx) - 2.5, 2.5, self.balcony, "item_health");
         build.supply(3.0, 3.0, 0, "item_rockets");
@@ -406,7 +404,7 @@ node ShamblerGate(Prefab) {
         counted_foe(build, float(gx) - 3.0, float(middle) + 0.5, 2, guardian, 180.0, slain);
         build.touch(1.0, float(middle - 2), 0.0, 4.0, float(middle + 2), 6.0, True, "The great door opens only when its guardian is dead");
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 3.5, 3.5 + float(index) * 4.0, 0, end_foe(dice, self.danger), 180.0, waits=beyond_wake);
+            build.foe(float(self.long) - 3.5, 3.5 + float(index) * 4.0, 0, END_FOES.pick(dice, self.danger), 180.0, waits=beyond_wake);
         }
         build.foe(4.5, float(middle) + 0.5, 0, "monster_demon1" if self.danger > 0.2 else "monster_wizard", 0.0, patrol=[[4.5, float(middle) + 0.5], [float(mx) - 2.5, float(middle) + 0.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
@@ -476,7 +474,7 @@ node SpikeClimb(Prefab) {
         above = build.waiting();
         roused +>:Fires:+> above;
         top = landing[2];
-        build.foe(float(top[0] + top[2]) * 0.5, float(top[1] + top[3]) * 0.5, self.steps, end_foe(dice, self.danger, True), 180.0, waits=above);
+        build.foe(float(top[0] + top[2]) * 0.5, float(top[1] + top[3]) * 0.5, self.steps, END_FOES.pick(dice, self.danger, True), 180.0, waits=above);
         for index in range(dice.between(2, 3)) {
             build.foe(float(self.long // 2) + 0.5, float(self.wide // 2) + 0.5, 6 + index * 8, "monster_wizard", float(index * 120));
         }
@@ -529,16 +527,16 @@ node PitKey(Prefab) {
             build.solid(ax - 2, cy - 2, -3, ax + 2, cy + 2, 1);
             build.teleporter(3.5, float(cy) + 0.5, 0, float(ax) - 1.0, float(cy), 1, 0.0);
             build.teleporter(float(ax) + 1.0, float(cy) + 1.0, 1, float(cx) - 1.0, float(cy), 1, 0.0);
-            build.foe(float(ax) + 0.5, float(cy) - 1.0, 1, end_foe(dice, self.danger), 0.0);
+            build.foe(float(ax) + 0.5, float(cy) - 1.0, 1, END_FOES.pick(dice, self.danger), 0.0);
         } else {
             build.teleporter(3.5, float(cy) + 0.5, 0, float(cx) - 1.0, float(cy), 1, 0.0);
         }
         build.teleporter(float(cx) + 1.0, float(cy) + 1.0, 1, 3.0, 3.0, 0, 180.0);
-        key_ambush(build, self.key, float(cx) + 1.0, float(cy) - 1.0, 1, side, 0, [2], [end_foe(dice, self.danger, True)]);
+        key_ambush(build, self.key, float(cx) + 1.0, float(cy) - 1.0, 1, side, 0, [2], [END_FOES.pick(dice, self.danger, True)]);
         # The vore brought in at the shore as the key is taken.
         taken = build.touch(float(cx), float(cy - 2), 1.0, float(cx + 2), float(cy), 6.0);
         taken +>:Fires:+> build.summon(1, 1, self.tall + 1, "monster_shalrath" if self.danger > 0.3 else "monster_wizard", 4.0, float(side) - 4.0, 0, 0.0);
-        build.foe(3.0, float(side) - 3.0, 0, end_foe(dice, self.danger), 0.0);
+        build.foe(3.0, float(side) - 3.0, 0, END_FOES.pick(dice, self.danger), 0.0);
         build.supply(2.5, 2.5, 0, "item_health");
     }
 }
@@ -607,10 +605,10 @@ node ShubPit(Prefab) {
         halfway +>:Fires:+> later;
         later +>:Fires:+> guards;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 4.5, float(middle) + 2.5 - float(index) * 5.0, low, end_foe(dice, self.danger, True), 180.0, waits=guards);
+            build.foe(float(self.long) - 4.5, float(middle) + 2.5 - float(index) * 5.0, low, END_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, end_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, END_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(float(self.long + wall) * 0.5, float(middle) + 0.5, low + 4, "monster_wizard", 0.0);
         build.supply(2.5, 2.5, 0, "item_health");

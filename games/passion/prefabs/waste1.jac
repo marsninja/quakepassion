@@ -28,7 +28,7 @@ palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush }
 import from .plant_parts { key_doors, open_ways, charges, sparking, stash, crate_pile, squad, keep_box, plat }
 
@@ -36,12 +36,7 @@ glob WASTE1: str = "q2:waste1";
 
 """waste1's foes: gunners and soldiers, iron maidens and berserkers, hovers,
 a tank deeper in."""
-def waste1_foe(dice: Stream, danger: float, heavy: bool = False, flying: bool = False) -> str {
-    if flying {
-        return "monster_hover";
-    }
-    return q1_foe(dice, q1_palette(["monster_gunner", "monster_berserk"] if heavy else ["monster_soldier", "monster_gunner", "monster_chick"], ["monster_tank"] if heavy else ["monster_berserk"], danger * 0.3 if heavy else danger * 0.6));
-}
+glob WASTE1_FOES: FoeMix = FoeMix(light=["monster_soldier", "monster_gunner", "monster_chick"], strong=["monster_berserk"], heavy_light=["monster_gunner", "monster_berserk"], heavy_strong=["monster_tank"], scale=0.6, heavy_scale=0.3, flying="monster_hover");
 
 """The start: a yard of slime pits, a loading canopy over its far end."""
 node DumpYard(Prefab) {
@@ -103,7 +98,7 @@ node DumpYard(Prefab) {
         shutter = build.opened(float(self.long - 6), float(self.wide - 6), 0.0, float(self.long - 5), float(self.wide - 2), 5.0);
         lever = build.push(float(self.long) - 4.5, float(self.wide - 7), 1.5, 3);
         lever +>:Fires:+> shutter;
-        squad(build, lever, [[float(self.long) - 3.5, float(self.wide) - 4.0, 0.0]], [waste1_foe(dice, self.danger, True)], 180.0);
+        squad(build, lever, [[float(self.long) - 3.5, float(self.wide) - 4.0, 0.0]], [WASTE1_FOES.pick(dice, self.danger, True)], 180.0);
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, 0, "ammo_rockets", "q2");
         open_ways(build, yard, self);
         build.start(2.5, float(cy) + 0.5, 0, 0.0);
@@ -111,11 +106,11 @@ node DumpYard(Prefab) {
         build.touch(1.0, float(cy - 3), 0.0, 5.0, float(cy + 3), 8.0) +>:Fires:+> build.objective("Proceed to Pumping Stations.\nActivate stations one\nand two.");
         # Guards appear on the canopy's roof as the player crosses.
         crossing = build.touch(float(self.long // 2 - 1), 1.0, 0.0, float(self.long // 2 + 1), float(self.wide - 1), 6.0);
-        squad(build, crossing, [[float(self.long) - 4.5, float(cy) - 4.5, float(r)], [float(self.long) - 4.5, float(cy) + 4.5, float(r)]], ["monster_gunner", waste1_foe(dice, self.danger)], 180.0);
+        squad(build, crossing, [[float(self.long) - 4.5, float(cy) - 4.5, float(r)], [float(self.long) - 4.5, float(cy) + 4.5, float(r)]], ["monster_gunner", WASTE1_FOES.pick(dice, self.danger)], 180.0);
         build.foe(4.5, float(cy) + 0.5, 0, "monster_soldier", 0.0, patrol=[[4.5, float(cy) + 0.5], [float(cx0) - 2.5, float(cy) + 0.5], [float(cx0) - 2.5, 10.5]]);
-        build.foe(float(cx0) + 4.5, float(cy) + 0.5, 0, waste1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(cx0) + 4.5, float(cy) + 0.5, 0, WASTE1_FOES.pick(dice, self.danger, True), 180.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long // 2 + 3) + 0.5, 4.5 + float(index) * 8.0, 0, waste1_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long // 2 + 3) + 0.5, 4.5 + float(index) * 8.0, 0, WASTE1_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(float(self.long // 2) + 0.5, float(cy) + 0.5, r + 4, "monster_hover", 180.0);
         sparking(build, dice.uniform(4.0, 6.0), float(cx0) + 0.5, 5.2, float(r) - 3.0, 1);
@@ -180,13 +175,13 @@ node SlimeCanyon(Prefab) {
         # brings guards onto the far ledge.
         over = build.touch(float(r0), float(self.low_y), 0.0, float(r0 + 2), float(self.low_y + 3), 6.0);
         charges(build, over, [[float(r0) + 1.0, 2.5, -2.0], [float(r1) - 1.0, float(self.wide) - 2.5, -2.0]], 0.4);
-        squad(build, over, [[float(self.long) - 3.5, 3.5, float(h)], [float(self.long) - 3.5, float(self.wide) - 3.5, float(h)]], [waste1_foe(dice, self.danger), "monster_gunner"], 180.0);
+        squad(build, over, [[float(self.long) - 3.5, 3.5, float(h)], [float(self.long) - 3.5, float(self.wide) - 3.5, float(h)]], [WASTE1_FOES.pick(dice, self.danger), "monster_gunner"], 180.0);
         build.foe(8.5, float(self.high_y) + 1.5, h, "monster_soldier", 0.0, patrol=[[8.5, float(self.high_y) + 1.5], [float(self.long) - 8.5, float(self.high_y) + 1.5]]);
         build.foe(float(r0) + 2.5, float(cy) + 0.5, 4, "monster_hover", 90.0, patrol=[[float(r0) + 2.5, 3.5], [float(r0) + 2.5, float(self.wide) - 3.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(r1) + 3.5 + float(index % 2) * 3.0, 3.5 + float(index) * 4.0, 0, waste1_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(r1) + 3.5 + float(index % 2) * 3.0, 3.5 + float(index) * 4.0, 0, WASTE1_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(3.5, float(cy) + 0.5, h, waste1_foe(dice, self.danger), 0.0);
+        build.foe(3.5, float(cy) + 0.5, h, WASTE1_FOES.pick(dice, self.danger), 0.0);
         build.supply(3.0, 3.0, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.0, float(cy) + 0.5, h, "ammo_bullets", "q2");
     }
@@ -256,14 +251,14 @@ node PipeGallery(Prefab) {
         }
         open_ways(build, hall, self);
         up = build.touch(float(px + 4), float(h - 2), float(h - 1), float(px + 7), float(h + 1), float(h + 6));
-        squad(build, up, [[float(px) + 2.0, float(self.wide) - 3.0, float(h)], [float(px) + 2.0, float(cy) + 4.0, float(h)]], ["monster_gunner", waste1_foe(dice, self.danger)], 270.0);
+        squad(build, up, [[float(px) + 2.0, float(self.wide) - 3.0, float(h)], [float(px) + 2.0, float(cy) + 4.0, float(h)]], ["monster_gunner", WASTE1_FOES.pick(dice, self.danger)], 270.0);
         under = build.touch(float(px - 2), float(cy - 2), 0.0, float(px), float(cy + 2), 6.0);
-        squad(build, under, [[float(self.long) - 4.5, float(cy) + 4.5, 0.0]], [waste1_foe(dice, self.danger, True)], 180.0);
+        squad(build, under, [[float(self.long) - 4.5, float(cy) + 4.5, 0.0]], [WASTE1_FOES.pick(dice, self.danger, True)], 180.0);
         build.foe(float(px) + 2.0, 3.5, h, "monster_soldier", 90.0, patrol=[[float(px) + 2.0, 3.5], [float(px) + 2.0, float(self.wide) - 3.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(px + 8 + index * 3) + 0.5, float(cy) + (4.5 if index % 2 == 0 else -4.5), 0, waste1_foe(dice, self.danger), 180.0);
+            build.foe(float(px + 8 + index * 3) + 0.5, float(cy) + (4.5 if index % 2 == 0 else -4.5), 0, WASTE1_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(4.5, float(cy) + 4.5, 0, waste1_foe(dice, self.danger), 0.0);
+        build.foe(4.5, float(cy) + 4.5, 0, WASTE1_FOES.pick(dice, self.danger), 0.0);
         sparking(build, dice.uniform(3.0, 5.0), float(px) - 0.2, float(self.wide) - 3.0, float(h) - 2.0, 2);
         crate_pile(build, self.long - 5, 1, 0, 2, 1);
         build.supply(float(self.long) - 3.0, 3.0, 0, Q2_HEALTH, "q2");
@@ -334,7 +329,7 @@ node SettlingTanks(Prefab) {
                 }
                 build.level(yard, 7);
                 booth_cue = build.touch(float(c0), float(c1 + 3), 7.0, float(c0 + tw), float(c1 + th), 13.0);
-                booth_cue +>:Fires:+> build.summon(c0 + tw - 4 if west else c0 + 1, c1 + th - 4, 0, waste1_foe(dice, self.danger, True), float(cx) + 0.5, float(cy) + 0.5, 0, 0.0);
+                booth_cue +>:Fires:+> build.summon(c0 + tw - 4 if west else c0 + 1, c1 + th - 4, 0, WASTE1_FOES.pick(dice, self.danger, True), float(cx) + 0.5, float(cy) + 0.5, 0, 0.0);
                 if west {
                     stash(build, c0, c1 + th - 3, 0, True, -1, Q2_ARMOR);
                 } else {
@@ -363,14 +358,14 @@ node SettlingTanks(Prefab) {
         open_ways(build, yard, self);
         # Up on the catwalks, guards appear at the ends of the cross.
         up = build.touch(float(cx - 2), 1.0, float(h), float(cx + 2), 5.0, float(h + 6));
-        squad(build, up, [[3.5, float(cy) + 0.5, float(h)], [float(cx) + 0.5, float(self.wide) - 3.5, float(h)]], ["monster_gunner", waste1_foe(dice, self.danger)], 0.0);
+        squad(build, up, [[3.5, float(cy) + 0.5, float(h)], [float(cx) + 0.5, float(self.wide) - 3.5, float(h)]], ["monster_gunner", WASTE1_FOES.pick(dice, self.danger)], 0.0);
         middle = build.touch(float(cx - 3), float(cy - 3), 0.0, float(cx + 3), float(cy + 3), 6.0);
-        squad(build, middle, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 3.5, float(self.wide) - 3.5, 0.0]], [waste1_foe(dice, self.danger, True), waste1_foe(dice, self.danger)], 180.0);
+        squad(build, middle, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 3.5, float(self.wide) - 3.5, 0.0]], [WASTE1_FOES.pick(dice, self.danger, True), WASTE1_FOES.pick(dice, self.danger)], 180.0);
         build.foe(3.0, 6.0, 0, "monster_soldier", 0.0, patrol=[[3.0, 6.0], [3.0, float(self.wide) - 3.0]]);
         build.foe(float(self.long) - 4.5, float(cy) + 0.5, h, "monster_gunner", 180.0, patrol=[[float(self.long) - 4.5, float(cy) + 0.5], [4.5, float(cy) + 0.5]]);
         build.foe(float(cx) + 0.5, float(cy) + 6.5, 4, "monster_hover", 270.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(cx) + 0.5, float(cy) - 6.5 + float(index) * 13.0, 0, waste1_foe(dice, self.danger), 180.0);
+            build.foe(float(cx) + 0.5, float(cy) - 6.5 + float(index) * 13.0, 0, WASTE1_FOES.pick(dice, self.danger), 180.0);
         }
         sparking(build, dice.uniform(4.0, 6.0), float(cx) + 2.2, float(cy) + 2.2, float(h) - 2.0, 0);
         crate_pile(build, self.long - 4, 6, 0, 1, 2);
@@ -427,13 +422,13 @@ node WasteOffice(Prefab) {
         } else {
             stair(build, ox - m, 1, 0, 0, m, 3);
         }
-        key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, m, side, 0, [3, 9], [waste1_foe(dice, self.danger, True), waste1_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, m, side, 0, [3, 9], [WASTE1_FOES.pick(dice, self.danger, True), WASTE1_FOES.pick(dice, self.danger)]);
         landing = build.touch(float(ox), 1.0, float(m), float(ox + 2), float(side), float(m + 5));
-        squad(build, landing, [[float(self.long) - 3.5, float(side) - 3.5, float(m)]], [waste1_foe(dice, self.danger)], 180.0);
+        squad(build, landing, [[float(self.long) - 3.5, float(side) - 3.5, float(m)]], [WASTE1_FOES.pick(dice, self.danger)], 180.0);
         inside = build.touch(float(ox + 4), 1.0, float(m), float(ox + 6), float(side), float(m + 5));
-        squad(build, inside, [[float(ox) - 3.5, float(side) - 3.5, 0.0], [4.5, float(cy) + 0.5, 0.0]], [waste1_foe(dice, self.danger), "monster_gunner"], 0.0);
+        squad(build, inside, [[float(ox) - 3.5, float(side) - 3.5, 0.0], [4.5, float(cy) + 0.5, 0.0]], [WASTE1_FOES.pick(dice, self.danger), "monster_gunner"], 0.0);
         inside +>:Fires:+> build.explosion(float(ox) - 2.0, float(cy), 3.0);
-        build.foe(float(self.long) - 3.5, 3.5, m, waste1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, 3.5, m, WASTE1_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(7.5, 6.5, 0, "monster_soldier", 0.0, patrol=[[7.5, 6.5], [float(self.long) - 4.5, 6.5]]);
         sparking(build, dice.uniform(4.0, 6.0), float(ox) + 0.5, 1.2, float(m) - 2.5, 1);
         build.supply(2.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
@@ -490,10 +485,10 @@ node PumpAccess(Prefab) {
         }
         build.way_out(float(self.long) - 4.0, float(cy) - 1.0, -d);
         down = build.touch(float(wall + 5 + d), 1.0, float(-d), float(wall + 7 + d), float(self.wide - 5), float(-d + 6));
-        squad(build, down, [[float(self.long) - 4.5, 3.5, float(-d)], [float(self.long) - 6.5, float(cy) + 1.5, float(-d)]], [waste1_foe(dice, self.danger, True), waste1_foe(dice, self.danger)], 180.0);
+        squad(build, down, [[float(self.long) - 4.5, 3.5, float(-d)], [float(self.long) - 6.5, float(cy) + 1.5, float(-d)]], [WASTE1_FOES.pick(dice, self.danger, True), WASTE1_FOES.pick(dice, self.danger)], 180.0);
         charges(build, down, [[float(self.long) - 3.0, float(self.wide) - 3.0, float(-d + 2)]], 0.5);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, waste1_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, WASTE1_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(float(wall + d + 8) + 0.5, float(cy) + 0.5, -d + 5, "monster_hover", 180.0, patrol=[[float(wall + d + 8) + 0.5, float(cy) + 0.5], [float(self.long) - 4.5, float(cy) + 0.5]]);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");

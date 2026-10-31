@@ -29,10 +29,11 @@ q3tourney2's own palette.
   the way out on a dais high across its far end, a pad up (and by the
   seed a stair), fire burning in front of the dais."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .common { key_ambush }
 import from .q3late_parts { deck, keep_box, hurt, throw, wake_later, flying_stair, columns }
 
@@ -41,9 +42,7 @@ glob Q3TOURNEY2: str = "q3:q3tourney2",
      Q3TOURNEY2_HEAVY: list[str] = ["monster_hell_knight"];
 
 """A foe for q3tourney2's stretches."""
-def proving_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3TOURNEY2_LIGHT, Q3TOURNEY2_HEAVY, strong);
-}
+glob PROVING_FOES: FoeMix = FoeMix(light=Q3TOURNEY2_LIGHT, strong=Q3TOURNEY2_HEAVY, heavy_light=Q3TOURNEY2_HEAVY, scale=0.5);
 
 """A brazier's fire flaring up now and then at (x, y), `z` lifts up: a
 timer firing a harmless burst (the original's looping fires)."""
@@ -100,7 +99,7 @@ node ProvingGate(Prefab) {
             build.widen(hall, self.long - 9, oy, -4, self.long - 1, oy + 4, 0);
             build.level(hall, -4);
             stair(build, self.long - 6, oy, -4, 2, 4, 4);
-            build.foe(float(self.long) - 3.0, float(oy) + 2.0, -4, proving_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long) - 3.0, float(oy) + 2.0, -4, PROVING_FOES.pick(dice, self.danger), 180.0);
         }
         build.doorway(hall, self.enter);
         for port in self.taken {
@@ -113,13 +112,13 @@ node ProvingGate(Prefab) {
         for index in range(3) {
             build.supply(float(12 + index * 3) + 0.5, py, 0, "item_armor_shard", "q3");
         }
-        build.foe(float(self.long) - 4.5, py, 0, proving_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 4.5, py, 0, PROVING_FOES.pick(dice, self.danger), 180.0);
         flare(build, 2.0, 2.0, 1.0, 5.0);
         flare(build, 2.0, float(self.wide) - 2.0, 1.0, 6.0);
         # Halfway up the stair, the gallery's guards come to meet the climber.
         climb = build.touch(float(8 + g // 2 - 1), float(sy), 1.0, float(8 + g // 2 + 1), float(sy + 3), float(g // 2 + 6));
         guards = wake_later(build, climb, 0.5);
-        build.foe(4.0, float(self.wide) - float(sy) - 2.5, g, proving_foe(dice, self.danger, True), 0.0, waits=guards);
+        build.foe(4.0, float(self.wide) - float(sy) - 2.5, g, PROVING_FOES.pick(dice, self.danger, True), 0.0, waits=guards);
         build.supply(float(self.long) - 3.0, 3.0 if self.side == 1 else float(self.wide) - 3.0, 0, Q3_HEALTH, "q3");
     }
 }
@@ -186,17 +185,17 @@ node ProvingRing(Prefab) {
             build.doorway(ring, port);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(9 + index * 3) + 0.5, float(cy) + (2.5 if index % 2 == 0 else -2.5), low, proving_foe(dice, self.danger), 180.0);
+            build.foe(float(9 + index * 3) + 0.5, float(cy) + (2.5 if index % 2 == 0 else -2.5), low, PROVING_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(3.0, 3.0, 0, proving_foe(dice, self.danger), 0.0, patrol=[[3.0, 3.0], [float(self.long) - 7.0, 3.0]]);
+        build.foe(3.0, 3.0, 0, PROVING_FOES.pick(dice, self.danger), 0.0, patrol=[[3.0, 3.0], [float(self.long) - 7.0, 3.0]]);
         # Down in the ring, the balcony's guards come to its rail.
         down = build.touch(6.0, 6.0, float(low), float(self.long - 6), float(self.wide - 6), float(low + 4));
         guards = wake_later(build, down, 1.0);
-        build.foe(float(self.long) - 2.5, 3.5, b, proving_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(float(self.long) - 2.5, float(cy) + 3.5, b, proving_foe(dice, self.danger), 180.0, waits=guards);
+        build.foe(float(self.long) - 2.5, 3.5, b, PROVING_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(self.long) - 2.5, float(cy) + 3.5, b, PROVING_FOES.pick(dice, self.danger), 180.0, waits=guards);
         # And a while on, a second wave down the stairs into the ring.
         wave = wake_later(build, down, 6.0);
-        build.foe(3.0, float(self.wide) - 3.0, 0, proving_foe(dice, self.danger), 0.0, waits=wave);
+        build.foe(3.0, float(self.wide) - 3.0, 0, PROVING_FOES.pick(dice, self.danger), 0.0, waits=wave);
         flare(build, float(self.long // 2) + 0.5, float(cy) + 0.5, float(low) + 1.0, 7.0);
         build.supply(float(self.long // 2) + 0.5, float(cy) + 0.5, low, Q3_ARMOR, "q3");
         build.supply(3.0, float(self.wide) - 3.0, 0, Q3_HEALTH, "q3");
@@ -260,14 +259,14 @@ node SwitchbackHall(Prefab) {
         for port in self.taken {
             build.doorway(hall, port);
         }
-        build.foe(10.5, float(middle) + 0.5, 0, proving_foe(dice, self.danger), 180.0);
+        build.foe(10.5, float(middle) + 0.5, 0, PROVING_FOES.pick(dice, self.danger), 180.0);
         # At the first flight's head, the landing's guards come on.
         head = build.touch(12.0, float(a0), 6.0, 16.0, float(a0 + 3), 14.0);
         guards = wake_later(build, head, 1.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 3.5, float(middle) + (2.5 if index == 0 else -2.5), 8, proving_foe(dice, self.danger), 180.0, waits=guards);
+            build.foe(float(self.long) - 3.5, float(middle) + (2.5 if index == 0 else -2.5), 8, PROVING_FOES.pick(dice, self.danger), 180.0, waits=guards);
         }
-        build.foe(3.0, float(a0) + 1.5, 16, proving_foe(dice, self.danger, True), 0.0);
+        build.foe(3.0, float(a0) + 1.5, 16, PROVING_FOES.pick(dice, self.danger, True), 0.0);
         build.supply(3.0, float(b0) + 1.5, 16, Q3_ARMOR, "q3");
         flare(build, float(self.long) - 2.0, float(a0) + 1.5, 9.0, 5.0);
         build.supply(float(self.long) - 3.0, float(b0) + 1.5, 8, Q3_HEALTH, "q3");
@@ -340,16 +339,16 @@ node ProvingCourt(Prefab) {
             build.doorway(court, port);
         }
         build.supply(float(self.long) - 2.5, float(cy) - 0.5, hb, "item_armor_combat", "q3");
-        build.foe(float(cx) - 2.5, float(cy) + 1.5, -6, proving_foe(dice, self.danger), 0.0);
-        build.foe(4.5, float(cy) + 7.5, 0, proving_foe(dice, self.danger), 0.0, patrol=[[4.5, float(cy) + 7.5], [float(self.long) - 7.5, float(cy) + 7.5], [float(self.long) - 7.5, float(cy) - 7.5], [20.5, float(cy) - 7.5]]);
+        build.foe(float(cx) - 2.5, float(cy) + 1.5, -6, PROVING_FOES.pick(dice, self.danger), 0.0);
+        build.foe(4.5, float(cy) + 7.5, 0, PROVING_FOES.pick(dice, self.danger), 0.0, patrol=[[4.5, float(cy) + 7.5], [float(self.long) - 7.5, float(cy) + 7.5], [float(self.long) - 7.5, float(cy) - 7.5], [20.5, float(cy) - 7.5]]);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(cx + 6 + index * 3) + 0.5, 3.0, g, proving_foe(dice, self.danger), 90.0);
+            build.foe(float(cx + 6 + index * 3) + 0.5, 3.0, g, PROVING_FOES.pick(dice, self.danger), 90.0);
         }
         # Into the pit, the far galleries' guards come on.
         pit = build.touch(float(cx - 4), float(cy - 3), -6.0, float(cx + 4), float(cy + 3), -2.0);
         guards = wake_later(build, pit, 1.0);
-        build.foe(float(self.long) - 3.0, float(cy) + 5.0, g, proving_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(float(cx) + 0.5, float(self.wide) - 3.0, g, proving_foe(dice, self.danger), 270.0, waits=guards);
+        build.foe(float(self.long) - 3.0, float(cy) + 5.0, g, PROVING_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(cx) + 0.5, float(self.wide) - 3.0, g, PROVING_FOES.pick(dice, self.danger), 270.0, waits=guards);
         build.supply(3.0, 3.0, g, Q3_HEALTH, "q3");
         build.supply(4.0, float(cy) - 3.5, 0, Q3_HEALTH, "q3");
         flare(build, float(cx) - 4.5, float(cy) - 3.5, 1.0, 5.0);
@@ -412,9 +411,9 @@ node TrialShrine(Prefab) {
         } else {
             keep_box(build, room, sx, 2, sx + 1, 5, 10);
         }
-        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, 10, side, 0, [2, 6], [proving_foe(dice, self.danger, True), proving_foe(dice, self.danger)]);
-        build.foe(float(sx) - 5.5, float(cy) - 3.0, -8, proving_foe(dice, self.danger), 0.0);
-        build.foe(float(self.long) - 3.0, float(side) - 3.0, 10, proving_foe(dice, self.danger), 180.0);
+        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, 10, side, 0, [2, 6], [PROVING_FOES.pick(dice, self.danger, True), PROVING_FOES.pick(dice, self.danger)]);
+        build.foe(float(sx) - 5.5, float(cy) - 3.0, -8, PROVING_FOES.pick(dice, self.danger), 0.0);
+        build.foe(float(self.long) - 3.0, float(side) - 3.0, 10, PROVING_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(14.0, float(cy) + 0.5, -8, "item_armor_shard", "q3");
     }
@@ -475,12 +474,12 @@ node ProvingEnd(Prefab) {
         guards = build.waiting();
         door +>:Fires:+> guards;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 3.0, 3.0 + float(index) * float(self.wide - 6) / 2.0, d, proving_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(self.long) - 3.0, 3.0 + float(index) * float(self.wide - 6) / 2.0, d, PROVING_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, proving_foe(dice, self.danger), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, PROVING_FOES.pick(dice, self.danger), 180.0);
         }
-        build.foe(float(dx) - 6.5, py + 4.0, 0, proving_foe(dice, self.danger), 180.0);
+        build.foe(float(dx) - 6.5, py + 4.0, 0, PROVING_FOES.pick(dice, self.danger), 180.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(wall) + 3.0, float(self.wide) - 3.0, 0, Q3_HEALTH, "q3");
     }

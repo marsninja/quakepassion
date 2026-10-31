@@ -29,10 +29,11 @@ jump pads or teleporters on it send them back up.
   the abyss, a narrow bridge (or a pad) to the stage, the way out under
   the great gate's arch; fires burst along the bridge."""
 import from ..random { Stream }
+import from .roster { FoeMix }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, key_ambush }
-import from .q3arena { arena_foe, Q3_HEALTH, Q3_ARMOR }
+import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3late_parts { deck, keep_box, void_floor, void_pads, throw, wake_later, flying_stair, columns }
 
 glob Q3TOURNEY3: str = "q3:q3tourney3",
@@ -40,9 +41,7 @@ glob Q3TOURNEY3: str = "q3:q3tourney3",
      Q3TOURNEY3_HEAVY: list[str] = ["monster_demon1"];
 
 """A foe for q3tourney3's stretches."""
-def hell_foe(dice: Stream, danger: float, strong: bool = False) -> str {
-    return arena_foe(dice, danger, Q3TOURNEY3_LIGHT, Q3TOURNEY3_HEAVY, strong);
-}
+glob HELL_FOES: FoeMix = FoeMix(light=Q3TOURNEY3_LIGHT, strong=Q3TOURNEY3_HEAVY, heavy_light=Q3TOURNEY3_HEAVY, scale=0.5);
 
 """A fire bursting on a timer at (x, y), `z` lifts up (the original's
 timed fires)."""
@@ -118,13 +117,13 @@ node HellsPorch(Prefab) {
         build.supply(16.0, float(ty) + 1.5, -4, "weapon_plasmagun", "q3");
         burst(build, 9.5, 1.5, 1.0, 5.0);
         burst(build, 9.5, float(self.wide) - 1.5, 1.0, 6.0);
-        build.foe(7.5, py + 3.0, 0, hell_foe(dice, self.danger), 0.0);
-        build.foe(12.0, float(ty) + 6.5, -4, hell_foe(dice, self.danger), 0.0);
+        build.foe(7.5, py + 3.0, 0, HELL_FOES.pick(dice, self.danger), 0.0);
+        build.foe(12.0, float(ty) + 6.5, -4, HELL_FOES.pick(dice, self.danger), 0.0);
         # From the terrace, the far ledge's guards come on.
         terrace = build.touch(10.0, float(ty), -4.0, 18.0, float(ty + 8), 2.0);
         guards = wake_later(build, terrace, 1.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 2.5, 3.5 + float(index) * float(self.wide - 7), 4, hell_foe(dice, self.danger, index == 1), 180.0, waits=guards);
+            build.foe(float(self.long) - 2.5, 3.5 + float(index) * float(self.wide - 7), 4, HELL_FOES.pick(dice, self.danger, index == 1), 180.0, waits=guards);
         }
         build.supply(float(self.long) - 3.5, py, 4, Q3_HEALTH, "q3");
     }
@@ -202,12 +201,12 @@ node GateBridge(Prefab) {
         for port in self.taken {
             build.doorway(hall, port);
         }
-        build.foe(float(land) + 1.5, py + 3.5, 0, hell_foe(dice, self.danger), 180.0);
+        build.foe(float(land) + 1.5, py + 3.5, 0, HELL_FOES.pick(dice, self.danger), 180.0);
         # On the landing, the stage's guards come on.
         landed = build.touch(float(land), 1.0, 0.0, float(land + 3), float(self.wide - 1), 6.0);
         guards = wake_later(build, landed, 0.5);
-        build.foe(float(self.long) - 3.0, py, st, hell_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(float(self.long) - 3.0, 3.0, st, hell_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.0, py, st, HELL_FOES.pick(dice, self.danger, True), 180.0, waits=guards);
+        build.foe(float(self.long) - 3.0, 3.0, st, HELL_FOES.pick(dice, self.danger), 180.0);
         burst(build, float(land) + 2.0, 1.5, 1.0, 4.5);
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, st, Q3_HEALTH, "q3");
     }
@@ -275,15 +274,15 @@ node AbyssPads(Prefab) {
         for port in self.taken {
             build.doorway(hall, port);
         }
-        build.foe(12.5, float(wy) + 5.0, -4, hell_foe(dice, self.danger), 0.0);
-        build.foe(22.0, float(ey) + 1.5, 4, hell_foe(dice, self.danger, True), 180.0);
+        build.foe(12.5, float(wy) + 5.0, -4, HELL_FOES.pick(dice, self.danger), 0.0);
+        build.foe(22.0, float(ey) + 1.5, 4, HELL_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(11.0, float(wy) + 1.5, -4, "item_armor_shard", "q3");
         build.supply(19.5, float(ey) + 5.0, 4, "item_enviro", "q3");
         # On the high outcrop, the far ledge's guards come on.
         high = build.touch(18.0, float(ey), 4.0, 24.0, float(ey + 6), 10.0);
         guards = wake_later(build, high, 1.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 2.5, 3.5 + float(index) * float(self.wide - 7), fz, hell_foe(dice, self.danger), 180.0, waits=guards);
+            build.foe(float(self.long) - 2.5, 3.5 + float(index) * float(self.wide - 7), fz, HELL_FOES.pick(dice, self.danger), 180.0, waits=guards);
         }
         burst(build, float(far) + 1.0, 2.0, float(fz) + 1.0, 5.0);
         build.supply(float(self.long) - 3.5, py, fz, Q3_HEALTH, "q3");
@@ -347,14 +346,14 @@ node GateCourt(Prefab) {
             build.doorway(court, port);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(16 + index * 6) + 0.5, 3.5, -4, hell_foe(dice, self.danger), 0.0);
+            build.foe(float(16 + index * 6) + 0.5, 3.5, -4, HELL_FOES.pick(dice, self.danger), 0.0);
         }
-        build.foe(float(self.long) - 4.5, float(self.wide) - 3.5, -4, hell_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 4.5, float(self.wide) - 3.5, -4, HELL_FOES.pick(dice, self.danger), 180.0);
         # Up on the stage's stair, the stage's guards come on.
         climb = build.touch(10.0, float(middle - 1), 1.0, 14.0, float(middle + 2), 8.0);
         guards = wake_later(build, climb, 0.5);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 6.5, float(middle) - 2.5 + float(index) * 2.5, 4, hell_foe(dice, self.danger, index == 1), 180.0, waits=guards);
+            build.foe(float(self.long) - 6.5, float(middle) - 2.5 + float(index) * 2.5, 4, HELL_FOES.pick(dice, self.danger, index == 1), 180.0, waits=guards);
         }
         build.supply(float(px) + 0.5, float(middle) + 0.5, 4, "weapon_railgun", "q3");
         build.supply(4.0, 3.0, 0, Q3_HEALTH, "q3");
@@ -411,9 +410,9 @@ node BrimstoneShrine(Prefab) {
         throw(build, room, 18.5, float(my) + 3.0, -4, float(sx) + 3.0, float(sy) + 3.5, 6, [19, my, 20, my + 6], None);
         build.teleporter(float(self.long) - 3.5, float(sy) + 5.5, 6, 4.0, float(cy) + 0.5, 0, 0.0);
         void_floor(build, 1, 1, self.long - 1, side, low, 4.0, float(cy) + 0.5, 0, 0.0, 12);
-        key_ambush(build, self.key, float(self.long) - 4.5, float(sy) + 2.0, 6, side, 0, [2, 7], [hell_foe(dice, self.danger, True), hell_foe(dice, self.danger)]);
-        build.foe(float(sx) + 2.0, float(sy) + 5.0, 6, hell_foe(dice, self.danger), 180.0);
-        build.foe(17.0, float(my) + 1.5, -4, hell_foe(dice, self.danger), 180.0);
+        key_ambush(build, self.key, float(self.long) - 4.5, float(sy) + 2.0, 6, side, 0, [2, 7], [HELL_FOES.pick(dice, self.danger, True), HELL_FOES.pick(dice, self.danger)]);
+        build.foe(float(sx) + 2.0, float(sy) + 5.0, 6, HELL_FOES.pick(dice, self.danger), 180.0);
+        build.foe(17.0, float(my) + 1.5, -4, HELL_FOES.pick(dice, self.danger), 180.0);
         burst(build, float(sx) - 1.0, float(sy) + 3.5, 7.0, 4.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(15.0, float(my) + 4.5, -4, "ammo_cells", "q3");
@@ -481,10 +480,10 @@ node HellsGate(Prefab) {
         halfway = build.touch(float(ex + 3), 1.0, 0.0, float(ex + 5), float(self.wide - 1), 6.0);
         guards = wake_later(build, halfway, 0.5);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 5.5, py - 3.0 + float(index) * 3.0, 4, hell_foe(dice, self.danger, index == 0), 180.0, waits=guards);
+            build.foe(float(self.long) - 5.5, py - 3.0 + float(index) * 3.0, 4, HELL_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, hell_foe(dice, self.danger), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, HELL_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
         build.supply(float(ex) - 2.0, float(self.wide) - 2.5, 0, Q3_HEALTH, "q3");

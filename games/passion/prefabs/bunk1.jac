@@ -28,7 +28,7 @@ way out. Raised in bunk1's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush, gate_into }
 import from .e4m6 { flood, onward_ports, port_door, told }
 import from .base2 { spark_timer, blast_chain, spawn_in, panel_stash, guard_closet }
@@ -36,9 +36,7 @@ import from .base2 { spark_timer, blast_chain, spawn_in, panel_stash, guard_clos
 glob BUNK1: str = "q2:bunk1";
 
 """bunk1's foes: soldiers and berserkers, enforcers deeper in."""
-def bunk1_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_berserk", "monster_soldier_ss"] if heavy else ["monster_soldier", "monster_soldier_ss", "monster_soldier_light"], ["monster_gladiator"] if heavy else ["monster_berserk", "monster_infantry"], danger));
-}
+glob BUNK1_FOES: FoeMix = FoeMix(light=["monster_soldier", "monster_soldier_ss", "monster_soldier_light"], strong=["monster_berserk", "monster_infantry"], heavy_light=["monster_berserk", "monster_soldier_ss"], heavy_strong=["monster_gladiator"]);
 
 """Crates: boxes of one to three lifts at the given cells ([x, y] each,
 a crate two cells square)."""
@@ -157,7 +155,7 @@ node LoadingDock(Prefab) {
         }
         spawn_in(build, dice, self.danger, climb, [[8.5, float(self.wide) - 3.0]], self.gantry, 0.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(dx) - 6.5 + float(index % 2) * 2.0, 6.5 + float(index) * 3.0, 0, bunk1_foe(dice, self.danger), 180.0);
+            build.foe(float(dx) - 6.5 + float(index % 2) * 2.0, 6.5 + float(index) * 3.0, 0, BUNK1_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(6.5, 5.5, 0, "monster_soldier", 0.0, patrol=[[6.5, 5.5], [float(dx) - 6.5, 5.5]]);
         spark_timer(build, float(dx) - 0.1, float(middle) + 4.5, 2.0, 2, 4.0);
@@ -240,10 +238,10 @@ node CrateStacks(Prefab) {
             }
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(8 + index * 5) + 0.5, float(middle) + 0.5, 0, bunk1_foe(dice, self.danger), 0.0);
+            build.foe(float(8 + index * 5) + 0.5, float(middle) + 0.5, 0, BUNK1_FOES.pick(dice, self.danger), 0.0);
         }
         build.foe(8.5, 2.5, self.top, "monster_soldier", 0.0, patrol=[[8.5, 2.5], [float(self.long) - 4.5, 2.5]]);
-        build.foe(float(self.long) - 3.0, float(self.wide) - 4.5, self.top, bunk1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.0, float(self.wide) - 4.5, self.top, BUNK1_FOES.pick(dice, self.danger, True), 180.0);
         spark_timer(build, float(self.long) - 1.1, 6.5, float(self.top) + 2.0, 2, 5.0);
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, self.top, Q2_ARMOR, "q2");
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
@@ -310,7 +308,7 @@ node CargoLifts(Prefab) {
             build.keep(hall, self.long - 7, y, upper);
         }
         build.level(hall, upper);
-        build.foe(float(self.long) - 3.5, float(middle) + 0.5, upper, bunk1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(self.long) - 3.5, float(middle) + 0.5, upper, BUNK1_FOES.pick(dice, self.danger, True), 180.0);
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, upper, Q2_ARMOR, "q2");
         build.solid(mx + 2, self.wide - 4, 0, mx + 9, self.wide - 1, self.mezzanine - 1);
         locker(build, mx + 3, self.wide - 4, 3, 0, Q2_HEALTH);
@@ -337,7 +335,7 @@ node CargoLifts(Prefab) {
             spawn_in(build, dice, self.danger, ride, [[float(self.long) - 4.5, float(y0) + 2.0]], self.mezzanine, 180.0, True);
         }
         for index in range(dice.between(3, 4)) {
-            build.foe(float(4 + index * 3) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), 0, bunk1_foe(dice, self.danger), 0.0);
+            build.foe(float(4 + index * 3) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), 0, BUNK1_FOES.pick(dice, self.danger), 0.0);
         }
         build.foe(float(mx) + 2.5, 2.5, self.mezzanine, "monster_soldier", 0.0, patrol=[[float(mx) + 2.5, 2.5], [float(self.long) - 3.5, 2.5]]);
         ammo_crates(build, [[3, 2], [3, self.wide - 3], [mx - 6, middle + 5]], 0);
@@ -427,7 +425,7 @@ node SubBasement(Prefab) {
             build.foe(float(10 + index * 7) + 0.5, float(middle) + 2.5, low + 1, "monster_flipper", 0.0);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long - 6 - index * 4) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -2.5), 0, bunk1_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(self.long - 6 - index * 4) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -2.5), 0, BUNK1_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(3.5, 3.5, 0, "monster_soldier", 90.0, patrol=[[3.5, 3.5], [3.5, float(self.wide) - 3.5]]);
         ammo_crates(build, [[self.long - 3, 2], [self.long - 3, self.wide - 3]], 0);
@@ -482,11 +480,11 @@ node ArmoryVault(Prefab) {
         ammo_crates(build, [[ax - 3, side - 2], [ax + 2, 2]], 0);
         build.solid(ax - 7, 1, 0, ax - 1, 4, 7);
         locker(build, ax - 6, 3, 1, 0, "ammo_grenades");
-        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, 0, side, 0, [3, ax - 5], [bunk1_foe(dice, self.danger, True), bunk1_foe(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, 0, side, 0, [3, ax - 5], [BUNK1_FOES.pick(dice, self.danger, True), BUNK1_FOES.pick(dice, self.danger)]);
         taken = build.touch(float(self.long - 5), float(cy - 2), 0.0, float(self.long - 1), float(cy + 3), 6.0);
         spawn_in(build, dice, self.danger, taken, [[float(ax) - 4.5, float(cy) + 0.5], [3.5, float(cy) - 3.5]], 0, 0.0, True);
         build.touch(1.0, float(cy - 2), 0.0, 4.0, float(cy + 2), 6.0) +>:Fires:+> build.objective("Take the key from the armory");
-        build.foe(float(self.long) - 3.0, 2.5, 0, bunk1_foe(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.0, 2.5, 0, BUNK1_FOES.pick(dice, self.danger), 180.0);
         build.foe(3.5, float(side) - 5.5, 0, "monster_soldier", 0.0, patrol=[[3.5, float(side) - 5.5], [float(ax) - 2.5, float(side) - 5.5]]);
         spark_timer(build, float(ax) - 0.1, float(cy) - 4.0, 4.0, 2, 4.0);
         build.supply(float(self.long) - 3.0, float(side) - 2.5, 0, Q2_ARMOR, "q2");
@@ -555,9 +553,9 @@ node DepotExit(Prefab) {
 
         build.touch(float(dx - self.dock), float(middle - 2), 0.0, float(dx), float(middle + 2), float(self.dock + 6), True, "Destroy the transports from the dock's console");
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, bunk1_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, BUNK1_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(dx) - 3.5, 2.5, 0, bunk1_foe(dice, self.danger, True), 180.0);
+        build.foe(float(dx) - 3.5, 2.5, 0, BUNK1_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(float(dx) + 2.5, float(self.wide) - 2.5, self.dock, "monster_soldier", 270.0, patrol=[[float(dx) + 2.5, float(self.wide) - 2.5], [float(dx) + 2.5, 2.5]]);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
     }

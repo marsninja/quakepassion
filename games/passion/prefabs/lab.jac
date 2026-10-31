@@ -43,16 +43,14 @@ lies, and the way back to the hangar. Raised in lab's own palette.
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
-import from .roster { q1_foe, q1_palette, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
+import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, gate_into, lift }
 import from .q2_works { deck, keep_box, sparking, blast_chain, stash, squad, rounds, beamed, shatter_row, laser_burst, key_taken, closets, held_door }
 
 glob LAB: str = "q2:lab";
 
 """lab's foes: parasites and iron maidens, medics and brains deeper in."""
-def lab_foe(dice: Stream, danger: float, heavy: bool = False) -> str {
-    return q1_foe(dice, q1_palette(["monster_chick", "monster_brain"] if heavy else ["monster_parasite", "monster_parasite", "monster_chick"], ["monster_medic"] if heavy else ["monster_brain"], danger * 0.4 if heavy else danger * 0.5));
-}
+glob LAB_FOES: FoeMix = FoeMix(light=["monster_parasite", "monster_parasite", "monster_chick"], strong=["monster_brain"], heavy_light=["monster_chick", "monster_brain"], heavy_strong=["monster_medic"], scale=0.5, heavy_scale=0.4);
 
 """Tanks along a room's wall line y = `side`: alcoves three cells wide and
 `deep` deep beyond it on lift `floor`, `high` lifts tall, one at each of
@@ -136,7 +134,7 @@ node Decontamination(Prefab) {
         done +>:Fires:+> far_door;
         # The holding tanks along the hall's wall burst as the cycle runs.
         held = tanks_along(build, side, [9, 13], 0, 3, 6);
-        shatter_row(build, cycle, held[0], held[1], ["monster_parasite", lab_foe(dice, self.danger)], 270.0, 0.6);
+        shatter_row(build, cycle, held[0], held[1], ["monster_parasite", LAB_FOES.pick(dice, self.danger)], 270.0, 0.6);
         # Beyond: a loading floor, sunk down a stair or not, a tank there
         # bursting as the far door opens.
         px = lx + 11;
@@ -152,8 +150,8 @@ node Decontamination(Prefab) {
             }
         }
         out_tank = tanks_along(build, side, [lx + 7], 0, 3, 6);
-        shatter_row(build, done, out_tank[0], out_tank[1], [lab_foe(dice, self.danger, True)], 270.0, 0.4);
-        beamed(build, done, 2, 2, -8, lab_foe(dice, self.danger), float(self.long) - 4.5, float(middle) + 0.5, -3 if self.sunken else 0, 180.0);
+        shatter_row(build, done, out_tank[0], out_tank[1], [LAB_FOES.pick(dice, self.danger, True)], 270.0, 0.4);
+        beamed(build, done, 2, 2, -8, LAB_FOES.pick(dice, self.danger), float(self.long) - 4.5, float(middle) + 0.5, -3 if self.sunken else 0, 180.0);
         build.doorway(hall, self.enter);
         deck_press = build.push(5.5, 1.0, float(self.deck_z) + 1.5, 1);
         for port in self.taken {
@@ -167,10 +165,10 @@ node Decontamination(Prefab) {
         build.start(1.5, float(middle) + 0.5, 0, 0.0);
         build.supply(2.5, float(middle) - 1.5, 0, "ammo_shells", "q2");
         build.touch(1.0, 1.0, 0.0, 3.0, float(side), 6.0) +>:Fires:+> build.objective("Locate the repair facility. Steal the commander's head");
-        rounds(build, lab_foe(dice, self.danger), [[5.5, 6.0], [5.5, float(side) - 2.0]], self.deck_z);
-        build.foe(12.5, float(middle) + 2.5, 0, lab_foe(dice, self.danger), 180.0);
+        rounds(build, LAB_FOES.pick(dice, self.danger), [[5.5, 6.0], [5.5, float(side) - 2.0]], self.deck_z);
+        build.foe(12.5, float(middle) + 2.5, 0, LAB_FOES.pick(dice, self.danger), 180.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 3.5, 3.5 + float(index) * 5.0, 0, lab_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long) - 3.5, 3.5 + float(index) * 5.0, 0, LAB_FOES.pick(dice, self.danger), 180.0);
         }
         sparking(build, float(self.long) - 1.2, float(side) - 2.5, 3.0, 2, 4.5);
         sparking(build, float(lx) - 0.2, 2.5, 4.0, 2, 6.0);
@@ -257,11 +255,11 @@ node SpecimenRow(Prefab) {
         start_x = float(self.long - 6) if self.from_far else 2.0;
         burst = build.touch(start_x, 6.0, 0.0, start_x + 3.0, float(side), 8.0);
         destroyed = build.tally(len(xs), "Specimens destroyed");
-        shatter_row(build, burst, held[0], held[1], ["monster_parasite", "monster_parasite", lab_foe(dice, self.danger, True)], 270.0, 0.6, destroyed);
+        shatter_row(build, burst, held[0], held[1], ["monster_parasite", "monster_parasite", LAB_FOES.pick(dice, self.danger, True)], 270.0, 0.6, destroyed);
         for jar_y in [side - 7, side - 10] {
             burst +>:Fires:+> build.breakable(float(self.long // 2 - 3), float(jar_y), 0.0, float(self.long // 2 - 2), float(jar_y + 1), 2.0, 10);
         }
-        beamed(build, burst, 2, 2, -8, lab_foe(dice, self.danger), float(self.long // 2) + 0.5, 7.5, 0, 90.0);
+        beamed(build, burst, 2, 2, -8, LAB_FOES.pick(dice, self.danger), float(self.long // 2) + 0.5, 7.5, 0, 90.0);
         # A locker under the gallery, its shutter opened by the button
         # beside it.
         lx0 = 4 if self.far_stair else self.long - 5;
@@ -282,13 +280,13 @@ node SpecimenRow(Prefab) {
         top_x = g1 - 2 if self.far_stair else g0;
         up = build.touch(float(top_x), 1.0, float(self.gal), float(top_x + 2), 5.0, float(self.gal + 6));
         laser_burst(build, up, float((g0 + g1) // 2) + 0.5, 1.1, float(self.gal) + 1.5, 1, 4.0);
-        squad(build, up, [[float((g0 + g1) // 2) + 4.5, 3.0, float(self.gal)]], [lab_foe(dice, self.danger, True)], 180.0);
+        squad(build, up, [[float((g0 + g1) // 2) + 4.5, 3.0, float(self.gal)]], [LAB_FOES.pick(dice, self.danger, True)], 180.0);
         # A pod riding a rail overhead.
         rail = float(self.gal + 4);
         build.train([2.0, 2.0, 2.0], [[6.0, float(side) - 7.0, rail], [float(self.long) - 8.0, float(side) - 7.0, rail]], 50.0, 3.0);
-        rounds(build, lab_foe(dice, self.danger), [[float(g0) + 1.5, 3.0], [float(g1) - 1.5, 3.0]], self.gal);
+        rounds(build, LAB_FOES.pick(dice, self.danger), [[float(g0) + 1.5, 3.0], [float(g1) - 1.5, 3.0]], self.gal);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long // 2 + index * 5) + 0.5, float(side) - 5.5, 0, lab_foe(dice, self.danger), 180.0);
+            build.foe(float(self.long // 2 + index * 5) + 0.5, float(side) - 5.5, 0, LAB_FOES.pick(dice, self.danger), 180.0);
         }
         sparking(build, float(self.long) - 1.2, 8.5, 3.0, 2, 3.5);
         build.supply(2.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
@@ -375,8 +373,8 @@ node ForcefieldHall(Prefab) {
         build.touch(float(dv - 3), float(middle - 2), 0.0, float(dv - 1), float(middle + 2), 6.0, False, "The forcefield is held by two switches");
         sparking(build, float(self.long) - 1.2, float(middle) - 4.0, 3.0, 2, 5.5);
         blast_chain(build, count, [[float(dv) - 1.0, float(middle) - 3.0, 4.0], [float(dv) - 1.0, float(middle) + 3.0, 4.0], [float(dv) + 2.0, float(middle), 7.0]], 0.3);
-        squad(build, count, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 3.5, float(self.wide) - 3.5, 0.0], [float(dv) + 4.5, float(middle) + 4.5, 0.0]], ["monster_parasite", lab_foe(dice, self.danger), "monster_parasite"], 180.0);
-        beamed(build, count, 2, 2, -8, lab_foe(dice, self.danger, True), 4.5, float(middle) + 0.5, 0, 0.0);
+        squad(build, count, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 3.5, float(self.wide) - 3.5, 0.0], [float(dv) + 4.5, float(middle) + 4.5, 0.0]], ["monster_parasite", LAB_FOES.pick(dice, self.danger), "monster_parasite"], 180.0);
+        beamed(build, count, 2, 2, -8, LAB_FOES.pick(dice, self.danger, True), 4.5, float(middle) + 0.5, 0, 0.0);
         # The bay's store: its shutter opened by the button by it ("Access
         # granted"), the parasites kept there let out.
         sy0 = middle + 3;
@@ -399,10 +397,10 @@ node ForcefieldHall(Prefab) {
         # A guard comes onto the deck as the player reaches it; foes in the
         # hall, one walking it.
         up = build.touch(float(d0), 1.0, float(self.deck_z), float(d0 + 3), 6.0, float(self.deck_z + 6));
-        squad(build, up, [[float(dv) - 3.5, 3.5, float(self.deck_z)]], [lab_foe(dice, self.danger, True)], 180.0);
-        rounds(build, lab_foe(dice, self.danger), [[5.5, float(middle) + 1.5], [float(dv) - 2.5, float(middle) + 1.5]], 0);
+        squad(build, up, [[float(dv) - 3.5, 3.5, float(self.deck_z)]], [LAB_FOES.pick(dice, self.danger, True)], 180.0);
+        rounds(build, LAB_FOES.pick(dice, self.danger), [[5.5, float(middle) + 1.5], [float(dv) - 2.5, float(middle) + 1.5]], 0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(dv) - 3.5, float(middle) + 5.5 - float(index) * 8.0, 0, lab_foe(dice, self.danger), 180.0);
+            build.foe(float(dv) - 3.5, float(middle) + 5.5 - float(index) * 8.0, 0, LAB_FOES.pick(dice, self.danger), 180.0);
         }
         sparking(build, float(dv) - 0.2, float(middle) + 3.0, 6.0, 2, 3.0);
         sparking(build, float(dv) + 1.2, float(middle) - 3.0, 6.0, 0, 4.0);
@@ -474,7 +472,7 @@ node MaintenanceBridge(Prefab) {
             build.touch(float(cut - 3), float(lane), 0.0, float(cut - 1), float(lane + 3), 6.0, True, "Shoot the switch on the far wall");
         }
         press +>:Fires:+> bridge;
-        beamed(build, press, 2, 2, -8, lab_foe(dice, self.danger, True), float(far) + 4.5, float(self.wide // 2) - 1.0, 0, 180.0);
+        beamed(build, press, 2, 2, -8, LAB_FOES.pick(dice, self.danger, True), float(far) + 4.5, float(self.wide // 2) - 1.0, 0, 180.0);
         stash(build, 2, 1, 0, 0, "ammo_cells", 5) +>:Fires:+> build.sparks(5.2, 3.0, 2.0, 0);
         late = build.delay(1.2);
         press +>:Fires:+> late;
@@ -483,7 +481,7 @@ node MaintenanceBridge(Prefab) {
         press +>:Fires:+> build.objective("Maintenance bridge activated", False);
         # Foes come onto the far ledge as the bridge goes out; a laser sweeps
         # the bridge as the player crosses.
-        squad(build, press, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 3.5, float(self.wide) - 6.5, 0.0]], [lab_foe(dice, self.danger), lab_foe(dice, self.danger, True)], 180.0);
+        squad(build, press, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 3.5, float(self.wide) - 6.5, 0.0]], [LAB_FOES.pick(dice, self.danger), LAB_FOES.pick(dice, self.danger, True)], 180.0);
         crossing = build.touch(float(cut + 2), float(lane), 0.0, float(far - 2), float(lane + 3), 6.0);
         laser_burst(build, crossing, float(cut) + float(self.span) * 0.5, float(self.wide) - 1.1, 1.5, 3, 3.0);
         crossing +>:Fires:+> build.sparks(float(far) + 0.5, float(lane) - 0.5, 2.0, 2);
@@ -493,9 +491,9 @@ node MaintenanceBridge(Prefab) {
             build.doorway(room, port);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(far) + 3.5, 3.5 + float(index) * 4.0, 0, lab_foe(dice, self.danger), 180.0);
+            build.foe(float(far) + 3.5, 3.5 + float(index) * 4.0, 0, LAB_FOES.pick(dice, self.danger), 180.0);
         }
-        rounds(build, lab_foe(dice, self.danger), [[float(far) + 2.5, float(self.wide) - 3.0], [float(self.long) - 3.0, float(self.wide) - 3.0], [float(self.long) - 3.0, 3.0]], 0);
+        rounds(build, LAB_FOES.pick(dice, self.danger), [[float(far) + 2.5, float(self.wide) - 3.0], [float(self.long) - 3.0, float(self.wide) - 3.0], [float(self.long) - 3.0, 3.0]], 0);
         build.foe(float(cut) + 1.0, 3.5, -self.depth, "monster_parasite", 90.0);
         sparking(build, float(cut) - 0.2, float(lane) - 2.0, -3.0, 0, 3.5);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
@@ -572,11 +570,11 @@ node LabStack(Prefab) {
         }
         # Foes appear as each floor is reached.
         second = build.touch(10.0, 1.0, float(m), 12.0, 4.0, float(m + 6));
-        squad(build, second, [[float(self.long) - 4.5, float(middle) + 2.5, float(m)], [14.5, float(self.wide) - 3.5, float(m)]], [lab_foe(dice, self.danger), "monster_parasite"], 180.0);
+        squad(build, second, [[float(self.long) - 4.5, float(middle) + 2.5, float(m)], [14.5, float(self.wide) - 3.5, float(m)]], [LAB_FOES.pick(dice, self.danger), "monster_parasite"], 180.0);
         third = build.touch(float(t1 - 2), float(self.wide - 4), float(t), float(t1), float(self.wide - 1), float(t + 6));
-        squad(build, third, [[3.5, 3.0, float(t)], [3.5, float(self.wide) - 3.0, float(t)]], [lab_foe(dice, self.danger, True), "monster_chick"], 0.0);
+        squad(build, third, [[3.5, 3.0, float(t)], [3.5, float(self.wide) - 3.0, float(t)]], [LAB_FOES.pick(dice, self.danger, True), "monster_chick"], 0.0);
         laser_burst(build, second, 13.5, float(self.wide) - 1.1, float(m) + 1.5, 3, 3.5);
-        beamed(build, third, 2, 2, -8, lab_foe(dice, self.danger), float(self.long) - 8.5, float(middle) + 3.5, m, 180.0);
+        beamed(build, third, 2, 2, -8, LAB_FOES.pick(dice, self.danger), float(self.long) - 8.5, float(middle) + 3.5, m, 180.0);
         # Steps a button raises from the floor to the second floor's edge.
         steps = build.rising_steps(2, middle + 2, 0, 0, m - 1, 3);
         keep_box(build, room, 10, middle + 2, 11, middle + 5, m);
@@ -584,9 +582,9 @@ node LabStack(Prefab) {
         build.touch(1.0, float(middle - 2), 0.0, 3.0, float(middle + 2), 6.0, True, "Research levels two and three above");
         broken = stash(build, self.long - 6, self.wide - 6, 0, 2, Q2_ARMOR, m - 1);
         broken +>:Fires:+> build.sparks(float(self.long) - 6.2, float(self.wide) - 4.0, 3.0, 2);
-        rounds(build, lab_foe(dice, self.danger), [[12.5, float(middle) - 1.5], [float(self.long) - 7.5, float(middle) - 1.5]], m);
+        rounds(build, LAB_FOES.pick(dice, self.danger), [[12.5, float(middle) - 1.5], [float(self.long) - 7.5, float(middle) - 1.5]], m);
         for index in range(dice.between(1, 2)) {
-            build.foe(6.5 + float(index) * 5.0, float(middle) + 3.5, 0, lab_foe(dice, self.danger), 0.0);
+            build.foe(6.5 + float(index) * 5.0, float(middle) + 3.5, 0, LAB_FOES.pick(dice, self.danger), 0.0);
         }
         sparking(build, 1.2, float(middle) + 3.0, float(t) + 2.0, 0, 4.0);
         sparking(build, float(self.long) - 1.2, float(middle), 3.0, 2, 5.0);
@@ -651,20 +649,20 @@ node OperatingTheatre(Prefab) {
         }
         # Taking the key: the closets open, the tanks burst, the medics come
         # onto the gallery.
-        closets(build, taken, side, 0, [3, self.long - 7], [lab_foe(dice, self.danger, True), lab_foe(dice, self.danger)]);
+        closets(build, taken, side, 0, [3, self.long - 7], [LAB_FOES.pick(dice, self.danger, True), LAB_FOES.pick(dice, self.danger)]);
         held = tanks_along(build, side, [8, 12], 0, 3, 6);
         shatter_row(build, taken, held[0], held[1], ["monster_parasite", "monster_chick"], 270.0, 0.5);
-        squad(build, taken, [[float(self.long) - 4.5, 2.5, float(self.gal)], [10.5, 2.5, float(self.gal)]], ["monster_medic", lab_foe(dice, self.danger)], 270.0);
+        squad(build, taken, [[float(self.long) - 4.5, 2.5, float(self.gal)], [10.5, 2.5, float(self.gal)]], ["monster_medic", LAB_FOES.pick(dice, self.danger)], 270.0);
         taken +>:Fires:+> build.explosion(float(tx), float(cy) + 3.0, 1.0);
-        beamed(build, taken, 2, 2, -8, lab_foe(dice, self.danger, True), float(tx) - 3.5, float(cy) + 0.5, -3, 0.0);
+        beamed(build, taken, 2, 2, -8, LAB_FOES.pick(dice, self.danger, True), float(tx) - 3.5, float(cy) + 0.5, -3, 0.0);
         build.train([2.0, 2.0, 1.0], [[float(tx - 3), float(cy - 1), 7.0], [float(tx + 1), float(cy - 1), 7.0]], 30.0, 1.0);
         steps = build.rising_steps(self.long - 7, cy - 1, -3, 0, 3, 3);
         keep_box(build, room, self.long - 4, cy - 1, self.long - 3, cy + 2, 0);
         build.push(float(self.long - 1), 2.5, float(self.gal) + 1.5, 2) +>:Fires:+> steps;
         build.touch(1.0, 5.0, 0.0, 3.0, float(side - 1), 6.0, True, "The commander lies on the table below");
         sparking(build, 1.2, float(side) - 2.5, 3.0, 0, 4.0);
-        build.foe(float(self.long) - 3.5, float(side) - 3.5, 0, lab_foe(dice, self.danger), 180.0);
-        rounds(build, lab_foe(dice, self.danger), [[9.5, 2.5], [float(self.long) - 3.5, 2.5]], self.gal);
+        build.foe(float(self.long) - 3.5, float(side) - 3.5, 0, LAB_FOES.pick(dice, self.danger), 180.0);
+        rounds(build, LAB_FOES.pick(dice, self.danger), [[9.5, 2.5], [float(self.long) - 3.5, 2.5]], self.gal);
         sparking(build, float(self.long) - 1.2, float(cy) + 0.5, 2.0, 2, 3.0);
         sparking(build, float(tx) + 2.2, float(cy), -2.0, 0, 5.0);
         build.supply(2.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
@@ -715,7 +713,7 @@ node LabExit(Prefab) {
         build.solid(9, self.wide - 4, 0, 17, self.wide - 1, self.tall);
         held = tanks_along(build, self.wide - 4, [10, 13], 0, 2, 6);
         near = build.touch(12.0, 1.0, 0.0, 15.0, float(self.wide - 4), 8.0);
-        shatter_row(build, near, held[0], held[1], ["monster_parasite", lab_foe(dice, self.danger)], 270.0, 0.5);
+        shatter_row(build, near, held[0], held[1], ["monster_parasite", LAB_FOES.pick(dice, self.danger)], 270.0, 0.5);
         ex = self.long - 6;
         if self.well {
             # The well: its floor sinks with the player on it, the way out at
@@ -734,10 +732,10 @@ node LabExit(Prefab) {
             build.way_out(float(ex) + 3.0, float(middle), 4);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, lab_foe(dice, self.danger, index == 0), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, LAB_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(ex) - 5.5, 3.5, 0, lab_foe(dice, self.danger, True), 180.0);
-        build.foe(float(ex) - 5.5, float(self.wide) - 3.5, 0, lab_foe(dice, self.danger), 180.0);
+        build.foe(float(ex) - 5.5, 3.5, 0, LAB_FOES.pick(dice, self.danger, True), 180.0);
+        build.foe(float(ex) - 5.5, float(self.wide) - 3.5, 0, LAB_FOES.pick(dice, self.danger), 180.0);
         sparking(build, float(sx) + 1.2, 2.5, 4.0, 0, 3.0);
         sparking(build, float(self.long) - 1.2, 2.5, 5.0, 2, 5.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
