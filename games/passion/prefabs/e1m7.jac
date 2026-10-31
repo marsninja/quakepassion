@@ -241,7 +241,7 @@ node TeleportJunction(Prefab) {
         self.wide = dice.between(22, 25);
         self.t1 = dice.between(9, 10);
         self.t2 = self.t1 + dice.between(9, 10);
-        self.tall = self.t2 + dice.between(8, 10);
+        self.tall = self.t2 + dice.between(14, 16);
         self.low = -9;
         self.high = self.tall + 1;
         mid = self.wide // 2;
@@ -337,7 +337,7 @@ node ElectrodeWalk(Prefab) {
         self.long = dice.between(26, 30);
         self.wide = dice.between(17, 19);
         self.c = dice.between(10, 11);
-        self.tall = self.c + dice.between(9, 10);
+        self.tall = self.c + dice.between(12, 14);
         self.crooked = dice.chance(0.5);
         self.low = -9;
         self.high = self.tall + 1;
@@ -441,7 +441,7 @@ node LavaPillars(Prefab) {
         self.district = level_district(E1M7);
         self.long = dice.between(26, 30);
         self.wide = dice.between(17, 20);
-        self.tall = dice.between(18, 22);
+        self.tall = dice.between(26, 30);
         self.climbing = dice.chance(0.5);
         self.low = -10;
         self.high = self.tall + 1;
@@ -606,7 +606,7 @@ node ChthonArena(Prefab) {
         self.district = level_district(E1M7);
         self.long = dice.between(30, 34);
         self.wide = dice.between(26, 30);
-        self.tall = dice.between(24, 28);
+        self.tall = dice.between(42, 48);
         self.paired = dice.chance(0.5);
         self.low = -10;
         self.high = self.tall + 1;
