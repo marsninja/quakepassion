@@ -256,7 +256,7 @@ node ShowdownTiers(Prefab) {
         self.wide = dice.between(26, 28);
         self.drop = dice.between(3, 4);
         self.gantry = 9;
-        self.tall = 20;
+        self.tall = dice.between(26, 28);
         self.low = -2 * self.drop - 8;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -336,7 +336,7 @@ node MakronLair(Prefab) {
         self.wide = dice.between(24, 26);
         self.gal = 9;
         self.dais = dice.between(2, 3);
-        self.tall = 22;
+        self.tall = dice.between(27, 30);
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);

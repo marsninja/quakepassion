@@ -14,10 +14,10 @@ lift up to the way out. Raised in waste2's own palette.
   station (waste2's "Pumping Station One activated"): the pistons drive,
   the water sprays, the ways on open and guards come. A switch shot high
   on the platform's face blows a panel off a stash (waste2's shot secret).
-- `FilterBeds`: shallow beds of water across a hall, planks over them, a
+- `FilterBeds`: deep beds of water across a hall, swum under the planks over them, a
   walkway along the high wall over its walk, up a stair, or thrown up to
   by a pad in some seeds.
-- `ValveGallery`: a narrow gallery of stairs winding up over themselves,
+- `ValveGallery`: a narrow gallery of stairs winding up over a flooded well,
   two flights or three, landings stacked at its ends, sometimes a lift to
   the first.
 - `PumpControl`: the key room. A control deck over the floor of a room, a
@@ -111,7 +111,7 @@ node PumpStation(Prefab) {
         self.long = dice.between(34, 38);
         self.wide = dice.between(26, 30);
         self.control = dice.between(7, 8);
-        self.tall = self.control + dice.between(11, 13);
+        self.tall = self.control + dice.between(24, 28);
         self.low = -8;
         self.high = self.tall + 1;
         cx = float(self.long // 2);
@@ -179,7 +179,7 @@ node PumpStation(Prefab) {
     }
 }
 
-"""Shallow beds of water across a hall, planks over them, a walkway along
+"""Deep beds of water across a hall, planks over them, a walkway along
 the high wall over its walk."""
 node FilterBeds(Prefab) {
     has walk: int = 8,
@@ -195,10 +195,10 @@ node FilterBeds(Prefab) {
         self.long = dice.between(32, 36);
         self.wide = dice.between(20, 24);
         self.walk = dice.between(8, 9);
-        self.tall = self.walk + dice.between(8, 10);
+        self.tall = self.walk + dice.between(14, 18);
         self.pad = dice.chance(0.5);
         self.planks = [dice.between(3, self.wide - 9) for index in range(3)];
-        self.low = -3;
+        self.low = -8;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
         self.enter = Port(face=2, along=cy - 2.0, floor=0);
@@ -222,9 +222,9 @@ node FilterBeds(Prefab) {
             x += 9;
         }
         for (index, bx) in enumerate(beds) {
-            build.pool(bx, 1, -2, bx + 5, self.wide - 5, 0, 2, False, True, True);
+            build.pool(bx, 1, -7, bx + 6, self.wide - 5, 0, 2, False, True, True);
             py = self.planks[index];
-            build.solid(bx, py, -2, bx + 5, py + 3, 0);
+            build.solid(bx, py, -1, bx + 6, py + 3, 0);
         }
         # The walkway along the high wall, its stair at the near end.
         build.solid(2 + w, self.wide - 5, w - 1, self.long - 1, self.wide - 1, w);
@@ -273,7 +273,7 @@ node ValveGallery(Prefab) {
         self.flights = dice.between(2, 3);
         self.tall = self.flights * self.flight + 8;
         self.lift_up = dice.chance(0.5);
-        self.low = -1;
+        self.low = -8;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
         h = self.flight;
@@ -314,6 +314,9 @@ node ValveGallery(Prefab) {
         if self.lift_up {
             plat(build, gallery, self.long - 9, 4, self.long - 6, 7, 0, h);
         }
+        # The well under the flights, deep, a stair up out of it.
+        build.pool(8, 5, -7, self.long - 10, self.wide - 4, 0, 2, False, False);
+        stair(build, 14, 5, -7, 2, 7, 2);
         # A valve's stash behind a panel in the first flight's side.
         stash(build, 4, 11, 0, False, 1, Q2_ARMOR);
         open_ways(build, gallery, self);
@@ -321,7 +324,7 @@ node ValveGallery(Prefab) {
         far_end = self.long - 3 if self.flights % 2 == 1 else 3;
         squad(build, first, [[float(far_end) + 0.5, float(cy) + 0.5, float(self.flights * h)], [7.5, float(self.wide) - 2.5, float(2 * h)]], [WASTE2_FOES.pick(dice, self.danger), "monster_gunner"], 180.0);
         build.foe(float(self.long - 8), 2.5, h, "monster_soldier", 180.0, patrol=[[float(self.long - 8), 2.5], [float(7 + h), 2.5]]);
-        build.foe(float(self.long // 2), float(cy) + 0.5, 0, WASTE2_FOES.pick(dice, self.danger), 0.0);
+        build.foe(float(self.long) - 4.5, float(self.wide) - 2.5, 0, WASTE2_FOES.pick(dice, self.danger), 0.0);
         build.foe(float(self.long // 2), float(cy) + 0.5, h + 4, WASTE2_FOES.pick(dice, self.danger, False, True), 0.0);
         sparking(build, dice.uniform(3.0, 5.0), 1.2, float(cy) + 0.5, float(h) + 2.0, 0);
         build.supply(float(self.long) - 3.0, float(cy) + 0.5, h, Q2_HEALTH, "q2");
@@ -347,7 +350,7 @@ node PumpControl(Prefab) {
         self.wide = self.hall_wide + 4;
         self.deck = dice.between(7, 8);
         self.stairs = dice.chance(0.5);
-        self.low = -4;
+        self.low = -6;
         self.high = self.deck + 9;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
@@ -366,7 +369,7 @@ node PumpControl(Prefab) {
         dx = self.long - 9;
         build.solid(dx, 1, d - 1, self.long - 1, side, d);
         # The sump under the deck, steps out of it.
-        build.pool(dx + 1, cy - 3, -3, self.long - 2, cy + 3, 0, 2, False, True, True);
+        build.pool(dx + 1, cy - 3, -5, self.long - 2, cy + 3, 0, 2, False, True, True);
         if self.stairs {
             stair(build, dx - d, 1, 0, 0, d, 3);
         } else {

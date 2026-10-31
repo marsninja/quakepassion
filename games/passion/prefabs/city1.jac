@@ -5,22 +5,23 @@ bridges, the court where the hovers come in wave after wave, rooftops
 crossed by bridges and updrafts, the vault of the data spinner, and the
 gate of the leader's palace. Raised in city1's own palette.
 
-- `OuterCourts`: the start. A court, an arcade along one side whose roof
-  is a terrace up a stair (or an updraft), a walkway along the other; a
+- `OuterCourts`: the start. A court open high to the sky, a flooded arcade
+  along one side whose roof is a terrace up a stair (or an updraft), a
+  walkway along the other, a wall across on an arch; a
   heap of debris in a gateway that bursts when shot (a secret); the
   hovers come in after the player; "Neutralize the Strogg leader's
   command center".
 - `WindShaft`: a tower shaft, an updraft from its floor to a ledge and
   another from the ledge across to the gallery at the top (or a lift to
   the ledge).
-- `CanalQuarter`: a canal down the quarter's middle, quays along it,
+- `CanalQuarter`: a broad deep canal down the quarter's middle, quays along it,
   arched bridges over it up steps (the far one drawn out by a button), balconies over the quays on arcades;
   guards come onto the balconies as the player crosses.
-- `HoverCourt`: a plaza round a fountain, terraces along two sides over
+- `HoverCourt`: a plaza round a deep basin under its fountain, terraces along two sides over
   arcades (a catwalk across the plaza from one) and a higher one over
   them up an updraft, a teleporter to the
   high terrace; the hovers come in three waves. A hub.
-- `Rooftops`: the street under three roofs at rising heights, steps to
+- `Rooftops`: the street and its canal under three roofs at rising heights, steps to
   the first raised by a button on the wall, steps on to the second, an
   updraft to the third and a bridge from it back over the street.
 - `DataVault`: the data spinner (the key) on a pedestal up a lift in a
@@ -34,6 +35,7 @@ import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, gate_into, lift, pillars }
 import from .q2_works { deck, keep_box, sparking, blast_chain, stash, hidden_closet, squad, rounds, beamed, held_door, key_taken, closets, pad_to, splashing, barrels }
+import from .q2d_parts { wall_x, step_ways, chamber }
 
 glob CITY1: str = "q2:city1";
 
@@ -74,7 +76,7 @@ node OuterCourts(Prefab) {
         self.wide = dice.between(24, 26);
         self.roof = 12;
         self.walk = 8;
-        self.tall = 22;
+        self.tall = dice.between(38, 42);
         self.updraft = dice.chance(0.45);
         self.low = -9;
         self.high = self.tall + 1;
@@ -110,6 +112,13 @@ node OuterCourts(Prefab) {
             stair(build, 6, 7, 0, 0, r, 3);
             keep_box(build, court, 6 + r - 1, 6, 6 + r + 1, 7, r);
         }
+        # The arcade's floor a flooded channel, steps up out of it at its
+        # near end; a flipper in it.
+        build.pool(8, 1, -5, self.long - 1, 6, 0, 2);
+        build.foe(16.5, 3.5, -3, "monster_flipper", 0.0);
+        # A wall across the court, the way through on a sill.
+        line = self.long // 2 + 4;
+        wall_x(build, court, line, 7, self.wide - 4, 0, 10, [[middle - 1, middle + 3]]);
         # A bridge from the arcade's roof out over the court to look down on
         # the walkway.
         bx = self.long - 6;
@@ -142,12 +151,12 @@ node OuterCourts(Prefab) {
         hover_waves(build, come_in, 2, 4.0, [[float(self.long // 2), float(middle), 14.0], [float(self.long) - 6.0, float(middle) + 3.0, 15.0], [8.0, float(middle) - 2.0, 13.0], [float(self.long) - 10.0, float(middle), 16.0]]);
         build.foe(float(self.long) - 4.5, 3.5, r, CITY1_FOES.pick(dice, self.danger, True), 180.0);
         build.foe(float(self.long) - 4.5, float(self.wide) - 2.5, w, CITY1_FOES.pick(dice, self.danger), 180.0);
-        rounds(build, "monster_soldier_ss", [[8.5, 3.5], [float(self.long) - 3.5, 3.5]], 0);
+        rounds(build, "monster_soldier_ss", [[float(line) + 2.5, 8.5], [float(self.long) - 3.5, 8.5]], 0);
         build.foe(float(self.long) - 6.5, float(middle) + 1.5, 0, CITY1_FOES.pick(dice, self.danger), 180.0);
         sparking(build, float(self.long) - 1.2, float(middle) - 2.0, 3.0, 2, 5.0);
         sparking(build, 6.2, 4.0, float(r) - 3.0, 0, 7.0);
         sparking(build, float(self.long) - 1.2, float(self.wide) - 2.5, float(w) + 2.0, 2, 6.5);
-        barrels(build, dice, 8, 8, self.long - 4, self.wide - 9, 0, 2, [[0, middle - 3, 6, middle + 4], [5, 7, 19, 11], [self.long - 13, 7, self.long - 6, 12], [gx - 1, self.wide - 12, gx + 5, self.wide], [self.long - 4, middle - 2, self.long, middle + 4]]);
+        barrels(build, dice, 8, 8, self.long - 4, self.wide - 9, 0, 2, [[0, middle - 3, 6, middle + 4], [5, 7, 19, 11], [self.long - 13, 7, self.long - 6, 12], [gx - 1, self.wide - 12, gx + 5, self.wide], [self.long - 4, middle - 2, self.long, middle + 4], [line - 1, 0, line + 2, self.wide]]);
         build.supply(float(self.long) - 3.5, float(middle) + 3.5, 0, Q2_HEALTH, "q2");
         build.supply(10.5, 3.5, r, "ammo_bullets", "q2");
     }
@@ -175,7 +184,7 @@ node WindShaft(Prefab) {
         self.low = -9;
         self.high = self.tall + 1;
         cy = self.wide // 2;
-        self.enter = Port(face=2, along=float(cy), floor=0);
+        self.enter = Port(face=2, along=float(cy), floor=1);
         self.leaves = [
             Port(face=0, along=float(cy - 5), floor=0),
             Port(face=1, along=4.0, floor=self.top),
@@ -202,6 +211,10 @@ node WindShaft(Prefab) {
         keep_box(build, shaft, lx - 1, 1, lx, 5, l);
         keep_box(build, shaft, lx, cy - 2, lx + 1, cy + 2, l);
         keep_box(build, shaft, 6, cy - 2, 7, cy + 2, t);
+        # The shaft's foot flooded along its high side, deep, steps up out.
+        build.pool(4, cy + 3, -4, self.long - 1, self.wide - 1, 0, 2);
+        # A guard room under the walk along the low wall.
+        chamber(build, 8, 1, 14, 6, 0, l - 1, 1, 10);
         # Up to the ledge: an updraft from the floor, or a lift.
         if self.by_lift {
             lift(build, lx - 3, cy - 1, lx, cy + 2, 0, l);
@@ -213,6 +226,7 @@ node WindShaft(Prefab) {
         pad_to(build, float(lx) + 3.0, float(cy), l, 4.0, float(cy), t);
         vents = build.push(1.0, float(cy) + 0.5, float(t) + 1.5, 0);
         vents +>:Fires:+> build.objective("Vents opened", False);
+        step_ways(build, self);
         build.doorway(shaft, self.enter);
         for port in self.taken {
             build.doorway(shaft, port);
@@ -228,7 +242,7 @@ node WindShaft(Prefab) {
         beamed(build, on_ledge, 2, 2, -8, CITY1_FOES.pick(dice, self.danger), float(lx) + 2.5, 3.5, l, 180.0);
         build.foe(float(self.long // 2), float(cy) + 4.5, 6, "monster_hover", 0.0);
         rounds(build, "monster_soldier_ss", [[float(lx) + 2.5, 3.0], [float(lx) + 2.5, float(self.wide) - 3.0]], l);
-        build.foe(4.5, float(cy) + 4.5, 0, CITY1_FOES.pick(dice, self.danger), 0.0);
+        build.foe(5.5, float(cy) - 4.5, 0, CITY1_FOES.pick(dice, self.danger), 0.0);
         sparking(build, float(self.long) - 1.2, float(cy) + 3.0, float(l) + 2.0, 2, 4.0);
         build.supply(3.0, 3.0, 0, Q2_HEALTH, "q2");
         build.supply(3.0, float(self.wide) - 3.0, t, "ammo_bullets", "q2");
@@ -249,9 +263,9 @@ node CanalQuarter(Prefab) {
         self.source = CITY1;
         self.district = level_district(CITY1);
         self.long = dice.between(30, 32);
-        self.wide = dice.between(24, 26);
+        self.wide = dice.between(26, 28);
         self.bal = 8;
-        self.tall = 18;
+        self.tall = dice.between(38, 42);
         self.bridges = [dice.between(10, 14)];
         if dice.chance(0.6) {
             self.bridges.append(dice.between(18, self.long - 12));
@@ -259,7 +273,7 @@ node CanalQuarter(Prefab) {
         self.low = -9;
         self.high = self.tall + 1;
         cy = self.wide // 2;
-        self.enter = Port(face=2, along=float(cy - 6), floor=0);
+        self.enter = Port(face=2, along=float(cy - 6), floor=1);
         self.leaves = [
             Port(face=0, along=float(cy - 6), floor=0),
             Port(face=0, along=float(cy + 6), floor=0),
@@ -277,22 +291,22 @@ node CanalQuarter(Prefab) {
         quarter = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(quarter, b);
         # The canal, a stair up out of it onto each quay.
-        build.pool(1, cy - 3, -6, self.long - 1, cy + 3, 0, 2, steps=False);
-        stair(build, 3, cy - 3, -6, 0, 6, 2);
-        stair(build, self.long - 9, cy + 1, -6, 0, 6, 2);
+        build.pool(1, cy - 4, -5, self.long - 1, cy + 4, 0, 2, steps=False);
+        stair(build, 3, cy - 4, -5, 0, 5, 2);
+        stair(build, self.long - 8, cy + 2, -5, 0, 5, 2);
         # The arched bridges over it, steps up from each quay.
         for (index, bx) in enumerate(self.bridges) {
-            stair(build, bx, cy - 6, 0, 1, 3, 3);
-            stair(build, bx, cy + 5, 0, 3, 3, 3);
+            stair(build, bx, cy - 7, 0, 1, 3, 3);
+            stair(build, bx, cy + 6, 0, 3, 3, 3);
             if index == 0 {
-                deck(build, bx, cy - 3, bx + 3, cy + 3, 3);
+                deck(build, bx, cy - 4, bx + 3, cy + 4, 3);
             } else {
                 # The far bridge drawn out over the canal by the button on its
                 # landing.
-                drawn = build.drawn(float(bx), float(cy - 3), float(bx + 3), float(cy + 3), 3, 4);
-                build.push(float(bx + 3), float(cy) - 4.5, 1.5, 0) +>:Fires:+> drawn;
-                keep_box(build, quarter, bx, cy - 4, bx + 3, cy - 3, 3);
-                keep_box(build, quarter, bx, cy + 3, bx + 3, cy + 4, 3);
+                drawn = build.drawn(float(bx), float(cy - 4), float(bx + 3), float(cy + 4), 3, 4);
+                build.push(float(bx + 3), float(cy) - 5.5, 1.5, 0) +>:Fires:+> drawn;
+                keep_box(build, quarter, bx, cy - 5, bx + 3, cy - 4, 3);
+                keep_box(build, quarter, bx, cy + 4, bx + 3, cy + 5, 3);
             }
         }
         # The balconies over both quays on their arcades, a stair up to each.
@@ -306,6 +320,10 @@ node CanalQuarter(Prefab) {
         stair(build, 1, self.wide - 4, 0, 0, b, 3);
         keep_box(build, quarter, 9, 1, 10, 4, b);
         keep_box(build, quarter, 9, self.wide - 4, 10, self.wide - 1, b);
+        # Boat houses in the arcades' far ends, under the balconies.
+        chamber(build, self.long - 9, 1, self.long - 3, 6, 0, b - 1, 1, self.long - 7);
+        chamber(build, self.long - 9, self.wide - 6, self.long - 3, self.wide - 1, 0, b - 1, 3, self.long - 7);
+        step_ways(build, self);
         build.doorway(quarter, self.enter);
         for port in self.taken {
             build.doorway(quarter, port);
@@ -313,16 +331,16 @@ node CanalQuarter(Prefab) {
         # Guards come onto the balconies as the player starts over a bridge;
         # hovers over the canal; one walking the quay.
         first = self.bridges[0];
-        over = build.touch(float(first), float(cy - 3), 3.0, float(first + 3), float(cy + 3), 9.0);
+        over = build.touch(float(first), float(cy - 4), 3.0, float(first + 3), float(cy + 4), 9.0);
         squad(build, over, [[float(self.long) - 4.5, 2.5, float(b)], [float(self.long) - 8.5, float(self.wide) - 2.5, float(b)], [16.5, float(self.wide) - 2.5, float(b)]], [CITY1_FOES.pick(dice, self.danger, True), "monster_soldier_ss", CITY1_FOES.pick(dice, self.danger)], 180.0);
         hover_waves(build, over, 1, 3.0, [[float(self.long // 2), float(cy), 8.0], [float(self.long) - 6.0, float(cy), 9.0]]);
-        rounds(build, "monster_soldier_ss", [[3.5, float(cy) - 5.0], [float(self.long) - 3.5, float(cy) - 5.0]], 0);
-        build.foe(float(self.long) - 5.5, float(cy) + 5.0, 0, CITY1_FOES.pick(dice, self.danger), 180.0);
-        build.foe(12.5, float(cy) + 0.5, -4, "monster_flipper", 0.0);
+        rounds(build, "monster_soldier_ss", [[5.5, float(cy) - 6.5], [float(self.long) - 3.5, float(cy) - 6.5]], 0);
+        build.foe(float(self.long) - 5.5, float(cy) + 6.5, 0, CITY1_FOES.pick(dice, self.danger), 180.0);
+        build.foe(12.5, float(cy) + 0.5, -3, "monster_flipper", 0.0);
         splashing(build, 14.5, float(cy), -1.0, 5.0);
         sparking(build, 1.2, float(cy) + 5.0, 3.0, 0, 4.0);
         sparking(build, float(self.long) - 1.2, 3.0, float(b) + 2.0, 2, 5.5);
-        build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
+        build.supply(11.5, 6.5, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.0, float(self.wide) - 2.5, b, "ammo_grenades", "q2");
     }
 }
@@ -343,11 +361,11 @@ node HoverCourt(Prefab) {
         self.wide = dice.between(28, 30);
         self.terrace = 9;
         self.upper = 16;
-        self.tall = 26;
+        self.tall = dice.between(40, 44);
         self.low = -9;
         self.high = self.tall + 1;
         middle = self.wide // 2;
-        self.enter = Port(face=2, along=float(middle + 2), floor=0);
+        self.enter = Port(face=2, along=float(middle + 2), floor=1);
         self.leaves = [
             Port(face=0, along=float(middle), floor=0),
             Port(face=1, along=float(self.long // 2), floor=0),
@@ -368,13 +386,17 @@ node HoverCourt(Prefab) {
         build.level(plaza, te);
         build.level(plaza, up);
         # The fountain in the plaza's middle, its basin and its column.
-        build.pool(cx - 4, cy - 2, -4, cx + 3, cy + 5, 0, 2, steps=False);
-        stair(build, cx - 4, cy - 2, -4, 0, 4, 2);
+        build.pool(9, 13, -4, self.long - 8, self.wide - 5, 0, 2, steps=False);
+        stair(build, 9, 13, -4, 0, 4, 2);
+        stair(build, 9, self.wide - 7, -4, 0, 4, 2);
         build.solid(cx, cy + 1, -4, cx + 2, cy + 3, 6);
+        # The far terrace's arcade walled off from the plaza, arches on sills
+        # on either side of the basin.
+        wall_x(build, plaza, self.long - 8, 7, self.wide - 1, 0, te - 1, [[10, 14], [self.wide - 5, self.wide - 1]]);
         # The terraces along the near side and the far end over arcades, the
         # stair up to them; the high terrace over the near one.
         deck(build, 1, 1, self.long - 1, 7, te);
-        deck(build, self.long - 7, 7, self.long - 1, self.wide - 1, te);
+        deck(build, self.long - 8, 7, self.long - 1, self.wide - 1, te);
         for x in range(4, self.long - 7, 5) {
             build.solid(x, 6, 0, x + 1, 7, te - 1);
         }
@@ -391,6 +413,10 @@ node HoverCourt(Prefab) {
         sparking(build, 4.5, float(self.wide) - 1.2, float(te) + 2.0, 3, 6.0);
         # A teleporter in the far corner to the high terrace.
         build.teleporter(4.0, float(self.wide) - 4.0, 0, 3.0, 3.0, up, 0.0);
+        # Stalls under the near terrace, off the plaza's near and far ends.
+        chamber(build, 2, 1, 8, 7, 0, te - 1, 1, 4);
+        chamber(build, 18, 1, 24, 7, 0, te - 1, 1, 20);
+        step_ways(build, self);
         build.doorway(plaza, self.enter);
         for port in self.taken {
             build.doorway(plaza, port);
@@ -399,14 +425,14 @@ node HoverCourt(Prefab) {
         come_in = build.touch(1.0, float(cy - 1), 0.0, 4.0, float(cy + 5), 8.0);
         hover_waves(build, come_in, 3, 5.0, [[float(cx), float(cy) - 4.0, 12.0], [float(cx) + 6.0, float(cy) + 6.0, 14.0], [float(cx) - 8.0, float(cy) + 6.0, 13.0], [float(cx) + 2.0, float(cy) + 9.0, 15.0], [8.0, float(cy) + 2.0, 12.0], [float(self.long) - 12.0, float(cy), 16.0]]);
         squad(build, come_in, [[float(self.long) - 4.0, float(cy) + 3.0, float(te)], [float(cx) + 3.0, 3.0, float(up)]], [CITY1_FOES.pick(dice, self.danger, True), "monster_soldier_ss"], 180.0);
-        hidden_closet(build, self.long - 13, self.wide - 6, 0, 3, Q2_ARMOR, 6) +>:Fires:+> build.sparks(float(self.long) - 11.0, float(self.wide) - 6.2, 3.0, 3);
+        hidden_closet(build, self.long - 5, self.wide - 7, 0, 2, Q2_ARMOR, 6) +>:Fires:+> build.sparks(float(self.long) - 5.2, float(self.wide) - 5.0, 3.0, 2);
         rounds(build, "monster_soldier_ss", [[3.0, 3.5], [float(self.long) - 3.0, 3.5], [float(self.long) - 3.0, float(self.wide) - 3.0]], te);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(cx) + 5.5, float(cy) - 3.5 + float(index) * 7.0, 0, CITY1_FOES.pick(dice, self.danger), 180.0);
+            build.foe(float(self.long) - 5.5, float(cy) - 3.5 + float(index) * 5.0, 0, CITY1_FOES.pick(dice, self.danger), 180.0);
         }
         splashing(build, float(cx) - 1.0, float(cy) + 1.0, -1.0, 3.0);
         sparking(build, float(self.long) - 1.2, float(cy) - 4.0, float(te) + 2.0, 2, 5.0);
-        build.supply(2.5, float(cy) + 0.5, 0, Q2_HEALTH, "q2");
+        build.supply(2.5, float(cy) - 4.5, 0, Q2_HEALTH, "q2");
         build.supply(float(cx) + 4.5, 3.0, up, "ammo_rockets", "q2");
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, te, Q2_HEALTH, "q2");
     }
@@ -430,10 +456,10 @@ node Rooftops(Prefab) {
         self.roof_a = dice.between(4, 5);
         self.roof_b = self.roof_a + 4;
         self.roof_c = self.roof_b + 5;
-        self.tall = self.roof_c + 11;
+        self.tall = self.roof_c + dice.between(12, 16);
         self.low = -9;
         self.high = self.tall + 1;
-        self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
+        self.enter = Port(face=2, along=float(self.wide // 2), floor=1);
         self.leaves = [
             Port(face=0, along=float(self.wide // 2), floor=0),
             Port(face=0, along=4.0, floor=self.roof_c),
@@ -475,9 +501,14 @@ node Rooftops(Prefab) {
         pad_to(build, 18.5, 4.5, b, float(self.long) - 4.5, 4.5, c);
         keep_box(build, street, 21, 2, 22, 7, b);
         keep_box(build, street, self.long - 8, 2, self.long - 7, 7, c);
+        # The street's far side a canal, deep, the quay along the buildings;
+        # a flipper in it.
+        build.pool(6, 14, -4, self.long - 1, self.wide - 1, 0, 2);
+        build.foe(16.5, float(self.wide) - 4.0, -3, "monster_flipper", 0.0);
         # A high bridge from the third roof back over the street to a ledge.
         deck(build, self.long - 7, 9, self.long - 3, self.wide - 1, c);
         keep_box(build, street, self.long - 7, 8, self.long - 3, 9, c);
+        step_ways(build, self);
         build.doorway(street, self.enter);
         for port in self.taken {
             build.doorway(street, port);
@@ -487,11 +518,11 @@ node Rooftops(Prefab) {
         up = build.touch(4.0, 4.0, float(a), 7.0, 8.0, float(a + 6));
         squad(build, up, [[18.5, 6.0, float(b)], [float(self.long) - 4.5, 6.0, float(c)]], [CITY1_FOES.pick(dice, self.danger, True), "monster_soldier_ss"], 180.0);
         hover_waves(build, up, 1, 3.0, [[14.0, float(cy) + 4.0, 12.0], [float(self.long) - 10.0, float(cy) + 3.0, 14.0]]);
-        rounds(build, "monster_soldier_ss", [[3.5, float(self.wide) - 3.0], [float(self.long) - 14.5, float(self.wide) - 3.0]], 0);
+        rounds(build, "monster_soldier_ss", [[14.5, 10.5], [float(self.long) - 9.5, 10.5]], 0);
         build.foe(8.5, 4.5, a, CITY1_FOES.pick(dice, self.danger), 0.0);
-        beamed(build, up, 2, self.wide - 6, -8, CITY1_FOES.pick(dice, self.danger), 20.5, float(cy) + 4.5, 0, 180.0);
-        stash(build, 24, self.wide - 6, 0, 3, Q2_ARMOR, 6) +>:Fires:+> build.explosion(26.0, float(self.wide) - 7.0, 1.0);
-        barrels(build, dice, 2, 10, self.long - 9, self.wide - 7, 0, 2, [[0, cy - 3, 4, cy + 3], [3, 8, 8, 9 + a], [0, self.wide - 4, self.long, self.wide], [22, self.wide - 7, 29, self.wide]]);
+        beamed(build, up, 2, self.wide - 6, -8, CITY1_FOES.pick(dice, self.danger), 20.5, float(cy) - 0.5, 0, 180.0);
+        stash(build, self.long - 7, 2, 0, 1, Q2_ARMOR, 6) +>:Fires:+> build.explosion(float(self.long) - 5.0, 7.0, 1.0);
+        barrels(build, dice, 2, 10, self.long - 9, self.wide - 7, 0, 2, [[0, cy - 3, 4, cy + 3], [3, 8, 8, 9 + a], [0, self.wide - 4, self.long, self.wide], [5, 14, self.long, self.wide]]);
         sparking(build, float(self.long - 8) - 0.2, 5.0, float(c) - 3.0, 2, 5.0);
         sparking(build, 1.2, float(self.wide) - 4.0, 4.0, 0, 6.0);
         sparking(build, 12.2, 2.0, float(a) + 2.0, 0, 4.0);
@@ -573,7 +604,7 @@ node PalaceGate(Prefab) {
         self.long = dice.between(30, 32);
         self.wide = dice.between(20, 22);
         self.terrace = 8;
-        self.tall = 22;
+        self.tall = dice.between(32, 36);
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
