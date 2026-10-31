@@ -14,7 +14,7 @@ telefrag). Raised in end's own palette.
   the near shore from island to island to the far shore and back, and one
   up to a ledge high over the far shore (a secret, a drop back down); a
   fiend brought in behind the player as the first island is reached.
-- `ShubHall`: an island in a moat of slime (or lava), teleporters onto it
+- `ShubHall`: an island in a broad moat of black water (or lava), teleporters onto it
   or a bridge, teleporters from it to balconies on two walls; the vores
   on the balconies wake as the player reaches the island; ways on from
   the floor and the balconies (a hub).
@@ -25,8 +25,9 @@ telefrag). Raised in end's own palette.
 - `SpikeClimb`: a shaft, slime at its foot, a stair winding up its walls
   round and round over itself to a way on high up; spikes shoot across
   the stair at each turn of the climb (end's spike traps up its stair).
-- `PitKey`: the key on an island in lava, a teleporter out and one back
-  (or two islands); taking the key opens the closets and brings a vore in.
+- `PitKey`: a lake of lava wall to wall under a high roof, the key on the
+  last of a rising line of spires, a teleporter up from each to the next and
+  one back; taking the key opens the closets and brings a vore in.
 - `ShubPit`: the end. A door (a key's, as a gate), a stair down round a
   pit to its floor and the slipgate there, spikes along the stair, the
   pit's guards waking as the player comes down."""
@@ -80,10 +81,10 @@ node PitApproach(Prefab) {
         self.title = "Pit approach";
         self.source = END;
         self.district = level_district(END);
-        self.long = dice.between(28, 32);
+        self.long = dice.between(30, 34);
         self.wide = dice.between(18, 22);
-        self.tall = dice.between(14, 16);
-        self.deep = dice.between(8, 9);
+        self.tall = dice.between(27, 32);
+        self.deep = dice.between(11, 13);
         self.causeway = dice.chance(0.6);
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
@@ -138,7 +139,7 @@ node PitApproach(Prefab) {
         crossing +>:Fires:+> rising;
         rising +>:Fires:+> risen;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(x0 + 4 + index * 5) + 0.5, float(middle) + (4.5 if index % 2 == 0 else -3.5), 4, "monster_wizard", 180.0, waits=risen);
+            build.foe(float(x0 + 4 + index * 5) + 0.5, float(middle) + (4.5 if index % 2 == 0 else -3.5), 9, "monster_wizard", 180.0, waits=risen);
         }
         for index in range(2) {
             build.foe(float(x0 + 3 + index * 6) + 0.5, float(middle) + 3.5, 2 - self.deep, "monster_fish", 0.0);
@@ -163,8 +164,8 @@ node TeleportIslands(Prefab) {
         self.two = dice.chance(0.5);
         self.long = dice.between(30, 32) if self.two else dice.between(26, 28);
         self.wide = dice.between(18, 20);
-        self.tall = dice.between(14, 16);
-        self.low = -4;
+        self.tall = dice.between(27, 32);
+        self.low = -7;
         self.high = self.tall + 8;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -180,8 +181,8 @@ node TeleportIslands(Prefab) {
         build.level(hall, 7);
         x0 = 7;
         x1 = self.long - 6;
-        build.pool(x0, 1, -3, x1, self.wide - 1, 0, 4, False, False);
-        hurt(build, float(x0), 1.0, -3.0, float(x1), float(self.wide - 1), -1.0, 20);
+        build.pool(x0, 1, -6, x1, self.wide - 1, 0, 4, False, False);
+        hurt(build, float(x0), 1.0, -6.0, float(x1), float(self.wide - 1), -1.0, 20);
         # The islands, a teleporter on each to the next.
         islands: list[list[int]] = [];
         if self.two {
@@ -190,7 +191,7 @@ node TeleportIslands(Prefab) {
             islands = [[(x0 + x1) // 2, middle]];
         }
         for at in islands {
-            build.solid(at[0] - 3, at[1] - 2, -3, at[0] + 3, at[1] + 2, 1);
+            build.solid(at[0] - 3, at[1] - 2, -6, at[0] + 3, at[1] + 2, 1);
         }
         first = islands[0];
         build.teleporter(4.0, float(middle) + 0.5, 0, float(first[0]) - 1.5, float(first[1]) - 0.5, 1, 0.0);
@@ -229,7 +230,7 @@ node TeleportIslands(Prefab) {
         scrags = build.waiting();
         landed +>:Fires:+> scrags;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(x0 + 3 + index * 4) + 0.5, 2.5 + float(index % 2) * float(self.wide - 5), 5, "monster_wizard", 90.0, waits=scrags);
+            build.foe(float(x0 + 3 + index * 4) + 0.5, 2.5 + float(index % 2) * float(self.wide - 5), 10, "monster_wizard", 90.0, waits=scrags);
         }
         build.foe(float(last[0]) + 1.5, float(last[1]) - 1.5, 1, END_FOES.pick(dice, self.danger), 180.0);
         for index in range(dice.between(1, 2)) {
@@ -255,11 +256,11 @@ node ShubHall(Prefab) {
         self.district = level_district(END);
         self.long = dice.between(28, 30);
         self.wide = dice.between(24, 26);
-        self.balcony = dice.between(7, 8);
+        self.balcony = dice.between(11, 13);
         self.bridged = dice.chance(0.4);
         self.lava = dice.chance(0.35);
-        self.tall = self.balcony + 11;
-        self.low = -4;
+        self.tall = self.balcony + dice.between(15, 18);
+        self.low = -8;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -279,16 +280,17 @@ node ShubHall(Prefab) {
         cy = self.wide // 2;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, self.balcony);
-        build.pool(cx - 7, cy - 6, -3, cx + 7, cy + 6, 0, 4 if self.lava else 3, False, True, True);
-        build.solid(cx - 4, cy - 3, -3, cx + 4, cy + 3, 1);
+        moat = 3 if self.lava else 7;
+        build.pool(cx - 9, cy - 8, -moat, cx + 9, cy + 8, 0, 4 if self.lava else 2, False, True, True);
+        build.solid(cx - 4, cy - 3, -moat, cx + 4, cy + 3, 1);
         # The balconies: slabs along the side walls over the floor.
         under = self.balcony - 1;
         build.solid(cx - 6, self.wide - 4, under, cx + 6, self.wide - 1, self.balcony);
         build.solid(cx - 6, 1, under, cx + 6, 4, self.balcony);
         if self.bridged {
-            build.solid(cx - 7, cy - 1, -1, cx - 4, cy + 2, 1);
+            build.solid(cx - 9, cy - 1, -1, cx - 4, cy + 2, 1);
             for y in range(cy - 1, cy + 2) {
-                build.keep(hall, cx - 8, y, 0);
+                build.keep(hall, cx - 10, y, 0);
             }
         } else {
             build.teleporter(4.0, float(cy) + 0.5, 0, float(cx) - 2.5, float(cy) + 0.5, 1, 0.0);
@@ -337,9 +339,9 @@ node ShamblerGate(Prefab) {
         self.district = level_district(END);
         self.gallery = dice.between(8, 9);
         self.both = dice.chance(0.6);
-        self.long = dice.between(34, 36);
+        self.long = dice.between(38, 40);
         self.wide = dice.between(18, 22);
-        self.tall = dice.between(18, 22);
+        self.tall = dice.between(27, 32);
         self.low = -8;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -354,7 +356,7 @@ node ShamblerGate(Prefab) {
         middle = self.wide // 2;
         gx = self.long - 10;
         hall = build.room(1, 1, 0, gx, self.wide - 1, self.tall, variant=dice.below(3));
-        beyond = build.room(gx + 1, 1, 0, self.long - 1, self.wide - 1, 14, variant=dice.below(3));
+        beyond = build.room(gx + 1, 1, 0, self.long - 1, self.wide - 1, 24, variant=dice.below(3));
         build.level(hall, self.gallery);
         # The great door: eight cells wide, twelve lifts high, lifted when
         # the guardian dies.
@@ -365,7 +367,7 @@ node ShamblerGate(Prefab) {
         dx = gx - 6;
         build.solid(dx, 1, 0, gx, self.wide - 1, 1);
         build.solid(dx + 1, 1, 1, gx - 1, self.wide - 1, 2);
-        mx = dx - 6;
+        mx = dx - 9;
         build.pool(mx, 1, -6, dx - 1, self.wide - 1, 0, 4, False, False);
         pool_steps(build, mx, 1, 5, 2);
         pool_steps(build, mx, self.wide - 3, 5, 2);
@@ -435,8 +437,8 @@ node SpikeClimb(Prefab) {
             }
         }
         self.steps = fits[dice.below(len(fits))];
-        self.tall = self.steps + 8;
-        self.low = -3;
+        self.tall = self.steps + 12;
+        self.low = -7;
         self.high = self.tall + 1;
         top = ring_landing(1, 1, self.long - 1, self.wide - 1, 3, self.steps, 4);
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -450,7 +452,7 @@ node SpikeClimb(Prefab) {
         shaft = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(shaft, self.steps // 2);
         build.level(shaft, self.steps);
-        build.pool(4, 4, -2, self.long - 4, self.wide - 4, 0, 3, False, True, True);
+        build.pool(4, 4, -6, self.long - 4, self.wide - 4, 0, 3, False, True, True);
         landing = spiral(build, 1, 1, self.long - 1, self.wide - 1, 0, self.steps, 3, 4);
         build.doorway(shaft, self.enter);
         for port in self.taken {
@@ -484,25 +486,28 @@ node SpikeClimb(Prefab) {
     }
 }
 
-"""The key on an island in lava (or the second of two), a teleporter out
-and one back; taking it opens the closets and brings a vore in."""
+"""The key on the last of a rising line of spires in a lake of lava filling
+the hall wall to wall, a teleporter up from each to the next; a fall is the
+end. A way back down from the key's spire."""
 node PitKey(Prefab) {
     has key: str = "key_gold",
         hall_wide: int = 16,
-        two: bool = False,
-        tall: int = 14;
+        spires: int = 2,
+        rung: int = 5,
+        tall: int = 28;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Pit key (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = END;
         self.district = level_district(END);
-        self.two = dice.chance(0.45);
-        self.long = dice.between(26, 28) if self.two else dice.between(20, 22);
-        self.hall_wide = dice.between(16, 18);
+        self.spires = dice.between(2, 3);
+        self.rung = dice.between(4, 6);
+        self.long = 8 + 8 * self.spires + dice.between(2, 4);
+        self.hall_wide = dice.between(18, 20);
         self.wide = self.hall_wide + 4;
-        self.tall = dice.between(13, 15);
-        self.low = -4;
+        self.tall = dice.between(26, 30);
+        self.low = -7;
         self.high = self.tall + 8;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
@@ -517,25 +522,37 @@ node PitKey(Prefab) {
         hall = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
         build.doorway(hall, self.enter);
         x0 = 6;
-        x1 = self.long - 2;
-        build.pool(x0, 3, -3, x1, side - 2, 0, 4, False, False);
-        hurt(build, float(x0), 3.0, -3.0, float(x1), float(side - 2), -1.0, 20);
-        cx = (x0 + x1) // 2 + 1 if not self.two else x1 - 4;
-        build.solid(cx - 2, cy - 2, -3, cx + 2, cy + 2, 1);
-        if self.two {
-            ax = x0 + 5;
-            build.solid(ax - 2, cy - 2, -3, ax + 2, cy + 2, 1);
-            build.teleporter(3.5, float(cy) + 0.5, 0, float(ax) - 1.0, float(cy), 1, 0.0);
-            build.teleporter(float(ax) + 1.0, float(cy) + 1.0, 1, float(cx) - 1.0, float(cy), 1, 0.0);
-            build.foe(float(ax) + 0.5, float(cy) - 1.0, 1, END_FOES.pick(dice, self.danger), 0.0);
-        } else {
-            build.teleporter(3.5, float(cy) + 0.5, 0, float(cx) - 1.0, float(cy), 1, 0.0);
+        # The lake from the shore to the far wall, wall to wall.
+        build.pool(x0, 1, -6, self.long - 1, side, 0, 4, False, False);
+        hurt(build, float(x0), 1.0, -6.0, float(self.long - 1), float(side), -1.0, 20);
+        # The spires, one higher than the last, swinging from wall to wall.
+        tops: list[list[int]] = [];
+        for index in range(self.spires) {
+            sx = x0 + 3 + index * 8;
+            sy = cy + (4 if (index + dice.below(2)) % 2 == 0 else -4);
+            z = self.rung * (index + 1);
+            build.solid(sx - 2, sy - 2, -6, sx + 2, sy + 2, z);
+            build.level(hall, z);
+            tops.append([sx, sy, z]);
         }
-        build.teleporter(float(cx) + 1.0, float(cy) + 1.0, 1, 3.0, 3.0, 0, 180.0);
-        key_ambush(build, self.key, float(cx) + 1.0, float(cy) - 1.0, 1, side, 0, [2], [END_FOES.pick(dice, self.danger, True)]);
-        # The vore brought in at the shore as the key is taken.
-        taken = build.touch(float(cx), float(cy - 2), 1.0, float(cx + 2), float(cy), 6.0);
+        at = tops[0];
+        build.teleporter(3.5, float(cy) + 0.5, 0, float(at[0]) - 1.0, float(at[1]), at[2], 0.0);
+        for index in range(self.spires - 1) {
+            here_top = tops[index];
+            next_top = tops[index + 1];
+            build.teleporter(float(here_top[0]) + 1.0, float(here_top[1]) + 1.0, here_top[2], float(next_top[0]) - 1.0, float(next_top[1]), next_top[2], 0.0);
+            build.foe(float(here_top[0]) + 1.0, float(here_top[1]) - 1.0, here_top[2], END_FOES.pick(dice, self.danger), 0.0);
+        }
+        last = tops[-1];
+        build.teleporter(float(last[0]) + 1.0, float(last[1]) + 1.0, last[2], 3.0, 3.0, 0, 180.0);
+        key_ambush(build, self.key, float(last[0]) + 1.0, float(last[1]) - 1.0, last[2], side, 0, [2], [END_FOES.pick(dice, self.danger, True)]);
+        # The vore brought in at the shore as the key is taken; scrags hang
+        # over the lake.
+        taken = build.touch(float(last[0]), float(last[1] - 2), float(last[2]), float(last[0] + 2), float(last[1]), float(last[2] + 6));
         taken +>:Fires:+> build.summon(1, 1, self.tall + 1, "monster_shalrath" if self.danger > 0.3 else "monster_wizard", 4.0, float(side) - 4.0, 0, 0.0);
+        for index in range(dice.between(1, 2)) {
+            build.foe(float(x0 + 5 + index * 6) + 0.5, float(cy) + 0.5, 8 + index * 4, "monster_wizard", 180.0);
+        }
         build.foe(3.0, float(side) - 3.0, 0, END_FOES.pick(dice, self.danger), 0.0);
         build.supply(2.5, 2.5, 0, "item_health");
     }
@@ -555,8 +572,8 @@ node ShubPit(Prefab) {
         self.district = level_district(END);
         self.long = dice.between(22, 24);
         self.wide = dice.between(16, 18);
-        self.deep = dice.between(10, 14);
-        self.tall = 8;
+        self.deep = dice.between(14, 18);
+        self.tall = dice.between(12, 16);
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);

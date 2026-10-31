@@ -73,7 +73,7 @@ node SewerOutfall(Prefab) {
         self.wide = dice.between(20, 22);
         self.deep = min(dice.between(10, 12), self.wide - 10);
         self.catwalk = dice.between(8, 9);
-        self.tall = self.catwalk + 9;
+        self.tall = self.catwalk + 14;
         self.cx = dice.between(14, self.long - 14);
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
@@ -158,7 +158,7 @@ node FloodGate(Prefab) {
         self.long = 2 * self.deep + dice.between(12, 14);
         self.wide = dice.between(20, 22);
         self.deck = dice.between(6, 7);
-        self.tall = self.deck + dice.between(8, 9);
+        self.tall = self.deck + dice.between(14, 17);
         self.two = dice.chance(0.5);
         self.low = -self.deep - 2;
         self.high = self.tall + 1;
@@ -271,7 +271,7 @@ node SewerLocks(Prefab) {
         self.long = dice.between(28, 31);
         self.wide = dice.between(15, 17);
         self.step_down = dice.between(4, 5);
-        self.tall = dice.between(12, 14);
+        self.tall = dice.between(18, 21);
         self.riser = dice.chance(0.6);
         self.low = -2 * self.step_down - 14;
         self.high = self.tall + 1;
@@ -307,7 +307,7 @@ node SewerLocks(Prefab) {
             x0 = index * third + (4 if index == 0 else 2);
             x1 = (index + 1) * third - 1 if index < 2 else long - 6;
             build.pool(x0, 4, floor_at - (walk_y - 5), x1, walk_y - 1, floor_at, 2);
-            build.solid(x0 + 3, 4, floor_at - 1, x1, walk_y - 1, floor_at);
+            build.solid(x0 + 3, 4, floor_at - 1, x1, 7, floor_at);
         }
         # The catwalk along the north wall at the top's height.
         build.solid(1, walk_y, bottom, third, wide - 1, 0);
@@ -335,7 +335,7 @@ node SewerLocks(Prefab) {
             down = build.touch(float(at), 1.0, float(floor_at), float(at + drop), 4.0, float(floor_at + 6));
             below = build.waiting();
             down +>:Fires:+> below;
-            build.foe(float(at + third) - 2.5, float(walk_y) - 2.5, floor_at, E4M1_FOES.pick(dice, self.danger, index == 1), 180.0, waits=below);
+            build.foe(float(at + third) - 2.5, 5.5, floor_at, E4M1_FOES.pick(dice, self.danger, index == 1), 180.0, waits=below);
         }
         rounds(build, E4M1_FOES.pick(dice, self.danger), float(2 * third) + 3.5, 3.5, float(long) - 5.5, 3.5, bottom);
         rounds(build, "monster_army", 3.5, float(wide) - 2.5, float(long) - 5.5, float(wide) - 2.5, 0);
@@ -362,7 +362,7 @@ node SettlingTanks(Prefab) {
         self.wide = dice.between(24, 26);
         self.spine = dice.between(5, 6);
         self.deep = dice.between(8, 9);
-        self.tall = self.spine + dice.between(15, 16);
+        self.tall = self.spine + dice.between(19, 21);
         self.bridges = True;
         self.east = dice.chance(0.5);
         self.low = -self.deep - 2;
@@ -479,7 +479,7 @@ node CisternDrop(Prefab) {
         self.wide = dice.between(16, 18);
         self.down = dice.between(10, 12);
         self.deep = dice.between(10, 12);
-        self.tall = dice.between(11, 13);
+        self.tall = dice.between(17, 20);
         self.drawn_span = dice.chance(0.5);
         self.tele_up = dice.chance(0.4);
         self.low = -self.down - 2 * self.deep - 3;
@@ -577,7 +577,7 @@ node SumpKey(Prefab) {
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
         self.deep = dice.between(10, 12);
-        self.tall = dice.between(11, 13);
+        self.tall = dice.between(18, 21);
         self.low = -self.deep - 2;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -641,7 +641,7 @@ node SewerExit(Prefab) {
         self.deep = dice.between(9, 11);
         self.long = self.deep + dice.between(19, 21);
         self.wide = dice.between(15, 17);
-        self.tall = dice.between(12, 14);
+        self.tall = dice.between(18, 21);
         self.low = -self.deep - 2;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
