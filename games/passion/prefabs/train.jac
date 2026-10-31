@@ -6,8 +6,8 @@ turrets in a hall whose door is opened elsewhere, the key in a signal box
 up a stair. Raised in train's own palette.
 
 - `StationPlatform`: the start. A platform beside a deep track bed sunk
-  across the hall, a footbridge over it, a signal gantry over the bed up a
-  stair; parasites appear in the bed as the player crosses and a stash is
+  across the hall, sumps deeper still in the bed either side of a
+  footbridge over it, a signal gantry over the bed up a stair; parasites appear in the bed as the player crosses and a stash is
   hidden behind a panel shot open.
 - `TrackTunnel`: a tunnel, the track bed deep down its middle and a
   walkway either side, water in a sump in the bed with sharks, a
@@ -26,15 +26,19 @@ up a stair. Raised in train's own palette.
 - `BlasterHall`: a hall of turrets: plates in its floor set the blasters in
   its walls firing; its far door ("Access denied") is opened by a button
   in a control room up a stair, over the hall.
+- `ServiceWarren`: small rooms in a grid between the platforms, each a step
+  from its neighbours, a flooded sump in one, guards in the others.
 - `SignalBox`: the key room. The key in a signal box up a stair along the
   wall; taking it opens the closets on the floor and brings guards in.
 - `StationExit`: the end. A door (a key's, as a gate) onto a platform over
   a track bed, the way out at its end; guards appear in the bed."""
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
+import from ..space { Space }
 import from ..kits { level_district, kit_of }
 import from .roster { q2_foe, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
-import from .common { stair, pillars, key_ambush }
+import from .common { stair, pillars, key_ambush, lift }
+import from .q2_flood { office }
 import from .e4m6 { flood, onward_ports, port_door, pool_steps, told }
 import from .base2 { spark_timer, blast_chain, spawn_in, panel_stash, guard_closet }
 
@@ -67,8 +71,8 @@ node StationPlatform(Prefab) {
         self.bed = dice.between(6, 7);
         self.gantry = dice.chance(0.65);
         self.flooded = dice.chance(0.9);
-        self.tall = dice.between(15, 17);
-        self.low = -self.bed - 1;
+        self.tall = dice.between(18, 20);
+        self.low = -self.bed - 7;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=4.0, floor=0);
@@ -93,12 +97,15 @@ node StationPlatform(Prefab) {
         }
         stair(build, 3, middle + 2, low, 3, self.bed, 3);
         stair(build, self.long - 6, middle - 3, low, 1, self.bed, 3);
+        # Sumps deep in the bed either side of the footbridge.
+        fx = self.long // 2 - 2;
+        build.pool(6, middle - 3, low - 5, fx, middle + 3, low, 2, True, True, True);
+        build.pool(fx + 4, middle - 3, low - 5, self.long - 6, middle + 3, low, 2, True, True, True);
         if self.flooded {
             flood(build, 6, middle - 3, low, self.long - 6, middle + 3, -1);
         }
 
         # The footbridge over the bed.
-        fx = self.long // 2 - 2;
         build.solid(fx, middle - 3, -1, fx + 4, middle + 3, 0);
         for x in range(fx, fx + 4) {
             build.keep(hall, x, middle - 4, 0);
@@ -155,7 +162,7 @@ node TrackTunnel(Prefab) {
         self.bed = dice.between(6, 7);
         self.flooded = dice.chance(0.9);
         self.tall = dice.between(12, 14);
-        self.low = -self.bed - 6;
+        self.low = -self.bed - 9;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=3.0, floor=0);
         self.leaves = [Port(face=0, along=float(self.wide - 3), floor=0), Port(face=0, along=3.0, floor=0), Port(face=1, along=float(self.long - 4), floor=0)];
@@ -172,9 +179,9 @@ node TrackTunnel(Prefab) {
         build.widen(tunnel, 1, middle - 3, low, self.long - 1, middle + 3, 0);
         # The sump in the bed's middle, deep, sharks in it, steps out of it.
         sx = self.long // 2 - 4;
-        build.pool(sx, middle - 3, low - 5, sx + 8, middle + 3, low, 2, False, False);
-        stair(build, sx + 4, middle - 3, low - 5, 2, 5, 2);
-        stair(build, sx + 4, middle + 1, low - 5, 2, 5, 2);
+        build.pool(sx, middle - 3, low - 8, sx + 8, middle + 3, low, 2, False, False);
+        stair(build, sx + 7, middle - 3, low - 8, 2, 8, 2);
+        stair(build, sx + 7, middle + 1, low - 8, 2, 8, 2);
         # Steps down into the bed at either end, a footbridge over the sump.
         stair(build, 2, middle + 2, low, 3, self.bed, 3);
         stair(build, self.long - 5, middle - 3, low, 1, self.bed, 3);
@@ -238,8 +245,8 @@ node TrainChasm(Prefab) {
         self.wide = dice.between(16, 18);
         self.lane = dice.between(5, self.wide - 9);
         self.started = dice.chance(0.4);
-        self.tall = dice.between(15, 17);
-        self.low = -self.deep - 6;
+        self.tall = dice.between(30, 33);
+        self.low = -self.deep - 9;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [Port(face=0, along=float(self.wide // 2), floor=0), Port(face=1, along=float(self.long - 4), floor=0), Port(face=3, along=float(self.long - 4), floor=0)];
@@ -260,8 +267,7 @@ node TrainChasm(Prefab) {
         build.solid(x0 - 2, 1, -1, x0, self.wide - 1, 0);
         build.solid(x1, 1, -1, x1 + 2, self.wide - 1, 0);
         # A stream down the chasm's floor.
-        build.pool(x0 + 4, 1, low - 2, x0 + self.gap // 2, 4, low, 2, False, True, True);
-        build.pool(x0 + self.gap // 2 + 1, 1, low - 5, x1, self.wide - 1, low, 2, False, True, True);
+        build.pool(x0 + 4, 1, low - 8, x1, self.wide - 1, low, 2, False, True, True);
         crates_at = [[self.long - 2, middle - 4], [self.long - 2, middle + 3]];
         for at in crates_at {
             build.breakable(float(at[0]), float(at[1]), 0.0, float(at[0] + 1), float(at[1] + 1), 2.0, 10);
@@ -297,7 +303,7 @@ node TrainChasm(Prefab) {
             build.foe(float(x0 + 3 + index * 5) + 0.5, float(middle) + 0.5, 6, q2_foe(dice, self.danger, False, True), 0.0);
         }
         build.foe(3.5, 2.5, 0, "monster_soldier", 90.0, patrol=[[3.5, 2.5], [3.5, float(self.wide) - 2.5]]);
-        build.foe(float(x0 + self.gap // 2) + 0.5, float(self.wide) - 3.5, low, q2_foe(dice, self.danger), 0.0);
+        build.foe(float(x0) + 1.5, float(middle) + 0.5, low, q2_foe(dice, self.danger), 0.0);
         spark_timer(build, float(x1) + 0.1, float(self.lane) + 2.0, -3.0, 0, 4.0);
         build.supply(3.0, float(self.wide) - 3.0, 0, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 2.5, 2.5, 0, "ammo_bullets", "q2");
@@ -317,12 +323,12 @@ node GreatLift(Prefab) {
         self.title = "Great lift";
         self.source = TRAIN;
         self.district = level_district(TRAIN);
-        self.height = dice.between(40, 56);
+        self.height = dice.between(48, 56);
         self.twin = dice.chance(0.5);
         self.long = dice.between(24, 26);
         self.wide = dice.between(18, 20);
         self.tall = self.height + 10;
-        self.low = -8;
+        self.low = -16;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -348,7 +354,11 @@ node GreatLift(Prefab) {
         # lip.
         lx = self.long - 10;
         build.solid(lx, 1, h - 1, self.long - 1, self.wide - 1, h);
-        build.pool(9, 5, -7, lx, self.wide - 5, 0, 2, False, True, True);
+        build.pool(9, 5, -15, lx, self.wide - 5, 0, 2, False, False);
+        lift(build, lx - 3, 5, lx, 8, -15, 0);
+        for y in range(5, 8) {
+            build.keep(shaft, lx, y, 0);
+        }
         for y in range(5, self.wide - 5) {
             build.keep(shaft, lx, y, h);
         }
@@ -411,7 +421,7 @@ node Concourse(Prefab) {
         self.wide = dice.between(22, 24);
         self.rise_by = dice.between(10, 12);
         self.tall = 2 * self.rise_by + 10;
-        self.low = -7;
+        self.low = -11;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -440,7 +450,12 @@ node Concourse(Prefab) {
         build.solid(m1, 1, first - 1, self.long - 1, self.wide - 1, first);
         build.widen(hall, m1 + 4, 6, first - 1, self.long - 8, self.wide - 6, first);
         # A pool on the floor under the well.
-        build.pool(m1 + 4, 6, -6, self.long - 8, self.wide - 6, 0, 2, False, True, True);
+        build.pool(m1 + 4, 6, -10, self.long - 8, self.wide - 6, 0, 2, False, True, True);
+        # The station's offices under the far end of the first level.
+        office(build, self.long - 8, 2, self.long - 1, 9, 0, 8, 2, 4);
+        office(build, self.long - 8, self.wide - 9, self.long - 1, self.wide - 2, 0, 8, 2, self.wide - 7);
+        build.supply(float(self.long) - 3.5, 5.0, 1, "ammo_shells", "q2");
+        build.foe(float(self.long) - 3.5, float(self.wide) - 5.5, 1, q2_foe(dice, self.danger), 180.0);
         # The second level: a gallery across the far end.
         m2 = self.long - 7;
         build.solid(m2, 1, second - 1, self.long - 1, self.wide - 1, second);
@@ -609,7 +624,7 @@ node StationExit(Prefab) {
         self.wide = dice.between(18, 20);
         self.bed = dice.between(6, 7);
         self.tall = dice.between(12, 14);
-        self.low = -self.bed - 1;
+        self.low = -self.bed - 7;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=4.0, floor=0);
         self.leaves = [];
@@ -632,6 +647,7 @@ node StationExit(Prefab) {
         build.widen(platform, wall + 1, 8, -self.bed, self.long - 1, self.wide - 1, 0);
         build.solid(wall + 1, 8, -1, self.long - 1, 10, 0);
         stair(build, wall + 3, 9 + self.bed, -self.bed, 3, self.bed, 3);
+        build.pool(wall + 8, 10, -self.bed - 5, self.long - 1, self.wide - 1, -self.bed, 2, True, True, True);
         flood(build, wall + 7, 10, -self.bed, self.long - 1, self.wide - 1, -1);
         build.way_out(float(self.long) - 3.5, 4.0, 0);
         into = build.touch(float(wall + 1), 2.0, 0.0, float(wall + 3), 6.0, 6.0);
@@ -646,6 +662,125 @@ node StationExit(Prefab) {
     }
 }
 
+"""The floor of a warren's room in column `col`, row `row`: one lift apart
+from each of its neighbours."""
+def warren_floor(col: int, row: int) -> int {
+    return [0, 1, 2, 1][(col + row + 3) % 4];
+}
+
+"""A service warren between the platforms: small rooms in a grid, each a step
+from its neighbours, a walk along one side of each with the ways through; a
+flooded sump in one, offices with a guard or a store in the others."""
+node ServiceWarren(Prefab) {
+    has cols: int = 3,
+        room_x: int = 7,
+        room_y: int = 7,
+        tall: int = 14;
+
+    def box_of(col: int, row: int) -> list[int] {
+        x0 = 1 + col * (self.room_x + 1);
+        y0 = 1 + row * (self.room_y + 1);
+        return [x0, y0, x0 + self.room_x, y0 + self.room_y];
+    }
+
+    can choose with Lay entry {
+        dice = visitor.dice_for(self);
+        self.title = "Service warren";
+        self.source = TRAIN;
+        self.district = level_district(TRAIN);
+        self.cols = dice.between(3, 4);
+        self.room_x = dice.between(7, 8);
+        self.room_y = 7;
+        self.long = 1 + self.cols * (self.room_x + 1);
+        self.wide = 1 + 3 * (self.room_y + 1);
+        self.tall = dice.between(12, 14);
+        self.low = -8;
+        self.high = self.tall + 4;
+        last = self.cols - 1;
+        self.enter = Port(face=2, along=float(self.box_of(0, 1)[1]) + 4.5, floor=warren_floor(0, 1));
+        self.leaves = [
+            Port(face=0, along=float(self.box_of(last, 1)[1]) + 4.5, floor=warren_floor(last, 1)),
+            Port(face=1, along=float(self.box_of(1, 2)[0]) + 3.5, floor=warren_floor(1, 2)),
+            Port(face=3, along=float(self.box_of(last, 0)[0]) + 3.5, floor=warren_floor(last, 0))
+        ];
+        visitor.place(self);
+    }
+
+    can rise with Raise entry {
+        build = visitor.build;
+        dice = build.begin(self);
+        spaces: dict[str, Space] = {};
+        for col in range(self.cols) {
+            for row in range(3) {
+                box = self.box_of(col, row);
+                floor = warren_floor(col, row);
+                spaces[str(col) + ":" + str(row)] = build.room(box[0], box[1], floor, box[2], box[3], floor + self.tall, variant=dice.below(3));
+            }
+        }
+        # The ways through: along each row by the walk at the room's +y side,
+        # always; between the rows at least once in each, more in some seeds.
+        for row in range(3) {
+            for col in range(self.cols - 1) {
+                box = self.box_of(col, row);
+                top = max(warren_floor(col, row), warren_floor(col + 1, row));
+                build.widen(spaces[str(col) + ":" + str(row)], box[2], box[3] - 3, top, box[2] + 1, box[3], top + 7);
+                if dice.chance(0.3) {
+                    build.rising_door(float(box[2]), float(box[3] - 3), float(top), float(box[2] + 1), float(box[3]), float(top + 7), {"wait": "-1"});
+                }
+            }
+        }
+        for row in range(2) {
+            always = dice.below(self.cols);
+            for col in range(self.cols) {
+                if col == always or dice.chance(0.4) {
+                    box = self.box_of(col, row);
+                    top = max(warren_floor(col, row), warren_floor(col, row + 1));
+                    build.widen(spaces[str(col) + ":" + str(row)], box[0] + 2, box[3], top, box[0] + 5, box[3] + 1, top + 7);
+                }
+            }
+        }
+        # The sump: the second room of the first row flooded but for its walk,
+        # a stair up out of it onto the walk, a store at its foot.
+        sump = self.box_of(1, 0);
+        low_floor = warren_floor(1, 0);
+        build.pool(sump[0], sump[1], low_floor - 7, sump[2], sump[3] - 3, low_floor, 2, steps=False);
+        stair(build, sump[0], sump[3] - 5, low_floor - 7, 0, 7, 2);
+        build.supply(float(sump[2]) - 1.5, float(sump[1]) + 1.0, low_floor - 7, "ammo_cells", "q2");
+        if self.danger > 0.25 {
+            build.foe(float(sump[0]) + 3.5, float(sump[1]) + 1.5, low_floor - 4, "monster_flipper", 0.0);
+        }
+        build.doorway(spaces["0:1"], self.enter);
+        for port in self.taken {
+            if port.face == 0 {
+                build.doorway(spaces[str(self.cols - 1) + ":1"], port);
+            } elif port.face == 1 {
+                build.doorway(spaces["1:2"], port);
+            } else {
+                build.doorway(spaces[str(self.cols - 1) + ":0"], port);
+            }
+        }
+        # Foes about the rooms; a touch in the middle wakes those beyond.
+        for col in range(self.cols) {
+            for row in range(3) {
+                if (col + row) % 2 == 1 and not (col == 1 and row == 0) and not (col == 0 and row == 1) {
+                    box = self.box_of(col, row);
+                    build.foe(float(box[0]) + 2.5, float(box[1]) + 2.5, warren_floor(col, row), q2_foe(dice, self.danger), 180.0);
+                }
+            }
+        }
+        middle = self.box_of(1, 1);
+        woken = build.touch(float(middle[0]), float(middle[1]), float(warren_floor(1, 1)), float(middle[2]), float(middle[3]), float(warren_floor(1, 1) + 6));
+        far = self.box_of(self.cols - 1, 2);
+        spawn_in(build, dice, self.danger, woken, [[float(far[0]) + 3.5, float(far[1]) + 2.5]], warren_floor(self.cols - 1, 2), 180.0, True);
+        spark_timer(build, float(middle[0]) + 0.1, float(middle[1]) + 1.5, float(warren_floor(1, 1)) + 3.0, 0, 4.0);
+        store = self.box_of(0, 2);
+        build.supply(float(store[0]) + 2.5, float(store[1]) + 2.5, warren_floor(0, 2), Q2_HEALTH, "q2");
+        build.supply(float(store[0]) + 4.5, float(store[1]) + 2.5, warren_floor(0, 2), "ammo_bullets", "q2");
+        corner = self.box_of(0, 0);
+        build.supply(float(corner[0]) + 2.5, float(corner[1]) + 2.5, warren_floor(0, 0), Q2_ARMOR, "q2");
+    }
+}
+
 """train's stretches: [name, role]."""
 glob TRAIN_STRETCHES: list[list[str]] = [
          ["platform", "start"],
@@ -656,6 +791,7 @@ glob TRAIN_STRETCHES: list[list[str]] = [
          ["concourse", "hub"],
          ["concourse", "flow"],
          ["blasters", "flow"],
+         ["warren", "flow"],
          ["signal", "keyroom"],
          ["exit", "end"],
          ["exit", "gate"]
@@ -680,6 +816,9 @@ def make_train(name: str, key: str) -> Prefab {
     }
     if name == "blasters" {
         return BlasterHall();
+    }
+    if name == "warren" {
+        return ServiceWarren();
     }
     if name == "signal" {
         return SignalBox(key=key if key else "key_silver");
