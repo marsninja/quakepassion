@@ -31,8 +31,10 @@ palette.
   ("Bridge access denied"); the switch that lifts the barrier is on a
   control balcony over the gorge or down on the gorge's floor; guards
   appear on the far side as it lifts.
-- `VentControl`: the key on a control deck over the fan room, up a lift or
-  a stair; taking it opens the closets below.
+- `VentControl`: the fan pit, a walk round its rim; the key on a control
+  deck on a tower in the pit, a bridge out to it from the rim up a lift or a
+  stair; a stair down among the fans, ducts off the pit's floor; taking the key
+  opens the closets on the rim.
 - `ToxicExit`: the end. A door (a key's, as a gate), a hall, the way out
   behind a door sealed for the toxic air that the ventilation switch on
   a gantry opens ("Ventilation systems active")."""
@@ -601,26 +603,30 @@ node BarrierBridge(Prefab) {
     }
 }
 
-"""The key on a control deck over the fan room, up a lift or a stair."""
+"""The key on a control deck on a tower in the fan pit, a bridge out to it
+from the walk round the pit's rim, up a lift or a stair; a stair down into
+the pit, ducts off its floor."""
 node VentControl(Prefab) {
     has key: str = "key_silver",
-        hall_wide: int = 16,
+        hall_wide: int = 20,
         deck: int = 6,
+        deep: int = 7,
         by_lift: bool = True,
-        tall: int = 14;
+        tall: int = 15;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Vent control (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = MINE1;
         self.district = level_district(MINE1);
-        self.long = dice.between(22, 24);
-        self.hall_wide = dice.between(16, 18);
+        self.long = dice.between(24, 26);
+        self.hall_wide = dice.between(20, 22);
         self.wide = self.hall_wide + 4;
-        self.deck = dice.between(6, 7);
+        self.deck = 6;
+        self.deep = dice.between(6, 7);
         self.by_lift = dice.chance(0.5);
-        self.tall = self.deck + 8;
-        self.low = -1;
+        self.tall = self.deck + 9;
+        self.low = -self.deep - 1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
@@ -631,43 +637,70 @@ node VentControl(Prefab) {
         build = visitor.build;
         dice = build.begin(self);
         side = self.hall_wide - 1;
-        cy = side // 2;
-        room = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
+        low = -self.deep;
+        px0 = 6;
+        py0 = 4;
+        px1 = self.long - 5;
+        py1 = side - 3;
+        cx = (px0 + px1) // 2;
+        cy = (py0 + py1) // 2;
+        room = build.room(1, 1, low, self.long - 1, side, self.tall, variant=dice.below(3));
+        build.level(room, 0);
+        build.level(room, low);
         build.level(room, self.deck);
         build.doorway(room, self.enter);
-        dx = self.long - 8;
-        # The deck over the fan bay, posts along its front.
-        slab(build, dx, 1, self.long - 1, side, self.deck, 1);
-        for y in range(2, side - 1, 4) {
-            if y < cy - 2 or y > cy + 2 {
-                build.solid(dx, y, 0, dx + 1, y + 1, self.deck - 1);
+        # The walk round the pit's rim.
+        build.solid(1, 1, low, self.long - 1, py0, 0);
+        build.solid(1, py1, low, self.long - 1, side, 0);
+        build.solid(1, py0, low, px0, py1, 0);
+        build.solid(px1, py0, low, self.long - 1, py1, 0);
+        # The tower in the pit, its top the control deck; the bridge out to
+        # it from the rim's south side, up a lift or a stair along the rim.
+        build.solid(cx - 3, cy - 3, low, cx + 3, cy + 3, self.deck);
+        bx = px0 + self.deck;
+        slab(build, bx, 4 if self.by_lift else 1, bx + 3, cy - 3, self.deck, 1);
+        if self.by_lift {
+            lift(build, bx, 1, bx + 3, 4, 0, self.deck);
+            for x in range(bx, bx + 3) {
+                build.keep(room, x, 4, self.deck);
+            }
+        } else {
+            stair(build, px0, 1, 0, 0, self.deck, 3);
+            for y in range(1, 4) {
+                build.keep(room, bx, y, self.deck);
             }
         }
-        # Fan housings on the floor, sparking.
-        for at in [[4, 3], [4, side - 5]] {
-            build.solid(at[0], at[1], 0, at[0] + 3, at[1] + 3, 4);
+        for x in range(bx, bx + 3) {
+            build.keep(room, x, cy - 3, self.deck);
         }
-        sparking(build, 7.2, 4.5, 2.0, 0, 3.0);
-        if self.by_lift {
-            lift(build, dx - 3, cy - 1, dx, cy + 2, 0, self.deck);
-        } else {
-            stair(build, dx - self.deck, cy - 1, 0, 0, self.deck, 3);
+        # The fans' controls along the deck's back.
+        build.solid(cx - 2, cy + 2, self.deck, cx + 2, cy + 3, self.deck + 2);
+        # The stair down the pit's north wall; ducts off its floor, a crawl
+        # high enough to walk, into the rock under the rim.
+        stair(build, px0 + self.deep - 1, py1 - 3, low, 2, self.deep, 3);
+        for y in range(py1 - 3, py1) {
+            build.keep(room, px0 - 1, y, 0);
         }
-        for y in range(cy - 1, cy + 2) {
-            build.keep(room, dx, y, self.deck);
-        }
-        # The fans' controls along the deck's back wall.
-        build.solid(self.long - 2, 3, self.deck, self.long - 1, side - 2, self.deck + 2);
-        key_ambush(build, self.key, float(self.long) - 3.5, float(cy) + 0.5, self.deck, side, 0, [2, dx - 4], [MINE1_FOES.pick(dice, self.danger, True), MINE1_FOES.pick(dice, self.danger)]);
+        build.widen(room, px1, cy - 2, low, self.long - 1, cy + 1, low + 5);
+        build.widen(room, px1 - 5, py0 - 3, low, px1 - 2, py0, low + 5);
+        # Fan housings on the pit's floor, sparking.
+        build.solid(px1 - 2, py0, low, px1, py0 + 2, low + 3);
+        build.solid(px1 - 2, py1 - 3, low, px1, py1 - 1, low + 3);
+        sparking(build, float(px1) - 2.2, float(py0) + 1.0, float(low) + 2.0, 2, 3.0);
+        key_ambush(build, self.key, float(cx) + 0.5, float(cy) + 0.5, self.deck, side, 0, [3, self.long - 8], [MINE1_FOES.pick(dice, self.danger, True), MINE1_FOES.pick(dice, self.danger)]);
+        # Coming in wakes what is down among the fans; stepping onto the
+        # deck, what walks it.
         fans = build.waiting();
-        build.touch(1.0, float(cy - 2), 0.0, 4.0, float(cy + 3), 6.0) +>:Fires:+> fans;
-        build.foe(float(dx) - 1.5, float(side) - 3.5, 0, MINE1_FOES.pick(dice, self.danger), 180.0, waits=fans);
+        build.touch(1.0, self.enter.along - 2.0, 0.0, 4.0, self.enter.along + 2.0, 6.0) +>:Fires:+> fans;
+        build.foe(float(px1) - 1.5, float(cy) + 0.5, low, MINE1_FOES.pick(dice, self.danger), 180.0, waits=fans);
         deck_guard = build.waiting();
-        build.touch(float(dx), float(cy - 2), float(self.deck), float(dx + 2), float(cy + 3), float(self.deck + 6)) +>:Fires:+> deck_guard;
-        build.foe(float(self.long) - 3.5, 3.5, self.deck, MINE1_FOES.pick(dice, self.danger, True), 180.0, waits=deck_guard);
-        build.foe(8.5, 2.5, 0, "monster_soldier", 90.0, patrol=[[8.5, 2.5], [8.5, float(side) - 2.5]]);
-        build.supply(2.5, float(cy) + 3.5, 0, Q2_HEALTH, "q2");
-        build.timer(5.0) +>:Fires:+> build.sparks(float(self.long) - 2.2, float(cy) - 3.5, float(self.deck) + 1.5, 2);
+        build.touch(float(bx), float(cy - 5), float(self.deck), float(bx + 3), float(cy - 3), float(self.deck + 6)) +>:Fires:+> deck_guard;
+        build.foe(float(cx) - 1.5, float(cy) + 1.0, self.deck, MINE1_FOES.pick(dice, self.danger, True), 180.0, waits=deck_guard);
+        rim_y = float(side) - 1.5;
+        build.foe(4.5, rim_y, 0, "monster_soldier", 0.0, patrol=[[4.5, rim_y], [float(self.long) - 2.5, rim_y], [float(self.long) - 2.5, 2.5], [4.5, 2.5]]);
+        build.supply(2.5, float(self.enter.along) + 3.5, 0, Q2_HEALTH, "q2");
+        build.supply(float(self.long) - 2.5, float(cy) - 0.5, low, "ammo_bullets", "q2");
+        build.timer(5.0) +>:Fires:+> build.sparks(float(cx) + 2.2, float(cy) + 2.5, float(self.deck) + 1.0, 0);
     }
 }
 
