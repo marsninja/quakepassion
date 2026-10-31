@@ -16,10 +16,10 @@ way out. Raised in bunk1's own palette.
 - `CargoLifts`: a hall, a mezzanine across its far half, cargo lifts up to
   it and a cargo car riding up and down beside them; a button on the
   mezzanine opens the doors below (a hub).
-- `SubBasement`: a hall over a flooded basement, wells down into the water
-  through its floor; the hall's way on is opened by a button deep in the
-  basement (or on its far wall in some seeds); guards appear in the hall
-  as it opens.
+- `SubBasement`: a hall of storerooms over a flooded basement, its chambers
+  joined by culverts, wells down into the water through the hall's floor; the
+  hall's way on is opened by a button deep in the basement (or on its far
+  wall in some seeds); guards appear in the hall as it opens.
 - `ArmoryVault`: the key room. The key in an armory behind a door a button
   on the wall opens; taking it opens the closets and brings guards in.
 - `DepotExit`: the end. A door (a key's, as a gate), a ramp up to a dock,
@@ -32,6 +32,7 @@ import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush, gate_into }
 import from .e4m6 { flood, onward_ports, port_door, told }
 import from .base2 { spark_timer, blast_chain, spawn_in, panel_stash, guard_closet }
+import from .q2walls_parts { partition, side_rooms }
 
 glob BUNK1: str = "q2:bunk1";
 
@@ -88,7 +89,7 @@ node LoadingDock(Prefab) {
         self.wide = dice.between(20, 22);
         self.dock = dice.between(4, 5);
         self.gantry = 9;
-        self.tall = dice.between(16, 18);
+        self.tall = dice.between(28, 32);
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -102,7 +103,7 @@ node LoadingDock(Prefab) {
         build = visitor.build;
         dice = build.begin(self);
         middle = self.wide // 2;
-        yard = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        yard = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(yard, self.dock);
         build.level(yard, self.gantry);
         dx = self.long - 8;
@@ -119,7 +120,7 @@ node LoadingDock(Prefab) {
             build.keep(yard, dx - 1, y, self.gantry);
         }
         # The crane riding over the yard.
-        build.train([4.0, 4.0, 1.0], [[6.0, float(middle - 2), float(self.tall - 3)], [float(dx - 6), float(middle - 2), float(self.tall - 3)]], 40.0, 3.0);
+        build.train([4.0, 4.0, 1.0], [[6.0, float(middle - 2), float(self.gantry + 6)], [float(dx - 6), float(middle - 2), float(self.gantry + 6)]], 40.0, 3.0);
         crates(build, dice, [[12, 7], [15, middle - 1]], 0);
         crates(build, dice, [[dx + 5, middle + 3]], self.dock);
         ammo_crates(build, [[10, middle + 3], [18, 7], [dx - 2, middle + 2]], 0);
@@ -178,7 +179,7 @@ node CrateStacks(Prefab) {
         self.long = dice.between(28, 30);
         self.wide = dice.between(16, 18);
         self.top = dice.between(9, 10);
-        self.tall = self.top + 9;
+        self.tall = self.top + 16;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -261,8 +262,8 @@ node CargoLifts(Prefab) {
         self.district = level_district(BUNK1);
         self.long = dice.between(26, 28);
         self.wide = dice.between(22, 24);
-        self.mezzanine = dice.between(9, 10);
-        self.tall = 2 * self.mezzanine + 8;
+        self.mezzanine = dice.between(11, 12);
+        self.tall = 2 * self.mezzanine + 10;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -312,8 +313,15 @@ node CargoLifts(Prefab) {
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, upper, Q2_ARMOR, "q2");
         build.solid(mx + 2, self.wide - 4, 0, mx + 9, self.wide - 1, self.mezzanine - 1);
         locker(build, mx + 3, self.wide - 4, 3, 0, Q2_HEALTH);
-        # Guards' closets in a block along the -y wall under the mezzanine.
+        # Under the mezzanine a store of its own behind a wall, stepped into;
+        # guards' closets in a block along its -y wall, side rooms along its
+        # far wall.
         build.solid(mx + 2, 1, 0, self.long - 3, 4, self.mezzanine - 1);
+        partition(build, hall, mx, 1, mx + 1, self.wide - 1, 0, self.mezzanine - 1, [[middle + 1, middle + 4]]);
+        if self.wide >= 23 {
+            store = side_rooms(build, self.long - 7, 5, 0, 3, 3, 5, 6, False, -1);
+            build.supply(store[1][0], store[1][1], 1, Q2_AMMO[dice.below(len(Q2_AMMO))], "q2");
+        }
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
@@ -335,7 +343,7 @@ node CargoLifts(Prefab) {
             spawn_in(build, dice, self.danger, ride, [[float(self.long) - 4.5, float(y0) + 2.0]], self.mezzanine, 180.0, True);
         }
         for index in range(dice.between(3, 4)) {
-            build.foe(float(4 + index * 3) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), 0, BUNK1_FOES.pick(dice, self.danger), 0.0);
+            build.foe(float(3 + index * 3) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), 0, BUNK1_FOES.pick(dice, self.danger), 0.0);
         }
         build.foe(float(mx) + 2.5, 2.5, self.mezzanine, "monster_soldier", 0.0, patrol=[[float(mx) + 2.5, 2.5], [float(self.long) - 3.5, 2.5]]);
         ammo_crates(build, [[3, 2], [3, self.wide - 3], [mx - 6, middle + 5]], 0);
@@ -359,9 +367,9 @@ node SubBasement(Prefab) {
         self.district = level_district(BUNK1);
         self.long = dice.between(26, 28);
         self.wide = dice.between(18, 20);
-        self.deep = dice.between(9, 11);
+        self.deep = dice.between(8, 9);
         self.wall_button = dice.chance(0.4);
-        self.tall = dice.between(11, 13);
+        self.tall = dice.between(17, 20);
         self.low = -self.deep - 2;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -377,10 +385,16 @@ node SubBasement(Prefab) {
         low = -self.deep;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         # The basement under the hall's floor, flooded to the floor's
-        # underside, pillars holding the floor up.
-        build.room(5, 2, low, self.long - 5, self.wide - 2, -1, variant=dice.below(3));
-        for x in range(8, self.long - 6, 5) {
-            for y in range(5, self.wide - 4, 5) {
+        # underside: three chambers, a culvert through each wall between them
+        # over a sill, pillars holding the floor up.
+        under = build.room(5, 2, low, self.long - 5, self.wide - 2, -1, variant=dice.below(3));
+        span = (self.long - 10) // 3;
+        chambers = [5 + span, 5 + 2 * span];
+        for x in chambers {
+            partition(build, under, x, 2, x + 1, self.wide - 2, low, -1, [[middle - 1, middle + 2]], 4);
+        }
+        for x in [5 + span // 2, 5 + span + span // 2, 5 + 2 * span + span // 2] {
+            for y in [5, self.wide - 6] {
                 build.solid(x, y, low, x + 1, y + 1, -1);
             }
         }
@@ -399,6 +413,12 @@ node SubBasement(Prefab) {
                 build.keep(hall, at[0] + 3, at[1] + dy, 0);
             }
         }
+        # The hall broken by a wall across its floor, storerooms along its far
+        # side stepped up into.
+        split = self.long // 2 + 3;
+        partition(build, hall, split, 1, split + 1, self.wide - 1, 0, 8, [[middle - 2, middle + 2]]);
+        stores = side_rooms(build, 5, self.wide - 6, 0, 2, 4, 4, 6, True, -1);
+        build.supply(stores[0][0], stores[0][1], 1, Q2_AMMO[dice.below(len(Q2_AMMO))], "q2");
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
@@ -420,12 +440,12 @@ node SubBasement(Prefab) {
         }
         late = build.delay(1.5);
         press +>:Fires:+> late;
-        spawn_in(build, dice, self.danger, late, [[float(self.long) - 4.5, 3.5], [float(self.long) - 4.5, float(self.wide) - 3.5], [12.5, float(middle) + 0.5]], 0, 180.0, True);
+        spawn_in(build, dice, self.danger, late, [[float(self.long) - 4.5, 3.5], [float(self.long) - 4.5, float(self.wide) - 3.5], [float(split) - 3.5, float(middle) + 0.5]], 0, 180.0, True);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(10 + index * 7) + 0.5, float(middle) + 2.5, low + 1, "monster_flipper", 0.0);
+            build.foe(float(5 + index * span + span // 2) + 2.5, float(middle) + 3.5, low + 1, "monster_flipper", 0.0);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long - 6 - index * 4) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -2.5), 0, BUNK1_FOES.pick(dice, self.danger, index == 0), 180.0);
+            build.foe(float(split + 2 + index * 3) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, BUNK1_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(3.5, 3.5, 0, "monster_soldier", 90.0, patrol=[[3.5, 3.5], [3.5, float(self.wide) - 3.5]]);
         ammo_crates(build, [[self.long - 3, 2], [self.long - 3, self.wide - 3]], 0);
@@ -451,7 +471,7 @@ node ArmoryVault(Prefab) {
         self.long = dice.between(22, 24);
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
-        self.tall = dice.between(11, 13);
+        self.tall = dice.between(16, 18);
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -507,7 +527,7 @@ node DepotExit(Prefab) {
         self.long = dice.between(28, 30);
         self.wide = dice.between(16, 18);
         self.dock = dice.between(4, 5);
-        self.tall = dice.between(14, 16);
+        self.tall = dice.between(28, 32);
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -520,7 +540,7 @@ node DepotExit(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         wall = 8;
-        court = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key);
+        court = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key, True);
         dx = self.long - 12;
         build.solid(dx, 1, 0, self.long - 1, self.wide - 1, self.dock);
         stair(build, dx - self.dock, middle - 2, 0, 0, self.dock, 4);
@@ -549,7 +569,7 @@ node DepotExit(Prefab) {
         }
         blow +>:Fires:+> hulks;
         blast_chain(build, press, [[float(dx) - 7.0, 4.0, 2.0], [float(dx) - 7.0, float(self.wide) - 4.0, 2.0], [float(dx) - 3.0, float(middle) + 0.5, 6.0]]);
-        spawn_in(build, dice, self.danger, press, [[float(wall) + 3.5, 3.5], [float(wall) + 3.5, float(self.wide) - 3.5]], 0, 0.0, True);
+        spawn_in(build, dice, self.danger, press, [[float(dx) - 2.5, 3.5], [float(dx) - 2.5, float(self.wide) - 3.5]], 0, 180.0, True);
 
         build.touch(float(dx - self.dock), float(middle - 2), 0.0, float(dx), float(middle + 2), float(self.dock + 6), True, "Destroy the transports from the dock's console");
         for index in range(dice.between(2, 3)) {

@@ -13,13 +13,14 @@ Raised in base1's own palette.
   climbs its steps; a panel in the canyon's wall breaks open on a stash
   when shot (a secret); by the dice a natural arch spans the canyon, a
   guard on it, a ramp up to it.
-- `CanyonBridge`: a gorge, a stream (or a channel of slime) far down at
-  its bottom, a metal bridge over it, now and then a spur off it to a
-  lookout; a stair up the gorge's wall for whoever falls. Halfway over,
+- `CanyonBridge`: a gorge, a deep stream (or a channel of slime) far down at
+  its bottom, split by the bridge's pier with a culvert through it under the
+  water, a metal bridge over it, now and then a spur off it to a lookout;
+  steps out of the stream and a stair up the gorge's wall for whoever falls. Halfway over,
   charges go off along the bridge and guards appear on the far side.
-- `ControlYard`: a yard round a control tower, a ramp up to its top and
-  walkways from it to ways on high in two walls; ways on below too (a
-  hub). The tower may be hollow, a control room in its foot whose console
+- `ControlYard`: a yard round a control tower, a flooded sump in the corner
+  its walkways make, a ramp up to the tower's top and walkways from it to ways
+  on high in two walls; ways on below too (a hub). The tower may be hollow, a control room in its foot whose console
   establishes the communication link (base1's objective), charges and
   guards answering; a cargo lift may ride its side; panels spark, guards
   walk round it.
@@ -42,8 +43,9 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from .roster { q2_foe, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
-import from .common { stair, boulders, key_ambush, key_item, lift, pillars }
+import from .common { stair, key_ambush, key_item, lift, pillars }
 import from .e1m1_parts { deck, stash, bars }
+import from .q2walls_parts { partition, spaced_boulders }
 
 glob BASE1: str = "q2:base1";
 
@@ -88,7 +90,7 @@ node CanyonGate(Prefab) {
         self.district = level_district(BASE1);
         self.long = dice.between(28, 32);
         self.wide = dice.between(18, 22);
-        self.tall = dice.between(20, 24);
+        self.tall = dice.between(30, 34);
         self.bunker = dice.between(3, 4);
         self.arch = dice.chance(0.55);
         self.low = -1;
@@ -136,7 +138,7 @@ node CanyonGate(Prefab) {
         build.breakable(9.0, 3.0, 0.0, 11.0, 4.0, 4.0, 20);
         build.secret(9.0, 1.0, 0.0, 11.0, 3.0, 3.0);
         build.supply(10.0, 2.0, 0, Q2_ARMOR, "q2");
-        boulders(build, dice, 1, 1, bx, self.wide - 1, 0, dice.between(6, 9), clear);
+        spaced_boulders(build, dice, 1, 1, bx, self.wide - 1, 0, dice.between(6, 9), clear);
         build.doorway(canyon, self.enter);
         for port in self.taken {
             build.doorway(canyon, port);
@@ -172,6 +174,7 @@ spur off it to a lookout); a stair up the gorge's wall."""
 node CanyonBridge(Prefab) {
     has deep: int = 9,
         tall: int = 14,
+        stream: int = 8,
         spur: bool = False,
         slime: bool = False;
 
@@ -180,13 +183,14 @@ node CanyonBridge(Prefab) {
         self.title = "Canyon bridge";
         self.source = BASE1;
         self.district = level_district(BASE1);
-        self.long = dice.between(26, 28);
+        self.long = dice.between(34, 36);
         self.spur = dice.chance(0.5);
         self.slime = dice.chance(0.35);
         self.wide = dice.between(18, 20) if self.spur else dice.between(16, 18);
         self.deep = dice.between(8, 10);
-        self.tall = dice.between(13, 15);
-        self.low = -self.deep - 3;
+        self.tall = dice.between(22, 26);
+        self.stream = dice.between(8, 9);
+        self.low = -self.deep - self.stream - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -205,9 +209,18 @@ node CanyonBridge(Prefab) {
         x1 = self.long - 6;
         build.solid(1, 1, low, x0, self.wide - 1, 0);
         build.solid(x1, 1, low, self.long - 1, self.wide - 1, 0);
-        # The stream (or slime) down the gorge's middle, the bridge over it
-        # all, and the stair up the near wall.
-        build.pool(x0 + self.deep + 1, 1, low - 2, x1, self.wide - 1, low, 3 if self.slime else 2);
+        # The stream (or slime) deep down the gorge's middle, split by the
+        # bridge's pier, a culvert through the pier under the water, steps
+        # up out of it either side of the pier; the bridge over it all, and
+        # the stair up the near wall.
+        sx = x0 + self.deep + 1;
+        depth = self.stream;
+        channel = build.pool(sx, 1, low - depth, x1, self.wide - 1, low, 3 if self.slime else 2, False, False);
+        build.solid(sx, middle - 1, low - depth, x1, middle + 1, -1);
+        build.widen(channel, x1 - 5, middle - 1, low - depth + 1, x1 - 2, middle + 1, low - depth + 5);
+        stair(build, sx + depth - 1, 1, low - depth, 2, depth, 3);
+        stair(build, sx + depth - 1, self.wide - 4, low - depth, 2, depth, 3);
+        build.supply(float(x1) - 1.5, float(middle) - 4.5, low - depth, Q2_ARMOR, "q2");
         build.solid(x0, middle - 2, -1, x1, middle + 2, 0);
         stair(build, x0 + self.deep - 1, 1, low, 2, self.deep, 3);
         for y in range(middle - 2, middle + 2) {
@@ -245,7 +258,10 @@ node CanyonBridge(Prefab) {
             build.foe(float(x1) + 3.5, float(middle) + 2.5 - float(index) * 5.0, 0, q2_foe(dice, self.danger), 180.0, waits=far_side);
         }
         build.foe(float(x1) + 1.5, 2.5, 0, "monster_soldier", 90.0, patrol=[[float(x1) + 1.5, 2.5], [float(x1) + 1.5, float(self.wide) - 2.5]]);
-        build.foe(float(x0 + self.deep + 3) + 0.5, 3.5, low, q2_foe(dice, self.danger), 90.0);
+        build.foe(float(x0 + self.deep) - 0.5, float(self.wide) - 3.5, low, q2_foe(dice, self.danger), 270.0);
+        if self.danger > 0.3 and not self.slime {
+            build.foe(float(x1) - 3.5, float(middle) + 4.5, low - depth + 1, "monster_flipper", 0.0);
+        }
         sparking(build, float(x1) - 0.2, float(middle) - 4.5, -2.0, 2, 4.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
         build.supply(float(x0) + 2.5, float(self.wide) - 2.5, low, "ammo_bullets", "q2");
@@ -271,8 +287,8 @@ node ControlYard(Prefab) {
         self.hollow = dice.chance(0.6);
         self.cargo = dice.chance(0.5);
         self.tower = dice.between(8, 9) if self.hollow else dice.between(7, 8);
-        self.tall = self.tower + 13;
-        self.low = -1;
+        self.tall = self.tower + 20;
+        self.low = -7;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -309,6 +325,13 @@ node ControlYard(Prefab) {
             build.keep(yard, cx + at, ty1 - 1, self.tower);
             build.keep(yard, tx1 - 1, cy + at, self.tower);
         }
+        # Pipes laid across the yard's aisles, stepped over.
+        build.solid(tx0 - 3, ty1, 0, tx0 - 2, self.wide - 1, 1);
+        build.solid(tx1 + 5, 1, 0, tx1 + 6, cy - 2, 1);
+        # The sump in the corner the two walkways make, deep, its steps along
+        # the side by the east walkway.
+        build.pool(cx + 6, cy + 6, -6, self.long - 1, self.wide - 1, 0, 2);
+        build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, -6, Q2_AMMO[dice.below(len(Q2_AMMO))], "q2");
         build.doorway(yard, self.enter);
         for port in self.taken {
             build.doorway(yard, port);
@@ -421,6 +444,8 @@ node BaseElevator(Prefab) {
             build.push(1.0, float(car_y) - 1.5, float(self.drop) + 2.0, 0) +>:Fires:+> ride;
             build.push(float(self.long - 1), float(middle) + 3.5, 2.5, 2) +>:Fires:+> ride;
         }
+        # A pipe laid across the floor past the car, stepped over.
+        build.solid(edge_x + 5, 1, 0, edge_x + 6, self.wide - 1, 1);
         # The stair down the side wall beside the car, a lift a cell.
         stair_y = 1 if self.stair_low else self.wide - 4;
         stair(build, edge_x + self.drop - 1, stair_y, 0, 2, self.drop, 3);
@@ -466,7 +491,7 @@ node CommCenter(Prefab) {
         self.source = BASE1;
         self.district = level_district(BASE1);
         self.gallery = dice.between(9, 10);
-        self.long = dice.between(24, 27);
+        self.long = dice.between(26, 29);
         self.wide = dice.between(19, 21);
         self.tall = self.gallery + dice.between(9, 10);
         self.twin = dice.chance(0.6);
@@ -507,6 +532,15 @@ node CommCenter(Prefab) {
         # drop to the floor.
         for y in range(middle + 3, middle + 6) {
             build.keep(hall, self.long - 4, y, g);
+        }
+        # A wall across the floor past the first stair, under the gallery too,
+        # a gate over a sill through it on the south side.
+        wx = 8 + g;
+        if self.twin {
+            partition(build, hall, wx, 1, wx + 1, self.wide - 7, 0, g - 1, [[middle - 5, middle - 2]]);
+            build.solid(wx, self.wide - 4, 0, wx + 1, self.wide - 1, g - 1);
+        } else {
+            partition(build, hall, wx, 1, wx + 1, self.wide - 1, 0, g - 1, [[middle - 5, middle - 2]]);
         }
         # Consoles down the middle (on a low dais, or on the floor).
         if self.dais {
@@ -636,7 +670,7 @@ node LandingPad(Prefab) {
         self.long = dice.between(24, 26);
         self.wide = dice.between(18, 20);
         self.pad = dice.between(8, 10) if dice.chance(0.5) else dice.between(1, 2);
-        self.tall = max(dice.between(18, 22), self.pad + 12);
+        self.tall = max(dice.between(28, 32), self.pad + 20);
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);

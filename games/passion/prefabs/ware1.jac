@@ -11,9 +11,9 @@ and the loading bay out. Raised in ware1's own palette.
   motor sparks; a stack of crates breaks open on a stash (a secret); now
   and then the way on below is a shutter opened from the deck ("This door
   is opened elsewhere").
-- `ConveyorHall`: a hall, crates riding a belt down it, a catwalk along a
-  wall and a gantry across from it over the belt (both over the floor); up
-  by a stair or a lift. A button on the catwalk opens the floor's way on
+- `ConveyorHall`: two aisles either side of the belt that runs down the hall
+  through a slot in the wall between them, crates riding it, a catwalk along a
+  wall and a gantry across from it over the wall; up by a stair or a lift. A button on the catwalk opens the floor's way on
   (or not); guards appear on the gantry as the player tops the stair; a
   guard walks the floor; ways out on both floors (a hub).
 - `CraneBay`: a tall bay, a gantry across it high up, a crane riding its
@@ -234,6 +234,9 @@ node ConveyorHall(Prefab) {
         bx0 = 6;
         bx1 = self.long - 6;
         build.solid(bx0, belt_y, 0, bx1, belt_y + 3, 2);
+        # The wall the belt runs through, up to the catwalk's height; the
+        # aisles either side join only round its ends.
+        build.solid(bx0, belt_y, 5, bx1, belt_y + 3, self.walk);
         belt_crates(build, dice, bx0, bx1, belt_y, 2, dice.between(2, 3));
         sparking(build, float(bx1) + 0.1, float(belt_y) + 1.5, 1.0, 0, 5.0);
         # Up to the catwalk: a stair under its near end, or a lift at its
@@ -397,7 +400,7 @@ node CraneBay(Prefab) {
         under = build.touch(float(cx - 3), 1.0, 0.0, float(cx + 3), float(self.wide - 1), 6.0);
         guards(build, under, [[float(cx) + 0.5, 3.5], [float(cx) + 0.5, float(self.wide) - 7.5]], self.gantry, WARE1_FOES.squad(dice, self.danger, 2), 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx + 5 + index * 3) + 0.5, float(middle) + (4.5 if index % 2 == 0 else -4.5), 0, WARE1_FOES.pick(dice, self.danger), 180.0);
+            build.foe(float(cx + 4 + index * 2) + 0.5, float(middle) + (4.5 if index % 2 == 0 else -4.5), 0, WARE1_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(float(px0) + 4.5, 4.5, -self.pit, WARE1_FOES.pick(dice, self.danger, True), 0.0);
         lane = float(middle) - 3.5;
@@ -746,7 +749,7 @@ node LoadingBay(Prefab) {
         belt_crates(build, dice, 2, self.wide - 2, self.long - 3, self.dock + 2, 2, False);
         if self.by_lift {
             # Called down by the button beside it.
-            build.push(float(dx - 1) - 0.5, 1.0, 1.0, 1) +>:Fires:+> called_lift(build, dx - 3, 2, dx, 5, 0, self.dock);
+            build.push(float(dx - 4) - 0.5, 1.0, 1.0, 1) +>:Fires:+> called_lift(build, dx - 3, 2, dx, 5, 0, self.dock);
             keep_row(build, bay, dx, 2, self.dock, 0, 3);
         } else {
             stair(build, dx - self.dock, 2, 0, 0, self.dock, 3);
@@ -759,7 +762,7 @@ node LoadingBay(Prefab) {
         # Coming in, guards appear in the bay; on the dock, the bay's
         # charges go off.
         come_in = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
-        guards(build, come_in, [[float(dx) - 2.5, float(self.wide) - 3.5], [float(dx) + 3.5, float(self.wide) - 3.5]], 0, WARE1_FOES.squad(dice, self.danger, 2, True), 180.0);
+        guards(build, come_in, [[float(dx) - 2.5, float(self.wide) - 3.5], [float(dx) - 2.5, float(self.wide) - 6.5]], 0, WARE1_FOES.squad(dice, self.danger, 2, True), 180.0);
         on_dock = build.touch(float(dx), 1.0, float(self.dock), float(dx + 2), float(self.wide - 1), float(self.dock + 6));
         charges(build, on_dock, [[float(wall) + 2.5, 2.5, 2.0], [float(wall) + 2.5, float(self.wide) - 2.5, 2.0]], 0.4);
         for index in range(dice.between(2, 3)) {

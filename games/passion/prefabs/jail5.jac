@@ -33,8 +33,9 @@ import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
-import from .common { stair, spiral, boulders, apart }
-import from .warejail_parts { shutter, auto_shutters, key_cue, sparking, guards, charges, stash, keep_row, called_lift, closets, gate_pair, post_button, laser, bars, drip, hurt, merlons }
+import from .common { stair, spiral, apart }
+import from .warejail_parts { shutter, auto_shutters, key_cue, sparking, guards, charges, stash, keep_row, called_lift, closets, post_button, laser, bars, drip, hurt, merlons }
+import from .q2walls_parts { partition, gate_yard, spaced_boulders }
 
 glob JAIL5: str = "q2:jail5";
 
@@ -75,7 +76,7 @@ node GuardCourtyard(Prefab) {
         self.wide = dice.between(22, 24);
         self.porch = dice.between(3, 4);
         self.walk = dice.between(12, 14);
-        self.tall = self.walk + 12;
+        self.tall = self.walk + 18;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -169,7 +170,7 @@ node Battlement(Prefab) {
         self.wall = dice.between(12, 14);
         # The yard deep enough that the stairs up start clear of the ditch.
         self.wide = self.wall + dice.between(12, 13);
-        self.tall = self.wall + 12;
+        self.tall = self.wall + 20;
         self.low = -3;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=4.0, floor=0);
@@ -210,7 +211,7 @@ node Battlement(Prefab) {
         build.solid(dx0, 1, -2, dx0 + 1, 4, -1);
         build.solid(dx1 - 1, 1, -2, dx1, 4, -1);
         hurt(build, float(dx0 + 1), 1.0, -2.0, float(dx1 - 1), 4.0, -1.0, 10);
-        boulders(build, dice, 6, 5, self.long - 6, wy - 3, 0, dice.between(3, 5), [[0, 1, 6, 7], [10, wy - w - 2, 17, wy], [self.long - 17, wy - w - 2, self.long - 10, wy], [self.long - 6, 1, self.long, 7], [6, wy - 3, 12, wy], [self.long - 12, wy - 3, self.long - 6, wy]]);
+        spaced_boulders(build, dice, 6, 5, self.long - 6, wy - 3, 0, dice.between(3, 5), [[0, 1, 6, 7], [10, wy - w - 2, 17, wy], [self.long - 17, wy - w - 2, self.long - 10, wy], [self.long - 6, 1, self.long, 7], [6, wy - 3, 12, wy], [self.long - 12, wy - 3, self.long - 6, wy]]);
         build.doorway(ground, self.enter);
         for port in self.taken {
             build.doorway(ground, port);
@@ -244,11 +245,11 @@ node Barracks(Prefab) {
         self.title = "Barracks";
         self.source = JAIL5;
         self.district = level_district(JAIL5);
-        self.long = dice.between(27, 29);
+        self.long = dice.between(30, 32);
         self.wide = dice.between(22, 24);
-        self.gallery = dice.between(9, 10);
+        self.gallery = dice.between(11, 12);
         self.by_lift = dice.chance(0.4);
-        self.tall = self.gallery + 10;
+        self.tall = self.gallery + 14;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -285,8 +286,9 @@ node Barracks(Prefab) {
         woken = build.touch(1.0, float(middle - 3), 0.0, 4.0, float(middle + 3), 6.0);
         sleepers = build.waiting();
         woken +>:Fires:+> sleepers;
-        for (index, x) in enumerate(range(14, self.long - 7, 4)) {
-            for y in [7, self.wide - 9] {
+        partition(build, hall, 6 + g, 3, 7 + g, self.wide - 1, 0, g - 1, [[middle - 2, middle + 2]]);
+        for (index, x) in enumerate(range(8 + g, self.long - 7, 4)) {
+            for y in [9, self.wide - 9] {
                 build.solid(x, y, 0, x + 2, y + 2, 2);
                 if (index + y) % 3 == 0 {
                     build.foe(float(x) + 1.0, float(y) + 1.0, 2, JAIL5_FOES.pick(dice, self.danger), 90.0, waits=sleepers);
@@ -296,7 +298,8 @@ node Barracks(Prefab) {
         # Lockers along the floor's south wall under the gallery, each behind
         # a door that breaks; a stash in one.
         for (index, x) in enumerate(range(10, self.long - 8, 5)) {
-            build.solid(x, 1, 0, x + 3, 2, 4);
+            build.solid(x, 1, 0, x + 5, 2, 4);
+            build.solid(x + 2, 2, 0, x + 5, 3, 4);
             build.room(x, 1, 0, x + 2, 2, 3);
             build.breakable(float(x), 2.0, 0.0, float(x + 2), 3.0, 3.0, 15);
             build.supply(float(x) + 1.0, 1.5, 0, Q2_AMMO[index % len(Q2_AMMO)] if index > 0 else Q2_ARMOR, "q2");
@@ -324,7 +327,8 @@ node Barracks(Prefab) {
 the booth over the near end that shuts it off."""
 node PowerTrench(Prefab) {
     has deep: int = 5,
-        booth: int = 9,
+        booth: int = 11,
+        width: int = 10,
         drawn_bridge: bool = False,
         tall: int = 16;
 
@@ -333,11 +337,11 @@ node PowerTrench(Prefab) {
         self.title = "Power trench";
         self.source = JAIL5;
         self.district = level_district(JAIL5);
-        self.long = dice.between(28, 30);
+        self.long = dice.between(32, 34);
         self.wide = dice.between(19, 21);
         self.deep = dice.between(8, 9);
         self.drawn_bridge = dice.chance(0.5);
-        self.tall = self.booth + 7;
+        self.tall = self.booth + 12;
         self.low = -self.deep - 2;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -360,18 +364,19 @@ node PowerTrench(Prefab) {
         # The trench across the room, water in it live with current, steps
         # up out of it at both ends.
         tx = 15;
-        build.pool(tx, 1, -d, tx + 6, self.wide - 1, 0, 2, False, True, True);
-        current = hurt(build, float(tx), 1.0, float(-d), float(tx + 6), float(self.wide - 1), -1.0, 8);
+        tw = self.width;
+        build.pool(tx, 1, -d, tx + tw, self.wide - 1, 0, 2, False, True, True);
+        current = hurt(build, float(tx), 1.0, float(-d), float(tx + tw), float(self.wide - 1), -1.0, 8);
         # The bridge over it: fixed, or drawn out from the booth.
         lane = middle - 2;
         if self.drawn_bridge {
-            bridge = build.drawn(float(tx), float(lane), float(tx + 6), float(lane + 4), 0, d + 1);
+            bridge = build.drawn(float(tx), float(lane), float(tx + tw), float(lane + 4), 0, d + 1);
         } else {
-            build.solid(tx, lane, -1, tx + 6, lane + 4, 0);
+            build.solid(tx, lane, -1, tx + tw, lane + 4, 0);
         }
         for y in range(lane, lane + 4) {
             build.keep(room, tx - 1, y, 0);
-            build.keep(room, tx + 6, y, 0);
+            build.keep(room, tx + tw, y, 0);
         }
         # The booth over the near end, up a stair along its side; its console
         # shuts the current off (and draws the bridge).
@@ -390,7 +395,7 @@ node PowerTrench(Prefab) {
         # Live wires spark along the trench.
         for (index, y) in enumerate([3, self.wide - 4]) {
             sparking(build, float(tx) - 0.2, float(y) + 0.5, -1.0, 2, 2.5 + float(index));
-            sparking(build, float(tx + 6) + 0.2, float(y) + 0.5, -1.0, 0, 3.0 + float(index));
+            sparking(build, float(tx + tw) + 0.2, float(y) + 0.5, -1.0, 0, 3.0 + float(index));
         }
         build.doorway(room, self.enter);
         for port in self.taken {
@@ -401,10 +406,10 @@ node PowerTrench(Prefab) {
         # on the far side.
         coming = build.touch(1.0, 1.0, 0.0, 4.0, float(self.wide - 1), 6.0);
         guards(build, coming, [[6.5, 4.5]], self.booth, JAIL5_FOES.squad(dice, self.danger, 1), 0.0);
-        over = build.touch(float(tx + 6), float(lane), 0.0, float(tx + 8), float(lane + 4), 6.0);
+        over = build.touch(float(tx + tw), float(lane), 0.0, float(tx + tw + 2), float(lane + 4), 6.0);
         guards(build, over, [[float(self.long) - 3.5, 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]], 0, JAIL5_FOES.squad(dice, self.danger, 2, True), 180.0);
         build.foe(5.5, float(self.wide) - 3.5, self.booth, JAIL5_FOES.pick(dice, self.danger), 0.0);
-        build.foe(float(tx + 8) + 0.5, 3.5, 0, "monster_soldier", 90.0, patrol=[[float(tx + 8) + 0.5, 3.5], [float(tx + 8) + 0.5, float(self.wide) - 3.5]]);
+        build.foe(float(tx + tw + 2) + 0.5, 3.5, 0, "monster_soldier", 90.0, patrol=[[float(tx + tw + 2) + 0.5, 3.5], [float(tx + tw + 2) + 0.5, float(self.wide) - 3.5]]);
         build.supply(float(self.long) - 2.5, float(middle) + 3.5, 0, Q2_HEALTH, "q2");
         build.supply(float(tx) + 3.5, float(self.wide) - 3.5, -d, "ammo_cells", "q2");
     }
@@ -422,11 +427,11 @@ node Armory(Prefab) {
         self.title = "Armory";
         self.source = JAIL5;
         self.district = level_district(JAIL5);
-        self.long = dice.between(26, 28);
+        self.long = dice.between(30, 32);
         self.wide = dice.between(20, 22);
-        self.gallery = dice.between(8, 9);
+        self.gallery = dice.between(11, 12);
         self.by_lift = dice.chance(0.4);
-        self.tall = self.gallery + 8;
+        self.tall = self.gallery + 14;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -480,7 +485,9 @@ node Armory(Prefab) {
             charges(build, alarm[0], [[float(self.long // 2) + 0.5, float(middle) + 0.5, 1.0], [8.5, float(middle) + 3.5, 1.0]], 0.5);
             guards(build, alarm[0], [[float(self.long) - 3.0, float(middle) + 0.5], [float(self.long // 2) + 0.5, float(self.wide) - 5.0]], g, JAIL5_FOES.squad(dice, self.danger, 2, True), 180.0);
         }
-        crate_heaps(build, dice, 8, 8, self.long - 11, self.wide - 8, 0, dice.between(2, 4), [[0, middle - 3, 9, middle + 3]]);
+        split = 7 + g;
+        partition(build, hall, split, 1, split + 1, self.wide - 1, 0, g - 1, [[middle - 2, middle + 2]]);
+        crate_heaps(build, dice, 8, 8, self.long - 11, self.wide - 8, 0, dice.between(2, 4), [[0, middle - 3, 9, middle + 3], [split - 3, middle - 4, split + 4, middle + 4], [split, 0, split + 1, self.wide]]);
         # A live panel by a broken console on the floor.
         build.solid(self.long - 8, middle - 1, 0, self.long - 7, middle + 1, 3);
         hurt(build, float(self.long - 10), float(middle - 1), 0.0, float(self.long - 8), float(middle + 1), 1.0, 6);
@@ -491,7 +498,7 @@ node Armory(Prefab) {
         }
         auto_shutters(build, dice, self, self.taken, 0.5);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(10 + index * 5) + 0.5, float(middle) + (2.5 if index % 2 == 0 else -2.5), 0, JAIL5_FOES.pick(dice, self.danger, index == 0), 180.0);
+            build.foe(float(10 + index * 5) + 0.5, float(middle) + (2.5 if index % 2 == 0 else 3.5), 0, JAIL5_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(7.5, 5.0, g, "monster_soldier", 0.0, patrol=[[7.5, 5.0], [float(self.long) - 3.0, 5.0]]);
         build.supply(2.5, float(self.wide) - 2.5, 0, Q2_HEALTH, "q2");
@@ -513,7 +520,7 @@ node CaptainQuarters(Prefab) {
         self.long = dice.between(22, 24);
         self.wide = 24;
         self.steps = dice.between(14, 18);
-        self.tall = self.steps + 8;
+        self.tall = self.steps + 14;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=12.0, floor=0);
@@ -565,7 +572,7 @@ node GuardExit(Prefab) {
         self.long = dice.between(25, 27);
         self.wide = dice.between(18, 20);
         self.dais = dice.between(2, 3);
-        self.tall = dice.between(16, 20);
+        self.tall = dice.between(28, 32);
         self.low = -3;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -578,7 +585,7 @@ node GuardExit(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         wall = 8;
-        gate_pair(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key);
+        gate_yard(build, [dice.below(3), dice.below(3)], self.enter, self.long, self.wide, wall, 0, self.tall, self.key);
         # The dais at the far end, steps up its front, the way out on it.
         dx = self.long - 8;
         build.solid(dx, middle - 4, 0, self.long - 1, middle + 4, self.dais);

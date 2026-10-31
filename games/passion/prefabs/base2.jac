@@ -12,8 +12,7 @@ Raised in base2's own palette.
   on, a stash behind a panel breaks open when shot (a secret).
 - `InstallationLobby`: a lobby, a gallery round two of its walls up a
   stair; guards appear on the gallery as the player climbs, and a button
-  up there opens the lobby's doors below. A start as well as a stretch
-  passed through.
+  up there opens the lobby's doors below.
 - `BlastCorridor`: a corridor shut across by two blast doors, a catwalk
   along its wall over them up a stair; the first opens by its button and
   sets charges off, the second by a button high over it, shot; guards
@@ -22,8 +21,8 @@ Raised in base2's own palette.
   channel, a lift down (or a stair); guards appear below as the player
   starts down; pipes broken open when shot hide a stash; ways on from the
   catwalk and the floor below.
-- `ReactorRing`: a reactor column in a pit, bridges from the floor round
-  it out to the column's foot (one drawn out by a shot button in some
+- `ReactorRing`: a reactor column in a pit flooded to a lift under the
+  floor, bridges from the floor round it out to the column's foot (one drawn out by a shot button in some
   seeds), a lift or a stair up out of the pit; guards appear in the pit
   as the player crosses and charges go off on the column (a hub).
 - `ServerRacks`: the key room. Rows of racks across a room, a catwalk over
@@ -110,7 +109,7 @@ node SewerEntry(Prefab) {
         self.district = level_district(BASE2);
         self.long = dice.between(30, 34);
         self.wide = dice.between(16, 18);
-        self.deep = dice.between(6, 7);
+        self.deep = dice.between(8, 10);
         self.upper = 7;
         self.tall = self.upper + dice.between(7, 8);
         self.low = -self.deep - 1;
@@ -201,7 +200,6 @@ node SewerEntry(Prefab) {
 opens the doors below."""
 node InstallationLobby(Prefab) {
     has gallery: int = 6,
-        opening: bool = False,
         tall: int = 16;
 
     can choose with Lay entry {
@@ -258,7 +256,7 @@ node InstallationLobby(Prefab) {
         # Coming in, the objective moves on; at the stair's top, guards
         # appear along the gallery.
         into = build.touch(1.0, float(middle - 3), 0.0, 4.0, float(middle + 3), 8.0);
-        into +>:Fires:+> build.objective("Reach the installation's inner halls" if self.opening else "Open the lobby's doors from the gallery");
+        into +>:Fires:+> build.objective("Open the lobby's doors from the gallery");
         top = build.touch(float(self.long - 7), float(self.wide - 7), float(self.gallery), float(self.long - 4), float(self.wide - 4), float(self.gallery + 6));
         spawn_in(build, dice, self.danger, top, [[8.5, float(self.wide) - 2.5], [12.5, float(self.wide) - 2.5], [float(self.long) - 2.5, 7.5]], self.gallery, 0.0);
         late = build.delay(2.0);
@@ -267,10 +265,6 @@ node InstallationLobby(Prefab) {
         spark_timer(build, float(self.long) - 1.1, 3.5, 3.0, 2, 4.0);
         spark_timer(build, 6.5, float(self.wide) - 4.9, float(self.gallery) - 2.0, 3, 6.0);
         panel_stash(build, 4, 0);
-        if self.opening {
-            build.start(2.5, float(middle) + 0.5, 0, 0.0);
-            build.supply(2.5, float(middle) - 1.5, 0, "ammo_shells", "q2");
-        }
         for index in range(dice.between(2, 3)) {
             build.foe(float(self.long // 2 + index * 3) + 0.5, float(middle) - 2.5, 0, q2_foe(dice, self.danger), 180.0);
         }
@@ -369,7 +363,7 @@ node PumpRoom(Prefab) {
         self.deep = dice.between(10, 12);
         self.by_stair = dice.chance(0.4);
         self.tall = dice.between(9, 11);
-        self.low = -self.deep - 3;
+        self.low = -self.deep - 7;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -397,7 +391,7 @@ node PumpRoom(Prefab) {
         build.solid(1, c, -1, c, self.wide - c, 0);
         build.solid(self.long - c, c, -1, self.long - 1, self.wide - c, 0);
         # The machine floor's channel, and its machines.
-        build.pool(c + 5, middle - 2, low - 2, self.long - c - 3, middle + 2, low, 2, False, True, True);
+        build.pool(c + 5, middle - 2, low - 6, self.long - c - 3, middle + 2, low, 2, False, True, True);
         for (index, x) in enumerate(range(c + 4, self.long - c - 4, 5)) {
             build.solid(x, c + 1, low, x + 2, c + 3, low + 3 + index % 2);
             build.solid(x, self.wide - c - 3, low, x + 2, self.wide - c - 1, low + 3 + (index + 1) % 2);
@@ -475,7 +469,7 @@ node ReactorRing(Prefab) {
         self.deep = dice.between(6, 7);
         self.drawn_bridge = dice.chance(0.4);
         self.lift_out = dice.chance(0.5);
-        self.tall = dice.between(18, 22);
+        self.tall = dice.between(24, 28);
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -518,14 +512,19 @@ node ReactorRing(Prefab) {
             build.keep(hall, 5, y, 0);
             build.keep(hall, self.long - 6, y, 0);
         }
+        # The reactor's coolant: the pit flooded to a lift under the floor.
+        flood(build, 6, 6, low, self.long - 6, self.wide - 6, -1);
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
         }
-        # Crossing to the column, guards appear in the pit and charges go off
-        # up the column.
+        # Crossing to the column, guards appear on the floor round the pit and
+        # charges go off up the column.
         crossing = build.touch(float(cx - 5), float(cy - 2), 0.0, float(cx - 2), float(cy + 2), 6.0);
-        spawn_in(build, dice, self.danger, crossing, [[8.5, float(cy) + 5.5], [float(self.long) - 8.5, float(cy) - 5.5], [float(cx) + 0.5, 8.5]], low, 90.0);
+        spawn_in(build, dice, self.danger, crossing, [[3.5, float(cy) + 3.5], [float(self.long) - 3.5, float(cy) - 5.5], [float(cx) + 0.5, 3.5]], 0, 90.0);
+        if self.danger > 0.3 {
+            build.foe(float(cx) - 4.5, float(cy) + 4.5, low + 1, "monster_flipper", 0.0);
+        }
         blast_chain(build, crossing, [[float(cx) - 2.5, float(cy) - 2.5, 8.0], [float(cx) + 2.5, float(cy) + 2.5, 12.0]]);
         crossing +>:Fires:+> build.objective("Destroy the reactor's guards and press on", False);
         build.solid(1, self.wide - 8, 0, 4, self.wide - 1, 8);
@@ -541,7 +540,7 @@ node ReactorRing(Prefab) {
         build.foe(6.5, float(self.wide) - 3.5, 0, "monster_soldier", 0.0, patrol=[[6.5, float(self.wide) - 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]]);
         build.supply(float(cx) + 3.0, float(cy) + 0.5, 0, Q2_ARMOR, "q2");
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, 0, Q2_HEALTH, "q2");
-        build.supply(8.5, 8.5, low, "ammo_grenades", "q2");
+        build.supply(float(cx) + 4.5, float(cy) - 4.5, low, "ammo_grenades", "q2");
     }
 }
 
@@ -678,7 +677,6 @@ node InstallationExit(Prefab) {
 """base2's stretches: [name, role]."""
 glob BASE2_STRETCHES: list[list[str]] = [
          ["sewer", "start"],
-         ["lobby_start", "start"],
          ["lobby", "flow"],
          ["corridor", "flow"],
          ["pump", "flow"],
@@ -694,9 +692,6 @@ glob BASE2_STRETCHES: list[list[str]] = [
 def make_base2(name: str, key: str) -> Prefab {
     if name == "sewer" {
         return SewerEntry();
-    }
-    if name == "lobby_start" {
-        return InstallationLobby(opening=True);
     }
     if name == "lobby" {
         return InstallationLobby();

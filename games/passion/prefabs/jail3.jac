@@ -14,9 +14,9 @@ jail3's own palette.
   now and then; a cave in the cliff's foot breaks open on a stash; snipers
   appear on the ledges as the player starts up.
 - `ComplexCore`: a shaft through a room down to a pit, a walkway round it
-  on the floor and a ring high up, stairs (or a lift) between; pipes drip,
-  a vent in the pit breaks open on a stash; guards appear on the ring.
-  Ways on from both (a hub).
+  on the floor and a ring high up, both shut across by bulkheads with gates
+  over sills, stairs (or a lift) between; pipes drip, a vent in the pit breaks
+  open on a stash; guards appear on the ring. Ways on from both (a hub).
 - `SecurityPyramid`: a stepped pyramid in a hall, a stair cut up its face
   to the control on its top, which opens its chamber below; inside, the
   switch that opens the ways out. Guards appear on the tiers.
@@ -26,14 +26,17 @@ jail3's own palette.
 - `ButtonCage`: the key room. The key on a dais in a cage, a button on the
   wall (or a shot one high up) that raises its gate; taking the key opens
   the closets and switches on lasers.
-- `ComplexExit`: the end. A door (a key's, as a gate), a landing up a stair
-  or a lift, the way out on it."""
+- `ComplexExit`: the end. A door (a key's, as a gate) out onto the mountain
+  under the sky: three lanes between ribs of rock, along the middle one to its
+  far end, back up the second by a stair or a lift called down, over the
+  middle one by a bridge and up the third to the way out on a landing."""
 import from ..random { Stream }
 import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, spiral, ring_landing }
-import from .warejail_parts { shutter, auto_shutters, key_cue, sparking, guards, charges, stash, keep_row, called_lift, closets, gate_pair, post_button, laser, laser_grid, bars, drip }
+import from .warejail_parts { shutter, auto_shutters, key_cue, sparking, guards, charges, stash, keep_row, called_lift, closets, post_button, laser, laser_grid, bars, drip }
+import from .q2walls_parts { partition, gate_yard }
 
 glob JAIL3: str = "q2:jail3";
 
@@ -90,7 +93,7 @@ node Checkpoint(Prefab) {
         # The barrier across the far end, its gate in the middle.
         bx = self.long - 8;
         build.solid(bx, 1, 0, bx + 1, self.wide - 1, self.tall);
-        build.widen(hall, bx, middle - 2, 0, bx + 1, middle + 2, 8);
+        build.widen(hall, bx, middle - 2, 1, bx + 1, middle + 2, 8);
         # The walkway along the north wall over the floor, up a stair at the
         # near end, to the barrier.
         build.solid(2 + self.walk, self.wide - 5, self.walk - 1, bx, self.wide - 1, self.walk);
@@ -103,12 +106,12 @@ node Checkpoint(Prefab) {
         # off, or a gate it raises.
         press = build.push(12.0, 3.5, float(b) + 0.5, 2);
         if self.lasers {
-            for height in [1.0, 2.5, 4.0, 5.5] {
+            for height in [1.5, 3.0, 4.5, 6.0] {
                 press +>:Fires:+> laser(build, float(bx) + 0.5, float(middle - 2) + 0.2, height, 1);
             }
             build.touch(float(bx - 3), float(middle - 3), 0.0, float(bx - 1), float(middle + 3), 6.0, False, "Yellow lasers still activated");
         } else {
-            press +>:Fires:+> build.opened(float(bx), float(middle - 2), 0.0, float(bx + 1), float(middle + 2), 8.0);
+            press +>:Fires:+> build.opened(float(bx), float(middle - 2), 1.0, float(bx + 1), float(middle + 2), 8.0);
             build.touch(float(bx - 3), float(middle - 3), 0.0, float(bx - 1), float(middle + 3), 6.0, True, "The gate is worked from the booth");
         }
         press +>:Fires:+> build.objective("Proceed to the security pyramid");
@@ -236,7 +239,7 @@ node ComplexCore(Prefab) {
         self.upper = dice.between(8, 9);
         self.east_lift = dice.chance(0.4);
         self.vent = dice.chance(0.6);
-        self.tall = self.upper + 10;
+        self.tall = self.upper + 16;
         self.low = -8;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -281,6 +284,12 @@ node ComplexCore(Prefab) {
         } else {
             stair(build, self.long - 9, self.wide - 7 - self.upper, 0, 1, self.upper, 3);
         }
+        # Bulkheads across the floor's walkway, and across the ring over it,
+        # each with a gate over a sill.
+        partition(build, core, cx, 1, cx + 1, cy - 4, 0, self.upper - 1, [[2, 5]]);
+        partition(build, core, cx, cy + 4, cx + 1, self.wide - 1, 0, self.upper - 1, [[self.wide - 5, self.wide - 2]]);
+        partition(build, core, cx + 4, 1, cx + 5, 6, self.upper, self.upper + 8, [[2, 5]]);
+        partition(build, core, cx - 5, self.wide - 6, cx - 4, self.wide - 1, self.upper, self.upper + 8, [[self.wide - 5, self.wide - 2]]);
         build.doorway(core, self.enter);
         for port in self.taken {
             build.doorway(core, port);
@@ -294,7 +303,7 @@ node ComplexCore(Prefab) {
             drip(build, float(spot[0]) + 0.5, float(spot[1]) + 0.5, float(self.tall) - 0.5, 2.0 + float(spot[0] % 3));
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx + 6) + 0.5, float(cy - 3 + index * 3) + 0.5, 0, JAIL3_FOES.pick(dice, self.danger), 180.0);
+            build.foe(float(self.long) - 3.5, float(cy - 3 + index * 3) + 0.5, 0, JAIL3_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(float(cx) + 0.5, float(cy) - 2.5, -6, JAIL3_FOES.pick(dice, self.danger, True), 90.0);
         build.foe(3.5, 3.5, self.upper, "monster_infantry", 0.0, patrol=[[3.5, 3.5], [float(self.long) - 3.5, 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5], [3.5, float(self.wide) - 3.5]]);
@@ -318,7 +327,7 @@ node SecurityPyramid(Prefab) {
         self.long = dice.between(31, 34);
         self.wide = dice.between(26, 28);
         self.tiers = dice.between(3, 4);
-        self.tall = self.tiers * self.tier + 10;
+        self.tall = self.tiers * self.tier + 18;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -372,6 +381,10 @@ node SecurityPyramid(Prefab) {
             inner +>:Fires:+> shutter(build, self, port);
         }
         build.touch(float(self.long - 4), 1.0, 0.0, float(self.long - 1), float(self.wide - 1), 6.0, True, "This door is opened elsewhere");
+        # Pipes laid across the aisles either side of the pyramid, stepped
+        # over.
+        build.solid(cx, 1, 0, cx + 1, cy - 9, 1);
+        build.solid(cx, cy + 9, 0, cx + 1, self.wide - 1, 1);
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
@@ -525,23 +538,26 @@ node ButtonCage(Prefab) {
     }
 }
 
-"""The end: a door, a landing up a stair or a lift, the way out on it."""
+"""The end: a door out onto the mountain, three lanes between ribs of rock
+climbed in a switchback, the way out on a landing at the top."""
 node ComplexExit(Prefab) {
     has key: str = "",
-        landing: int = 4,
+        first: int = 6,
+        second: int = 6,
         by_lift: bool = False,
-        tall: int = 14;
+        tall: int = 26;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Complex exit" + (" (" + self.key[4:] + " door)" if self.key else "");
         self.source = JAIL3;
         self.district = level_district(JAIL3);
-        self.long = dice.between(24, 26);
-        self.wide = dice.between(16, 18);
-        self.landing = dice.between(4, 6);
+        self.long = dice.between(26, 28);
+        self.wide = dice.between(18, 20);
+        self.first = dice.between(7, 8);
+        self.second = dice.between(5, 7);
         self.by_lift = dice.chance(0.4);
-        self.tall = dice.between(14, 16);
+        self.tall = self.first + self.second + dice.between(14, 18);
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -554,26 +570,54 @@ node ComplexExit(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         wall = 8;
-        room = gate_pair(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key);
-        build.level(room, self.landing);
-        lx = self.long - 7;
-        build.solid(lx, 1, 0, self.long - 1, self.wide - 1, self.landing);
+        room = gate_yard(build, [dice.below(3), dice.below(3)], self.enter, self.long, self.wide, wall, 0, self.tall, self.key);
+        l1 = self.first;
+        l2 = self.first + self.second;
+        build.level(room, l1);
+        build.level(room, l2);
+        lx0 = wall + 1;
+        lx1 = self.long - 1;
+        # The ribs of rock between the lanes; the middle lane opens at its far
+        # end into the second (+y) lane.
+        south = middle - 3;
+        north = middle + 2;
+        build.solid(lx0, south, 0, lx1, south + 1, l2 + 2);
+        build.solid(lx0, north, 0, lx1 - 4, north + 1, l2 + 2);
+        # Back along the second lane up to its first landing, by a stair or a
+        # lift called down at the far end and a walk back along the lane.
         if self.by_lift {
-            post_button(build, lx - 4, 2, 0, 2) +>:Fires:+> called_lift(build, lx - 3, 2, lx, 5, 0, self.landing);
-            keep_row(build, room, lx, 1, self.landing, 0, 6);
+            build.solid(lx0, north + 1, l1 - 1, lx1 - 4, self.wide - 1, l1);
+            post_button(build, lx1 - 2, north - 3, 0, 2) +>:Fires:+> called_lift(build, lx1 - 4, north + 1, lx1 - 1, north + 4, 0, l1);
+            keep_row(build, room, lx1 - 5, north + 1, l1, 0, 3);
         } else {
-            stair(build, lx - self.landing, 2, 0, 0, self.landing, 3);
+            stair(build, lx1 - 3, north + 1, 0, 2, l1, 3);
+            build.solid(lx0, north + 1, l1 - 1, lx1 - 2 - l1, self.wide - 1, l1);
         }
-        build.way_out(float(self.long) - 3.5, float(middle), self.landing);
-        # Coming in, guards appear on the landing; pipes drip.
+        # The bridge over the middle lane by the door's wall, through both
+        # ribs, to the third (-y) lane.
+        build.widen(room, lx0, south, l1, lx0 + 3, south + 1, l1 + 7);
+        build.widen(room, lx0, north, l1, lx0 + 3, north + 1, l1 + 7);
+        build.solid(lx0, south + 1, l1 - 1, lx0 + 3, north, l1);
+        keep_row(build, room, lx0, north + 1, l1, 0, 3);
+        keep_row(build, room, lx0, north - 1, l1, 0, 3);
+        # The third lane rock up to the bridge's height, then a stair the
+        # lane's whole width to the landing and the way out.
+        build.solid(lx0, 1, 0, lx1, south, l1);
+        stair(build, lx0 + 4, 1, l1, 0, self.second, south - 1);
+        lx = lx0 + 4 + self.second;
+        build.solid(lx, 1, l1, lx1, south, l2);
+        build.way_out(float(lx1) - 3.5, float(1 + south) * 0.5, l2);
+        # Coming in, guards appear along the lanes; pipes drip.
         come_in = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
-        guards(build, come_in, [[float(lx) + 2.5, float(self.wide) - 3.5], [float(lx) + 2.5, 3.5]], self.landing, JAIL3_FOES.squad(dice, self.danger, 2, True), 180.0);
+        guards(build, come_in, [[float(lx0) + 3.5, float(self.wide) - 2.5]], l1, JAIL3_FOES.squad(dice, self.danger, 1, True), 0.0);
+        guards(build, come_in, [[float(lx1) - 5.5, float(1 + south) * 0.5]], l2, JAIL3_FOES.squad(dice, self.danger, 1), 180.0);
         for index in range(dice.between(2, 3)) {
             build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, JAIL3_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
-        build.foe(float(wall) + 3.5, float(middle) + 0.5, 0, "monster_infantry", 0.0, patrol=[[float(wall) + 3.5, float(middle) + 0.5], [float(lx) - 2.5, float(middle) + 0.5]]);
+        build.foe(float(wall) + 3.5, float(middle) - 0.5, 0, "monster_infantry", 0.0, patrol=[[float(wall) + 3.5, float(middle) - 0.5], [float(lx1) - 2.5, float(middle) - 0.5]]);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
-        drip(build, float(wall) + 6.5, float(middle) + 0.5, float(self.tall) - 0.5, 2.5);
+        build.supply(float(lx1) - 2.5, float(middle) - 0.5, 0, Q2_AMMO[dice.below(len(Q2_AMMO))], "q2");
+        drip(build, float(wall) + 6.5, float(middle) - 0.5, float(self.tall) - 0.5, 2.5);
     }
 }
 
