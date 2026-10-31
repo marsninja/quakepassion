@@ -8,8 +8,8 @@ a design office, the way out past a slime moat. fact3 holds few foes; its
 stretches keep few. Raised in fact3's own palette.
 
 - `UpperLobby`: the start. A lobby, a slime duct cut across its floor
-  under a grate of beams, a gallery along the far side up a stair; the
-  clock's warning ("Get out before the works are sealed").
+  under a grate of beams and a raised crossing, a gallery over more slime
+  along the far side up a stair; the clock's warning ("Get out before the works are sealed").
 - `SinkingFloor`: a hall over a lower hall, a floor of it standing over a
   shaft that sinks a whole storey a moment after its switch is thrown
   (taking whoever is on it down); back up by a lift and a teleporter; the
@@ -19,10 +19,12 @@ stretches keep few. Raised in fact3's own palette.
   switch high over the slime.
 - `ProductionLine`: a hall, the line on a gantry down its middle, up a
   stair or steps a switch raises (or a lift), presses slamming down
-  beside it into pits; a stash in a press's base; ways on from the floor
+  beside it into troughs of slime; a stash in a press's base; ways on from the floor
   and the gantry (a hub).
-- `DesignOffice`: the key in an office up a stair or steps a switch
-  raises, over a drafting floor; taking it opens the closets.
+- `DesignOffice`: a corridor between two drafting rooms, a slime duct under
+  them all cutting each in two, the key in the office across the far end up a
+  stair or steps whose switch is in a drafting room; taking it opens the
+  closets.
 - `WorksExit`: the end. A door (a key's, as a gate), the way out on a
   platform in a slime moat, reached on a walk or by a teleporter."""
 import from ..random { Stream }
@@ -31,6 +33,7 @@ import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush, gate_into, lift }
 import from .minefact { slab, hurt, burning, sparking, stash, port_door, crusher }
+import from .q2floors_parts { sunken, stepped_bed }
 
 glob FACT3: str = "q2:fact3";
 
@@ -53,16 +56,16 @@ node UpperLobby(Prefab) {
         self.wide = dice.between(18, 20);
         self.deck = 8;
         self.by_lift = dice.chance(0.4);
-        self.tall = dice.between(13, 15);
+        self.tall = dice.between(20, 24);
         self.low = -4;
-        self.high = self.tall + 1;
+        self.high = self.tall + 8;
         middle = float(self.wide // 2);
         dx = self.long // 2 - 2;
-        self.enter = Port(face=2, along=middle, floor=0);
+        self.enter = Port(face=2, along=middle, floor=1);
         self.leaves = [
-            Port(face=0, along=middle, floor=0),
-            Port(face=1, along=float(self.long - 4), floor=0),
-            Port(face=3, along=float(dice.between(dx + 14, self.long - 3)), floor=self.deck)
+            Port(face=0, along=middle, floor=1),
+            Port(face=1, along=float(self.long - 4), floor=1),
+            Port(face=3, along=float(dice.between(dx + 16, self.long - 3)), floor=self.deck)
         ];
         visitor.place(self);
     }
@@ -74,26 +77,29 @@ node UpperLobby(Prefab) {
         lobby = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(lobby, self.deck);
         dx = self.long // 2 - 2;
-        burning(build, dx, 1, -3, dx + 4, self.wide - 1, 0, 3, 10);
-        for y in range(2, self.wide - 2, 2) {
-            build.solid(dx, y, -1, dx + 4, y + 1, 0);
+        burning(build, dx, 1, -3, dx + 6, self.wide - 1, 0, 3, 10);
+        for y in range(3, self.wide - 2, 5) {
+            build.solid(dx, y, -2, dx + 6, y + 1, -1);
         }
-        build.solid(dx, middle - 2, -1, dx + 4, middle + 2, 0);
+        # The crossing over it stands a step above the floors.
+        build.solid(dx, middle - 2, -1, dx + 6, middle + 2, 1);
         for y in range(middle - 2, middle + 2) {
             build.keep(lobby, dx - 1, y, 0);
-            build.keep(lobby, dx + 4, y, 0);
+            build.keep(lobby, dx + 6, y, 0);
         }
+        # More slime under the gallery.
+        burning(build, dx + 15, 1, -3, self.long - 1, 6, 0, 3, 10);
         # The gallery along the south wall over the far floor, up a stair
         # along the wall or a lift.
-        slab(build, dx + 12, 1, self.long - 1, 6, self.deck, 1);
-        lift(build, dx + 12, 6, dx + 15, 9, 0, self.deck);
-        for x in range(dx + 12, dx + 15) {
+        slab(build, dx + 14, 1, self.long - 1, 6, self.deck, 1);
+        lift(build, dx + 14, 6, dx + 17, 9, 0, self.deck);
+        for x in range(dx + 14, dx + 17) {
             build.keep(lobby, x, 5, self.deck);
         }
         if not self.by_lift {
-            stair(build, dx + 4, 1, 0, 0, self.deck, 3);
+            stair(build, dx + 6, 1, 0, 0, self.deck, 3);
             for y in range(1, 4) {
-                build.keep(lobby, dx + 12, y, self.deck);
+                build.keep(lobby, dx + 14, y, self.deck);
             }
         }
         build.doorway(lobby, self.enter);
@@ -106,9 +112,9 @@ node UpperLobby(Prefab) {
         sparking(build, float(dx) - 0.1, 2.5, 3.0, 2, 3.0);
         sparking(build, float(self.long) - 1.1, float(self.wide) - 3.5, 4.0, 2, 4.0);
         guard = build.waiting();
-        build.touch(float(dx + 4), float(middle - 2), 0.0, float(dx + 6), float(middle + 2), 6.0) +>:Fires:+> guard;
+        build.touch(float(dx + 6), float(middle - 2), 0.0, float(dx + 8), float(middle + 2), 6.0) +>:Fires:+> guard;
         build.foe(float(self.long) - 3.5, 3.0, self.deck, FACT3_FOES.pick(dice, self.danger), 180.0, waits=guard);
-        build.foe(float(dx + 7) + 0.5, float(self.wide) - 3.5, 0, FACT3_FOES.pick(dice, self.danger), 180.0, patrol=[[float(dx + 7) + 0.5, float(self.wide) - 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]]);
+        build.foe(float(dx + 8) + 0.5, float(self.wide) - 3.5, 0, FACT3_FOES.pick(dice, self.danger), 180.0, patrol=[[float(dx + 8) + 0.5, float(self.wide) - 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]]);
         build.supply(float(self.long) - 2.5, float(middle) + 0.5, 0, Q2_HEALTH, "q2");
     }
 }
@@ -127,14 +133,14 @@ node SinkingFloor(Prefab) {
         self.long = dice.between(22, 26);
         self.wide = dice.between(18, 20);
         self.drop = dice.between(12, 15);
-        self.tall = dice.between(9, 11);
+        self.tall = dice.between(14, 17);
         self.low = -2 * self.drop - 2;
-        self.high = self.tall + 1;
+        self.high = self.tall + 8;
         middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle - 2.0, floor=0);
+        self.enter = Port(face=2, along=middle - 2.0, floor=1);
         self.leaves = [Port(face=0, along=middle - 2.0, floor=-self.drop)];
         if dice.chance(0.3) {
-            self.leaves.append(Port(face=3, along=float(self.long - 5), floor=0));
+            self.leaves.append(Port(face=3, along=float(self.long - 5), floor=1));
         }
         visitor.place(self);
     }
@@ -153,6 +159,10 @@ node SinkingFloor(Prefab) {
         # against its north wall.
         slab(build, 1, 1, self.long - 1, self.wide - 1, 0, 1);
         build.widen(hall, sx, sy, -1, sx + 6, sy + 6, 0);
+        # The upper floor's far end a step up, the lower hall's a step down.
+        build.solid(sx + 8, 1, 0, self.long - 1, self.wide - 1, 1);
+        sunken(build, hall, sx + 7, 1, self.long - 1, self.wide - 1, low);
+        burning(build, sx + 8, middle, low - 4, self.long - 2, self.wide - 2, low - 1, 3, 8);
         sinks = build.sinking(float(sx), float(sy), float(sx + 6), float(sy + 6), 0, self.drop);
         throw = build.push(float(sx) + 3.0, float(self.wide - 1), 1.0, 3);
         late = build.delay(2.0);
@@ -168,8 +178,9 @@ node SinkingFloor(Prefab) {
         for x in range(2, 5) {
             build.keep(hall, x, 5, 0);
         }
-        build.teleporter(float(self.long) - 4.5, 3.5, low, 3.5, float(middle) - 2.0, 0, 0.0);
+        build.teleporter(float(self.long) - 4.5, 3.5, low - 1, 3.5, float(middle) - 2.0, 0, 0.0);
         burning(build, 2, self.wide - 6, low - 3, 6, self.wide - 2, low, 3, 8);
+        burning(build, 6, 7, low - 3, sx + 3, sy - 1, low, 3, 8);
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
@@ -177,11 +188,11 @@ node SinkingFloor(Prefab) {
         below = build.waiting();
         late +>:Fires:+> below;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(self.long) - 4.5, float(middle + 2 + index * 2) + 0.5, low, FACT3_FOES.pick(dice, self.danger, index == 0), 180.0, waits=below);
+            build.foe(float(self.long) - 7.5, 3.5 + float(index) * 2.0, low, FACT3_FOES.pick(dice, self.danger, index == 0), 180.0, waits=below);
         }
         sparking(build, float(sx) - 0.5, float(self.wide) - 1.1, 3.0, 3, 3.0);
         sparking(build, float(self.long) - 1.1, float(middle) + 3.5, float(low) + 3.0, 2, 4.0);
-        build.supply(float(self.long) - 3.5, 3.5, 0, Q2_HEALTH, "q2");
+        build.supply(float(self.long) - 3.5, 3.5, 1, Q2_HEALTH, "q2");
         build.supply(float(sx) - 2.5, 3.5, low, "ammo_bullets", "q2");
     }
 }
@@ -198,14 +209,14 @@ node SlimeDuct(Prefab) {
         self.source = FACT3;
         self.district = level_district(FACT3);
         self.long = dice.between(28, 30);
-        self.wide = dice.between(14, 16);
-        self.tall = dice.between(10, 12);
+        self.wide = dice.between(16, 18);
+        self.tall = dice.between(22, 26);
         self.low = -4;
-        self.high = self.tall + 1;
-        self.enter = Port(face=2, along=3.0, floor=0);
+        self.high = self.tall + 8;
+        self.enter = Port(face=2, along=3.0, floor=1);
         self.leaves = [Port(face=0, along=float(self.wide - 3), floor=0), Port(face=0, along=3.0, floor=0)];
         if dice.chance(0.4) {
-            self.leaves.append(Port(face=1, along=float(self.long // 2), floor=0));
+            self.leaves.append(Port(face=1, along=float(self.long // 2), floor=1));
         }
         visitor.place(self);
     }
@@ -215,6 +226,7 @@ node SlimeDuct(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         duct = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        sunken(build, duct, self.long - 4, 1, self.long - 1, self.wide - 1, 0);
         burning(build, 5, 4, -3, self.long - 5, self.wide - 4, 0, 3, 10);
         for x in [9, self.long - 12] {
             build.solid(x, 4, -1, x + 3, self.wide - 4, 0);
@@ -252,20 +264,20 @@ node ProductionLine(Prefab) {
         self.title = "Production line";
         self.source = FACT3;
         self.district = level_district(FACT3);
-        self.long = dice.between(28, 30);
+        self.long = dice.between(32, 34);
         self.wide = dice.between(22, 24);
         self.gantry = dice.between(6, 8);
         self.way_up = dice.below(3);
-        self.tall = self.gantry + 11;
+        self.tall = self.gantry + 18;
         self.low = -self.gantry - 2;
-        self.high = self.tall + 1;
+        self.high = self.tall + 8;
         middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle - 4.0, floor=0);
+        self.enter = Port(face=2, along=middle - 4.0, floor=1);
         self.leaves = [
             Port(face=0, along=middle, floor=self.gantry),
             Port(face=1, along=float(self.long // 2), floor=0),
             Port(face=3, along=float(self.long // 2), floor=0),
-            Port(face=0, along=4.0, floor=0)
+            Port(face=0, along=4.0, floor=1)
         ];
         visitor.place(self);
     }
@@ -289,15 +301,18 @@ node ProductionLine(Prefab) {
         for y in range(middle - 2, middle + 2) {
             build.keep(hall, g0, y, g);
         }
-        # Posts under the line; presses slamming down into pits beside it.
-        for x in range(g0 + 2, self.long - 3, 5) {
-            build.solid(x, middle - 2, 0, x + 1, middle + 2, g - 1);
+        # Posts under the line; a trough of slime under and either side of it,
+        # presses slamming down into it; the floors beyond it a step down.
+        for x in range(g0 + 2, self.long - 4, 5) {
+            build.solid(x, middle - 2, -3, x + 1, middle + 2, g - 1);
         }
+        sunken(build, hall, g0 + 1, middle + 8, self.long - 4, self.wide - 1, 0);
+        sunken(build, hall, g0 + 1, 1, self.long - 4, middle - 8, 0);
+        sunken(build, hall, 1, 1, g0, middle - 7, 0);
+        burning(build, g0 + 1, middle - 7, -3, self.long - 4, middle + 7, 0, 3, 10);
         for x in range(g0 + 3, self.long - 5, 10) {
             for py in [middle - 5, middle + 3] {
-                build.widen(hall, x, py, -2, x + 2, py + 2, 0);
                 crusher(build, float(x), float(py), [2.0, 2.0, 3.0], -2.0, 3.0, 100.0, 1.0, 30);
-                hurt(build, float(x), float(py), -2.0, float(x + 2), float(py + 2), 0.0, 20);
             }
         }
         # A press's base by the south wall, a stash behind a panel in it.
@@ -312,7 +327,7 @@ node ProductionLine(Prefab) {
         for index in range(dice.between(1, 2)) {
             build.foe(float(g0 + 6 + index * 6) + 0.5, float(middle) + 0.5, g, FACT3_FOES.pick(dice, self.danger, index == 0), 180.0, waits=up_line);
         }
-        build.foe(float(self.long // 2) + 0.5, 3.5 + float(self.wide - 8), 0, "monster_soldier", 0.0, patrol=[[float(g0) + 0.5, float(self.wide) - 3.5], [float(self.long) - 3.5, float(self.wide) - 3.5]]);
+        build.foe(float(self.long // 2) + 0.5, float(self.wide) - 2.5, 0, "monster_soldier", 0.0, patrol=[[float(g0) + 1.5, float(self.wide) - 2.5], [float(self.long) - 3.5, float(self.wide) - 2.5]]);
         sparking(build, 5.1, float(self.wide) - 3.0, 3.0, 0, 3.0);
         sparking(build, float(self.long) - 1.1, float(middle) + 0.5, float(g) + 3.0, 2, 4.0);
         build.supply(float(self.long) - 2.5, float(middle) + 0.5, g, Q2_ARMOR, "q2");
@@ -320,29 +335,31 @@ node ProductionLine(Prefab) {
     }
 }
 
-"""The key in an office up a stair or steps a switch raises, over a
-drafting floor."""
+"""The key in the design office at the end of a suite: a corridor between
+two drafting rooms, a slime duct under them all, each room cut in two by it
+and reached by its own doors; the office up a stair or steps whose switch is
+in a drafting room."""
 node DesignOffice(Prefab) {
     has key: str = "key_silver",
-        hall_wide: int = 16,
-        office: int = 5,
+        hall_wide: int = 18,
+        office: int = 4,
         rising: bool = False,
-        tall: int = 13;
+        tall: int = 14;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Design office (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = FACT3;
         self.district = level_district(FACT3);
-        self.long = dice.between(20, 22);
-        self.hall_wide = dice.between(16, 18);
+        self.long = dice.between(28, 30);
+        self.hall_wide = dice.between(18, 19);
         self.wide = self.hall_wide + 4;
-        self.office = dice.between(6, 8);
+        self.office = dice.between(3, 4);
         self.rising = dice.chance(0.5);
-        self.tall = self.office + 8;
-        self.low = -self.office - 1;
-        self.high = self.tall + 1;
-        self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
+        self.tall = self.office + 10;
+        self.low = -self.office - 4;
+        self.high = self.tall + 8;
+        self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=1);
         self.leaves = [];
         visitor.place(self);
     }
@@ -351,27 +368,50 @@ node DesignOffice(Prefab) {
         build = visitor.build;
         dice = build.begin(self);
         side = self.hall_wide - 1;
+        along = self.hall_wide // 2;
+        y0 = along - 2;
+        y1 = along + 2;
+        ox = self.long - 8;
+        dx = 7;
         cy = side // 2;
-        room = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
-        build.level(room, self.office);
-        build.doorway(room, self.enter);
-        ox = self.long - 7;
-        build.solid(ox, 1, self.office - 1, self.long - 1, side, self.office);
+        # The corridor down the middle, the drafting rooms either side of it
+        # behind walls, the office across the far end up its steps.
+        spine = build.room(1, y0, 0, ox, y1, self.tall, variant=dice.below(3));
+        south = build.room(1, 1, 0, ox - 1, y0 - 1, 10, variant=dice.below(3));
+        north = build.room(1, y1 + 1, 0, ox - 1, side, 10, variant=dice.below(3));
+        office = build.room(ox, 1, self.office, self.long - 1, side, self.tall, variant=dice.below(3));
+        build.level(spine, self.office);
+        build.doorway(spine, self.enter);
+        # The slime duct across all of it, the walls down into it, the
+        # corridor bridged; each room's two halves reached by doors of their
+        # own.
+        burning(build, dx, 1, -3, dx + 5, side, 0, 3, 10);
+        build.solid(dx, y0, -1, dx + 5, y1, 0);
+        build.solid(dx, y0 - 1, -1, dx + 5, y0, 0);
+        build.solid(dx, y1, -1, dx + 5, y1 + 1, 0);
+        for y in range(y0, y1) {
+            build.keep(spine, dx - 1, y, 0);
+            build.keep(spine, dx + 5, y, 0);
+        }
+        for at in [3, dx + 5] {
+            build.widen(south, at, y0 - 1, 0, at + 3, y0, 7);
+            build.widen(north, at, y1, 0, at + 3, y1 + 1, 7);
+        }
+        # The office's steps at the corridor's end; a window over the north
+        # room.
         if self.rising {
-            build.push(float(ox - self.office) - 1.5, 1.0, 1.0, 1) +>:Fires:+> build.rising_steps(ox - self.office, 1, 0, 0, self.office, 3);
+            build.push(float(ox) - 3.5, 1.0, 1.0, 1) +>:Fires:+> build.rising_steps(ox - self.office, y0, 0, 0, self.office, 4);
+            build.touch(float(ox - self.office - 3), float(y0), 0.0, float(ox - self.office), float(y1), 6.0, True, "The office steps are raised from the drafting room.");
         } else {
-            stair(build, ox - self.office, 1, 0, 0, self.office, 3);
+            stair(build, ox - self.office, y0, 0, 0, self.office, 4);
         }
-        for y in range(1, 4) {
-            build.keep(room, ox, y, self.office);
-        }
-        for x in range(4, ox - 3, 4) {
-            build.solid(x, cy - 1, 0, x + 2, cy + 2, 2);
-        }
-        # A plan chest by the north wall, a stash behind a panel in it.
-        build.solid(ox - 4, 4, 0, ox, 8, 6);
-        stash(build, ox - 3, 5, 0, 2, Q2_ARMOR);
-        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, self.office, side, 0, [2, ox - 4], [FACT3_FOES.pick(dice, self.danger, True), FACT3_FOES.pick(dice, self.danger)]);
+        build.widen(office, ox - 1, y1 + 2, self.office + 1, ox, side - 1, self.office + 5);
+        # A plan chest in the north room, a stash behind a panel in it.
+        build.solid(ox - 5, y1 + 1, 0, ox - 1, y1 + 5, 6);
+        stash(build, ox - 4, y1 + 2, 0, 2, Q2_ARMOR);
+        # Drafting tables in the near half of the south room.
+        build.solid(2, 2, 0, 5, 4, 2);
+        key_ambush(build, self.key, float(self.long) - 3.0, float(cy) + 0.5, self.office, side, 0, [2, dx + 6], [FACT3_FOES.pick(dice, self.danger, True), FACT3_FOES.pick(dice, self.danger)]);
         sparking(build, float(self.long) - 1.1, float(cy) - 3.5, float(self.office) + 2.0, 2, 4.0);
         build.supply(2.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
     }
@@ -392,10 +432,10 @@ node WorksExit(Prefab) {
         self.long = dice.between(24, 26);
         self.wide = dice.between(16, 18);
         self.by_walk = dice.chance(0.5);
-        self.tall = dice.between(12, 14);
+        self.tall = dice.between(18, 22);
         self.low = -4;
-        self.high = self.tall + 1;
-        self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
+        self.high = self.tall + 8;
+        self.enter = Port(face=2, along=float(self.wide // 2), floor=1);
         self.leaves = [];
         visitor.place(self);
     }
