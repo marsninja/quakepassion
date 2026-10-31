@@ -6,6 +6,7 @@ light is a flat shade by the way a face looks. It is what the level view
 shows while a scene is edited and what Play runs before a bake. The level is
 a "passion" one, so it plays by the rules generated expeditions do and may
 hold any game's entities."""
+import from engine.assets.catalog { AssetCatalog }
 import from engine.formats.bsp { Bsp, Face, Brush, Plane, Leaf, Model, MapEntity, Texture }
 import from engine.math.vec3 { Vec3 }
 import from ..document.scene { Scene, Item, Solid }
@@ -15,6 +16,11 @@ import from .cull { FaceCutter, material_clear }
 """Where a material's image comes from."""
 obj Materials {
     def texture(name: str) -> Texture abst;
+
+    """The games' archives these materials read, when they read any."""
+    def archives -> AssetCatalog | None {
+        return None;
+    }
 }
 
 """Materials as flat swatches: a colour from the name, with a line every 64

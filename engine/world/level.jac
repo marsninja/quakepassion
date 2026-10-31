@@ -465,6 +465,11 @@ obj Level {
         cloud_height: float = 128.0,
         sky_rotate: float = 0.0,
         sky_axis: Vec3 = Vec3(),
+        # A made level's sky materials, which draw as sky whatever they are
+        # (games/passion/sky.jac), and which of them holds Quake's two layers
+        # when its sky is Quake's.
+        sky_textures: list[int] = [],
+        sky_layer_texture: int = -1,
         portal_ranges: dict[int, float] = {},
         # The flareShader's image, when the map has flare surfaces.
         flare_image: Texture | None = None;

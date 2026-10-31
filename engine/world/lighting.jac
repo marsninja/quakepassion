@@ -10,7 +10,10 @@ node Lamp {
     has origin: Vec3,
         color: Vec3,
         radius: float = 760.0,
-        strength: float = 1.8;
+        strength: float = 1.8,
+        # light.c SingleLightFace: what is left of the light falls off in a
+        # straight line and half of it ignores the angle it strikes at.
+        linear: bool = False;
 }
 
 edge Emits: LightRig --> Lamp {}
@@ -673,7 +676,9 @@ def shade(
         }
         factor = 1.0 - distance / lamp.radius;
         contribution = lamp.color.scale(
-            lamp.strength * factor * factor * visibility * cosine
+            lamp.strength * factor * (0.5 + 0.5 * cosine) * visibility
+                if lamp.linear
+                else lamp.strength * factor * factor * visibility * cosine
         );
         result.directed = result.directed.add(contribution);
         result.direction = result.direction.add(direction.scale(contribution.length()));

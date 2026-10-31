@@ -367,6 +367,12 @@ obj Pk3Assets {
         return [material.fog_color.x, material.fog_color.y, material.fog_color.z, material.fog_depth];
     }
 
+    """Whether a shader is a sky's (`skyparms` or `surfaceparm sky`)."""
+    def is_sky(name: str) -> bool {
+        key = material_name(name);
+        return key in self.model_shaders and self.model_shaders[key].sky;
+    }
+
     """A sky shader's far box (six images, or none), cloud height and cloud
     stages with their images loaded (tr_shader.c ParseSkyParms)."""
     def sky_parts(name: str) -> SkyParts {

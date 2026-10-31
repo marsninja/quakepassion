@@ -1309,7 +1309,7 @@ def connect_targets(world: World, bsp: Bsp) {
     for index in range(len(bsp.entities)) {
         fields = bsp.entities[index].fields;
         kind = fields.get("classname", "");
-        if (kind == "trigger_secret" and bsp.game == "q1")
+        if (kind == "trigger_secret" and bsp.game in ["q1", "passion"])
             or (kind in ["target_secret", "target_goal"] and bsp.game == "q2") {
             progress = progress_for(world);
             secret = kind != "target_goal";
@@ -1348,7 +1348,7 @@ def connect_targets(world: World, bsp: Bsp) {
                 )
             );
         }
-        if kind == "func_timer" and bsp.game in ["q2", "q3"] {
+        if kind == "func_timer" and (bsp.game in ["q2", "q3"] or (bsp.game == "passion" and fields.get("asset_game", "") in ["q2", "q3"])) {
             interval = atof(fields.get("wait", "1"));
             if interval <= 0.0 {
                 interval = 1.0;
@@ -1582,7 +1582,7 @@ beeps (Q1 SUB_UseTargets misc/talk, Q2 G_UseTargets misc/talk1 unless
 `noise`), Q1 secrets' default."""
 def authored_cue(game: str, kind: str, fields: dict[str, str]) -> str {
     style = atoi(fields.get("sounds", "0"));
-    if (game == "q1" and kind == "trigger_secret" or game == "q2" and kind in ["target_secret", "target_goal"]) and style == 0 and not fields.get("noise", "") {
+    if (game in ["q1", "passion"] and kind == "trigger_secret" or game == "q2" and kind in ["target_secret", "target_goal"]) and style == 0 and not fields.get("noise", "") {
         style = 1;
     }
     if style == 1 {

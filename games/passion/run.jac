@@ -12,7 +12,7 @@ end of a level tallies is read off those."""
 import from engine.world.world { Player }
 import from editor.compile.live { Materials }
 import from editor.assets.materials { ArchiveMaterials }
-import from .generate { Forge, run_of, next_level, traced_essence }
+import from .generate { Forge, run_of, next_level, traced_essence, level_engine, VERSION }
 
 # Seconds a frame given to making the next level while one is played, and
 # while its way out waits on it.
@@ -24,6 +24,8 @@ played and of the next, the materials both are built with, and the player
 as they came into the level being played (a death begins it again so)."""
 node Run {
     has seed: int,
+        # The engine its levels are made by (`v4` essences, `pf` prefabs).
+        engine: str = "v4",
         depth: int = 1,
         directory: str = "",
         materials: Materials | None = None,
@@ -177,7 +179,8 @@ def clock_text(seconds: float) -> str {
 new run of the name's seed."""
 def run_of_level(run: Run | None, name: str, directory: str) -> Run {
     found = run_of(name);
-    if run is not None and run.seed == found[0] {
+    engine = level_engine(name);
+    if run is not None and run.seed == found[0] and run.engine == engine {
         here = run.here;
         # A run's first level asked for again starts the run afresh, unless
         # it is the level being played (begun again after a death).
@@ -185,7 +188,7 @@ def run_of_level(run: Run | None, name: str, directory: str) -> Run {
             return run;
         }
     }
-    return Run(seed=found[0], directory=directory);
+    return Run(seed=found[0], engine=engine, directory=directory);
 }
 
 """How a level's name reads on the HUD: the run and the level."""
@@ -196,7 +199,8 @@ def run_title(name: str) -> str {
             return "The essence of " + traced.split(":")[1];
         }
         found = run_of(name);
-        return "Run " + str(found[0]) + ", level " + str(found[1]);
+        kind = "Run " if level_engine(name) == VERSION else "Prefab run ";
+        return kind + str(found[0]) + ", level " + str(found[1]);
     } except ValueError {
         return name;
     }

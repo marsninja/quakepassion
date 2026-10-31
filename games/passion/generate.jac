@@ -18,7 +18,11 @@ the seed and the level's depth, and makes a new level of brushes for it:
 Names: `v4-<seed>` is a run's first level and `v4-<seed>-<n>` its level n;
 `trace-<map>` makes a level from one original's essence named outright
 (`trace-e1m1`, `trace-base1`, `trace-q3dm6`), and leads on into a run of
-its own seed. Nothing but the essences is kept on disk."""
+its own seed. Nothing but the essences is kept on disk.
+
+A run named `pf-<seed>` is made by the other engine: each level assembled
+from prefabs drawn from the original levels (`assemble.jac`), then
+compiled, proven and lit the same way."""
 import os;
 import time;
 import from .random { Stream, stream_for, mix32, hash_label }
@@ -34,9 +38,10 @@ import from .essence { pick_essence, named_essence, kept_donor }
 import from .embed { reembed, splice }
 import from .verify { lost_moves }
 import from .originals { all_originals }
+import from .assemble { Assembly, assemble_prefabs }
 import from engine.level.graph { LevelGraph, Move, graph_places }
 import from engine.level.extract { read_level_graph }
-import from engine.level.prove { prove_level, explain_proof }
+import from engine.level.prove { prove_level, explain_proof, prune_traps }
 import from engine.level.budget { budget_route, start_kit }
 import from engine.level.guide { guide_level }
 import from engine.world.teardown { destroy_graph, collision_roots }
@@ -55,9 +60,11 @@ import from engine.world.signals { HasSignal }
 import from engine.physics.collision { CollisionMap }
 
 glob VERSION: str = "v4",
+     PREFAB_VERSION: str = "pf",
+     HANDMADE_VERSION: str = "pfh",
      TRACE_PREFIX: str = "trace-",
      CANDIDATES: int = 4,
-     LUXEL: float = 32.0,
+     LUXEL: float = 16.0,
      # Faces lit between a bake's pauses.
      BAKE_SLICE: int = 8,
      DEPTH_LIMIT: int = 9999;
@@ -108,30 +115,41 @@ def run_of(name: str) -> list[int] {
     if spec {
         return [hash_label(7, spec) % 2147483646 + 1, 1];
     }
-    if not name.startswith(VERSION + "-") {
-        raise ValueError("Expected " + VERSION + "-SEED");
+    engine = level_engine(name);
+    if not name.startswith(engine + "-") {
+        raise ValueError("Expected " + VERSION + "-SEED or " + PREFAB_VERSION + "-SEED");
     }
-    words = name[len(VERSION) + 1:].split("-");
+    words = name[len(engine) + 1:].split("-");
     if len(words) > 2 {
-        raise ValueError("Expected " + VERSION + "-SEED or " + VERSION + "-SEED-LEVEL");
+        raise ValueError("Expected " + engine + "-SEED or " + engine + "-SEED-LEVEL");
     }
     run = int(words[0]);
     depth = int(words[1]) if len(words) == 2 else 1;
-    if run < 1 or run > 2147483646 or depth < 1 or depth > DEPTH_LIMIT or name != level_name(run, depth) {
+    if run < 1 or run > 2147483646 or depth < 1 or depth > DEPTH_LIMIT or name != level_name(run, depth, engine) {
         raise ValueError("Seed must be 1..2147483646 and level 2.." + str(DEPTH_LIMIT));
     }
     return [run, depth];
 }
 
-"""The name of a run's level."""
-def level_name(run: int, depth: int) -> str {
-    return VERSION + "-" + str(run) + ("-" + str(depth) if depth > 1 else "");
+"""The engine a level's name is made by: `pf` (the originals' own
+stretches) for a `pf-` name, `pfh` (the hand-made prefabs, after every original) for a
+`pfh-` one, else the essences' (`v4`)."""
+def level_engine(name: str) -> str {
+    if name.startswith(HANDMADE_VERSION + "-") {
+        return HANDMADE_VERSION;
+    }
+    return PREFAB_VERSION if name.startswith(PREFAB_VERSION + "-") else VERSION;
 }
 
-"""The level after one in its run."""
+"""The name of a run's level, made by `engine`."""
+def level_name(run: int, depth: int, engine: str = VERSION) -> str {
+    return engine + "-" + str(run) + ("-" + str(depth) if depth > 1 else "");
+}
+
+"""The level after one in its run, made by the same engine."""
 def next_level(name: str) -> str {
     found = run_of(name);
-    return level_name(found[0], min(DEPTH_LIMIT, found[1] + 1));
+    return level_name(found[0], min(DEPTH_LIMIT, found[1] + 1), level_engine(name));
 }
 
 """The seed a run's level is made from: the run's own for its first, and
@@ -259,12 +277,17 @@ def forge_steps(forge: Forge) -> Iterator[str] {
     seed = level_seed(found[0], found[1]);
     record = Survey(seed=seed, run=found[0], depth=found[1]);
     forge.survey = record;
-    forge.stage = "essence";
-    yield "essence";
     traced = traced_essence(forge.name);
+    prefabs = level_engine(forge.name) in [PREFAB_VERSION, HANDMADE_VERSION];
+    if prefabs {
+        yield from prefab_steps(forge, record, seed, "handmade" if level_engine(forge.name) == HANDMADE_VERSION else "derived");
+    } else {
+        forge.stage = "essence";
+        yield "essence";
+    }
     # A run's level that no candidate of its essence proves for goes on to
     # the next essence in its seed's order (a named one has only itself).
-    for essence_try in range(1 if traced else 3) {
+    for essence_try in range(0 if prefabs else (1 if traced else 3)) {
         atlas = named_essence(traced) if traced else pick_essence(seed, found[1] + essence_try);
         if atlas is None {
             raise ValueError("No essence could be read: are the original games' files where Passion looks for them?");
@@ -278,12 +301,17 @@ def forge_steps(forge: Forge) -> Iterator[str] {
             break;
         }
     }
-    if not record.proven and not (record.casting is not None and os.getenv("QP_PASSION_UNPROVEN", "")) {
+    if not record.proven and not prefabs and not (record.casting is not None and os.getenv("QP_PASSION_UNPROVEN", "")) {
         raise ValueError("No level made for " + record.essence + " proved: " + " | ".join(record.notes[-6:]));
+    }
+    if prefabs and not record.proven {
+        forge_note(forge.name + " plays unproven: " + " | ".join(record.notes[-3:]));
     }
     made_level = forge.made;
     lit_scene = forge.scene;
-    if forge.directory and made_level is not None and lit_scene is not None {
+    # QP_FORGE_NOBAKE=1 leaves the light out (the games' files still read,
+    # for tools that prove levels with their pickups).
+    if forge.directory and made_level is not None and lit_scene is not None and not os.getenv("QP_FORGE_NOBAKE", "") {
         forge.stage = "bake";
         held = Lighting();
         yield from light_job_steps(lit_scene, made_level, LUXEL, 4000000, held);
@@ -376,7 +404,7 @@ def essence_steps(forge: Forge, record: Survey, atlas: LevelGraph, seed: int) ->
         }
         forge.stage = "prove";
         forge_note(forge.name + " candidate " + str(attempt) + " compiled, proving");
-        verdict = prove_made(forge, compiler.result, casting, briefing, essence, made);
+        verdict = prove_made(forge, compiler.result, casting, briefing, essence, mass, made);
         yield "proven";
         record.notes.append("candidate " + str(attempt) + ": " + verdict[1]);
         forge_note(forge.name + " candidate " + str(attempt) + ": " + verdict[1][:160]);
@@ -401,10 +429,133 @@ def essence_steps(forge: Forge, record: Survey, atlas: LevelGraph, seed: int) ->
     }
 }
 
+"""The candidates of a level assembled from prefabs, into the forge's
+survey: each assembled from a seed of its own, compiled and proven, the
+first that proves kept (the last when none does, so the pilot can be
+played and looked at; `forge_steps` notes it)."""
+def prefab_steps(forge: Forge, record: Survey, seed: int, library: str) -> Iterator[str] {
+    record.essence = "prefabs:" + library;
+    forge.stage = "sculpt";
+    yield "prefabs";
+    materials = forge.materials;
+    if materials is None {
+        materials = ArchiveMaterials(directory=forge.directory) if forge.directory else SwatchMaterials();
+        forge.materials = materials;
+    }
+    # When none proves clean, the first that can at least be finished is
+    # played (else the last made), so the pilot can be looked at.
+    spare: Assembly | None = None;
+    spare_items: list[MapItem] = [];
+    spare_scene: Scene | None = None;
+    spare_made: LiveLevel | None = None;
+    spare_finishes = False;
+    # QP_PREFAB_CANDIDATE=n makes that candidate alone (to look at it).
+    only = int(os.getenv("QP_PREFAB_CANDIDATE", "-1"));
+    # A candidate woven (ways back, hatches...) that does not prove is
+    # tried again as laid, without its hatches and then unwoven, before the
+    # next is laid.
+    tries: list[list[int]] = [];
+    for attempt in range(CANDIDATES) {
+        for weaving in [2, 1, 0] {
+            tries.append([attempt, weaving]);
+        }
+    }
+    retry: list[int] = [];
+    for trial in tries {
+        attempt = trial[0];
+        weaving = trial[1];
+        if only >= 0 and attempt != only {
+            continue;
+        }
+        if weaving < 2 and retry != [attempt, weaving] {
+            continue;
+        }
+        record.candidates += 1;
+        forge.stage = "sculpt";
+        weave_notes = len(record.notes);
+        built = assemble_prefabs(mix32(seed * 31 + attempt) % 2147483646 + 1, record.depth, record.notes, library, weaving);
+        if built is None {
+            record.notes.append("candidate " + str(attempt) + ": the prefabs did not fit");
+            continue;
+        }
+        made_notes = record.notes[weave_notes:];
+        hatched = len([line for line in made_notes if "hatch from" in line]) > 0;
+        wove = len([line for line in made_notes if "loop from" in line or "window from" in line or "shortcut from" in line]) > 0;
+        if weaving < 2 {
+            forge_note(forge.name + " candidate " + str(attempt) + ": again " + ("without hatches" if weaving == 1 else "unwoven"));
+        }
+        forge_note(forge.name + " candidate " + str(attempt) + ": " + built.briefing);
+        yield "assembled";
+        items: list[MapItem] = [];
+        yield from map_item_steps(built.mass, built.spaces, built.dressing, built.casting.items, built.briefing, items);
+        if items {
+            for brush in built.casting.solids {
+                items[0].brushes.append(brush);
+            }
+        }
+        yield "brushwork";
+        forge.stage = "compile";
+        scene = scene_from_map("passion", forge.name, MapFile(items=items));
+        compiling = Compiling();
+        forge.compiling = compiling;
+        yield from compile_steps(scene, materials, True, compiling);
+        compiler = compiling.compiler;
+        if compiler is None {
+            record.notes.append("candidate " + str(attempt) + ": not compiled");
+            continue;
+        }
+        forge.stage = "prove";
+        verdict = prove_made(forge, compiler.result, built.casting, built.briefing, None, built.mass, None, library == "derived");
+        yield "proven";
+        record.notes.append("candidate " + str(attempt) + ": " + verdict[1]);
+        forge_note(forge.name + " candidate " + str(attempt) + ": " + verdict[1][:160]);
+        finishes = verdict[0] or "(finishes True" in verdict[1];
+        # Woven and failing: the same again with less of its weaving, when
+        # it cut something that less weaving leaves out.
+        retry = [];
+        if not verdict[0] and library != "derived" {
+            if weaving == 2 and hatched {
+                retry = [attempt, 1];
+            } elif weaving > 0 and wove {
+                retry = [attempt, 0];
+            }
+        }
+        if not verdict[0] {
+            if spare is None or (finishes and not spare_finishes) {
+                spare = built;
+                spare_items = items;
+                spare_scene = scene;
+                spare_made = compiler.result;
+                spare_finishes = finishes;
+            }
+            continue;
+        }
+        record.proven = True;
+        spare = built;
+        spare_items = items;
+        spare_scene = scene;
+        spare_made = compiler.result;
+        break;
+    }
+    if spare is None {
+        raise ValueError("No level could be assembled from prefabs: " + " | ".join(record.notes[-4:]));
+    }
+    record.casting = spare.casting;
+    record.items = spare_items;
+    record.briefing = spare.briefing;
+    record.start = spare.casting.start;
+    forge.scene = spare_scene;
+    forge.made = spare_made;
+    yield "chosen";
+}
+
 """Prove a level as made: opened in a world of its own as the game opens
 it, its things spawned, its own graph read off it and proven, its budget
 walked. Answers whether it proves clean, and a line on how it went."""
-def prove_made(forge: Forge, made: LiveLevel, casting: Casting, briefing: str, essence: LevelGraph, sculpting: Sculpting) -> tuple[bool, str] {
+def prove_made(
+    forge: Forge, made: LiveLevel, casting: Casting, briefing: str, essence: LevelGraph | None, mass: Massing | None, sculpting: Sculpting | None,
+    prune: bool = False
+) -> tuple[bool, str] {
     began = time.time();
     world = World();
     level = open_made(world, forge.name, made, casting, briefing);
@@ -414,6 +565,15 @@ def prove_made(forge: Forge, made: LiveLevel, casting: Casting, briefing: str, e
     }
     atlas = read_level_graph(world, level);
     proof = prove_level(atlas, False);
+    # The originals' own stretches keep the originals' dead ends (a pit
+    # nothing climbs out of): pruned and proven again, as an essence is.
+    pruned = 0;
+    if prune and proof.finishes and proof.softlocks > 0 {
+        pruned = prune_traps(atlas);
+        if pruned > 0 {
+            proof = prove_level(atlas, False);
+        }
+    }
     games: dict[str, int] = {};
     for item in casting.items {
         source = item.fields.get("asset_game", "");
@@ -427,18 +587,40 @@ def prove_made(forge: Forge, made: LiveLevel, casting: Casting, briefing: str, e
             lead = game;
         }
     }
-    ledger = budget_route(atlas, proof.route, level.collision, start_kit(lead));
-    clean = proof.finishes and proof.softlocks == 0;
+    # The weapons where the player starts are held from the first step.
+    kit = start_kit(lead);
+    if casting.start {
+        for item in casting.items {
+            kind = item.fields.get("classname", "");
+            words = item.fields.get("origin", "").split();
+            if kind.startswith("weapon_") and len(words) == 3 and abs(float(words[0]) - casting.start[0]) < 64.0 and abs(float(words[1]) - casting.start[1]) < 64.0 and abs(float(words[2]) - casting.start[2]) < 64.0 {
+                kit.take(item.fields.get("asset_game", lead), kind, 0);
+            }
+        }
+    }
+    ledger = budget_route(atlas, proof.route, level.collision, kit);
+    # QP_FORGE_BUDGET=1: the ledger walked along the route, a line a fight
+    # or a supply taken.
+    if os.getenv("QP_FORGE_BUDGET", "") {
+        for ledger_line in ledger.lines {
+            print("FORGE", forge.name, "budget", ledger_line);
+        }
+    }
+    # A made level always has a way out: a graph with no place at it (read
+    # as an arena) has it where no body comes, and does not prove.
+    lost_exit = len(casting.exit_low) > 0 and atlas.arena;
+    clean = proof.finishes and proof.softlocks == 0 and not lost_exit;
     survey = forge.survey;
     if survey is not None {
         survey.lowest = ledger.lowest;
         survey.atlas = atlas;
     }
-    line = ("proves clean" if clean else "does not prove (finishes " + str(proof.finishes) + ", " + str(proof.softlocks) + " softlocks)")
+    line = ("proves clean" if clean else "does not prove (finishes " + str(proof.finishes and not lost_exit) + ", " + str(proof.softlocks) + " softlocks" + (", the way out on no place" if lost_exit else "") + ")")
+        + (" with " + str(pruned) + " dead-end places pruned" if pruned else "")
         + ": " + str(len(graph_places(atlas))) + " places, budget lowest "
         + str(int(ledger.lowest)) + ", in " + str(round(time.time() - began, 1)) + " s";
     if not clean {
-        outside = outside_places(atlas, sculpting);
+        outside = outside_places(atlas, mass);
         if outside {
             line += " | " + " | ".join(outside);
         }
@@ -451,7 +633,10 @@ def prove_made(forge: Forge, made: LiveLevel, casting: Casting, briefing: str, e
                 kinds[move.kind] = kinds.get(move.kind, 0) + 1;
             }
         }
-        line += " | moves " + " ".join([str(kind) + ":" + str(kinds[kind]) for kind in sorted(kinds.keys())]) + " | " + " | ".join(atlas.notes) + " | " + " | ".join(explain_proof(atlas, proof)) + " | " + " | ".join(lost_moves(essence, atlas, sculpting));
+        line += " | moves " + " ".join([str(kind) + ":" + str(kinds[kind]) for kind in sorted(kinds.keys())]) + " | " + " | ".join(atlas.notes) + " | " + " | ".join(explain_proof(atlas, proof));
+        if essence is not None and sculpting is not None {
+            line += " | " + " | ".join(lost_moves(essence, atlas, sculpting));
+        }
     }
     return (clean, line);
 }
@@ -459,8 +644,7 @@ def prove_made(forge: Forge, made: LiveLevel, casting: Casting, briefing: str, e
 """Places of a made level where the sculpture has no air (a body got
 outside the walls): how many, and a few of the moves that lead there from
 inside."""
-def outside_places(atlas: LevelGraph, sculpting: Sculpting) -> list[str] {
-    mass = sculpting.mass;
+def outside_places(atlas: LevelGraph, mass: Massing | None) -> list[str] {
     if mass is None {
         return [];
     }

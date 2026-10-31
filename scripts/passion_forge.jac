@@ -12,6 +12,7 @@ import time;
 import from games.passion.generate { Forge }
 import from games.passion.sculpt { Sculpting, Ground, sculpture_grounds }
 import from games.passion.massing { CELL, LIFT }
+import from engine.level.graph { write_graph }
 
 with entry {
     home = os.getenv("HOME") or "";
@@ -30,6 +31,13 @@ with entry {
             print("FORGE", name, "essence", record.essence, "candidates", record.candidates, "proven", record.proven, "budget lowest", int(record.lowest));
             for note in record.notes {
                 print("FORGE", name, "  ", note);
+            }
+            # QP_FORGE_GRAPH=<folder>: the last candidate's own level graph,
+            # as read off it to prove it, written there.
+            folder = os.getenv("QP_FORGE_GRAPH", "");
+            atlas = record.atlas;
+            if folder and atlas is not None {
+                write_graph(atlas, folder + "/" + name + ".graph");
             }
             # QP_FORGE_AT="x y": the last candidate's sculpture in the column
             # at that point of the made level (its grounds, its air).
@@ -81,6 +89,17 @@ with entry {
             }
             if casting is not None {
                 print("FORGE", name, "cast", len(casting.items), "items,", casting.monsters, "monsters,", casting.doors, "doors", " ".join(casting.notes));
+            }
+            # QP_FORGE_ENTITIES=<folder>: the last candidate's entities written
+            # there, a line each of its fields (key=value, tab between), to
+            # count its mechanics.
+            listing = os.getenv("QP_FORGE_ENTITIES", "");
+            if casting is not None and listing {
+                with open(listing + "/" + name + ".ents", "w") as handle {
+                    for item in casting.items {
+                        handle.write("\t".join([key + "=" + value for (key, value) in item.fields.items()]) + "\n");
+                    }
+                }
             }
         }
     }

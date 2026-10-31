@@ -113,11 +113,112 @@ way out, which tokens are wanted and who gives them).
    made level opened in a world of its own with its things spawned, its own
    graph read and proven. A candidate that does not prove is passed over
    with a line on why (and how its graph differs from the essence's:
-   `verify.jac`). The kept level is lit by the studio's light bake.
+   `verify.jac`). The kept level is lit by the studio's light bake, with the
+   world's `_falloff linear` so its lamps fall off as Quake's do (a lamp of
+   `light` L reaches L units), at a lightmap sample every 16 units.
 
 `scripts/passion_forge.jac` makes levels as the game makes them and says how
 each candidate went; `QP_PASSION_UNPROVEN=1` lets the game play the last
 candidate when none proves (to look at what the proof found).
+
+## Prefabs (`prefab.jac`, `prefabs/`, `assemble.jac`)
+
+A second engine, side by side with the essences: a run named `pf-<seed>`
+(the Passion page's "Prefabs" choice, or `QP_MAP=pf-42`) assembles each
+level from prefabs. A prefab is a stretch of an original level made again
+by code, at its scale and with its flow (its doors, buttons, lifts and
+bridges), and varied by the seed: its sizes, heights, which way it lies,
+what stands on its floors.
+
+- A prefab is a node (`Prefab`) with a box of its own cells, a way in on
+  its -x face and the ways out it offers (`Port`). Prefabs stand in a chain
+  (`Next`). The `Lay` walker has each choose itself (its own `choose`
+  ability) and places it, mirrored and turned so its way in meets a way
+  out of the one before across a short passage, clear of all laid. The
+  `Raise` walker has each carve itself into the massing and put down its
+  entities (its own `rise` ability, through `Raising`), and cuts the
+  passage from the one before, with a double door that slides into its
+  walls.
+- The level is then dressed, compiled, proven and lit as an essence's is.
+  The pilot plays its best candidate even when none proves (the forge log
+  says so).
+- A `pfh-<seed>` run takes the hand-made library (`prefabs/library.jac`):
+  a module per original of all three games (Quake's 31, Quake II's 39,
+  Quake III's 26), each five to eight stretches drawn after that
+  original's flow and set-pieces (e1m2's drawbridge, jail1's laser grid,
+  q3dm17's platforms over the void...), each playing a part: `start`,
+  `flow`, `hub`, `keyroom`, `end` or `gate` (an end behind a key's door).
+  Each stretch chooses by its dice between ways of being built, not only
+  sizes (a lift or a stair, which side its gallery runs, a bridge or
+  stepping stones, whether a secret is there), and most stand on two or
+  more floors that see and reach each other. A level is a tree of them: a
+  start, a flow or two, a hub; from the hub a branch to a key room, and
+  the hub's way on locked by that key, so the key is fetched and the
+  branch walked back; from level 2 a second hub and the gold key; then
+  the end.
+- A level holds together: it draws on one family of originals (`FAMILIES`
+  in `prefabs/library.jac`: an episode, a Quake II unit, a run of arenas
+  of one kind), with now and then a guest from the rest of the library, and
+  takes no stretch twice while another will do.
+- Levels keep their originals' scale, measured off the originals' own level
+  graphs (`measures.jac`: the headroom nine tenths of the floor lies under,
+  and foes per hundred cells). `Raising.vault` lifts the big rooms the
+  stretches left low into the rock over them (flat, in steps, or round a
+  lantern), only where rock stands on every side, never over a mover's reach.
+  A plain way between stretches is an arch as often as a door, and always
+  in the arenas, whose spaces run into one another.
+- `Pace`, a walker over the level, gives each stretch a part in the rhythm of
+  fights: a `rest` (usually after a fight), `steady` or `fight` (usually where
+  a key or the way out lies), and takes stray foes out to suit, more of them
+  from an original that was sparsely held, fewer deep into a run. Foes a cue
+  wakes stay, and so do bosses: an ambush in a quiet room is the point.
+- `dark_floor_lamps` hangs a lamp of no fitting over any dry floor no lamp
+  reaches, after the dressing's own (steps and sunken floors are not among
+  the levels those are hung by).
+- A room open to the sky shows a real sky of its game (`sky.jac`): one to a
+  level, taken from the kit over the most open floor, by that original's own
+  `sky` on Quake II, its shader's far box and clouds on Quake III, and
+  Quake's two layers.
+- Quake III's arenas hold no foes of their own, so each arena's stretches
+  take Quake's and Quake II's; every arena has stretches of its own for
+  each part, drawn after its own architecture (`prefabs/q3arena.jac`
+  keeps the arenas' shared foes and supplies).
+- What fires what is a graph: a `Cue` node holds entities (a touch, a
+  button, a key, foes lying in wait, a door, a bridge, a counter, a
+  relay, a timer) and `Fires` edges say what each sets off. The `Wire`
+  walker names targets once all are laid; a cue fired from more than one
+  cue answers to a name of its own, each firer reaching it by a relay.
+  The builder (`Raising`) has the cues the originals use: woken and
+  patrolling foes, sinking floors, drawn bridges, rising stairs, trains,
+  teleported ambushes, counters, delays, timers, secrets, spike
+  shooters, Quake II's sparks, explosions, breakables and objectives.
+- Stretches are woven together after they are raised, as the originals'
+  rooms wind over and back into each other: the layout favours lying
+  over or beside a stretch already passed; a way back (`Loop`) leads from
+  a later stretch's free way out to a free way out of one it was reached
+  through, onto that one's own floor, behind a door that opens only from
+  the later side (so it never leads round a locked door); hatches drop
+  a body down into a stretch it came through; barred windows look into
+  the next. A woven candidate that does not prove is tried again without
+  its hatches, then unwoven, before the next is laid.
+- Supplies follow the foes (`provision`): health at every second foe and
+  every Quake II one, more by each heavy foe for what the budget reckons
+  it costs to fight, armour by the heaviest, ammunition at every third
+  and by each foe's health, and at the start Quake's super shotgun,
+  nailgun and grenade launcher and Quake II's super shotgun, machinegun
+  and grenade launcher, so either game's ammunition feeds a gun.
+- Trying stretches: `QP_PREFAB_SOLO=<original>:<name>:<role>` makes one
+  stretch alone between plain rooms (`QP_PREFAB_SOLO_LEAVE=n` takes its
+  n-th way out); `QP_PREFAB_FOCUS=<original>[,<original>...]` takes
+  those originals' stretches first in every level, `QP_PREFAB_PURE=1`
+  only theirs; `QP_PREFAB_CANDIDATE=n` makes candidate n alone,
+  `QP_PREFAB_NOWEAVE=1` leaves the weaving out. The forge's
+  `QP_FORGE_ENTITIES=<folder>` writes each level's entities and
+  `QP_FORGE_BUDGET=1` prints the budget's ledger along the route.
+  `QP_PREFAB_NOVAULT=1` leaves the ceilings as raised, and
+  `scripts/passion_look.jac` takes views of a level from given places.
+- Jump pads sit three cells back from the edge they throw a body over and
+  `keep` that edge, since the dressing rails any drop of four lifts.
 
 ## Districts (`kits.jac`)
 

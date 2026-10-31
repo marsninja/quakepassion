@@ -885,7 +885,12 @@ def:priv nav_ladder_steps(grid: NavGrid, ladders: list[AABB]) -> int {
 """Where each jump pad throws a body: from the middle of its trigger, at its
 floor, along the arc of its launch (swept a twentieth of a second at a
 time, sliding off walls) to the floor it comes down on. The pads that land
-somewhere, with their landing."""
+somewhere, with their landing.
+
+A trigger's bounds are its brush grown by a standing body's box (-24 to
++32 up), so the brush itself runs from 32 over their bottom to 24 under
+their top; the body starts where it would stand in the brush, dropped
+from the brush's top to the floor under it."""
 def:priv nav_push_landings(world: World, grid: NavGrid) -> list[tuple[Traversal, Vec3]] {
     found: list[tuple[Traversal, Vec3]] = [];
     for traversal in [world->:HasTraversal:->][?:Traversal] {
@@ -893,7 +898,15 @@ def:priv nav_push_landings(world: World, grid: NavGrid) -> list[tuple[Traversal,
             continue;
         }
         box = traversal.volume.bounds[0];
-        at = Vec3(x=(box.mins.x + box.maxs.x) * 0.5, y=(box.mins.y + box.maxs.y) * 0.5, z=box.mins.z + 24.0);
+        middle_x = (box.mins.x + box.maxs.x) * 0.5;
+        middle_y = (box.mins.y + box.maxs.y) * 0.5;
+        bottom = box.mins.z + 32.0;
+        top = max(bottom, box.maxs.z - 24.0);
+        at = Vec3(x=middle_x, y=middle_y, z=bottom + 25.0);
+        drop = grid.sweep(Vec3(x=middle_x, y=middle_y, z=top), Vec3(x=middle_x, y=middle_y, z=bottom - 64.0));
+        if not drop.start_solid and drop.fraction < 1.0 {
+            at = drop.end.add(Vec3(z=1.0));
+        }
         moving = traversal.velocity;
         step = 0.05;
         landed: Vec3 | None = None;

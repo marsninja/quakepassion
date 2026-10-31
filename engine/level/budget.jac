@@ -316,13 +316,18 @@ def budget_route(atlas: LevelGraph, route: list[int], collision: CollisionMap, k
         stands.append(at.area if at is not None else -1);
     }
     done = [False for _ in things];
+    fighters = [thing.classname.startswith("monster_") or thing.classname == "info_player_deathmatch" for thing in things];
     for area in route {
         place = by_area.get(area, None);
         if place is None {
             continue;
         }
         eye = place.center.add(Vec3(z=collision.eye_height));
-        for index in range(len(things)) {
+        # What stands where the route comes is taken before what is fought
+        # from there (the start's weapons before the foes in sight of it).
+        order = [index for index in range(len(things)) if stands[index] == area and not fighters[index]];
+        order += [index for index in range(len(things)) if stands[index] != area or fighters[index]];
+        for index in order {
             if done[index] {
                 continue;
             }

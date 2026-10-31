@@ -372,7 +372,7 @@ def target_origin(fields: dict[str, str]) -> Vec3 {
 }
 
 def load_targets(world: World, bsp: Bsp) {
-    if bsp.game not in ["q1", "q2", "q3"] {
+    if bsp.game not in ["q1", "q2", "q3", "passion"] {
         return;
     }
     origins: dict[str, Vec3] = {};
@@ -385,6 +385,8 @@ def load_targets(world: World, bsp: Bsp) {
     for index in range(len(bsp.entities)) {
         fields = bsp.entities[index].fields;
         kind = fields.get("classname", "");
+        # A Passion level's targets are each of the game it casts them from.
+        game = fields.get("asset_game", "q1") if bsp.game == "passion" else bsp.game;
         q2_kinds = [
             "target_explosion",
             "target_splash",
@@ -395,7 +397,7 @@ def load_targets(world: World, bsp: Bsp) {
         ];
         q3_kinds = ["target_remove_powerups", "target_print", "target_give"];
         # Q1/Q2 named lights are LightSwitch nodes (see lightstyles.jac).
-        if bsp.game == "q2" and kind == "func_killbox" {
+        if game == "q2" and kind == "func_killbox" {
             reference = fields.get("model", "");
             if reference.startswith("*") and reference[1:].isdigit() and int(reference[1:]) < len(bsp.models) {
                 record = bsp.models[int(reference[1:])];
@@ -405,8 +407,8 @@ def load_targets(world: World, bsp: Bsp) {
             }
             continue;
         }
-        if bsp.game == "q1"
-            or kind not in (q2_kinds if bsp.game == "q2" else q3_kinds) {
+        if game == "q1"
+            or kind not in (q2_kinds if game == "q2" else q3_kinds) {
             continue;
         }
         flags = atoi(fields.get("spawnflags", "0"));
