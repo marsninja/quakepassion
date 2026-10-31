@@ -57,7 +57,7 @@ node GrimHall(Prefab) {
         self.district = level_district(Q3DM14);
         self.long = dice.between(26, 30);
         self.wide = dice.between(18, 20);
-        self.tall = dice.between(13, 15);
+        self.tall = dice.between(24, 28);
         self.stairway = dice.chance(0.5);
         self.vestibule = dice.chance(0.6);
         self.low = -11;
@@ -129,7 +129,7 @@ node GrimShaft(Prefab) {
         self.district = level_district(Q3DM14);
         self.long = dice.between(20, 22);
         self.wide = dice.between(16, 18);
-        self.tall = dice.between(10, 11);
+        self.tall = dice.between(28, 30);
         self.bobbing = dice.chance(0.6);
         self.lava = dice.chance(0.6);
         self.low = -27;
@@ -144,7 +144,7 @@ node GrimShaft(Prefab) {
         build = visitor.build;
         dice = build.begin(self);
         mid = self.wide // 2;
-        shaft = build.room(1, 1, -24, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        shaft = build.room(1, 1, -24, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(shaft, 0);
         build.level(shaft, -8);
         build.level(shaft, -16);
@@ -203,7 +203,7 @@ node GrimCells(Prefab) {
         self.district = level_district(Q3DM14);
         self.long = dice.between(28, 30);
         self.wide = dice.between(16, 18);
-        self.tall = dice.between(9, 10);
+        self.tall = dice.between(20, 22);
         self.doors = dice.chance(0.6);
         self.low = -11;
         self.high = self.tall + 1;
@@ -279,7 +279,7 @@ node GrimUndercroft(Prefab) {
         self.district = level_district(Q3DM14);
         self.long = dice.between(30, 32);
         self.wide = dice.between(26, 28);
-        self.tall = dice.between(12, 13);
+        self.tall = dice.between(32, 36);
         self.bridged = dice.chance(0.6);
         self.lifted = dice.chance(0.4);
         self.low = -15;
@@ -365,7 +365,7 @@ node GrimOubliette(Prefab) {
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
         self.bobbing = dice.chance(0.5);
-        self.tall = 14;
+        self.tall = 34;
         self.low = -17;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -427,7 +427,7 @@ node GrimGate(Prefab) {
         self.long = dice.between(26, 28);
         self.wide = dice.between(18, 20);
         self.bobbing = dice.chance(0.5);
-        self.tall = dice.between(12, 13);
+        self.tall = dice.between(28, 30);
         self.low = -11;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
