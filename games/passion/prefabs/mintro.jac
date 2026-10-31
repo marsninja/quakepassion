@@ -14,7 +14,8 @@ mintro's own palette.
   down into the ravine; a panel in the cliff under the road breaks open on
   a stash (the secret). Down by a stair or a lift; the arch west of the
   ramp or over its foot.
-- `PipeYard`: a works yard: a loading dock over a bay at its far end, a
+- `PipeYard`: a works yard under the sky, a flooded sump in its floor: a
+  loading dock over a bay at its far end, a
   catwalk along its side over the floor, a pump house under the catwalk
   whose broken pipe sparks, and a panel on it that breaks open on a stash
   (mintro's sparking pipe, its secret). Up by a stair before the dock or
@@ -77,12 +78,12 @@ node CliffRoad(Prefab) {
         self.source = MINTRO;
         self.district = level_district(MINTRO);
         self.long = dice.between(32, 36);
-        self.wide = dice.between(22, 25);
+        self.wide = dice.between(26, 29);
         self.deep = dice.between(7, 9);
         self.up = dice.between(6, 8);
-        self.tall = self.up + dice.between(12, 15);
+        self.tall = self.up + dice.between(30, 38);
         self.by_lift = dice.chance(0.4);
-        self.stream = dice.chance(0.7);
+        self.stream = True;
         steps = self.up + self.deep;
         # The arch: west of the ramp up to the shelf, or over the ramp's
         # foot (high enough over it to walk under).
@@ -213,11 +214,11 @@ node PipeYard(Prefab) {
         self.dock = dice.between(6, 7);
         self.up = 9;
         self.walk = 4;
-        self.tall = self.up + dice.between(9, 11);
+        self.tall = self.up + dice.between(26, 34);
         self.stair_west = dice.chance(0.5);
         self.vent = dice.chance(0.6);
         self.house_x = dice.between(self.long // 2 - 4, self.long // 2);
-        self.low = -1;
+        self.low = -6;
         self.high = self.tall + 1;
         rim = self.wide - 1 - self.walk;
         front = self.long - 1 - self.dock;
@@ -237,8 +238,10 @@ node PipeYard(Prefab) {
         dice = build.begin(self);
         rim = self.wide - 1 - self.walk;
         front = self.long - 1 - self.dock;
-        yard = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        yard = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(yard, self.up);
+        # A flooded sump across the yard's floor, walked round.
+        build.pool(6, 4, -4, front - 4, rim - 4, 0, 2);
         # The dock over its bay, pillars along its front; the catwalk along
         # the side wall at the dock's height.
         slab(build, front, 1, self.long - 1, self.wide - 1, self.up, 1);
@@ -319,14 +322,14 @@ node QuarryPit(Prefab) {
         self.long = dice.between(28, 32);
         self.wide = dice.between(26, 30);
         self.deep = dice.between(10, 12);
-        self.tall = dice.between(11, 14);
+        self.tall = dice.between(26, 32);
         self.by_lift = dice.chance(0.35);
         # The stair's first step along the pit's south wall, so it lands on
         # that wall short of the corner.
         seg = (self.long - 10) - 3;
         self.spiral_start = dice.between(0, max(0, seg - self.deep - 4));
         self.bridge_y = dice.between(self.wide // 2 - 2, self.wide // 2 + 1);
-        self.pond = dice.chance(0.6);
+        self.pond = True;
         self.low = -self.deep - 7;
         self.high = self.tall + 1;
         cy = self.wide // 2;
@@ -378,7 +381,7 @@ node QuarryPit(Prefab) {
         }
         # A pond in the pit's floor under the bridge, steps out of it.
         if self.pond {
-            build.pool(self.long // 2 - 4, max(py0 + 6, span_y - 1), low - 5, self.long // 2 + 4, min(py1 - 4, span_y + 5), low, 2);
+            build.pool(self.long // 2 - 6, py0 + 5, low - 5, self.long // 2 + 6, py1 - 3, low, 2);
         }
         # The tunnel out of the pit's floor, under the east rim.
         build.widen(quarry, px1, cy - 2, low, self.long - 1, cy + 2, low + 8);
@@ -445,7 +448,7 @@ node SlideBridge(Prefab) {
         self.gallery = dice.between(6, 7);
         self.lava = dice.chance(0.6);
         self.low_switch = dice.chance(0.5);
-        self.tall = self.gallery + dice.between(8, 10);
+        self.tall = self.gallery + dice.between(22, 30);
         self.low = -2 * self.deep - 4;
         self.high = self.tall + 1;
         cy = self.wide // 2;
@@ -464,7 +467,7 @@ node SlideBridge(Prefab) {
         cy = self.wide // 2;
         x0 = 1 + self.near;
         x1 = self.long - 1 - self.far;
-        chasm = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        chasm = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(chasm, 0);
         build.level(chasm, self.gallery);
         build.solid(1, 1, low, x0, self.wide - 1, 0);
@@ -531,11 +534,11 @@ node HoverCavern(Prefab) {
         self.mid = self.drop // 2;
         self.long = dice.between(self.mid + 17, self.mid + 20);
         self.wide = dice.between(self.drop - self.mid + 15, self.drop - self.mid + 18);
-        self.top = dice.between(8, 10);
+        self.top = dice.between(16, 22);
         self.bridge = dice.chance(0.6);
-        self.lake = dice.chance(0.6);
+        self.lake = True;
         self.low = -self.drop - 7;
-        self.high = self.top + 1;
+        self.high = self.top + 26;
         cy = self.wide // 2;
         self.enter = Port(face=2, along=float(cy), floor=0);
         self.leaves = [
@@ -569,7 +572,7 @@ node HoverCavern(Prefab) {
         }
         # A pool in the floor's south half.
         if self.lake {
-            build.pool(9, 5, low - 5, self.long - 8, cy - 1, low, 2);
+            build.pool(9, 5, low - 5, self.long - 7, self.wide - 7, low, 2);
         }
         # A rock pillar under the entry ledge, a foe sealed in it.
         build.solid(1, self.wide - 5, low, 5, self.wide - 1, low + 8);
@@ -590,8 +593,8 @@ node HoverCavern(Prefab) {
         }
         # At the foot of the stair a mutant is sent in.
         foot = build.touch(float(self.long - 4), float(8 + self.drop - self.mid), float(low), float(self.long - 1), float(11 + self.drop - self.mid), float(low + 6));
-        foot +>:Fires:+> build.summon(1, self.wide - 4, low, "monster_mutant" if self.danger > 0.3 else "monster_berserk", float(self.long // 2) + 0.5, float(cy) + 2.5, low, 0.0);
-        build.foe(9.5, float(cy) + 0.5, low, "monster_berserk", 0.0, patrol=[[9.5, float(cy) + 0.5], [float(self.long) - 6.5, float(cy) + 0.5], [float(self.long) - 6.5, float(self.wide) - 3.5], [9.5, float(self.wide) - 3.5]]);
+        foot +>:Fires:+> build.summon(1, self.wide - 4, low, "monster_mutant" if self.danger > 0.3 else "monster_berserk", float(self.long // 2) + 0.5, float(self.wide) - 4.5, low, 0.0);
+        build.foe(9.5, float(self.wide) - 3.5, low, "monster_berserk", 0.0, patrol=[[9.5, float(self.wide) - 3.5], [float(self.long) - 6.5, float(self.wide) - 3.5]]);
         build.foe(float(self.long) - 3.5, 4.5, -self.mid, mintro_foe(dice, self.danger), 180.0);
         if self.bridge {
             build.foe(float(self.long) - 3.5, float(self.wide) - 4.0, 0, mintro_foe(dice, self.danger), 180.0);
@@ -623,7 +626,7 @@ node ForemanShack(Prefab) {
         self.way_up = dice.below(3);
         self.tall = self.ledge + 9;
         self.low = -self.ledge - 1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 28;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -696,7 +699,7 @@ node MineElevator(Prefab) {
         self.by_lift = dice.chance(0.5);
         self.tall = dice.between(13, 15);
         self.low = -self.shaft - 1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 28;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
