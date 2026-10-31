@@ -5,8 +5,9 @@ falling to the void), platforms bobbing and shuttling between islands,
 a launch high up to the BFG's platform, low terraces thrown up from by
 jump pads. Quake III's arenas hold no foes of their own; q3tourney6's
 are hell_knight, shalrath, shambler. Raised in q3tourney6's own palette.
-The void's floor burns whoever falls, and jump pads at its foot throw
-them back up (as the original's do).
+The sky stands far overhead; the void's floor, too far down to reckon
+on, burns whoever falls, and jump pads at its foot throw them back up (as
+the original's do).
 
 - `EndPlatform`: the start. A platform over the void, a stair down its
   side to a terrace, a pad from the terrace up to the far deck, and a long
@@ -35,6 +36,7 @@ import from ..kits { level_district, kit_of }
 import from .common { stair, key_ambush }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3late_parts { deck, keep_box, void_floor, void_pads, throw, wake_later, columns }
+import from .q3open_parts { OPEN_AIR, VOID_DROP }
 
 glob Q3TOURNEY6: str = "q3:q3tourney6",
      Q3TOURNEY6_LIGHT: list[str] = ["monster_hell_knight", "monster_shalrath"],
@@ -74,8 +76,8 @@ node EndPlatform(Prefab) {
         self.long = dice.between(30, 32);
         self.wide = dice.between(20, 22);
         self.terrace_side = dice.below(2);
-        self.tall = 14;
-        self.low = -19;
+        self.tall = OPEN_AIR;
+        self.low = -VOID_DROP - 5;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         ty = 2 if self.terrace_side == 0 else self.wide - 10;
@@ -90,7 +92,7 @@ node EndPlatform(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         py = float(middle) + 0.5;
-        low = -18;
+        low = -VOID_DROP - 4;
         ty = 2 if self.terrace_side == 0 else self.wide - 10;
         oy = (ty + 8 + self.wide - 1) // 2 if self.terrace_side == 0 else (1 + ty) // 2;
         void = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
@@ -107,7 +109,7 @@ node EndPlatform(Prefab) {
         # deck, beside the one back.
         out_y = oy + 3 if self.terrace_side == 0 else oy - 3;
         throw(build, void, 8.0, float(out_y) + 0.5, 0, float(self.long) - 3.5, float(out_y) + 0.5, 0, [11, out_y - 1, 12, out_y + 2], [far, out_y - 1, far + 1, out_y + 2]);
-        void_pads(build, void, 1, 1, self.long - 1, self.wide - 1, low, [[18.0, float(oy) + 0.5, 5.0, float(oy) + 0.5, 0.0]], [[11, oy - 1, 12, oy + 2, 0]]);
+        void_pads(build, void, 1, 1, self.long - 1, self.wide - 1, low, [[20.0, float(oy) + 0.5, 5.0, float(oy) + 0.5, 0.0]], [[11, oy - 1, 12, oy + 2, 0]]);
         build.doorway(void, self.enter);
         for port in self.taken {
             build.doorway(void, port);
@@ -141,8 +143,8 @@ node TrapdoorBridge(Prefab) {
         self.long = dice.between(32, 34);
         self.wide = dice.between(18, 20);
         self.upper = dice.chance(0.5);
-        self.tall = 20;
-        self.low = -19;
+        self.tall = 10 + OPEN_AIR;
+        self.low = -VOID_DROP - 5;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -158,7 +160,7 @@ node TrapdoorBridge(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         py = float(middle) + 0.5;
-        low = -18;
+        low = -VOID_DROP - 4;
         void = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(void, 0);
         far = self.long - 8;
@@ -224,8 +226,8 @@ node LaunchSpire(Prefab) {
         self.wide = dice.between(22, 24);
         self.platform = dice.between(18, 20);
         self.perch = dice.chance(0.5);
-        self.tall = self.platform + 10;
-        self.low = -19;
+        self.tall = self.platform + OPEN_AIR;
+        self.low = -VOID_DROP - 5;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -238,7 +240,7 @@ node LaunchSpire(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         py = float(middle) + 0.5;
-        low = -18;
+        low = -VOID_DROP - 4;
         hz = self.platform;
         void = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(void, 0);
@@ -292,8 +294,8 @@ node VoidCross(Prefab) {
         self.long = dice.between(32, 34);
         self.wide = dice.between(30, 32);
         self.both = dice.chance(0.5);
-        self.tall = 16;
-        self.low = -19;
+        self.tall = 2 + OPEN_AIR;
+        self.low = -VOID_DROP - 13;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
         cx = float(self.long // 2);
@@ -307,7 +309,7 @@ node VoidCross(Prefab) {
         dice = build.begin(self);
         cx = self.long // 2;
         cy = self.wide // 2;
-        low = -18;
+        low = -VOID_DROP - 12;
         hub = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(hub, 0);
         build.level(hub, -12);
@@ -333,7 +335,7 @@ node VoidCross(Prefab) {
                 throw(build, hub, tx, float(y1) - 2.5, -12, tx, float(cy) + 0.5, 0, None, [int(tx) - 2, cy - 3, int(tx) + 3, cy - 2]);
                 keep_box(build, hub, x0 + 1, cy - 3, x0 + 4, cy - 2, 0);
             } else {
-                throw(build, hub, tx, float(y0) + 2.5, -12, tx, float(cy) + 0.5, 0, None, [int(tx) - 2, cy + 3, int(tx) + 3, cy + 4]);
+                throw(build, hub, tx, float(y0) + 2.5, -12, tx, float(cy) + 3.0, 0, None, [int(tx) - 2, cy + 3, int(tx) + 3, cy + 4]);
                 keep_box(build, hub, x1 - 4, cy + 3, x1 - 1, cy + 4, 0);
             }
             build.foe(tx, float(y0 + y1) * 0.5, -12, END_FOES.pick(dice, self.danger), 90.0);
@@ -389,8 +391,8 @@ node XaeroAltar(Prefab) {
         self.hall_wide = dice.between(20, 22);
         self.wide = self.hall_wide + 4;
         self.side = dice.below(2);
-        self.tall = 18;
-        self.low = -19;
+        self.tall = 8 + OPEN_AIR;
+        self.low = -VOID_DROP - 5;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
@@ -402,7 +404,7 @@ node XaeroAltar(Prefab) {
         dice = build.begin(self);
         side = self.hall_wide - 1;
         cy = side // 2;
-        low = -18;
+        low = -VOID_DROP - 4;
         room = build.room(1, 1, low, self.long - 1, side, self.tall, variant=dice.below(3), sky=True);
         for z in [0, -4, 8] {
             build.level(room, z);
@@ -420,7 +422,7 @@ node XaeroAltar(Prefab) {
         build.teleporter(float(self.long) - 3.5, float(my) + 5.0, 8, 4.0, float(cy) + 0.5, 0, 0.0);
         open_y = float(side) - 3.0 if self.side == 0 else 4.0;
         void_pads(build, room, 1, 1, self.long - 1, side, low, [[17.0, open_y, 6.0, open_y, 0.0]], [[10, int(open_y) - 1, 11, int(open_y) + 2, 0]]);
-        key_ambush(build, self.key, float(self.long) - 5.0, float(my) + 1.5, 8, side, 0, [2, 7], [END_FOES.pick(dice, self.danger, True), END_FOES.pick(dice, self.danger)]);
+        key_ambush(build, self.key, float(self.long) - 3.5, float(my) + 1.5, 8, side, 0, [2, 7], [END_FOES.pick(dice, self.danger, True), END_FOES.pick(dice, self.danger)]);
         build.foe(26.5, float(my) + 5.0, 8, END_FOES.pick(dice, self.danger), 180.0);
         build.foe(17.0, float(my) + 1.5, -4, END_FOES.pick(dice, self.danger), 180.0);
         build.timer(5.0) +>:Fires:+> build.sparks(float(self.long) - 2.0, float(my) + 3.0, 9.0, 2);
@@ -442,8 +444,8 @@ node VeryEnd(Prefab) {
         self.district = level_district(Q3TOURNEY6);
         self.long = dice.between(32, 34);
         self.wide = dice.between(18, 20);
-        self.tall = 14;
-        self.low = -19;
+        self.tall = OPEN_AIR;
+        self.low = -VOID_DROP - 5;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
@@ -455,7 +457,7 @@ node VeryEnd(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         py = float(middle) + 0.5;
-        low = -18;
+        low = -VOID_DROP - 4;
         wall = 7;
         hall = build.room(1, 1, 0, wall, self.wide - 1, 10, variant=dice.below(3));
         void = build.room(wall + 1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
@@ -480,7 +482,7 @@ node VeryEnd(Prefab) {
         late +>:Fires:+> opened;
         build.timer(4.5) +>:Fires:+> build.sparks(float(ax) - 0.2, float(middle) - 4.0, 5.0, 2);
         build.way_out(float(self.long) - 2.0, py, 0);
-        void_pads(build, void, wall + 1, 1, self.long - 1, self.wide - 1, low, [[float(ex) + 3.5, 3.0, float(ex) - 3.5, 3.0, 0.0]], [[ex - 1, 2, ex, 5, 0]]);
+        void_pads(build, void, wall + 1, 1, self.long - 1, self.wide - 1, low, [[float(ex) + 5.0, 3.0, float(ex) - 3.0, 3.0, 0.0]], [[ex - 1, 2, ex, 5, 0]]);
         door = build.touch(float(wall + 1), float(middle - 2), 0.0, float(wall + 3), float(middle + 2), 6.0);
         guards = wake_later(build, door, 1.0);
         for index in range(dice.between(2, 3)) {
