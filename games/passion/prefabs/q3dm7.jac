@@ -67,7 +67,7 @@ node RetributionHall(Prefab) {
         self.long = dice.between(28, 30);
         self.wide = dice.between(20, 22);
         self.both = dice.chance(0.5);
-        self.tall = 20;
+        self.tall = 26;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -113,7 +113,7 @@ node RetributionHall(Prefab) {
         # The far wall and the door through it, opening as a body comes near;
         # the galleries run on through it over the sanctum.
         build.solid(dw, 1, 0, dw + 1, self.wide - 1, g - 1);
-        build.solid(dw, 6, g - 1, dw + 1, self.wide - 6, self.tall);
+        build.solid(dw, 6, g - 1, dw + 1, self.wide - 6, g + 6);
         build.widen(hall, dw, middle - 2, 0, dw + 1, middle + 2, 8);
         near_door(build, dw, middle - 2, middle + 2, 0, 8);
         build.doorway(hall, self.enter);
@@ -152,7 +152,7 @@ node RetributionBasin(Prefab) {
         self.wide = dice.between(18, 20);
         self.ledge = 9;
         self.lifted = dice.chance(0.4);
-        self.tall = self.ledge + 10;
+        self.tall = self.ledge + 20;
         self.low = -10;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -232,7 +232,7 @@ node RetributionCourt(Prefab) {
         self.wide = dice.between(28, 30);
         self.ups = dice.below(3);
         self.bridge = dice.chance(0.6);
-        self.tall = 19;
+        self.tall = 60;
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -254,7 +254,7 @@ node RetributionCourt(Prefab) {
         b = 9;
         cx = long // 2;
         cy = wide // 2;
-        court = build.room(1, 1, -8, long - 1, wide - 1, self.tall, variant=dice.below(3));
+        court = build.room(1, 1, -8, long - 1, wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(court, 0);
         build.level(court, b);
         build.solid(1, 1, -8, long - 1, wide - 1, 0);
@@ -332,7 +332,7 @@ node RetributionDepths(Prefab) {
         self.steps = fits[dice.below(len(fits))];
         self.pad_up = dice.chance(0.5);
         top = ring_landing(1, 1, self.long - 1, self.wide - 1, 3, self.steps, 5);
-        self.tall = self.steps + 9;
+        self.tall = self.steps + 16;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=int(top[0]), along=top[1], floor=self.steps);
@@ -405,7 +405,7 @@ node RetributionShrine(Prefab) {
         self.hall_wide = dice.between(17, 19);
         self.wide = self.hall_wide + 4;
         self.pad_up = dice.chance(0.5);
-        self.tall = 21;
+        self.tall = 26;
         self.low = -13;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -465,7 +465,7 @@ node RetributionAltar(Prefab) {
         self.long = dice.between(30, 32);
         self.wide = dice.between(18, 20);
         self.sides = dice.chance(0.5);
-        self.tall = 20;
+        self.tall = 28;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -484,8 +484,9 @@ node RetributionAltar(Prefab) {
         room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key);
         build.level(room, d);
         build.level(room, 12);
-        # The inner wall and its door that opens as a body comes near.
-        build.solid(dw, 1, 0, dw + 1, self.wide - 1, self.tall);
+        # The inner wall and its door that opens as a body comes near; the
+        # galleries see over it.
+        build.solid(dw, 1, 0, dw + 1, self.wide - 1, 14);
         build.widen(room, dw, middle - 2, 0, dw + 1, middle + 2, 8);
         near_door(build, dw, middle - 2, middle + 2, 0, 8);
         # The altar's dais, a grand stair (or two) up to it.

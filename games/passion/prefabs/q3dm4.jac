@@ -1,7 +1,7 @@
 """Prefabs drawn from Quake III's q3dm4, The Place of Many Deaths: a great
 floor sunk deep under its ledges, pits of lava in it, a tower standing out
 of a lava moat in its middle reached by a causeway or a teleporter, and a
-long climb in terraces up from the lowest floor. Quake III's arenas hold
+long climb winding up over a lake of lava. Quake III's arenas hold
 no foes of their own; q3dm4's are zombie, ogre, hell_knight. Raised in
 q3dm4's own palette.
 
@@ -15,9 +15,11 @@ q3dm4's own palette.
   causeway to its top from a ledge high along the far wall (climbed by a
   stair) and a teleporter at the moat's edge (or teleporters both ways);
   ways on from the floor and the ledge.
-- `ManyClimb`: terraces climbing a long hall, a stair at each face on
-  alternating sides, a trough of lava along the lowest, a walk high along
-  a wall back over them dropped from at its end.
+- `ManyClimb`: the climb out of the fire. A lake of lava under the sky, three
+  causeways over it side by side, a flight in each, turning back on itself
+  at landings over the lake from the shore to the high far end; the whole
+  climb in sight across the lake, a jump pad now and then from the shore to
+  the turn half way up, its edge dropped from back to the shore.
 - `ManyForge`: the key room. A lake of lava between the shore and the
   key's platform, crossed by stepping stones (a gallery over them too), a
   bridge drawn out when a button high on the far wall is shot, or a pair
@@ -32,7 +34,7 @@ import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from .common { stair, key_ambush, gate_into, lift }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
-import from .q3low_parts { slab, keep_box, keep_frame, hint, wake_later, lava, lava_stones }
+import from .q3low_parts { slab, keep_box, keep_frame, hint, wake_later, lava, lava_stones, flying_stair, pad_to }
 
 glob Q3DM4: str = "q3:q3dm4",
      Q3DM4_LIGHT: list[str] = ["monster_zombie", "monster_ogre"],
@@ -59,7 +61,7 @@ node ManyGate(Prefab) {
         self.down = dice.below(3);
         self.pits = dice.between(1, 3);
         self.walk = self.down != 1 and dice.chance(0.6);
-        self.tall = 10;
+        self.tall = 32;
         self.low = -11;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -79,7 +81,7 @@ node ManyGate(Prefab) {
         build = visitor.build;
         dice = build.begin(self);
         middle = self.wide // 2;
-        hall = build.room(1, 1, -10, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        hall = build.room(1, 1, -10, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(hall, 0);
         build.level(hall, -8);
         build.solid(1, 1, -10, 9, self.wide - 1, 0);
@@ -148,7 +150,7 @@ node ManyDeathsPit(Prefab) {
         self.deep = dice.between(9, 11);
         self.channels = dice.between(1, 2);
         self.teleport = dice.chance(0.6);
-        self.tall = dice.between(11, 13);
+        self.tall = dice.between(30, 33);
         self.low = -self.deep - 3;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -162,7 +164,7 @@ node ManyDeathsPit(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         low = -self.deep;
-        pit = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        pit = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(pit, 0);
         build.solid(1, 1, low, 6, self.wide - 1, 0);
         stair(build, 5 + self.deep, 1, low, 2, self.deep, 3);
@@ -215,7 +217,7 @@ node ManyTower(Prefab) {
         self.wide = dice.between(28, 30);
         self.top = 14;
         self.access = dice.below(3);
-        self.tall = self.top + 10;
+        self.tall = self.top + 26;
         self.low = -3;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -237,7 +239,7 @@ node ManyTower(Prefab) {
         t = self.top;
         cx = long // 2 - 2;
         cy = wide // 2;
-        hall = build.room(1, 1, -2, long - 1, wide - 1, self.tall, variant=dice.below(3));
+        hall = build.room(1, 1, -2, long - 1, wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(hall, t);
         build.solid(1, 1, -2, long - 1, wide - 1, 0);
         # The moat round the tower, in four reaches, and the tower.
@@ -284,86 +286,89 @@ node ManyTower(Prefab) {
     }
 }
 
-"""Terraces climbing a long hall, a stair at each face on alternating
-sides, a trough of lava along the lowest, a walk high along a wall back
-over them."""
+"""The climb out of the fire: a lake of lava under the sky, three causeways
+over it side by side, a flight in each, turning back on itself at landings
+from the shore up to the high far end; a jump pad now and then from the shore
+to the turn half way up."""
 node ManyClimb(Prefab) {
-    has flip: bool = False,
-        trough: bool = True,
-        walk: bool = True,
-        tall: int = 18;
+    has thrown: bool = False,
+        tall: int = 42;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Many climb";
         self.source = Q3DM4;
         self.district = level_district(Q3DM4);
-        self.long = dice.between(30, 32);
-        self.wide = dice.between(16, 18);
-        self.flip = dice.chance(0.5);
-        self.trough = dice.chance(0.6);
-        self.walk = dice.chance(0.6);
-        self.tall = 18;
+        self.long = dice.between(32, 35);
+        self.wide = dice.between(23, 25);
+        self.thrown = dice.chance(0.5);
+        self.tall = 42;
         self.low = -3;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
         self.leaves = [
-            Port(face=0, along=middle, floor=8),
-            Port(face=0, along=3.0, floor=8)
+            Port(face=0, along=float(self.wide) - 3.0, floor=18),
+            Port(face=1, along=float(self.long - 6), floor=18),
+            Port(face=3, along=21.0, floor=6),
+            Port(face=0, along=3.0, floor=6)
         ];
-        if self.walk {
-            self.leaves.append(Port(face=2, along=float(self.wide) - 3.0, floor=8));
-        } else {
-            self.leaves.append(Port(face=1, along=10.0, floor=2));
-        }
         visitor.place(self);
     }
 
     can rise with Raise entry {
         build = visitor.build;
         dice = build.begin(self);
+        long = self.long;
         wide = self.wide;
-        hall = build.room(1, 1, -2, self.long - 1, wide - 1, self.tall, variant=dice.below(3));
-        build.solid(1, 1, -2, self.long - 1, wide - 1, 0);
-        # Five terraces two lifts apart, each five cells or so along, a
-        # stair of two steps up each face, the side alternating.
-        starts = [1, 8, 13, 18, 23];
-        for tier in range(1, 5) {
-            x = starts[tier];
-            build.solid(x, 1, 0, self.long - 1, wide - 1, 2 * tier);
-            build.level(hall, 2 * tier);
-            low_side = (tier % 2 == 0) != self.flip;
-            y = 2 if low_side else wide // 2 - 1;
-            stair(build, x - 2, y, 2 * tier - 2, 0, 2, 3);
-            keep_box(build, hall, x, 1, x + 1, wide - 1, 2 * tier);
-        }
-        # The trough of lava along the lowest terrace's -y side.
-        if self.trough {
-            lava(build, 2, 1, -2, 6, 3, 0, 25, False);
-        }
-        # The walk high along the +y wall from the top terrace back to the
-        # near end, solid where the terraces come near it, its near end
-        # open to drop from.
-        if self.walk {
-            slab(build, 1, wide - 5, 13, wide - 1, 8);
-            build.solid(13, wide - 5, 0, 23, wide - 1, 8);
-            keep_box(build, hall, 2, wide - 5, 9, wide - 4, 8);
+        cy = wide // 2;
+        north = wide - 5;
+        hall = build.room(1, 1, -2, long - 1, wide - 1, self.tall, variant=dice.below(3), sky=True);
+        build.level(hall, 6);
+        build.level(hall, 12);
+        build.level(hall, 18);
+        # The shore, and the lake from it to the far wall.
+        build.solid(1, 1, -2, 6, wide - 1, 0);
+        lava(build, 6, 1, -2, long - 1, wide - 1, 0, 30, False);
+        # The first causeway along the -y wall, up to the far landing.
+        slab(build, 6, 1, 9, 5, 0);
+        flying_stair(build, 9, 1, 0, 0, 6, 4);
+        slab(build, 15, 1, long - 6, 5, 6);
+        slab(build, long - 6, 1, long - 1, cy + 2, 6);
+        # A pier under the far landing, standing in the lake.
+        build.solid(long - 5, cy - 1, -2, long - 2, cy + 2, 5);
+        # The second down the middle, back over the lake to the near landing
+        # over the shore.
+        slab(build, long - 8, cy - 2, long - 6, cy + 2, 6);
+        flying_stair(build, long - 9, cy - 2, 6, 2, 6, 4);
+        slab(build, 1, cy - 2, long - 14, cy + 2, 12);
+        slab(build, 1, cy + 2, 6, wide - 1, 12);
+        # The third along the +y wall, up to the high far end.
+        slab(build, 6, north, 9, wide - 1, 12);
+        flying_stair(build, 9, north, 12, 0, 6, 4);
+        slab(build, 15, north, long - 1, wide - 1, 18);
+        # The near landing's edge to drop from, to the shore; a jump pad on
+        # the shore up to it.
+        keep_box(build, hall, 1, cy - 2, 6, cy - 1, 12);
+        if self.thrown {
+            pad_to(build, hall, 3.5, float(cy) - 5.0, 0, 3.5, float(cy) + 0.5, 12, 1, cy - 2, 6, cy - 1);
         }
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
         }
-        build.foe(10.5, float(wide // 2) + 0.5, 2, Q3DM4_FOES.pick(dice, self.danger), 180.0);
-        build.foe(20.5, float(wide // 2) + 0.5, 6, Q3DM4_FOES.pick(dice, self.danger), 180.0);
-        build.foe(float(self.long) - 3.0, float(wide // 2) + 2.5, 8, Q3DM4_FOES.pick(dice, self.danger, True), 180.0);
-        if self.walk {
-            up = build.touch(23.0, float(wide - 5), 8.0, 25.0, float(wide - 1), 14.0);
-            guard = wake_later(build, up, 0.5);
-            build.foe(4.5, float(wide) - 2.5, 8, Q3DM4_FOES.pick(dice, self.danger), 0.0, waits=guard);
-        }
-        build.supply(float(self.long) - 2.5, 2.5, 8, Q3_HEALTH, "q3");
-        build.supply(15.5, float(wide // 2) + 0.5, 4, "item_spikes");
+        hint(build, 2.0, float(cy - 2), 0.0, 4.0, float(cy + 2), 6.0, "The climb out of the fire", "Mind the lake", 2.5);
+        build.foe(21.5, 3.0, 6, Q3DM4_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(long) - 3.0, 3.0, 6, Q3DM4_FOES.pick(dice, self.danger), 180.0);
+        build.foe(12.5, float(cy) + 0.5, 12, Q3DM4_FOES.pick(dice, self.danger), 0.0);
+        # What holds the top wakes as the player turns onto the last flight.
+        turn = build.touch(6.0, float(north), 12.0, 9.0, float(wide - 1), 18.0);
+        top = wake_later(build, turn, 0.5);
+        build.foe(float(long) - 3.0, float(wide) - 3.0, 18, Q3DM4_FOES.pick(dice, self.danger, True), 180.0, waits=top);
+        build.foe(float(long) - 8.5, float(wide) - 3.0, 18, Q3DM4_FOES.pick(dice, self.danger), 180.0, waits=top);
+        build.supply(float(long) - 3.0, float(cy) + 0.5, 6, Q3_HEALTH, "q3");
+        build.supply(3.5, float(wide) - 3.0, 12, "item_spikes");
+        build.supply(float(long) - 12.5, float(wide) - 3.0, 18, Q3_HEALTH, "q3");
     }
 }
 
@@ -385,7 +390,7 @@ node ManyForge(Prefab) {
         self.hall_wide = dice.between(17, 19);
         self.wide = self.hall_wide + 4;
         self.cross = dice.below(3);
-        self.tall = 14;
+        self.tall = 34;
         self.low = -6;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -400,7 +405,7 @@ node ManyForge(Prefab) {
         cy = side // 2;
         lake_x0 = 7;
         far = lake_x0 + 1 + 3 * ((self.long - 8 - lake_x0) // 3);
-        forge = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
+        forge = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3), sky=True);
         build.doorway(forge, self.enter);
         # The lake between the shore (x < 7) and the key's platform.
         if self.cross == 0 {
@@ -446,7 +451,7 @@ node ManyAltar(Prefab) {
         self.long = dice.between(30, 32);
         self.wide = dice.between(16, 18);
         self.cross = dice.below(3);
-        self.tall = 16;
+        self.tall = 34;
         self.low = -6;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -461,7 +466,7 @@ node ManyAltar(Prefab) {
         wall = 7;
         mx = wall + 6;
         mx1 = mx + (4 if self.cross != 2 else 7);
-        room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key);
+        room = gate_into(build, dice, self.enter, self.long, self.wide, wall, 0, self.tall, self.key, True);
         if self.cross == 2 {
             lava_stones(build, mx, mx1, 1, self.wide - 1, -2, 0, middle - 1, middle + 2, 40);
         } else {
