@@ -300,7 +300,7 @@ node LaserMaze(Prefab) {
         guards(build, up, [[float(self.long) - 3.5, float(self.wide) - 3.0]], self.walk, SECURITY_FOES.squad(dice, self.danger, 1, True), 180.0);
         guards(build, up, [[float(self.long) - 4.5, float(middle) - 3.5]], 0, SECURITY_FOES.squad(dice, self.danger, 1), 180.0);
         for index in range(dice.between(1, 2)) {
-            build.foe(float(12 + index * 8) + 0.5, float(middle) - 2.5, 0, SECURITY_FOES.pick(dice, self.danger), 180.0);
+            build.foe(float(8 + (span * index) // max(1, self.fences - 1)) + 2.5, float(middle) - 2.5, 0, SECURITY_FOES.pick(dice, self.danger), 180.0);
         }
         build.supply(float(self.long // 2) + 0.5, float(self.wide) - 3.0, self.walk, Q2_ARMOR, "q2");
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
