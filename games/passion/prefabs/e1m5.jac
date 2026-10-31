@@ -5,8 +5,8 @@ hall, the vault whose cells hold the keep's worst, its key at the top of a
 tower, its gate and drawbridge. Raised in e1m5's own palette. Each stretch
 takes its shape from its dice as well as its sizes.
 
-- `KeepCourtyard`: the start. A courtyard under the sky, wall-walks on
-  three sides on arcades (stairs or lifts up to them), a well; stepping
+- `KeepCourtyard`: the start. A courtyard open to a far sky, wall-walks on
+  three sides on arcades (stairs or lifts up to them), a broad well; stepping
   out wakes the walks' guards and brings scrags in by teleporters (e1m5's
   first ambush); a stash in the corner tower's base.
 - `Battlements`: a ward and the wall-walk over a covered gallery along it,
@@ -20,11 +20,11 @@ takes its shape from its dice as well as its sizes.
 - `KeyTower`: the key room: a tall tower, lifts up its middle to a landing
   and the top floor, the key there; taking it opens the rooms off the
   landing and sends one more in behind; a stash at its foot.
-- `SpikeBridge`: a hall cut by a flooded channel, crossed on a platform
-  riding to and fro (e1m5's train) or on a bridge drawn up by a shot
-  button; spikes fly across the crossing; a balcony over the far floor
-  (a lift up to it) whose archers wake as the player lands; an underwater
-  niche a secret.
+- `SpikeBridge`: a canal down the length of a hall, a quay along each side,
+  crossed on a platform riding to and fro (e1m5's train) or on a bridge
+  drawn up by a shot button; spikes fly down the water from the end walls;
+  a balcony over the far quay (a lift up to it) whose archers wake as the
+  player lands; an underwater niche a secret.
 - `FloodedCrypt`: a crypt flooded between its ends, columns standing in
   the water; crossed on a catwalk (a lift up to it, scrags sent in on the
   way) or from column to column, or swum; the great lift on the far side
@@ -88,10 +88,10 @@ node KeepCourtyard(Prefab) {
         self.district = level_district(E1M5);
         self.long = dice.between(26, 30);
         self.wide = dice.between(22, 26);
-        self.tall = dice.between(20, 23);
+        self.tall = dice.between(36, 40);
         self.walk = dice.between(9, 10);
         self.lifted = dice.chance(0.4);
-        self.well = dice.chance(0.6);
+        self.well = dice.chance(0.8);
         self.low = -11;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -139,7 +139,7 @@ node KeepCourtyard(Prefab) {
         }
         # The well.
         if self.well {
-            build.pool(self.long // 2 - 2, mid - 2, -5, self.long // 2 + 3, mid + 3, 0, 2);
+            build.pool(self.long // 2 - 4, mid - 3, -5, self.long // 2 + 3, mid + 3, 0, 2);
             sump(build, self.long // 2, mid, -10, -5, 2);
         }
         build.doorway(court, self.enter);
@@ -150,7 +150,7 @@ node KeepCourtyard(Prefab) {
         # A hoist by the east walk, riding up to it and down again.
         build.train([3.0, 3.0, 1.0], [[float(far_x - 3), float(y1 - 6), -1.0], [float(far_x - 3), float(y1 - 6), float(self.walk - 1)]], 100.0, 2.0);
         keep_box(build, court, far_x - 1, y1 - 7, far_x + 1, y1 - 2, self.walk);
-        blocks = [[4, y0, 16, y0 + 4], [4, y1 - 4, 16, y1], [self.long // 2 - 3, mid - 3, self.long // 2 + 4, mid + 6], [far_x - 4, mid - 3, far_x, mid + 3], [self.long // 2 - 1, mid + 3, self.long // 2 + 8, mid + 6], [far_x - 5, y1 - 8, far_x, y1 - 1]];
+        blocks = [[4, y0, 16, y0 + 4], [4, y1 - 4, 16, y1], [self.long // 2 - 5, mid - 4, self.long // 2 + 4, mid + 6], [far_x - 4, mid - 3, far_x, mid + 3], [self.long // 2 - 1, mid + 3, self.long // 2 + 8, mid + 6], [far_x - 5, y1 - 8, far_x, y1 - 1]];
         low_rocks(build, dice, 9, y0, far_x, y1, 0, dice.between(3, 5), 2, blocks);
         build.start(2.5, float(mid) + 0.5, 0, 0.0);
         build.supply(2.5, float(mid) + 2.5, 0, "item_shells");
@@ -190,12 +190,12 @@ node Battlements(Prefab) {
         self.district = level_district(E1M5);
         self.long = dice.between(28, 32);
         self.wide = dice.between(18, 22);
-        self.tall = dice.between(20, 23);
+        self.tall = dice.between(36, 40);
         self.walk = dice.between(9, 10);
         self.lifted = dice.chance(0.4);
         self.bridge = dice.chance(0.5);
         self.low_spikes = dice.chance(0.5);
-        self.low = -11;
+        self.low = -15;
         self.high = self.tall + 1;
         wall_y = self.wide - 1 - self.deep;
         self.enter = Port(face=2, along=float(dice.between(3, wall_y - 7)), floor=0);
@@ -248,9 +248,9 @@ node Battlements(Prefab) {
         keep_box(build, ward, hx - 1, wall_y - 4, hx + 4, wall_y, 0);
         # A well in the ward (under the bridge, when there is one), blocks of
         # stone about it.
-        build.pool(bx - 1, 3, -5, bx + 5, 9, 0, 2);
+        build.pool(bx - 5, 1, -5, bx + 7, wall_y - 5, 0, 2);
         sump(build, bx + 2, 5, -10, -5, 2);
-        blocks = [[bx - 2, 0, bx + 6, 10], [self.long // 3 - 1, wall_y - 5, self.long // 3 + 10, wall_y], [self.long - 9, 0, self.long, wall_y], [0, 0, self.walk + 4, wall_y]];
+        blocks = [[bx - 6, 0, bx + 8, wall_y - 4], [self.long // 3 - 1, wall_y - 5, self.long // 3 + 10, wall_y], [self.long - 9, 0, self.long, wall_y], [0, 0, self.walk + 4, wall_y]];
         low_rocks(build, dice, 1, 1, self.long - 1, wall_y, 0, dice.between(3, 5), 2, blocks);
         build.doorway(ward, self.enter);
         for port in self.taken {
@@ -276,7 +276,7 @@ node Battlements(Prefab) {
         }
         far_end = build.touch(float(self.long - 8), float(wall_y), float(self.walk), float(self.long - 4), float(self.wide - 1), float(self.walk + 6));
         for index in range(2) {
-            far_end +>:Fires:+> build.summon(4 + index * 5, 1, -8, "monster_wizard", float(self.long // 2 - 4 + index * 6) + 0.5, float(wall_y // 2) + 0.5, 6, 0.0);
+            far_end +>:Fires:+> build.summon(4 + index * 5, 1, -12, "monster_wizard", float(self.long // 2 - 4 + index * 6) + 0.5, float(wall_y // 2) + 0.5, 6, 0.0);
         }
         for index in range(dice.between(2, 3)) {
             build.foe(float(self.long // 3 + index * 4) + 0.5, float(wall_y) - 3.5, 0, E1M5_FOES.pick(dice, self.danger), 0.0);
@@ -300,7 +300,7 @@ node ThroneKeep(Prefab) {
         self.title = "Throne keep";
         self.source = E1M5;
         self.district = level_district(E1M5);
-        self.long = dice.between(30, 34);
+        self.long = dice.between(32, 36);
         self.hw = dice.between(18, 22);
         self.wide = self.hw + 6;
         self.tall = dice.between(22, 26);
@@ -340,11 +340,12 @@ node ThroneKeep(Prefab) {
         stair(build, dais_x - r, mid - 2, 0, 0, r, 4);
         keep_box(build, hall, dais_x - 2, mid - 3, dais_x + 1, mid + 3, r);
         stash(build, mid + 2, dais_x - 4, 0, 3, "item_artifact_super_damage");
-        # Two long basins either side of the middle aisle, wells in them.
-        basin_x1 = dais_x - r - 2;
+        # Two long basins either side of the middle aisle, wells in them,
+        # long enough that their steps up fit.
+        basin_x1 = max(dais_x - r - 2, 12);
         for at in [mid - 5, mid + 2] {
             build.pool(6, at, -5, basin_x1, at + 3, 0, 2);
-            sump(build, basin_x1 - 4, at, -10, -5, 3);
+            sump(build, basin_x1 - 3, at, -10, -5, 3);
         }
         # The throne against the far wall off the middle, the button on it.
         build.solid(self.long - 3, mid - 7, r, self.long - 2, mid - 3, r + 3);
@@ -459,13 +460,14 @@ node KeyTower(Prefab) {
     }
 }
 
-"""A hall cut by a flooded channel, crossed on a riding platform or a
-drawn bridge, spikes flying across; a balcony over the far floor."""
+"""A canal down the length of a hall, a quay along each side; crossed on a
+platform riding to and fro (e1m5's train), spikes flying down the water as
+it rides; a balcony over the far quay."""
 node SpikeBridge(Prefab) {
-    has near: int = 8,
-        span: int = 9,
-        far_side: int = 9,
-        lane: int = 6,
+    has quay: int = 6,
+        canal: int = 9,
+        far_quay: int = 7,
+        cross_x: int = 12,
         tall: int = 18,
         ridden: bool = True;
 
@@ -474,25 +476,23 @@ node SpikeBridge(Prefab) {
         self.title = "Spike bridge";
         self.source = E1M5;
         self.district = level_district(E1M5);
-        self.near = dice.between(7, 9);
-        self.span = dice.between(8, 10);
-        self.far_side = dice.between(8, 10);
-        self.wide = dice.between(16, 19);
+        self.long = dice.between(30, 36);
+        self.quay = dice.between(6, 7);
+        self.canal = dice.between(9, 11);
+        self.far_quay = dice.between(7, 8);
+        self.wide = 1 + self.quay + self.canal + self.far_quay + 1;
         self.tall = dice.between(18, 20);
         self.ridden = dice.chance(0.5);
-        self.lane = dice.between(8, self.wide - 6);
-        if not self.ridden and self.lane - 4 < 4 and self.lane + 7 > self.wide - 1 {
-            self.ridden = True;
-        }
-        self.long = 1 + self.near + self.span + self.far_side + 1;
+        self.cross_x = dice.between(self.long // 2 - 3, self.long // 2 + 3);
+        self.long = max(self.long, self.cross_x + 17);
         self.low = -12;
         self.high = self.tall + 1;
-        land = 1 + self.near + self.span;
-        self.enter = Port(face=2, along=float(dice.between(9, self.wide - 3)), floor=0);
+        q1 = 1 + self.quay + self.canal;
+        self.enter = Port(face=2, along=float(1 + self.quay // 2), floor=0);
         self.leaves = [
-            Port(face=0, along=float(dice.between(8, self.wide - 3)), floor=0),
-            Port(face=1, along=float(land + 3), floor=0),
-            Port(face=0, along=3.0, floor=9)
+            Port(face=0, along=float(q1 + 2), floor=0),
+            Port(face=1, along=float(self.long - 12), floor=0),
+            Port(face=0, along=float(self.wide - 3), floor=9)
         ];
         visitor.place(self);
     }
@@ -502,74 +502,74 @@ node SpikeBridge(Prefab) {
         dice = build.begin(self);
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, 9);
-        cut = 1 + self.near;
-        land = cut + self.span;
-        # The channel, steps up out of it at both banks, a well in its bed.
-        build.pool(cut, 1, -6, land, self.wide - 1, 0, 2, False, False);
-        for step in range(6) {
-            build.solid(cut + step, 1, -6, cut + step + 1, 3, -step);
-            build.solid(land - 1 - step, 1, -6, land - step, 3, -step);
-        }
-        sump(build, cut + self.span // 2 - 1, 4, -11, -6, 2);
-        # A niche under the near bank's water: a secret, and armor.
-        build.room(cut - 2, 4, -6, cut, 6, -3);
-        flood(build, cut - 2, 4, -6, cut, 6, -3);
-        build.secret(float(cut - 2), 4.0, -6.0, float(cut), 6.0, -3.0);
-        build.supply(float(cut) - 1.0, 5.0, -6, "item_armor1");
-        # The crossing: a platform riding to and fro, or a bridge drawn up
-        # by shooting the button on the far floor's wall.
+        q0 = 1 + self.quay;
+        q1 = q0 + self.canal;
+        cross = self.cross_x;
+        # The canal end to end, deep, wells in its bed; steps up out of it to
+        # each quay, far from the crossing.
+        build.pool(1, q0, -6, self.long - 1, q1, 0, 2, False, False);
+        stair(build, 3, q0 + 5, -6, 3, 6, 2);
+        stair(build, self.long - 6, q1 - 6, -6, 1, 6, 2);
+        sump(build, 8, q0 + 2, -11, -6, 2);
+        sump(build, self.long - 11, q1 - 4, -11, -6, 2);
+        # A niche under the near quay's water: a secret, and armor.
+        build.room(cross - 6, q0 - 2, -6, cross - 4, q0, -3);
+        flood(build, cross - 6, q0 - 2, -6, cross - 4, q0, -3);
+        build.secret(float(cross - 6), float(q0 - 2), -6.0, float(cross - 4), float(q0), -3.0);
+        build.supply(float(cross) - 5.0, float(q0) - 1.0, -6, "item_armor1");
         # The crossing: a platform riding to and fro (e1m5's train), and
-        # sometimes a bridge too, beside it, drawn up by shooting the button
-        # high on the far wall.
-        build.train([3.0, 3.0, 1.0], [[float(cut), float(self.lane), -1.0], [float(land - 3), float(self.lane), -1.0]], 150.0, 1.0);
-        lanes = [self.lane];
+        # sometimes a bridge too, nearer the way out, drawn up by shooting
+        # the button on the canal's far end.
+        build.train([3.0, 3.0, 1.0], [[float(cross), float(q0), -1.0], [float(cross), float(q1 - 3), -1.0]], 150.0, 1.0);
+        lanes = [cross];
         if not self.ridden {
-            other = self.lane - 4 if self.lane - 4 >= 4 else self.lane + 4;
+            other = cross + 6;
             lanes.append(other);
-            shot = build.push(float(self.long - 1), float(self.wide // 2) + 0.5, 12.0, 2, True);
-            shot +>:Fires:+> build.drawn(float(cut), float(other), float(land), float(other + 3), 0, 7);
-            build.touch(1.0, 1.0, 0.0, float(cut), float(self.wide - 1), 6.0, True, "Shoot the button across the water");
+            shot = build.push(float(self.long - 1), float(q0 + self.canal // 2) + 0.5, 12.0, 2, True);
+            shot +>:Fires:+> build.drawn(float(other), float(q0), float(other + 3), float(q1), 0, 7);
+            build.touch(1.0, 1.0, 0.0, 4.0, float(q0), 6.0, True, "Shoot the button down the canal");
         }
         for lane in lanes {
             for across in range(3) {
-                build.keep(hall, cut - 1, lane + across, 0);
-                build.keep(hall, land, lane + across, 0);
+                build.keep(hall, lane + across, q0 - 1, 0);
+                build.keep(hall, lane + across, q1, 0);
             }
         }
-        # The spikes fly across the crossing from both side walls.
-        crossing = build.touch(float(cut), 1.0, -3.0, float(land), float(self.wide - 1), 6.0, False);
-        spike_wall(build, crossing, 1, cut + 1, land, 1.5, 3, False, 1);
-        spike_wall(build, crossing, self.wide - 1, cut + 2, land, 1.5, 3, False, 3);
-        # The balcony over the far floor, a lift up to it.
-        slab(build, self.long - 5, 1, self.long - 1, self.wide - 1, 9);
-        lift(build, self.long - 8, 1, self.long - 5, 4, 0, 9);
-        keep_box(build, hall, self.long - 9, 1, self.long - 4, 5, 9);
-        keep_box(build, hall, self.long - 9, 1, self.long - 4, 5, 0);
+        # The spikes fly down the canal from both end walls while a body is
+        # on the water.
+        crossing = build.touch(float(cross - 1), float(q0), -3.0, float(cross + 4), float(q1), 6.0, False);
+        spike_wall(build, crossing, 1, q0 + 1, q1, 1.5, 3, True, 0);
+        spike_wall(build, crossing, self.long - 1, q0 + 2, q1, 1.5, 3, True, 2);
+        # The balcony along the far quay's wall, a lift up to it.
+        balcony_x = self.long - 16;
+        slab(build, balcony_x, self.wide - 5, self.long - 1, self.wide - 1, 9);
+        lift(build, balcony_x - 3, self.wide - 4, balcony_x, self.wide - 1, 0, 9);
+        keep_box(build, hall, balcony_x - 4, self.wide - 5, balcony_x + 1, self.wide - 1, 9);
+        keep_box(build, hall, balcony_x - 4, self.wide - 5, balcony_x, self.wide - 1, 0);
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
         }
-        # Landing on the far floor wakes the balcony's archers and brings a
+        # Landing on the far quay wakes the balcony's archers and brings a
         # foe in behind.
-        landed = build.touch(float(land), 1.0, 0.0, float(land + 2), float(self.wide - 1), 6.0);
+        landed = build.touch(float(cross - 2), float(q1), 0.0, float(cross + 5), float(q1 + 2), 6.0);
         archers = build.waiting();
         landed +>:Fires:+> archers;
-        landed +>:Fires:+> build.summon(2, 2, -10, E1M5_FOES.pick(dice, self.danger, True), float(cut) - 2.5, float(self.lane) + 1.5, 0, 0.0);
+        landed +>:Fires:+> build.summon(2, 2, -10, E1M5_FOES.pick(dice, self.danger, True), float(cross) + 1.5, float(q0) - 2.5, 0, 0.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 2.5, 3.5 + float(index) * 4.0, 9, E1M5_FOES.pick(dice, self.danger, index == 0), 180.0, waits=archers);
+            build.foe(float(self.long) - 3.5 - float(index) * 4.0, float(self.wide) - 3.0, 9, E1M5_FOES.pick(dice, self.danger, index == 0), 270.0, waits=archers);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(land) + 4.5, 6.5 + float(index) * 4.0, 0, E1M5_FOES.pick(dice, self.danger), 180.0);
+            build.foe(float(cross) - 4.5 - float(index) * 4.0, float(q1) + 3.5, 0, E1M5_FOES.pick(dice, self.danger), 0.0);
         }
-        build.foe(3.5, 2.5, 0, "monster_knight", 90.0, patrol=[[3.5, 2.5], [3.5, float(self.wide) - 2.5]]);
+        build.foe(3.5, 2.5, 0, "monster_knight", 0.0, patrol=[[3.5, 2.5], [float(self.long) - 3.5, 2.5]]);
         if dice.chance(0.5) {
-            build.foe(float(cut) + float(self.span) * 0.5, float(self.wide) - 3.5, -5, "monster_fish", 0.0);
+            build.foe(float(self.long // 3), float(q0 + self.canal // 2), -5, "monster_fish", 0.0);
         }
-        build.supply(2.5, float(self.wide) - 2.5, 0, "item_health");
+        build.supply(2.5, float(q1) + 2.5, 0, "item_health");
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, 9, "item_rockets");
     }
 }
-
 """A crypt flooded between its ends, columns in the water, crossed on a
 catwalk or column to column or swum; the great lift up on the far side."""
 node FloodedCrypt(Prefab) {
@@ -588,7 +588,7 @@ node FloodedCrypt(Prefab) {
         self.span = dice.between(12, 15);
         self.far_side = dice.between(9, 10);
         self.wide = dice.between(18, 22);
-        self.tall = dice.between(20, 22);
+        self.tall = dice.between(26, 30);
         self.catwalk = dice.chance(0.6);
         self.long = 1 + self.near + self.span + self.far_side + 1;
         self.low = -14;
@@ -693,7 +693,7 @@ node ShamblerVault(Prefab) {
         self.title = "Shambler vault";
         self.source = E1M5;
         self.district = level_district(E1M5);
-        self.long = dice.between(30, 33);
+        self.long = dice.between(32, 35);
         self.hw = dice.between(14, 16);
         self.wide = self.hw + 8;
         self.tall = dice.between(18, 20);
@@ -723,19 +723,19 @@ node ShamblerVault(Prefab) {
         for (at, edge) in [(y0, y0 + 3), (y1 - 4, y1 - 4)] {
             stair(build, 4, at, 0, 0, 7, 4);
             slab(build, 11, at, door_x, at + 4, 7);
-            arcade(build, edge, 16, door_x - 1, 0, 6, 4, False);
+            arcade(build, edge, 18, door_x - 1, 0, 6, 4, False);
             keep_box(build, hall, 9, at, 12, at + 4, 7);
         }
         stash(build, y0 + 4, 8, 0, 3, "item_artifact_super_damage");
         # A channel across the hall under a causeway, steps out on both sides.
-        build.pool(12, y0, -4, 15, y1, 0, 2, False, True, True);
-        build.solid(12, mid - 2, -4, 15, mid + 2, 0);
-        keep_box(build, hall, 11, mid - 2, 16, mid + 2, 0);
-        sump(build, 13, mid - 5, -9, -4, 2);
+        build.pool(12, y0, -4, 17, y1, 0, 2, False, True, True);
+        build.solid(12, mid - 2, -4, 17, mid + 2, 0);
+        keep_box(build, hall, 11, mid - 2, 18, mid + 2, 0);
+        sump(build, 15, mid - 5, -9, -4, 2);
         # The button: on a post on a plinth in the hall, or high on the far
         # wall over the door, pressed from a catwalk between the galleries.
         if self.plinth {
-            px = door_x - 8;
+            px = door_x - 6;
             build.solid(px, mid - 1, 0, px + 3, mid + 2, 2);
             build.solid(px - 1, mid - 1, 0, px, mid + 2, 1);
             build.solid(px + 1, mid, 2, px + 2, mid + 1, 4);
@@ -747,10 +747,10 @@ node ShamblerVault(Prefab) {
             press = build.push(float(door_x), float(mid) + 0.5, 8.2, 2);
         }
         press +>:Fires:+> door;
-        blocks = [[door_x - 10, mid - 3, door_x + 1, mid + 4], [16, mid + 2, door_x, mid + 5], [0, mid - 3, 17, mid + 3]];
-        low_rocks(build, dice, 16, y0 + 5, door_x - 1, y1 - 5, 0, dice.between(2, 4), 2, blocks);
+        blocks = [[door_x - 10, mid - 3, door_x + 1, mid + 4], [18, mid + 2, door_x, mid + 5], [0, mid - 3, 19, mid + 3]];
+        low_rocks(build, dice, 18, y0 + 5, door_x - 1, y1 - 5, 0, dice.between(2, 4), 2, blocks);
         # The cells along both walls under the galleries.
-        starts = [x for x in [17, 22, 27] if x + 3 <= door_x - 1];
+        starts = [x for x in [19, 24] if x + 3 <= door_x - 1];
         closets(build, press, y0, starts, 0, 3, [e1m5_worst(dice, self.danger), E1M5_FOES.pick(dice, self.danger, True)]);
         closets(build, press, y1, starts[:2], 0, 1, [E1M5_FOES.pick(dice, self.danger, True), e1m5_worst(dice, self.danger)]);
         press +>:Fires:+> build.summon(4, mid - 1, -8, E1M5_FOES.pick(dice, self.danger, True), 9.5, float(mid) + 0.5, 0, 0.0);
@@ -759,12 +759,12 @@ node ShamblerVault(Prefab) {
             build.doorway(chamber, port);
         }
         # The galleries' archers wake as the causeway is crossed.
-        crossing = build.touch(12.0, float(mid - 2), 0.0, 15.0, float(mid + 2), 6.0);
+        crossing = build.touch(12.0, float(mid - 2), 0.0, 17.0, float(mid + 2), 6.0);
         archers = build.waiting();
         crossing +>:Fires:+> archers;
         build.foe(float(door_x) - 2.5, float(y0) + 2.0, 7, E1M5_FOES.pick(dice, self.danger, True), 180.0, waits=archers);
         build.foe(float(door_x) - 2.5, float(y1) - 2.0, 7, E1M5_FOES.pick(dice, self.danger), 180.0, waits=archers);
-        build.foe(17.5, float(mid) + 3.5, 0, "monster_knight", 0.0, patrol=[[17.5, float(mid) + 3.5], [float(door_x) - 2.5, float(mid) + 3.5]]);
+        build.foe(19.5, float(mid) + 3.5, 0, "monster_knight", 0.0, patrol=[[19.5, float(mid) + 3.5], [float(door_x) - 2.5, float(mid) + 3.5]]);
         build.foe(12.5, float(y0) + 2.0, 7, "monster_army", 0.0, patrol=[[12.5, float(y0) + 2.0], [float(door_x) - 4.5, float(y0) + 2.0]]);
         inside = build.waiting();
         press +>:Fires:+> inside;
@@ -789,9 +789,9 @@ node PortcullisGate(Prefab) {
         self.title = "Portcullis gate" + (" (" + self.key[4:] + " door)" if self.key else "");
         self.source = E1M5;
         self.district = level_district(E1M5);
-        self.long = dice.between(32, 36);
+        self.long = dice.between(34, 38);
         self.wide = dice.between(16, 18);
-        self.tall = dice.between(18, 20);
+        self.tall = dice.between(30, 34);
         self.shot = dice.chance(0.5);
         self.gate_x = dice.between(14, 16);
         self.low = -12;
@@ -806,7 +806,7 @@ node PortcullisGate(Prefab) {
         dice = build.begin(self);
         mid = self.wide // 2;
         g = self.gate_x;
-        hall = build.room(1, 1, 0, g, self.wide - 1, self.tall, variant=dice.below(3));
+        hall = build.room(1, 1, 0, g, self.wide - 1, 20, variant=dice.below(3));
         outside = build.room(g + 1, 1, 0, self.long - 1, self.wide - 1, self.tall, sky=True);
         build.level(hall, 7);
         build.doorway(hall, self.enter);
@@ -828,7 +828,7 @@ node PortcullisGate(Prefab) {
         # (or by shooting the one on the far bank); steps out of the moat on
         # both banks.
         moat_x = g + 4;
-        far_x = moat_x + 6;
+        far_x = moat_x + 8;
         build.pool(moat_x, 1, -6, far_x, self.wide - 1, 0, 2, False, False);
         for step in range(6) {
             build.solid(moat_x + step, 1, -6, moat_x + step + 1, 3, -step);
