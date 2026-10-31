@@ -21,8 +21,9 @@ palette.
 - `ReactorCatwalks`: a hub. Catwalks across a pit of slime, a second
   catwalk over the first, freight platforms riding between them, a stair
   up from the floor round the pit. Soldiers patrol both levels.
-- `BlueKeyStore`: the key room. A store with a loft along two walls, the
-  key in the loft's corner; taking it opens the closets; a stash.
+- `BlueKeyStore`: the key room. A store cut by racks into three aisles, the
+  middle one flooded and swum, one behind a gate from a switch, a loft across
+  the far room with the key; taking it opens the closets; a stash.
 - `CoreDoors`: the end. Blast doors one after another (each a key's, as a
   gate) down a corridor into the reactor core, the way out on its dais;
   charges go off at each door."""
@@ -32,6 +33,7 @@ import from ..kits { level_district }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush }
 import from .plant_parts { key_doors, open_ways, charges, sparking, stash, crate_pile, squad, keep_box, plat, hurting }
+import from .q2d_parts { wall_x, wall_y, step_ways }
 
 glob WASTE3: str = "q2:waste3";
 
@@ -56,7 +58,7 @@ node SumpGallery(Prefab) {
         self.long = dice.between(26, 30);
         self.wide = dice.between(24, 28);
         self.gallery = 9;
-        self.tall = self.gallery + dice.between(8, 10);
+        self.tall = self.gallery + dice.between(16, 20);
         self.bridge_x = dice.between(10, self.long - 12);
         self.foul = dice.chance(0.3);
         self.climb_lift = dice.chance(0.4);
@@ -91,6 +93,9 @@ node SumpGallery(Prefab) {
         } else {
             stair(build, 2, 1, 0, 0, g, 3);
         }
+        # Walls under the gallery's height halve the floor round the sump.
+        wall_x(build, room, self.long // 2, 1, 7, 0, g - 1, [[2, 5]]);
+        wall_x(build, room, self.long // 2, self.wide - 7, self.wide - 1, 0, g - 1, [[self.wide - 6, self.wide - 2]]);
         # A block in the near high corner, a stash behind a panel in it.
         build.solid(1, self.wide - 6, 0, 6, self.wide - 1, 6);
         stash(build, self.wide - 6, 2, 0, False, -1, Q2_ARMOR);
@@ -210,12 +215,12 @@ node BlowerHall(Prefab) {
         self.long = dice.between(24, 28);
         self.wide = dice.between(18, 20);
         self.duct = dice.between(11, 13);
-        self.tall = self.duct + dice.between(8, 9);
+        self.tall = self.duct + dice.between(14, 17);
         self.blower = dice.chance(0.65);
         self.low = -1;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
-        self.enter = Port(face=2, along=cy, floor=0);
+        self.enter = Port(face=2, along=cy, floor=1);
         self.leaves = [Port(face=0, along=cy, floor=0), Port(face=0, along=cy, floor=self.duct), Port(face=1, along=float(self.long - 4), floor=self.duct), Port(face=3, along=float(self.long // 2 - 2), floor=self.duct // 2)];
         visitor.place(self);
     }
@@ -244,8 +249,14 @@ node BlowerHall(Prefab) {
         } else {
             plat(build, hall, dx - 3, self.wide - 5, dx, self.wide - 2, 0, d);
         }
+        # Walls across the floor make it three rooms, the blower's between the
+        # near hall and the room under the duct, ways through on sills.
+        wall_x(build, hall, 10, 5, self.wide - 1, 0, self.tall, [[cy - 1, cy + 5]]);
+        wall_x(build, hall, 10, 1, 5, 0, m - 1);
+        wall_x(build, hall, dx, 1, self.wide - 1, 0, d - 1, [[cy - 2, cy + 2]]);
+        step_ways(build, self);
         # Crates on the floor that break.
-        crate_pile(build, 8, self.wide - 3, 0, 0, 2);
+        crate_pile(build, 3, self.wide - 3, 0, 0, 2);
         open_ways(build, hall, self);
         mid = build.touch(float(2 + m), 1.0, float(m), float(4 + m), 5.0, float(m + 6));
         squad(build, mid, [[float(self.long) - 4.5, float(cy) + 0.5, float(d)], [float(dx) - 4.0, 3.0, float(m)]], [WASTE3_FOES.pick(dice, self.danger), "monster_gunner"], 180.0);
@@ -275,13 +286,13 @@ node ReactorCatwalks(Prefab) {
         self.long = dice.between(32, 36);
         self.wide = dice.between(28, 32);
         self.upper = dice.between(9, 10);
-        self.tall = self.upper + dice.between(8, 10);
+        self.tall = self.upper + dice.between(16, 20);
         self.freights = dice.between(1, 2);
         self.low = -11;
         self.high = self.tall + 1;
         cx = float(self.long // 2);
         cy = float(self.wide // 2);
-        self.enter = Port(face=2, along=cy, floor=0);
+        self.enter = Port(face=2, along=cy, floor=1);
         self.leaves = [Port(face=0, along=cy, floor=0), Port(face=0, along=cy, floor=self.upper), Port(face=1, along=cx, floor=0), Port(face=3, along=cx + 6.0, floor=0)];
         visitor.place(self);
     }
@@ -312,6 +323,14 @@ node ReactorCatwalks(Prefab) {
             keep_box(build, hall, x, cy + 1, x + 3, cy + 2, 0);
             keep_box(build, hall, x, cy + 1, x + 3, cy + 2, u);
         }
+        # The middle of the cross a step up; walls across the floor round the
+        # pit either side of the cross's arms, arches on sills.
+        build.solid(cx - 1, cy - 1, 0, cx + 2, cy + 2, 1);
+        for line in [cx - 3, cx + 3] {
+            wall_x(build, hall, line, 1, 5, 0, self.tall, [[2, 5]]);
+            wall_x(build, hall, line, self.wide - 5, self.wide - 1, 0, self.tall, [[self.wide - 4, self.wide - 1]]);
+        }
+        step_ways(build, self);
         # A block in the far corner, a stash behind a panel in it.
         build.solid(self.long - 5, self.wide - 5, 0, self.long - 1, self.wide - 1, 6);
         stash(build, self.long - 5, self.wide - 4, 0, True, -1, Q2_ARMOR);
@@ -334,11 +353,12 @@ node ReactorCatwalks(Prefab) {
     }
 }
 
-"""The key room: a store with a loft along two walls, the key in the
-loft's corner."""
+"""The key room: a store cut by racks into three aisles, the middle one
+flooded and swum, the low one behind a gate raised from a switch; beyond them
+a loft across the far room, the key on it."""
 node BlueKeyStore(Prefab) {
     has key: str = "key_silver",
-        hall_wide: int = 18,
+        hall_wide: int = 20,
         loft: int = 6,
         stairs: bool = True;
 
@@ -347,12 +367,12 @@ node BlueKeyStore(Prefab) {
         self.title = "Key store (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = WASTE3;
         self.district = level_district(WASTE3);
-        self.long = dice.between(22, 25);
-        self.hall_wide = dice.between(18, 20);
+        self.long = dice.between(27, 30);
+        self.hall_wide = dice.between(20, 22);
         self.wide = self.hall_wide + 4;
         self.loft = dice.between(6, 7);
         self.stairs = dice.chance(0.6);
-        self.low = -1;
+        self.low = -6;
         self.high = self.loft + 9;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
@@ -363,33 +383,51 @@ node BlueKeyStore(Prefab) {
         build = visitor.build;
         dice = build.begin(self);
         side = self.hall_wide - 1;
-        cy = side // 2;
         f = self.loft;
-        store = build.room(1, 1, 0, self.long - 1, side, f + 8, variant=dice.below(3));
+        top = f + 8;
+        store = build.room(1, 1, 0, self.long - 1, side, top, variant=dice.below(3));
         build.level(store, f);
         build.doorway(store, self.enter);
-        # The loft along the far wall and the low wall.
-        build.solid(self.long - 6, 1, f - 1, self.long - 1, side, f);
-        build.solid(8, 1, f - 1, self.long - 6, 5, f);
-        if self.stairs {
-            stair(build, 8 - f, 1, 0, 0, f, 3);
-        } else {
-            plat(build, store, 5, 1, 8, 4, 0, f);
+        # The racks, floor to roof, between the near room and the far.
+        rx0 = 7;
+        rx1 = self.long - 12;
+        r1 = side // 3 + 1;
+        r2 = side - side // 3 - 1;
+        wall_y(build, store, r1, rx0, rx1 + 1, 0, top);
+        wall_y(build, store, r2, rx0, rx1 + 1, 0, top);
+        # The aisles' mouths on sills; the low aisle's gate raised by the
+        # switch by the door.
+        for x in [rx0, rx1] {
+            wall_x(build, store, x, 1, r1, 0, top, [[3, 6]]);
+            wall_x(build, store, x, r2 + 1, side, 0, top, [[r2 + 2, r2 + 5]]);
         }
-        # The loft's gate at the stair's head, raised by the switch below.
-        gate = build.opened(10.0, 1.0, float(f), 11.0, 5.0, float(f + 5));
-        build.push(1.0, 6.5, 1.5, 0) +>:Fires:+> gate;
-        build.touch(2.0, 1.0, 0.0, 4.0, 5.0, 6.0, True, "The loft's gate is raised from the switch by the stair");
-        # Crates under the loft, a block with a stash.
-        build.solid(10, 6, 0, 14, 10, 6);
-        stash(build, 10, 7, 0, True, -1, "item_adrenaline");
-        crate_pile(build, self.long - 9, side - 3, 0, 2, 2);
-        key_ambush(build, self.key, float(self.long) - 3.0, 3.0, f, side, 0, [3, 9], [WASTE3_FOES.pick(dice, self.danger, True), WASTE3_FOES.pick(dice, self.danger)]);
-        up = build.touch(8.0, 1.0, float(f), 10.0, 5.0, float(f + 6));
-        squad(build, up, [[float(self.long) - 3.5, float(side) - 3.5, float(f)], [5.5, float(side) - 4.5, 0.0]], [WASTE3_FOES.pick(dice, self.danger), "monster_gunner"], 180.0);
-        build.foe(float(self.long) - 9.5, float(cy) + 2.5, 0, "monster_soldier", 180.0, patrol=[[float(self.long) - 9.5, float(cy) + 2.5], [4.5, float(cy) + 2.5]]);
-        build.foe(12.5, 3.0, f, "monster_soldier", 0.0, patrol=[[12.5, 3.0], [float(self.long) - 3.5, 3.0], [float(self.long) - 3.5, float(side) - 3.0]]);
-        sparking(build, dice.uniform(4.0, 6.0), float(self.long) - 1.2, float(cy), float(f) + 2.0, 2);
+        gate = build.opened(float(rx0), 3.0, 1.0, float(rx0 + 1), 6.0, 9.0);
+        build.push(1.0, float(r1) - 0.5, 1.5, 0) +>:Fires:+> gate;
+        build.touch(2.0, float(r1 - 2), 0.0, 4.0, float(r1 + 1), 6.0, True, "The low aisle's gate is raised from the switch by the door");
+        # The middle aisle flooded, a stair up out at each end.
+        build.pool(rx0, r1 + 1, -5, rx1, r2, 0, 2, False, False);
+        stair(build, rx0 + 4, r1 + 1, -5, 2, 5, 2);
+        stair(build, rx1 - 5, r1 + 1, -5, 0, 5, 2);
+        build.foe(float(rx0 + rx1) * 0.5, float(r2) - 1.0, -3, "monster_flipper", 0.0);
+        # The loft across the far room, up a stair or a lift.
+        lx = self.long - 5;
+        build.solid(lx, 1, f - 1, self.long - 1, side, f);
+        if self.stairs {
+            stair(build, lx - 3, 1, 0, 1, f, 3);
+            keep_box(build, store, lx, f - 2, lx + 1, f + 1, f);
+        } else {
+            plat(build, store, lx - 3, side // 2 - 1, lx, side // 2 + 2, 0, f);
+        }
+        # Under the loft, a block with a stash; crates in the low aisle.
+        build.solid(lx, side - 5, 0, self.long - 1, side - 1, f - 1);
+        stash(build, side - 5, lx + 1, 0, False, -1, "item_adrenaline");
+        crate_pile(build, rx0 + 2, 1, 0, 0, 2);
+        key_ambush(build, self.key, float(self.long) - 3.0, 3.0, f, side, 0, [3, rx0 + 2], [WASTE3_FOES.pick(dice, self.danger, True), WASTE3_FOES.pick(dice, self.danger)]);
+        up = build.touch(float(lx), 1.0, float(f), float(lx + 2), float(side), float(f + 6));
+        squad(build, up, [[float(self.long) - 3.5, float(side) - 3.5, float(f)], [float(lx) - 6.0, float(side) - 3.0, 0.0]], [WASTE3_FOES.pick(dice, self.danger), "monster_gunner"], 180.0);
+        build.foe(float(rx0) + 1.5, float(r2) + 3.5, 0, "monster_soldier", 0.0, patrol=[[float(rx0) + 1.5, float(r2) + 3.5], [float(rx1) - 1.5, float(r2) + 3.5]]);
+        build.foe(float(self.long) - 3.5, 6.5, f, "monster_soldier", 90.0, patrol=[[float(self.long) - 3.5, 6.5], [float(self.long) - 3.5, float(side) - 3.0]]);
+        sparking(build, dice.uniform(4.0, 6.0), float(self.long) - 1.2, float(side // 2), float(f) + 2.0, 2);
         build.supply(2.5, float(side) - 2.5, 0, Q2_HEALTH, "q2");
     }
 }
@@ -439,6 +477,9 @@ node CoreDoors(Prefab) {
             through = build.touch(float(dx + 1), float(cy - 3), 0.0, float(dx + 3), float(cy + 3), 6.0);
             charges(build, through, [[float(dx) + 4.0, float(cy) - 2.5, 6.0], [float(dx) + 4.0, float(cy) + 2.5, 6.0]], 0.3);
         }
+        # A step before the first door and at the corridor's end.
+        build.solid(7, cy - 4, 0, 8, cy + 4, 1);
+        build.solid(end_x - 1, cy - 3, 0, end_x, cy + 3, 1);
         # The core: a hall, the way out on the dais at its end.
         core = build.room(end_x, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(core, 5);
