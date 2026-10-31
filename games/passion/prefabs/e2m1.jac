@@ -89,7 +89,7 @@ node InstallationDock(Prefab) {
         self.district = level_district(E2M1);
         self.long = dice.between(28, 32);
         self.wide = dice.between(20, 22);
-        self.tall = dice.between(14, 16);
+        self.tall = dice.between(16, 20);
         self.bridged = dice.chance(0.5);
         self.low = -14;
         self.high = self.tall + 1;
@@ -184,7 +184,7 @@ node FloodedTunnels(Prefab) {
         self.district = level_district(E2M1);
         self.long = dice.between(26, 30);
         self.wide = dice.between(14, 16);
-        self.tall = dice.between(12, 14);
+        self.tall = dice.between(15, 18);
         self.deep = dice.between(8, 9);
         self.walled = dice.chance(0.5);
         self.low = -self.deep - 6;
@@ -261,7 +261,7 @@ node PumpingStation(Prefab) {
         self.district = level_district(E2M1);
         self.long = dice.between(26, 30);
         self.wide = dice.between(22, 26);
-        self.tall = dice.between(19, 22);
+        self.tall = dice.between(24, 28);
         self.walk = dice.between(9, 10);
         self.low = -14;
         self.high = self.tall + 1;
@@ -354,7 +354,7 @@ node Sluice(Prefab) {
         self.district = level_district(E2M1);
         self.long = dice.between(28, 32);
         self.wide = dice.between(18, 20);
-        self.tall = dice.between(18, 20);
+        self.tall = dice.between(23, 27);
         self.broken = dice.chance(0.5);
         self.low = -self.deep - 6;
         self.high = self.tall + 1;
@@ -447,7 +447,7 @@ node LaserCorridor(Prefab) {
         self.district = level_district(E2M1);
         self.long = dice.between(26, 30);
         self.wide = dice.between(13, 15);
-        self.tall = dice.between(12, 14);
+        self.tall = dice.between(15, 18);
         self.jog = dice.chance(0.5);
         self.low = -12;
         self.high = self.tall + 1;
