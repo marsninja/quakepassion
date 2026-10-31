@@ -22,7 +22,8 @@ gold key caged across a pit of the dead. Raised in e3m2's own palette.
 - `ZinHall`: a great hall, a balcony across its far end reached by a
   teleporter in its middle and dropped from; a plate in its floor brings
   ogres in by teleporter and opens a door elsewhere; vaults behind doors
-  that open when shot along its north wall (a hub).
+  that open when shot along its north wall, chapels a step up between
+  buttresses along its south (a hub).
 - `ZinVault`: the key room. A pit of the dead across a vault, a bridge
   over it, a stair (or a lift) out of it at each end, a gallery over it; the key in a cage beyond, its
   bars opened by a button down on the pit's floor; taking the key opens
@@ -339,7 +340,16 @@ node ZinHall(Prefab) {
             build.keep(hall, bx, y, b);
             build.keep(hall, bx - 4, y, 0);
         }
-        clear = [[bx - 5, inner - 6, bx, inner], [0, middle - 3, 5, middle + 3], [self.long // 2 - 5, middle - 3, self.long // 2 + 1, middle + 3], [2, inner - 5, 7, inner], [self.long // 2 - 3, 0, self.long // 2 + 3, 4]];
+        # Chapels a step up between buttresses along the south wall, either
+        # side of the way on there.
+        chapels = [5, self.long // 2 + 3];
+        for at in chapels {
+            build.solid(at, 1, 0, at + 1, 6, 8);
+            build.solid(at + 5, 1, 0, at + 6, 6, 8);
+            build.solid(at + 1, 1, 0, at + 5, 6, 1);
+            build.supply(float(at) + 3.0, 3.5, 1, "item_shells" if at == 5 else "item_health");
+        }
+        clear = [[bx - 5, inner - 6, bx, inner], [0, middle - 3, 5, middle + 3], [self.long // 2 - 5, middle - 3, self.long // 2 + 1, middle + 3], [2, inner - 5, 7, inner], [self.long // 2 - 3, 0, self.long // 2 + 3, 4], [4, 0, 12, 7], [self.long // 2 + 2, 0, self.long // 2 + 10, 7]];
         pillars(build, 5, 4, bx - 1, 5, 0, self.tall, 4, clear);
         pillars(build, 5, inner - 4, bx - 1, inner - 3, 0, self.tall, 4, clear);
         # The plate in the floor's corner: ogres brought in by teleporter,
@@ -348,7 +358,7 @@ node ZinHall(Prefab) {
         late = build.delay(0.5);
         plate +>:Fires:+> late;
         for index in range(dice.between(2, 4)) {
-            late +>:Fires:+> build.summon(1 + (index % 2) * 4, 2 + (index // 2) * 4, -8, "monster_ogre", float(self.long // 2) - 4.5 + float(index) * 3.0, float(middle) + (3.5 if index % 2 == 0 else -3.5), 0, 180.0);
+            late +>:Fires:+> build.summon(1 + (index % 2) * 4, 2 + (index // 2) * 4, -8, "monster_ogre", float(self.long // 2) - 4.5 + float(index) * 3.0, float(middle) + (3.5 if index % 2 == 0 else -1.5), 0, 180.0);
         }
         build.doorway(hall, self.enter);
         for port in self.taken {
@@ -365,12 +375,13 @@ node ZinHall(Prefab) {
         for (index, at) in enumerate([9, self.long // 2 + 2]) {
             vault = build.room(at, inner + 1, 0, at + 3, inner + 4, 6);
             build.widen(vault, at, inner, 0, at + 3, inner + 1, 5);
+            build.solid(at, inner + 1, 0, at + 3, inner + 4, 1);
             e3m2_shot_door(build, float(at), float(inner), 0.0, float(at + 3), float(inner + 1), 5.0);
             if index == 0 {
-                build.secret(float(at), float(inner + 1), 0.0, float(at + 3), float(inner + 4), 3.0);
-                build.supply(float(at) + 1.5, float(inner) + 2.5, 0, "item_armor2");
+                build.secret(float(at), float(inner + 1), 1.0, float(at + 3), float(inner + 4), 4.0);
+                build.supply(float(at) + 1.5, float(inner) + 2.5, 1, "item_armor2");
             } else {
-                build.supply(float(at) + 1.5, float(inner) + 2.5, 0, "item_rockets");
+                build.supply(float(at) + 1.5, float(inner) + 2.5, 1, "item_rockets");
             }
         }
         # What keeps the balcony wakes as the player comes through the
@@ -382,7 +393,7 @@ node ZinHall(Prefab) {
             build.foe(float(self.long) - 3.5, 3.5 + float(index) * (float(inner) - 7.0), b, E3M2_FOES.pick(dice, self.danger, True), 180.0, waits=guard);
         }
         for index in range(dice.between(2, 3)) {
-            build.foe(float(6 + index * 2) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -3.5), 0, E3M2_FOES.pick(dice, self.danger), 0.0, patrol=[[float(6 + index * 2) + 0.5, 6.5], [float(6 + index * 2) + 0.5, float(inner) - 6.5]]);
+            build.foe(float(6 + index * 2) + 0.5, float(middle) + (3.5 if index % 2 == 0 else -1.5), 0, E3M2_FOES.pick(dice, self.danger), 0.0, patrol=[[float(6 + index * 2) + 0.5, 7.5], [float(6 + index * 2) + 0.5, float(inner) - 6.5]]);
         }
         build.supply(float(self.long) - 2.5, float(middle) + 3.5, b, "item_health");
         build.supply(2.5, 2.5, 0, "item_shells");
