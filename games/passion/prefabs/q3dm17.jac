@@ -3,19 +3,20 @@ islands floating in two tiers over a black void under the stars, thrown
 between by jump pads, the railgun on a ledge high over everything, the
 red armor on an island of its own. Quake III's arenas hold no foes of
 their own; q3dm17's are wizard, army, hell_knight. Raised in q3dm17's own
-palette. The void's floor burns whoever falls, and teleporters on it send
-them back up to where the stretch was entered.
+palette. The sky stands far overhead and the void falls too far to reckon
+on; its floor burns whoever falls, and teleporters on it send them back up
+to where the stretch was entered. Long pads lead back over it.
 
 - `YardBase`: the start. An end base floating over the void: a deck, a
   balcony over the way in with a stair up a side wall, and a pad from the
   deck's lip over the void to the outer platform (or to an island and on
-  from it); from the balcony, by the seed, the yard's long pad throws a
-  body right over the deck to the outer platform. Foes come out on the
-  outer platform a moment after the player lands there.
+  from it), and one back; from the balcony, by the seed, the yard's long pad
+  throws a body right over the deck to the outer platform. Foes come out on
+  the outer platform a moment after the player lands there.
 - `LongestYard`: the runway. A long, thin deck out over the void between
-  the near and far ledges, a pad at each end; by the seed a high deck
-  crosses over the runway near its start (a pad from the near ledge up to
-  it, drops from it back to the runway) with ways on at both its ends.
+  the near and far ledges, pads each way at both ends; by the seed a high
+  deck crosses over the runway near its start (a pad from the near ledge up
+  to it, drops from it back to the runway) with ways on at both its ends.
 - `RailSpire`: a deck floating over the void, the railgun's ledge high
   over its far end; a pad throws a body straight up to the ledge (and, by
   the seed, another by way of a perch hung over the deck, or a teleporter
@@ -45,6 +46,7 @@ import from ..kits { level_district }
 import from .common { stair, key_ambush, lift }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3late_parts { deck, keep_box, void_floor, throw, wake_later }
+import from .q3open_parts { OPEN_AIR, VOID_DROP }
 
 glob Q3DM17: str = "q3:q3dm17",
      Q3DM17_LIGHT: list[str] = ["monster_wizard", "monster_army"],
@@ -79,8 +81,8 @@ node YardBase(Prefab) {
         gap = 14 if self.island else dice.between(7, 8);
         self.long = self.lip_x + gap + 7;
         self.wide = dice.between(18, 20);
-        self.deep = dice.between(10, 12);
-        self.tall = self.upper + 10;
+        self.deep = VOID_DROP + dice.between(0, 2);
+        self.tall = self.upper + OPEN_AIR;
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -130,6 +132,8 @@ node YardBase(Prefab) {
             # The yard's long pad: from the balcony right over the deck.
             throw(build, yard, 3.5, py + 3.0, self.upper, float(self.long) - 3.0, py + 2.0, self.outer, [6, middle + 1, 7, middle + 5], [ox, middle + 1, ox + 1, middle + 5]);
         }
+        # The pad back from the outer platform over the void to the deck.
+        throw(build, yard, float(ox) + 3.0, py - 3.5, self.outer, float(self.lip_x) - 5.5, py - 3.5, 0, [ox, middle - 4, ox + 1, middle - 2], [self.lip_x - 1, middle - 4, self.lip_x, middle - 2]);
         void_floor(build, 1, 1, self.long - 1, self.wide - 1, low, 3.5, py, 0, 0.0);
         build.doorway(yard, self.enter);
         for port in self.taken {
@@ -169,16 +173,16 @@ node LongestYard(Prefab) {
         self.title = "Longest yard";
         self.source = Q3DM17;
         self.district = level_district(Q3DM17);
-        self.long = dice.between(40, 44);
+        self.long = dice.between(44, 48);
         self.wide = dice.between(18, 22);
-        self.deep = dice.between(10, 12);
+        self.deep = VOID_DROP + dice.between(0, 2);
         self.cross = dice.chance(0.5);
         self.run_z = [0, 2, 4][dice.below(3)];
         self.far_z = self.run_z + [0, 2][dice.below(2)];
         self.cross_z = self.run_z + dice.between(9, 10);
         self.lane = dice.between(3, self.wide - 8);
         self.cx = 19 + dice.between(0, 1);
-        self.tall = max(self.cross_z, self.far_z) + 11;
+        self.tall = max(self.cross_z, self.far_z) + OPEN_AIR;
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -229,6 +233,13 @@ node LongestYard(Prefab) {
             build.foe(float(self.cx) + 0.5, float(self.wide) - side_y, self.cross_z, YARD_FOES.pick(dice, self.danger, True), 180.0);
             build.supply(float(self.cx) + 0.5, side_y + (2.0 if side_y < 5.0 else -2.0), self.cross_z, "weapon_rocketlauncher", "q3");
         }
+        # The way back: a pad from the far ledge, beside the runway's line,
+        # to the runway's end, and one along it to the near ledge.
+        back_y = float(self.lane) + 6.5 if self.lane + 8 < self.wide else float(self.lane) - 1.5;
+        back_lo = min(self.lane, int(back_y) - 1);
+        back_hi = max(self.lane + 5, int(back_y) + 2);
+        throw(build, yard, float(far) + 3.0, back_y, self.far_z, float(r1) - 6.0, ry, self.run_z, [far, back_lo, far + 1, back_hi], [r1 - 1, self.lane, r1, self.lane + 5]);
+        throw(build, yard, float(r0) + 4.5, ry + 1.5, self.run_z, float(near) - 4.5, ry + 1.5, 0, [r0, self.lane, r0 + 1, self.lane + 5], [near - 1, self.lane, near, self.lane + 5]);
         void_floor(build, 1, 1, self.long - 1, self.wide - 1, low, 3.5, float(middle) + 0.5, 0, 0.0);
         build.doorway(yard, self.enter);
         for port in self.taken {
@@ -267,12 +278,12 @@ node RailSpire(Prefab) {
         self.district = level_district(Q3DM17);
         self.long = dice.between(26, 30);
         self.wide = dice.between(20, 22);
-        self.deep = dice.between(10, 12);
+        self.deep = VOID_DROP + dice.between(0, 2);
         self.rail = dice.between(15, 18);
         self.perch = dice.chance(0.5);
         self.tele = dice.chance(0.5);
         self.side = dice.below(2);
-        self.tall = self.rail + 10;
+        self.tall = self.rail + OPEN_AIR;
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -360,12 +371,12 @@ node BounceIsles(Prefab) {
         self.isles = dice.between(3, 4);
         self.long = 10 + 8 * self.isles + 8;
         self.wide = dice.between(20, 22);
-        self.deep = dice.between(10, 12);
+        self.deep = VOID_DROP + dice.between(0, 2);
         self.first_side = dice.below(2);
         self.catwalk = dice.chance(0.6);
         top = 7 + 2 * (self.isles - 1);
         self.far_z = top - [0, 4][dice.below(2)];
-        self.tall = top + 11;
+        self.tall = top + OPEN_AIR;
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -465,11 +476,11 @@ node YardHub(Prefab) {
         self.district = level_district(Q3DM17);
         self.long = dice.between(34, 38);
         self.wide = dice.between(30, 32);
-        self.deep = dice.between(10, 12);
+        self.deep = VOID_DROP + dice.between(0, 2);
         self.bridge = dice.between(10, 12);
         self.cx = self.long // 2 + dice.between(-2, 2);
         self.island_side = dice.below(2);
-        self.tall = self.bridge + 11;
+        self.tall = self.bridge + OPEN_AIR;
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -561,10 +572,10 @@ node ArmorFloat(Prefab) {
         self.long = dice.between(28, 30);
         self.hall_wide = dice.between(20, 22);
         self.wide = self.hall_wide + 4;
-        self.deep = dice.between(9, 11);
+        self.deep = VOID_DROP + dice.between(0, 2);
         self.first = dice.below(2);
         self.over = dice.chance(0.5);
-        self.tall = 24;
+        self.tall = 13 + OPEN_AIR;
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -631,10 +642,10 @@ node VoidPortal(Prefab) {
         self.district = level_district(Q3DM17);
         self.long = dice.between(32, 34);
         self.wide = dice.between(18, 20);
-        self.deep = dice.between(9, 11);
+        self.deep = VOID_DROP + dice.between(0, 2);
         self.dais = dice.between(4, 6);
         self.stones = dice.chance(0.5);
-        self.tall = self.dais + 12;
+        self.tall = self.dais + OPEN_AIR;
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
