@@ -36,6 +36,7 @@ import from ..kits { level_district }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush }
 import from .plant_parts { key_doors, open_ways, charges, sparking, shelling, stash, crate_pile, squad, keep_box, plat, port_door, hurting, laser, quake }
+import from .q2floors_parts { sunken }
 
 glob POWER2: str = "q2:power2";
 
@@ -63,7 +64,7 @@ node ReactorLobby(Prefab) {
         self.twin = dice.chance(0.5);
         self.pit = dice.chance(0.7);
         self.low = -5;
-        self.high = self.tall + 1;
+        self.high = self.tall + 16;
         cy = float(self.wide // 2);
         self.enter = Port(face=2, along=cy, floor=0);
         self.leaves = [Port(face=0, along=cy, floor=0), Port(face=0, along=cy, floor=self.balcony), Port(face=1, along=float(self.long - 4), floor=self.balcony), Port(face=3, along=6.0, floor=0)];
@@ -79,6 +80,8 @@ node ReactorLobby(Prefab) {
         build.level(lobby, b);
         # The control balcony across the far end, its stairs up the walls.
         bx = self.long - 8;
+        # The floor along the low wall a step down.
+        sunken(build, lobby, 5, 1, bx - b - 1, cy - 4, 0);
         build.solid(bx, 1, b - 1, self.long - 1, self.wide - 1, b);
         stair(build, bx - b, 1, 0, 0, b, 3);
         if self.twin {
@@ -92,7 +95,7 @@ node ReactorLobby(Prefab) {
                 build.pool(x0, cy - 3, -4, x1, cy + 4, 0, 3, False, True, True);
                 hurting(build, float(x0), float(cy - 3), -4.0, float(x1), float(cy + 4), -1.0, 10);
                 walk_x = (x0 + x1) // 2 - 1;
-                build.solid(walk_x, cy - 3, -1, walk_x + 3, cy + 4, 0);
+                build.solid(walk_x, cy - 3, -1, walk_x + 3, cy + 4, 1);
                 keep_box(build, lobby, walk_x, cy - 4, walk_x + 3, cy + 5, 0);
             }
         }
@@ -150,13 +153,13 @@ node CoolantChannel(Prefab) {
         self.long = dice.between(30, 36);
         self.wide = dice.between(19, 22);
         self.gantry = dice.between(9, 10);
-        self.tall = self.gantry + dice.between(8, 10);
+        self.tall = self.gantry + dice.between(16, 20);
         self.deep = 6;
         self.slime = dice.chance(0.5);
         self.bridge_x = dice.between(self.long // 2 - 3, self.long - 9);
         self.drawn_x = dice.between(8, self.bridge_x - 6) if dice.chance(0.6) and self.bridge_x - 6 >= 8 else 0;
         self.low = -self.deep - 1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 16;
         self.enter = Port(face=2, along=3.5, floor=0);
         self.leaves = [Port(face=0, along=3.5, floor=0), Port(face=0, along=float(self.wide) - 3.0, floor=self.gantry), Port(face=1, along=float(self.long - 8), floor=0), Port(face=3, along=float(self.long - 8), floor=0)];
         visitor.place(self);
@@ -169,6 +172,9 @@ node CoolantChannel(Prefab) {
         g = self.gantry;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, g);
+        # Stretches of both walks a step down.
+        sunken(build, hall, 12, cy + 4, self.long - 1, self.wide - 1, 0);
+        sunken(build, hall, 8, 1, self.long - 11, cy - 4, 0);
         # The channel down the middle, its steps up at the near end.
         code = 3 if self.slime else 2;
         build.pool(1, cy - 3, -self.deep, self.long - 1, cy + 3, 0, code, False, True, True);
@@ -177,7 +183,7 @@ node CoolantChannel(Prefab) {
             hurting(build, float(self.long // 2), float(cy - 3), float(-self.deep), float(self.long - 1), float(cy + 3), -1.0, 8);
         }
         # The bridge across, and the one a button draws out.
-        build.solid(self.bridge_x, cy - 3, -1, self.bridge_x + 3, cy + 3, 0);
+        build.solid(self.bridge_x, cy - 3, -1, self.bridge_x + 3, cy + 3, 1);
         keep_box(build, hall, self.bridge_x, cy - 4, self.bridge_x + 3, cy + 4, 0);
         if self.drawn_x > 0 {
             press = build.push(float(self.drawn_x) + 4.5, 1.0, 1.2, 1);
@@ -197,7 +203,7 @@ node CoolantChannel(Prefab) {
         squad(build, up, [[float(self.long) - 4.5, float(self.wide) - 3.0, float(g)]], [POWER2_FOES.pick(dice, self.danger, True)], 180.0);
         sparking(build, dice.uniform(3.0, 5.0), float(self.long) - 1.2, float(cy) - 4.0, 2.5, 2);
         sparking(build, dice.uniform(4.0, 6.0), 11.5, float(self.wide) - 5.2, float(g) - 2.0, 3);
-        crate_pile(build, 13, self.wide - 3, 0, 0, 2);
+        crate_pile(build, 13, self.wide - 3, -1, 0, 2);
         for index in range(dice.between(2, 3)) {
             build.foe(float(self.long // 2 + index * 4) + 0.5, float(cy) + (4.5 if index % 2 == 0 else -4.5), 0, POWER2_FOES.pick(dice, self.danger), 180.0);
         }
@@ -224,14 +230,14 @@ node CoreChamber(Prefab) {
         self.long = dice.between(32, 35);
         self.wide = dice.between(30, 33);
         self.gallery = dice.between(9, 10);
-        self.tall = self.gallery + dice.between(10, 12);
+        self.tall = self.gallery + dice.between(18, 22);
         self.wrap = dice.chance(0.5);
         self.bridges = [2] + [face for face in [0, 1, 3] if dice.chance(0.55)];
         if len(self.bridges) == 1 {
             self.bridges.append(0);
         }
         self.low = -4;
-        self.high = self.tall + 1;
+        self.high = self.tall + 16;
         cy = float(self.wide // 2);
         self.enter = Port(face=2, along=cy, floor=0);
         self.leaves = [Port(face=0, along=cy, floor=0), Port(face=0, along=float(self.wide - 8), floor=self.gallery), Port(face=3, along=float(self.long // 2 - 8), floor=0)];
@@ -251,6 +257,11 @@ node CoreChamber(Prefab) {
         g = self.gallery;
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(hall, g);
+        # The floor either side of the moat a step down; the core's platform
+        # a step up.
+        sunken(build, hall, 1, cy - 7, cx - 8, cy + 7, 0);
+        sunken(build, hall, cx + 8, cy - 7, self.long - 1, cy + 7, 0);
+        build.solid(cx - 4, cy - 4, 0, cx + 4, cy + 4, 1);
         # The moat: four strips of slime round the core's platform.
         strips = [[cx - 7, cy - 7, cx + 7, cy - 4], [cx - 7, cy + 4, cx + 7, cy + 7], [cx - 7, cy - 4, cx - 4, cy + 4], [cx + 4, cy - 4, cx + 7, cy + 4]];
         for strip in strips {
@@ -306,11 +317,11 @@ node CoreChamber(Prefab) {
         pulse +>:Fires:+> build.sparks(float(cx) - 2.2, float(cy) + 1.5, 2.0, 2);
         pulse +>:Fires:+> build.sparks(float(cx) + 2.2, float(cy) - 1.5, 2.0, 0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx - 3 + index * 3) + 0.5, float(cy) + 3.0, 0, POWER2_FOES.pick(dice, self.danger), 270.0);
+            build.foe(float(cx - 3 + index * 3) + 0.5, float(cy) + 3.0, 1, POWER2_FOES.pick(dice, self.danger), 270.0);
         }
         build.foe(float(self.long) - 3.0, 4.5, g, "monster_gunner", 90.0, patrol=[[float(self.long) - 3.0, 4.5], [float(self.long) - 3.0, float(self.wide) - 4.5]]);
         build.foe(float(cx) + 0.5, float(cy) + 9.5, 6, "monster_flyer", 270.0);
-        build.supply(float(cx) - 3.0, float(cy) - 3.0, 0, Q2_HEALTH, "q2");
+        build.supply(float(cx) - 3.0, float(cy) - 3.0, 1, Q2_HEALTH, "q2");
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, g, "ammo_cells", "q2");
         build.supply(3.0, 3.0, 0, "ammo_rockets", "q2");
     }
@@ -339,8 +350,8 @@ node VentShaft(Prefab) {
         self.flip = dice.chance(0.4);
         self.pads = dice.chance(0.65);
         self.freight = dice.chance(0.5);
-        self.low = -1;
-        self.high = self.tall + 1;
+        self.low = -2;
+        self.high = self.tall + 16;
         cy = float(self.wide // 2);
         if self.flip {
             # Entered at the top, left at the foot.
@@ -363,6 +374,7 @@ node VentShaft(Prefab) {
         shaft = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(shaft, f1);
         build.level(shaft, f2);
+        sunken(build, shaft, 6, 1, open_x - 1, self.wide - 5, 0);
         if not self.flip {
             # The first floor over the near end, the second over the far.
             build.solid(1, 1, f1 - 1, open_x, self.wide - 1, f1);
@@ -438,7 +450,7 @@ node DataVault(Prefab) {
         self.tall = self.mezzanine + 8;
         self.stairs = dice.chance(0.5);
         self.low = -1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 16;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -500,7 +512,7 @@ node MeltdownRun(Prefab) {
         self.bend = dice.chance(0.5);
         self.raised = dice.chance(0.5);
         self.low = -self.deep - 1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 16;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -568,7 +580,6 @@ glob POWER2_STRETCHES: list[list[str]] = [
          ["channel", "flow"],
          ["vents", "flow"],
          ["core", "hub"],
-         ["channel", "hub"],
          ["vault", "keyroom"],
          ["meltdown", "end"],
          ["meltdown", "gate"]
