@@ -5,16 +5,16 @@ the way through, settling tanks under a cross of catwalks, the waste
 office, the stair down to the pumping stations. Raised in waste1's own
 palette.
 
-- `DumpYard`: the start. A yard under the sky, slime pits in it, a loading
+- `DumpYard`: the start. A yard open high to the sky, broad slime pits in it, a loading
   canopy over the far end whose roof is walked, up a stair or a lift. The
   help computer gives the mission (waste1's pumping stations); guards
   appear on the roof as the player crosses; a soldier walks the yard; a
   stash in a block behind a panel.
-- `SlimeCanyon`: a canyon across a river of slime, a low bridge over it
+- `SlimeCanyon`: a canyon open to the sky across a broad river of slime, a low bridge over it
   and a high walk between ledges at both ends, lifts up to them. Crossing
   the low bridge sets off the drums in the river and brings guards onto
   the far ledge.
-- `PipeGallery`: a pipe walk high across a gallery over a slime trench,
+- `PipeGallery`: a pipe walk high across a gallery over a broad slime trench,
   the way through passing under it on a low bridge, a stair up beside it,
   sometimes a mezzanine joined to it along the far wall.
 - `SettlingTanks`: a hub. Four sunk tanks of slime, walks between them,
@@ -53,9 +53,9 @@ node DumpYard(Prefab) {
         self.long = dice.between(30, 34);
         self.wide = dice.between(24, 28);
         self.roof = dice.between(9, 10);
-        self.tall = self.roof + dice.between(10, 12);
+        self.tall = self.roof + dice.between(26, 30);
         self.climb_lift = dice.chance(0.4);
-        self.second = dice.chance(0.6);
+        self.second = dice.chance(0.85);
         self.low = -4;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
@@ -83,9 +83,9 @@ node DumpYard(Prefab) {
             stair(build, cx0 - r, self.wide - 4, 0, 0, r, 3);
         }
         # The slime pits.
-        build.pool(6, 2, -3, 12, 8, 0, 3);
+        build.pool(6, 2, -4, 17, 9, 0, 3);
         if self.second {
-            build.pool(14, self.wide - 10, -3, 20, self.wide - 5, 0, 3);
+            build.pool(8, self.wide - 11, -4, 18, self.wide - 5, 0, 3);
         }
         # A block in the near corner, a stash behind a panel in it.
         build.solid(1, self.wide - 6, 0, 5, self.wide - 1, 6);
@@ -135,8 +135,8 @@ node SlimeCanyon(Prefab) {
         self.long = dice.between(30, 34);
         self.wide = dice.between(18, 22);
         self.high_walk = dice.between(11, 14);
-        self.tall = self.high_walk + dice.between(8, 10);
-        self.river = dice.between(5, 7);
+        self.tall = self.high_walk + dice.between(22, 26);
+        self.river = min(dice.between(10, 13), self.long - 20);
         cy = self.wide // 2;
         self.low_y = dice.between(4, self.wide - 7);
         self.low_y = min(self.low_y, self.wide - 9) if dice.chance(0.5) else self.low_y;
@@ -201,12 +201,12 @@ node PipeGallery(Prefab) {
         self.title = "Pipe gallery";
         self.source = WASTE1;
         self.district = level_district(WASTE1);
-        self.long = dice.between(26, 30);
+        self.long = dice.between(28, 32);
         self.wide = dice.between(24, 28);
         self.walk = dice.between(9, 13);
-        self.tall = self.walk + dice.between(8, 10);
-        self.pipe_x = dice.between(9, self.long - 15);
-        self.trench = dice.chance(0.65);
+        self.tall = self.walk + dice.between(16, 22);
+        self.pipe_x = dice.between(12, self.long - 15);
+        self.trench = dice.chance(0.85);
         self.mezzanine = dice.chance(0.6);
         self.low = -5;
         self.high = self.tall + 1;
@@ -235,9 +235,10 @@ node PipeGallery(Prefab) {
         stair(build, px + 4, 1, 0, 1, h, 3);
         if self.trench {
             # The slime trench under the walk, the way through bridging it.
-            build.pool(px, 5, -4, px + 4, self.wide - 5, 0, 3);
-            build.solid(px, cy - 2, -1, px + 4, cy + 2, 0);
-            keep_box(build, hall, px - 1, cy - 2, px + 5, cy + 2, 0);
+            tx = 6;
+            build.pool(tx, 4, -4, px + 4, self.wide - 4, 0, 3);
+            build.solid(tx, cy - 2, -1, px + 4, cy + 2, 0);
+            keep_box(build, hall, tx - 1, cy - 2, px + 5, cy + 2, 0);
         }
         if self.mezzanine {
             # A mezzanine along the far wall, joined to the walk along the
@@ -283,11 +284,11 @@ node SettlingTanks(Prefab) {
         self.long = dice.between(32, 36);
         self.wide = dice.between(30, 34);
         self.walk = dice.between(9, 10);
-        self.tall = self.walk + dice.between(9, 11);
+        self.tall = self.walk + dice.between(24, 28);
         self.tanks = [True, True, True, True];
         self.booth = dice.below(4);
         self.tanks[self.booth] = False;
-        self.tanks[(self.booth + 1 + dice.below(3)) % 4] = dice.chance(0.6);
+        self.tanks[(self.booth + 1 + dice.below(3)) % 4] = dice.chance(0.8);
         self.climb = dice.below(3);
         self.low = -5;
         self.high = self.tall + 1;
@@ -304,7 +305,7 @@ node SettlingTanks(Prefab) {
         cx = self.long // 2;
         cy = self.wide // 2;
         h = self.walk;
-        yard = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        yard = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(yard, h);
         # The tanks: four pools of slime in a square round the walks.
         tw = cx - 8;
