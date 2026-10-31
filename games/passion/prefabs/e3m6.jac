@@ -19,12 +19,13 @@ e3m6's own palette.
   pit's floor walked by hell knights, a stair up its near wall and a lift
   (or a platform riding up and down) at its far wall.
 - `SpikeCage`: a tall chamber, galleries round three of its walls climbed
-  to by a stair or a lift; spikes fly across the floor and along the
+  to by a stair or a lift, its floor three rooms through arches, the middle
+  one sunk; spikes fly across the floor and along the
   galleries while anyone is in its middle (e3m6's cage of shooters); a
   button high on the far wall, shot, opens a niche on the gallery (a
   secret) where hell knights wait.
-- `ButtonHall`: a hall, a balcony along its far wall, a pit sunk in a
-  corner; three buttons, on the balcony, down in the pit and in an alcove
+- `ButtonHall`: a hall divided by a wall with an arch, a balcony along its
+  far wall, a pit sunk in a corner; three buttons, on the balcony, down in the pit and in an alcove
   of the floor, counted together open the bars across the ways on ("These
   bars are opened elsewhere"); a hub.
 - `TormentPillar`: the key room. The key on a pillar in a pit, reached by
@@ -39,6 +40,7 @@ import from ..kits { level_district }
 import from .roster { FoeMix }
 import from .common { stair, pillars, key_ambush, lift }
 import from .e3m5 { keep_run, sealed_way, bursting }
+import from .e3_parts { cross_wall, sunken }
 
 glob E3M6: str = "q1:e3m6";
 
@@ -68,7 +70,7 @@ node TormentYard(Prefab) {
         self.district = level_district(E3M6);
         self.long = dice.between(26, 30);
         self.wide = dice.between(19, 22);
-        self.tall = dice.between(15, 17);
+        self.tall = dice.between(21, 25);
         self.sunk = dice.between(6, 7);
         self.climb = dice.below(2);
         self.closets = dice.between(1, 2);
@@ -165,10 +167,10 @@ node TormentBridge(Prefab) {
         self.title = "Torment bridge";
         self.source = E3M6;
         self.district = level_district(E3M6);
-        self.long = dice.between(28, 32);
+        self.deep = dice.between(15, 18);
+        self.long = dice.between(28, 32) + self.deep - 11;
         self.wide = dice.between(15, 17);
-        self.deep = dice.between(10, 12);
-        self.tall = dice.between(11, 13);
+        self.tall = dice.between(15, 18);
         self.island = dice.chance(0.5);
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
@@ -241,7 +243,7 @@ node TormentBridge(Prefab) {
             build.foe(float(x1) + 3.5, 3.5 + float(index) * 4.0, 0, E3M6_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
         build.foe(float(m) + 0.5, float(middle) + 3.5, 3, "monster_wizard", 180.0, waits=guard);
-        build.supply(float(x0 + 13) + 0.5, 3.0, low, "item_health");
+        build.supply(float(x0 + self.deep + 2) + 0.5, 3.0, low, "item_health");
         build.supply(float(long) - 2.5, 2.5, 0, "item_spikes");
     }
 }
@@ -259,10 +261,10 @@ node TrainPit(Prefab) {
         self.title = "Train pit";
         self.source = E3M6;
         self.district = level_district(E3M6);
-        self.long = dice.between(28, 32);
+        self.deep = dice.between(12, 14);
+        self.long = dice.between(28, 32) + self.deep - 9;
         self.wide = dice.between(16, 18);
-        self.deep = dice.between(8, 10);
-        self.tall = dice.between(13, 15);
+        self.tall = dice.between(18, 21);
         self.fired = dice.chance(0.5);
         self.riser = dice.chance(0.4);
         self.low = -self.deep - 1;
@@ -349,7 +351,7 @@ node SpikeCage(Prefab) {
         self.long = dice.between(24, 28);
         self.wide = dice.between(16, 18);
         self.gallery = dice.between(9, 10);
-        self.tall = self.gallery + dice.between(9, 11);
+        self.tall = self.gallery + dice.between(17, 20);
         self.climb = dice.below(2);
         self.niche = dice.chance(0.7);
         self.low = -9;
@@ -390,13 +392,18 @@ node SpikeCage(Prefab) {
         }
         # Drops from the north gallery to the floor.
         keep_run(build, cage, 10, wide - 6, 13, wide - 5, g);
+        # The floor in three rooms, walls with arches under the galleries'
+        # ends, the middle one sunk where the spikes fly over.
+        cross_wall(build, 8, 5 if self.climb == 0 else 1, wide - 1, 0, g - 1, mid - 2);
+        cross_wall(build, long - 8, 1, wide - 1, 0, g - 1, mid - 2);
+        sunken(build, cage, 10, 6, long - 9, wide - 6, 0, 2);
         # The cage of spikes: shooters along both walls at the floor and
         # down the galleries from the west, firing while anyone is in the
         # chamber's middle.
         zone = build.touch(7.0, 1.0, 0.0, float(long - 8), float(wide - 1), float(g + 5), False);
-        for x in range(9, long - 9, 4) {
-            zone +>:Fires:+> build.spikes(float(x) + 0.5, 1.2, 2.5, 1);
-            zone +>:Fires:+> build.spikes(float(x) + 2.5, float(wide) - 1.2, 2.5, 3);
+        for x in range(9, long - 11, 4) {
+            zone +>:Fires:+> build.spikes(float(x) + 0.5, 1.2, 1.2, 1);
+            zone +>:Fires:+> build.spikes(float(x) + 2.5, float(wide) - 1.2, 1.2, 3);
         }
         zone +>:Fires:+> build.spikes(float(start) + 0.2, 3.0, float(g) + 2.5, 0);
         zone +>:Fires:+> build.spikes(8.2, float(wide) - 3.0, float(g) + 2.5, 0);
@@ -452,9 +459,9 @@ node ButtonHall(Prefab) {
         self.wide = dice.between(22, 26);
         self.balcony = dice.between(7, 8);
         self.pit = dice.between(5, 7);
-        self.tall = self.balcony + dice.between(9, 11);
+        self.tall = self.balcony + dice.between(18, 22);
         self.climb = dice.below(2);
-        self.alcove_x = dice.between(6, 12);
+        self.alcove_x = dice.between(5, 8);
         self.low = -self.pit - 2;
         self.high = self.tall + 1;
         b = self.balcony;
@@ -495,6 +502,8 @@ node ButtonHall(Prefab) {
         build.widen(hall, px0, 1, low, long - 1, 9, 0);
         stair(build, px0 + self.pit - 1, 6, low, 2, self.pit, 3);
         keep_run(build, hall, px0 - 1, 6, px0, 9, 0);
+        # A wall across the hall under the balcony's height, an arch in it.
+        cross_wall(build, 13, 1, wide - 1, 0, b - 1, wide - 12);
         # The three buttons, counted together.
         count = build.tally(3, "The bars are open");
         build.push(float(long // 2) + 0.5, float(wide - 1), float(b) + 1.2, 3) +>:Fires:+> count;
@@ -520,8 +529,8 @@ node ButtonHall(Prefab) {
         build.foe(float(long) - 3.5, 7.5, low, E3M6_FOES.pick(dice, self.danger, True), 180.0, waits=pit_guard);
         build.foe(float(px0) + 2.5, 2.5, low, E3M6_FOES.pick(dice, self.danger), 0.0, waits=pit_guard);
         rounds(build, "monster_ogre", 3.5, float(wide) - 3.5, float(long) - 3.5, float(wide) - 3.5, b);
-        rounds(build, "monster_hell_knight", 12.5, float(bal_y) - 3.5, float(long) - 4.5, float(bal_y) - 3.5, 0);
-        rounds(build, E3M6_FOES.pick(dice, self.danger), 3.5, 11.5, float(px0) - 3.5, 11.5, 0);
+        rounds(build, "monster_hell_knight", 15.5, float(bal_y) - 3.5, float(long) - 4.5, float(bal_y) - 3.5, 0);
+        rounds(build, E3M6_FOES.pick(dice, self.danger), 3.5, 3.5, 11.5, 3.5, 0);
         build.foe(float(long // 2) + 0.5, float(wide // 2) + 0.5, 6, "monster_wizard", 90.0);
         build.supply(3.5, float(wide) - 2.5, b, "item_rockets");
         build.supply(float(long) - 2.5, 2.5, low, "item_health");
@@ -545,8 +554,8 @@ node TormentPillar(Prefab) {
         self.long = dice.between(22, 24);
         self.hall_wide = dice.between(17, 19);
         self.wide = self.hall_wide + 4;
-        self.deep = dice.between(7, 9);
-        self.tall = dice.between(13, 15);
+        self.deep = dice.between(11, 13);
+        self.tall = dice.between(18, 21);
         self.drawn_in = dice.chance(0.5);
         self.low = -2 * self.deep - 4;
         self.high = self.tall + 1;
@@ -616,7 +625,7 @@ node TormentExit(Prefab) {
         self.long = dice.between(30, 33);
         self.wide = dice.between(16, 18);
         self.balcony = dice.between(7, 8);
-        self.tall = self.balcony + dice.between(8, 10);
+        self.tall = self.balcony + dice.between(14, 18);
         self.shot = dice.chance(0.5);
         self.low = -9;
         self.high = self.tall + 1;
