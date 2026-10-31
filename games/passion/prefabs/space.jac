@@ -24,8 +24,10 @@ space's own palette.
   heights up plats, bridges to the core; four couplings shot out on its
   faces disable it, the station powers down section by section and the
   doors on open one after another. A hub.
-- `ControlRoom`: the key on the control deck up a lift or a stair;
-  taking it opens the closets and brings in the flyers.
+- `ControlRoom`: a ring of walkway round a pit, the key on a pod in the
+  pit's middle: a lift rides up to it from the pit's floor, and in some
+  seeds a console on the far wall draws out a bridge to it; taking it opens
+  the closets and brings in the flyers.
 - `ShuttlePort`: the end. A door (a key's, as a gate) into the shuttle's
   bay, a ramp up into the shuttle's cabin and the way out in it."""
 import from ..random { Stream }
@@ -221,7 +223,7 @@ node SolarArray(Prefab) {
         self.wide = dice.between(22, 24);
         self.deep = dice.between(14, 16);
         self.panel = dice.chance(0.7);
-        self.tall = 20;
+        self.tall = 48;
         self.low = -self.deep - 2;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide - 5), floor=0);
@@ -300,7 +302,7 @@ node DishArray(Prefab) {
         self.long = dice.between(26, 28);
         self.wide = dice.between(24, 26);
         self.walk = 8;
-        self.tall = 24;
+        self.tall = 48;
         self.low = -9;
         self.high = self.tall + 1;
         cy = self.wide // 2;
@@ -472,12 +474,13 @@ node PowerCore(Prefab) {
     }
 }
 
-"""The key on the control deck up a lift or a stair; taking it opens the
-closets and brings in the flyers."""
+"""A ring of walkway round a pit, the key on a pod in the pit's middle: a
+lift from the pit's floor rides up beside it, and in some seeds the far
+wall's console draws out a bridge to it; taking the key opens the closets and
+brings in the flyers."""
 node ControlRoom(Prefab) {
     has key: str = "key_silver",
-        hall_wide: int = 16,
-        level: int = 7,
+        hall_wide: int = 18,
         by_lift: bool = False,
         tall: int = 16;
 
@@ -486,10 +489,9 @@ node ControlRoom(Prefab) {
         self.title = "Control room (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = SPACE;
         self.district = level_district(SPACE);
-        self.long = dice.between(22, 24);
-        self.hall_wide = dice.between(16, 18);
+        self.long = dice.between(24, 26);
+        self.hall_wide = dice.between(19, 21);
         self.wide = self.hall_wide + 4;
-        self.level = 7;
         self.by_lift = dice.chance(0.5);
         self.tall = 16;
         self.low = -9;
@@ -505,28 +507,48 @@ node ControlRoom(Prefab) {
         side = self.hall_wide - 1;
         cy = side // 2;
         room = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3));
-        build.level(room, self.level);
+        build.level(room, -7);
         build.doorway(room, self.enter);
-        dx = self.long - 9;
-        deck(build, dx, 1, self.long - 1, side, self.level);
-        build.solid(self.long - 2, 3, self.level, self.long - 1, side - 2, self.level + 2);
+        # The pit, the ring of walkway left round it, the pod on its stalk in
+        # the middle, a gap of three cells all round it.
+        px0 = 7;
+        px1 = self.long - 5;
+        py0 = 4;
+        py1 = side - 3;
+        pit = build.room(px0, py0, -7, px1, py1, 0);
+        build.level(pit, -7);
+        build.solid(px0 + 3, py0 + 3, -7, px1 - 3, py1 - 3, 0);
+        # The consoles on the pod, a low wall round its far half.
+        build.solid(px1 - 4, py0 + 3, 0, px1 - 3, py1 - 3, 2);
+        # The lift beside the pod, its top flush with the ring and the pod:
+        # stepped down to from the ring, it rides up. In some seeds a console
+        # on the far wall draws out a bridge straight from the near ring too.
+        mx = (px0 + px1) // 2;
+        lift(build, mx - 1, py0, mx + 2, py0 + 3, -7, 0);
+        keep_box(build, room, mx - 1, py0 - 1, mx + 2, py0, 0);
+        keep_box(build, room, mx - 1, py0 + 3, mx + 2, py0 + 4, 0);
         if self.by_lift {
-            lift(build, dx - 3, cy - 1, dx, cy + 2, 0, self.level);
-            keep_box(build, room, dx, cy - 1, dx + 1, cy + 2, self.level);
+            build.touch(float(px0 - 3), float(cy - 2), 0.0, float(px0 - 1), float(cy + 2), 6.0, True, "The pod's lift rides up from the pit");
         } else {
-            stair(build, dx - self.level, 1, 0, 0, self.level, 3);
-            keep_box(build, room, dx, 1, dx + 1, 4, self.level);
+            bridge_way = build.drawn(float(px0), float(cy - 1), float(px0 + 3), float(cy + 2), 0, 8);
+            keep_box(build, room, px0 - 1, cy - 1, px0, cy + 2, 0);
+            keep_box(build, room, px0 + 3, cy - 1, px0 + 4, cy + 2, 0);
+            console = build.push(float(self.long - 1), float(cy) + 0.5, 1.5, 2);
+            console +>:Fires:+> bridge_way;
+            console +>:Fires:+> build.sparks(float(self.long) - 1.2, float(cy) + 0.5, 3.0, 2);
+            build.touch(float(px0 - 3), float(cy - 2), 0.0, float(px0 - 1), float(cy + 2), 6.0, True, "The pod's bridge is worked from the far wall");
         }
-        broken = stash(build, self.long - 6, side - 5, 0, 2, "ammo_cells", self.level - 1);
-        broken +>:Fires:+> build.sparks(float(self.long) - 6.2, float(side) - 3.0, 2.0, 2);
-        taken = key_taken(build, self.key, float(self.long) - 4.5, float(cy) + 0.5, self.level);
-        closets(build, taken, side, 0, [3, dx - 5], [SPACE_FOES.pick(dice, self.danger, True), SPACE_FOES.pick(dice, self.danger)]);
-        squad(build, taken, [[float(dx) - 4.0, float(cy) + 0.5, 6.0], [6.0, float(cy) - 2.5, 6.0]], ["monster_flyer"], 0.0);
-        beamed(build, taken, 2, 2, -8, SPACE_FOES.pick(dice, self.danger, True), 6.5, float(cy) + 0.5, 0, 0.0);
-        rounds(build, SPACE_FOES.pick(dice, self.danger), [[float(dx) + 2.5, 3.5], [float(dx) + 2.5, float(side) - 3.5]], self.level);
-        build.foe(5.5, float(cy) + 3.5, 0, SPACE_FOES.pick(dice, self.danger), 0.0);
-        sparking(build, float(self.long) - 2.2, float(cy) - 2.5, float(self.level) + 1.5, 2, 3.0);
-        sparking(build, float(dx) + 0.5, float(side) - 0.2, 2.0, 3, 5.0);
+        # A stash in the pit's floor, the spare parts of the station.
+        build.supply(float(px0) + 1.5, float(py1) - 1.5, -7, "ammo_cells", "q2");
+        build.supply(float(px1) - 1.5, float(py1) - 1.5, -7, Q2_ARMOR, "q2");
+        taken = key_taken(build, self.key, float(mx) + 0.5, float(cy) + 0.5, 0);
+        closets(build, taken, side, 0, [3, self.long - 7], [SPACE_FOES.pick(dice, self.danger, True), SPACE_FOES.pick(dice, self.danger)]);
+        squad(build, taken, [[float(px0) + 1.5, float(py0) + 1.5, 4.0], [float(px1) - 1.5, float(py1) - 1.5, 4.0]], ["monster_flyer"], 0.0);
+        beamed(build, taken, 2, 2, -8, SPACE_FOES.pick(dice, self.danger, True), 3.5, float(cy) + 0.5, 0, 0.0);
+        rounds(build, SPACE_FOES.pick(dice, self.danger), [[float(px1) + 2.0, 2.5], [float(px1) + 2.0, float(side) - 2.0], [4.0, float(side) - 2.0]], 0);
+        build.foe(float(px0) + 3.5, float(py1) - 1.5, -7, SPACE_FOES.pick(dice, self.danger), 0.0);
+        sparking(build, float(self.long) - 1.2, float(cy) - 3.5, 2.5, 2, 3.0);
+        sparking(build, float(px1) - 4.2, float(cy) + 1.0, 1.5, 2, 5.0);
         build.supply(2.5, 2.5, 0, Q2_HEALTH, "q2");
     }
 }

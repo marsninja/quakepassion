@@ -9,14 +9,15 @@ Raised in hangar1's own palette.
   at the far end with a balcony up a stair. The help computer gives the
   mission (hangar1's two objectives); guards come out on the balcony as
   the player crosses; infantry patrol; a stash in the stair's side.
-- `FloodedSump`: a sump flooded deep, a wall across it that a body swims
-  under, flippers in both halves; in some seeds a catwalk over the water
-  through a hatch high in the wall, up a lift.
+- `FloodedSump`: a sump flooded deep under the open sky, a wall across it
+  that a body swims under, a shelf in its bed, flippers in both halves; a
+  catwalk over the water through a hatch high in the wall, up a lift.
 - `BayHangar`: a hub. A ship docked on struts in a great bay, a gantry
-  round the walls up a tall lift and a stair, bridges from it onto the
-  ship's back, a crane riding the roof.
-- `LaserTunnel`: a tunnel whose lasers switch on and off on a timer, a vent
-  duct over it reached by an updraft or a lift.
+  round the walls up a tall lift and a stair, offices under it, bridges from
+  it onto the ship's back, a crane riding the roof.
+- `LaserTunnel`: a tunnel whose lasers switch on and off on a timer, its
+  floor in sections a sill apart, a vent duct over it reached by an updraft
+  or a lift.
 - `HangarControl`: the key room. A control deck over a tank of water, the
   key on the deck up a stair; taking it opens the closets.
 - `BayDoor`: the end. A door (a key's, as a gate), the bay, its great door
@@ -28,6 +29,7 @@ import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district, kit_of }
 import from .roster { FoeMix, Q2_HEALTH, Q2_AMMO, Q2_ARMOR }
 import from .common { stair, key_ambush }
+import from .q2_flood { office }
 import from .plant_parts { key_doors, open_ways, charges, sparking, stash, crate_pile, squad, keep_box, plat, laser, quake, port_door, hurting }
 
 glob HANGAR1: str = "q2:hangar1";
@@ -65,7 +67,7 @@ node HangarApron(Prefab) {
         self.long = dice.between(34, 38);
         self.wide = dice.between(26, 30);
         self.balcony = 9;
-        self.tall = dice.between(20, 24);
+        self.tall = dice.between(48, 52);
         self.pads = dice.between(1, 2);
         self.low = -9;
         self.high = self.tall + 1;
@@ -149,7 +151,7 @@ node FloodedSump(Prefab) {
         self.district = level_district(HANGAR1);
         self.long = dice.between(34, 38);
         self.wide = dice.between(18, 22);
-        self.tall = dice.between(13, 15);
+        self.tall = dice.between(36, 40);
         self.wall_x = dice.between(13, 15);
         self.catwalk = True;
         self.low = -11;
@@ -165,7 +167,7 @@ node FloodedSump(Prefab) {
         dice = build.begin(self);
         cy = self.wide // 2;
         wx = self.wall_x;
-        sump = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
+        sump = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(sump, -10);
         # The flood, the far ledge and the steps up to it from the water.
         build.pool(7, 1, -10, self.long - 7, self.wide - 1, 0, 2);
@@ -173,6 +175,8 @@ node FloodedSump(Prefab) {
         stair(build, self.long - 17, 1, -10, 0, 10, 3);
         # The wall across the sump, the way under it four lifts high.
         build.solid(wx, 1, -6, wx + 2, self.wide - 1, self.tall);
+        # A shelf of the bed in the far half, clear of the way under the wall.
+        build.solid(wx + 6, 5, -10, wx + 10, self.wide - 1, -7);
         if self.catwalk {
             # A catwalk along the high wall over the water, through a hatch
             # high in the wall, out over the far ledge to drop from.
@@ -187,12 +191,12 @@ node FloodedSump(Prefab) {
         open_ways(build, sump, self);
         # Swimming in brings the far half's flippers out.
         dive = build.touch(8.0, 1.0, -10.0, 12.0, float(self.wide - 1), -2.0);
-        squad(build, dive, [[float(wx) + 5.5, float(cy) - 2.5, -9.0], [float(wx) + 9.5, float(cy) + 2.5, -9.0]], ["monster_flipper"], 180.0);
+        squad(build, dive, [[float(wx) + 4.0, float(cy) - 2.5, -9.0], [float(wx) + 8.0, float(cy) + 2.5, -6.0]], ["monster_flipper"], 180.0);
         landed = build.touch(float(self.long - 7), 4.0, 0.0, float(self.long - 5), float(self.wide - 1), 6.0);
         landed +>:Fires:+> build.summon(self.long - 5, cy - 1, -9, HANGAR1_FOES.pick(dice, self.danger, True), float(self.long) - 3.5, float(cy) + 0.5, 0, 180.0);
         squad(build, landed, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 3.5, float(self.wide) - 3.5, 0.0]], [HANGAR1_FOES.pick(dice, self.danger), HANGAR1_FOES.pick(dice, self.danger, True)], 180.0);
         build.foe(9.5, float(cy) + 0.5, -9, "monster_flipper", 0.0, patrol=[[9.5, float(cy) + 0.5], [float(wx) - 1.5, float(cy) + 0.5], [float(wx) - 1.5, 3.5], [9.5, 3.5]]);
-        build.foe(float(wx) + 4.5, float(cy) + 0.5, -9, "monster_flipper", 0.0, patrol=[[float(wx) + 4.5, float(cy) + 0.5], [float(self.long) - 9.5, float(cy) + 0.5]]);
+        build.foe(float(wx) + 4.5, float(cy) + 0.5, -6, "monster_flipper", 0.0, patrol=[[float(wx) + 4.5, float(cy) + 0.5], [float(self.long) - 9.5, float(cy) + 0.5]]);
         build.foe(3.5, 3.5, 0, "monster_infantry", 90.0, patrol=[[3.5, 3.5], [3.5, float(self.wide) - 6.5]]);
         build.foe(float(self.long // 2), float(cy) + 0.5, 4, HANGAR1_FOES.pick(dice, self.danger, False, True), 180.0);
         sparking(build, dice.uniform(3.0, 5.0), float(wx) - 0.2, float(cy) - 3.0, 3.0, 2);
@@ -217,7 +221,7 @@ node BayHangar(Prefab) {
         self.long = dice.between(36, 40);
         self.wide = dice.between(32, 36);
         self.gantry = 14;
-        self.tall = self.gantry + dice.between(9, 11);
+        self.tall = self.gantry + dice.between(18, 22);
         self.both = dice.chance(0.6);
         self.climb_stair = dice.chance(0.6);
         self.low = -1;
@@ -261,6 +265,16 @@ node BayHangar(Prefab) {
         if self.climb_stair {
             stair(build, 6, self.wide - 5 - g, 0, 1, g, 4);
         }
+        # Offices under the gantry along both long walls, breaking up the
+        # floor under it; stores and a crew's lockers in them.
+        for at in [10, cx]{
+            office(build, at, 1, at + 7, 7, 0, 8, 1, at + 2);
+        }
+        office(build, cx + 12, self.wide - 7, cx + 18, self.wide - 1, 0, 8, 3, cx + 13);
+        office(build, 12, self.wide - 7, 19, self.wide - 1, 0, 8, 3, 14);
+        build.supply(float(cx) + 3.5, 3.5, 1, "ammo_bullets", "q2");
+        build.supply(15.5, float(self.wide) - 3.5, 1, "ammo_grenades", "q2");
+        build.foe(13.5, 3.5, 1, "monster_infantry", 90.0);
         # The crane riding the roof.
         build.train([4.0, 4.0, 1.0], [[6.0, float(cy - 2), float(self.tall - 3)], [float(self.long - 10), float(cy - 2), float(self.tall - 3)]], 60.0, 3.0);
         open_ways(build, bay, self);
@@ -329,12 +343,16 @@ node LaserTunnel(Prefab) {
             build.jump_pad(9.0, float(self.wide - 8), 0, 9.0, float(self.wide - 3), d);
             keep_box(build, tunnel, 7, self.wide - 5, 12, self.wide - 4, d);
         }
+        # The tunnel's floor in sections, a sill a lift high to every other
+        # one, each fence standing where they meet.
+        build.solid(14, 1, 0, 19, self.wide - 1, 1);
+        build.solid(20, 1, 0, 25, self.wide - 1, 1);
         # The lasers across the tunnel, switched on and off by the timer.
         clock = build.timer(dice.uniform(2.0, 3.0));
         for index in range(self.fences) {
             fx = 13 + index * 6;
             for z in [1.2, 2.8] {
-                clock +>:Fires:+> laser(build, float(fx) + 0.5, 1.1, z, float(fx) + 0.5, float(self.wide) - 1.1, z, index % 2 == 0);
+                clock +>:Fires:+> laser(build, float(fx) + 0.5, 1.1, z + 1.0, float(fx) + 0.5, float(self.wide) - 1.1, z + 1.0, index % 2 == 0);
             }
             sparking(build, dice.uniform(3.0, 5.0), float(fx) + 0.5, 1.2, 4.0, 1);
         }
@@ -344,9 +362,9 @@ node LaserTunnel(Prefab) {
         squad(build, far_end, [[float(self.long) - 3.5, 3.5, 0.0], [float(self.long) - 6.5, float(self.wide) - 3.0, float(d)]], ["monster_infantry", HANGAR1_FOES.pick(dice, self.danger, True)], 180.0);
         in_duct = build.touch(6.0, float(self.wide - 5), float(d), 8.0, float(self.wide - 1), float(d + 6));
         squad(build, in_duct, [[float(self.long // 2), float(self.wide) - 3.0, float(d)]], [HANGAR1_FOES.pick(dice, self.danger)], 180.0);
-        build.foe(4.5, 3.5, 0, "monster_infantry", 0.0, patrol=[[4.5, 3.5], [float(self.long) - 4.5, 3.5]]);
+        build.foe(3.5, 8.5, 0, "monster_infantry", 0.0, patrol=[[3.5, 8.5], [float(self.long) - 4.5, 8.5]]);
         build.foe(float(self.long) - 4.5, float(self.wide) - 3.0, d, "monster_gunner", 180.0, patrol=[[float(self.long) - 4.5, float(self.wide) - 3.0], [9.5, float(self.wide) - 3.0]]);
-        crate_pile(build, self.long - 12, 1, 0, 2, 1);
+        crate_pile(build, 5, 1, 0, 0, 2);
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, d, Q2_HEALTH, "q2");
     }
 }
@@ -396,7 +414,7 @@ node HangarControl(Prefab) {
         }
         # The deck's gate, raised by the switch on the wall by the way up.
         gate = build.opened(float(dx), 1.0, float(d), float(dx + 1), 5.0, float(d + 5));
-        build.push(float(dx) - 1.5 if self.climb_lift else float(dx - d) - 0.5, 1.0, 1.5, 1) +>:Fires:+> gate;
+        build.push(float(dx) - 4.5 if self.climb_lift else float(dx - d) - 0.5, 1.0, 1.5, 1) +>:Fires:+> gate;
         # A block in the near corner, a stash behind a panel in it.
         build.solid(2, 1, 0, 6, 5, 5);
         stash(build, 5, 3, 0, False, 1, "item_adrenaline");
