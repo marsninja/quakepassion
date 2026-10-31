@@ -91,7 +91,7 @@ node CampingTower(Prefab) {
             }
         }
         self.steps = fits[dice.below(len(fits))];
-        self.tall = self.steps + 9;
+        self.tall = max(self.steps + 12, 40);
         # A pad in the foot throws a body up onto a step half way up that
         # lies along a wall (not at a corner).
         self.pad_at = -1;
@@ -188,7 +188,7 @@ node CampingYard(Prefab) {
         self.low_top = dice.between(5, 7);
         self.high_top = self.ledge - dice.between(3, 5);
         self.balcony = dice.between(9, 10) if dice.chance(0.5) else 0;
-        self.tall = self.ledge + 10;
+        self.tall = self.ledge + 36;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -278,7 +278,7 @@ node StoneBridge(Prefab) {
         self.lane = dice.between(8, self.wide - 8);
         self.pool = dice.chance(0.5);
         self.upper = dice.chance(0.5);
-        self.tall = dice.between(16, 18);
+        self.tall = dice.between(40, 44);
         self.low = -self.deep - 7;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -459,7 +459,7 @@ node RailLedge(Prefab) {
         self.long = dice.between(22, 26);
         self.wide = dice.between(15, 17);
         self.ledge = dice.between(12, 14);
-        self.tall = self.ledge + 9;
+        self.tall = self.ledge + 16;
         self.by_pad = dice.chance(0.55);
         self.tele = dice.chance(0.5);
         self.low = -1;
@@ -536,7 +536,7 @@ node QuadChamber(Prefab) {
         self.long = dice.between(22, 24);
         self.wide = dice.between(18, 20);
         self.deep = dice.between(10, 11);
-        self.tall = dice.between(13, 15);
+        self.tall = dice.between(18, 22);
         self.by_pad = dice.chance(0.55);
         self.barred = dice.chance(0.5);
         self.low = -self.deep - 1;
@@ -612,7 +612,7 @@ node CampingVault(Prefab) {
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
         self.by_pad = dice.chance(0.55);
-        self.tall = 21;
+        self.tall = 28;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -683,7 +683,7 @@ node CampingGate(Prefab) {
         self.wide = dice.between(18, 20);
         self.by_pad = dice.chance(0.5);
         self.gallery_low = dice.chance(0.5);
-        self.tall = 20;
+        self.tall = 28;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
