@@ -99,7 +99,7 @@ node OublietteLedge(Prefab) {
         self.lifted = dice.chance(0.5);
         self.bridge = dice.chance(0.4);
         self.grate = dice.chance(0.6);
-        self.tall = self.high_ledge + 10;
+        self.tall = self.high_ledge + 16;
         self.low = -13;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -206,11 +206,11 @@ node SunkenLake(Prefab) {
         self.district = level_district(E2M6);
         self.long = dice.between(30, 34);
         self.wide = dice.between(22, 26);
-        self.deep = dice.between(6, 8);
+        self.deep = min(dice.between(8, 10), self.wide // 2 - 3);
         self.isle = dice.chance(0.6);
         self.stash = dice.chance(0.5);
-        self.tall = 9 + dice.between(10, 12);
-        self.low = -10;
+        self.tall = 9 + dice.between(18, 22);
+        self.low = -12;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -299,7 +299,7 @@ node SunkenLake(Prefab) {
 """Water crossed to an island and on to a far shore by two bridges that
 rise as the player comes to each edge, spikes across them."""
 node ChangingBridge(Prefab) {
-    has deep: int = 5,
+    has deep: int = 7,
         first: int = 7,
         second: int = 7,
         lane_one: int = 8,
@@ -320,10 +320,10 @@ node ChangingBridge(Prefab) {
         self.first = dice.between(6, 8);
         self.second = dice.between(6, 8);
         self.long = 6 + self.first + 3 + self.second + 7;
-        self.wide = dice.between(20, 22) if self.upper else dice.between(18, 22);
+        self.wide = dice.between(22, 26);
         self.lane_one = dice.between(self.deep + 2, self.wide - self.deep - 5);
         self.lane_two = dice.between(self.deep + 2, self.wide - self.deep - 5);
-        self.tall = 19 if self.upper else 12;
+        self.tall = dice.between(26, 30) if self.upper else dice.between(20, 24);
         self.low = -2 * self.deep - 3;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -430,7 +430,7 @@ node CellBlock(Prefab) {
         self.bridged = dice.chance(0.5);
         self.button_cell = dice.below(3);
         self.stash = dice.chance(0.5);
-        self.tall = dice.between(17, 19);
+        self.tall = dice.between(25, 29);
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -616,7 +616,7 @@ node DrownedKey(Prefab) {
         self.wide = self.hall_wide + 4;
         self.deep = dice.between(7, 9);
         self.grated = dice.chance(0.7);
-        self.tall = dice.between(11, 13);
+        self.tall = dice.between(18, 23);
         self.low = -self.deep - 6;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -697,7 +697,7 @@ node DismalExit(Prefab) {
         self.wide = dice.between(20, 22);
         self.rafted = dice.chance(0.8);
         self.stash = dice.chance(0.5);
-        self.tall = dice.between(15, 17);
+        self.tall = dice.between(22, 26);
         self.low = -10;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -711,7 +711,7 @@ node DismalExit(Prefab) {
         middle = self.wide // 2;
         wall = 8;
         d = 6;
-        hall = build.room(1, 1, 0, wall, self.wide - 1, 10, variant=dice.below(3));
+        hall = build.room(1, 1, 0, wall, self.wide - 1, 12, variant=dice.below(3));
         cavern = build.room(wall + 1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(cavern, 8);
         build.doorway(hall, self.enter);

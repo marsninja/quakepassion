@@ -12,12 +12,14 @@ three switches are shot. Raised in e2m4's own palette.
   ramp and a bridge high over the moat) or shot on the wall's face. Scrags
   are brought in behind the player as the bars go down (e2m4's teleported
   scrags), ogres on the wall wake as the player lands on the far shore, a
-  knight walks the wall-walk, and the moat hides a flooded grotto (a
-  secret) and the yard a stash behind a wall that opens when shot.
+  knight walks the wall-walk, guardrooms stand in the wall's thickness off
+  the passage, and the moat hides a flooded grotto (a secret) and the yard
+  a stash behind a wall that opens when shot.
 - `CryptUndercroft`: a gallery round (or along) a well looking down into a
   crypt, a stair or a lift (or both) down; ways on from both floors (a
   hub as well). Walking into the crypt opens its walls on the dead behind
   them (e2m4's secret walls fired by a touch) and brings one in behind;
+  burial vaults stand a step up off its floor along both walls;
   a knight walks the gallery; a stash behind a wall on the gallery opens
   when shot.
 - `TrainChasm`: a chasm between two ledges, its floor far below (a pool,
@@ -27,14 +29,15 @@ three switches are shot. Raised in e2m4's own palette.
   platform riding back high over the chasm to a gallery over the way in.
   A lift climbs back out of the chasm; a niche under the near ledge opens
   when shot.
-- `KeepShaft`: a tall shaft, a lift (or a stair up the wall) to a ledge
+- `KeepShaft`: a tall shaft, a pool at its foot, cells under its first
+  ledge, a lift (or a stair up the wall) to a ledge
   along one wall, a lift on from it to a ledge high along the next, over
   the first; scrags wake as the player climbs, the high ledge's keeper as
   the player comes onto it, and a stretch of its edge is left open to
   drop back down from.
 - `EbonHall`: a hall of two galleries, the upper over the lower or along
-  the next wall, a stair or a lift to each (a hub), a pool sunk in the
-  floor in some. A door on the floor
+  the next wall, a stair or a lift to each (a hub), chambers under the lower
+  gallery, a wide pool sunk in the floor in most. A door on the floor
   will not open ("I don't think so...") until a button high on the wall
   is shot; scrags are brought in as the player crosses the floor; knights
   walk the floor and an ogre the gallery.
@@ -203,13 +206,13 @@ node MoatGate(Prefab) {
         self.grotto = dice.chance(0.7);
         self.stash = dice.chance(0.5);
         self.moat_x = self.wall + 4;
-        self.moat_w = dice.between(6, 8);
+        self.moat_w = dice.between(8, 10);
         self.wall_x = self.moat_x + self.moat_w + dice.between(6, 7);
         self.long = self.wall_x + 8;
         self.wide = dice.between(22, 24);
         self.tall = self.wall + dice.between(12, 14);
         self.gate_y = self.wide - 6;
-        self.low = -9;
+        self.low = -11;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [Port(face=0, along=float(self.gate_y), floor=0), Port(face=0, along=5.0, floor=self.wall), Port(face=1, along=float(self.long - 4), floor=self.wall)];
@@ -227,7 +230,7 @@ node MoatGate(Prefab) {
         middle = self.wide // 2;
         yard = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(yard, top);
-        e2m4_moat(build, mx0, mx1, 1, self.wide - 1, 8, 0, self.causeway);
+        e2m4_moat(build, mx0, mx1, 1, self.wide - 1, 10);
         if self.causeway {
             build.solid(mx0, gy - 2, -1, mx1, gy + 2, 0);
             for y in range(gy - 2, gy + 2) {
@@ -238,6 +241,13 @@ node MoatGate(Prefab) {
         # The fortress wall, the passage through it behind the bars.
         build.solid(wx, 1, 0, self.long - 1, self.wide - 1, top);
         build.widen(yard, wx, gy - 2, 0, self.long - 1, gy + 2, 8);
+        # Guardrooms in the wall's thickness, a step up off the passage, a
+        # second a step on.
+        guard_room = build.room(wx + 2, gy - 8, 1, self.long - 2, gy - 3, 7);
+        build.widen(guard_room, wx + 2, gy - 3, 1, wx + 5, gy - 2, 7);
+        back_room = build.room(wx + 2, gy - 13, 2, self.long - 2, gy - 9, 8);
+        build.widen(back_room, wx + 2, gy - 9, 2, wx + 5, gy - 8, 7);
+        build.supply(float(wx) + 3.5, float(gy) - 11.0, 2, "item_shells");
         # The way up onto the wall-walk: a stair up the wall's face, a lift,
         # or a ramp up the yard's side and a bridge high over the moat.
         arrive = [top - 2, top + 3];
@@ -349,7 +359,7 @@ node CryptUndercroft(Prefab) {
         self.long = dice.between(26, 30);
         self.wide = dice.between(20, 22);
         self.gallery = dice.between(9, 10);
-        self.tall = self.gallery + dice.between(9, 11);
+        self.tall = self.gallery + dice.between(13, 16);
         self.ring = dice.chance(0.5);
         self.down = dice.below(3);
         self.stash = dice.chance(0.6);
@@ -450,6 +460,15 @@ node CryptUndercroft(Prefab) {
         late = build.delay(2.0);
         into +>:Fires:+> late;
         late +>:Fires:+> build.summon(2, 6, -8, E2M4_FOES.pick(dice, self.danger, True), float(well[0]) + 1.5, float(middle) + 0.5, 0, 0.0);
+        # Burial vaults a step up off the crypt's floor, along both its walls.
+        for x in range(12, self.long - 9, 4) {
+            build.room(x, 1, 1, x + 3, 4, 7);
+        }
+        for x in range(3, self.long - 3, 4) {
+            if x + 3 <= north_x or x >= north_x + 3 {
+                build.room(x, self.wide - 4, 1, x + 3, self.wide - 1, 7);
+            }
+        }
         # A knight walks the gallery's far side; an ogre keeps its end.
         build.foe(3.5, float(self.wide) - 2.5, g, "monster_knight", 0.0, patrol=[[3.5, float(self.wide) - 2.5], [float(self.long) - 3.5, float(self.wide) - 2.5]]);
         build.foe(float(self.long) - 3.5, 6.5, g, E2M4_FOES.pick(dice, self.danger, True), 180.0);
@@ -581,6 +600,10 @@ node TrainChasm(Prefab) {
             build.foe(float(nx + 4 + index * 5) + 0.5, float(self.wide // 2) + 0.5, h + 3, "monster_wizard", 180.0);
         }
         build.foe(float(nx) + 2.5, float(ly) - 1.5, 0, E2M4_FOES.pick(dice, self.danger), 0.0);
+        # A chamber in the near ledge's foot, a step up off the chasm's floor.
+        room_y = 4 if ly >= 10 else self.wide - 7;
+        build.room(2, room_y, 1, nx, room_y + 5, 8);
+        build.supply(4.5, float(room_y) + 2.5, 1, "item_shells");
         # A niche under the near ledge, behind a wall that opens when shot.
         if self.nook {
             e2m4_stash(build, nx - 4, 1, nx - 2, 3, 0, 0, "item_artifact_envirosuit");
@@ -604,13 +627,13 @@ node KeepShaft(Prefab) {
         self.title = "Keep shaft";
         self.source = E2M4;
         self.district = level_district(E2M4);
-        self.long = dice.between(16, 18);
-        self.wide = dice.between(16, 18);
+        self.long = dice.between(18, 20);
+        self.wide = dice.between(18, 20);
         self.first = dice.between(8, 9);
         self.stairs = dice.chance(0.5);
         self.second = self.first + 9;
-        self.tall = self.second + 9;
-        self.low = -1;
+        self.tall = self.second + 13;
+        self.low = -8;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=5.0, floor=0);
         self.leaves = [
@@ -655,6 +678,14 @@ node KeepShaft(Prefab) {
         }
         for y in range(4, 8) {
             build.keep(shaft, self.long - 6, y, b);
+        }
+        # A pool at the shaft's foot, the water under the ledges' drop.
+        build.pool(6, 5, -7, self.long - 5, self.wide - 10, 0, 2);
+        # Cells under the first ledge, a step up off the floor.
+        for x in [6, 10] {
+            build.solid(x - 1, self.wide - 6, 0, x, self.wide - 1, a - 1);
+            build.solid(x, self.wide - 6, 0, x + 3, self.wide - 1, 1);
+            build.solid(x + 3, self.wide - 6, 0, x + 4, self.wide - 1, a - 1);
         }
         build.doorway(shaft, self.enter);
         for port in self.taken {
@@ -703,8 +734,8 @@ node EbonHall(Prefab) {
         self.upper = self.lower + (9 if self.stacked else 7);
         self.lift_low = dice.chance(0.5);
         self.refuse = dice.chance(0.6);
-        self.sunk = dice.chance(0.5);
-        self.tall = self.upper + 10;
+        self.sunk = dice.chance(0.85);
+        self.tall = self.upper + 13;
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -731,7 +762,10 @@ node EbonHall(Prefab) {
         # The lower gallery along the north wall, over pillars.
         build.solid(1, gy, low - 1, self.long - 1, self.wide - 1, low);
         for x in range(12, self.long - 3, 5) {
-            build.solid(x, gy, 0, x + 1, gy + 1, low - 1);
+            build.solid(x, gy, 0, x + 1, self.wide - 1, low - 1);
+            if x + 5 < self.long - 3 {
+                build.solid(x + 1, gy, 0, x + 5, self.wide - 1, 1);
+            }
         }
         if self.lift_low {
             lift(build, 3, gy - 3, 6, gy, 0, low);
@@ -770,8 +804,8 @@ node EbonHall(Prefab) {
         }
         # A pool sunk in the floor's middle.
         if self.sunk {
-            px = self.long // 2 - 2;
-            build.pool(px, middle - 3, -6, px + 6, middle + 3, 0, 2);
+            px = self.long // 2 - 5;
+            build.pool(px, middle - 4, -8, px + 10, middle + 4, 0, 2);
         }
         build.doorway(hall, self.enter);
         for port in self.taken {
@@ -785,7 +819,7 @@ node EbonHall(Prefab) {
             }
         }
         # Scrags brought in as the player crosses the floor.
-        crossing = build.touch(float(self.long // 2 - 2), float(middle - 3), 0.0, float(self.long // 2 + 2), float(middle + 3), 6.0);
+        crossing = build.touch(float(self.long // 2 - 7), 1.0, 0.0, float(self.long // 2 - 5), float(gy), 6.0);
         late = build.delay(1.0);
         crossing +>:Fires:+> late;
         for index in range(2) {
@@ -984,6 +1018,10 @@ node SwitchVault(Prefab) {
                 build.keep(hall, bx - 1, y, t);
             }
         }
+        # Chambers in the balcony's foot, a step up off the floor.
+        build.room(6, 4, 1, bx, 8, 7);
+        build.room(6, self.wide - 6, 1, bx, self.wide - 2, 7);
+        build.supply(8.5, 6.0, 1, "item_health");
         # A channel of lava across the floor, bridged.
         if self.lava {
             cx = bx + 8;

@@ -23,7 +23,8 @@ the walls. Raised in e2m5's own palette.
   over it, a channel of water across the floor below (bridged, or swum).
   What keeps the walkway wakes as the player comes to the channel, and a
   fiend is brought in behind; a stash in the landing's foot opens when shot.
-- `SanctumTerraces`: a sanctum climbing in two terraces, in some a gallery
+- `SanctumTerraces`: a sanctum climbing in two terraces, a basin at the
+  first's foot, in some a gallery
   round its west end and a catwalk on to the top terrace, a lift up to it
   (a hub). The altar's button on the top terrace opens the way on from it
   (as e2m5's buttons open its bars) and brings in what was waiting.
@@ -72,7 +73,7 @@ node ManseCourt(Prefab) {
         self.sides = dice.chance(0.5);
         self.upper = dice.chance(0.8);
         self.stash = dice.chance(0.5);
-        self.tall = self.porch + 9 + dice.between(9, 11);
+        self.tall = self.porch + 9 + dice.between(14, 18);
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -190,14 +191,14 @@ node CisternDive(Prefab) {
         self.source = E2M5;
         self.district = level_district(E2M5);
         self.long = dice.between(28, 32);
-        self.wide = dice.between(18, 22);
-        self.deep = min(dice.between(7, 10), self.wide - 11);
+        self.wide = dice.between(20, 24);
+        self.deep = min(dice.between(8, 11), self.wide - 11);
         self.cross = dice.weighted([2.0, 1.0, 1.0]);
         self.gap_x = dice.between(9, self.long - 15);
         self.grate = dice.chance(0.6);
         self.barred = dice.chance(0.5);
         self.lane = dice.between(self.deep + 2, self.wide - 9);
-        self.tall = 10 + dice.between(9, 11);
+        self.tall = 10 + dice.between(16, 20);
         self.low = -self.deep - 2;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=10);
@@ -220,8 +221,8 @@ node CisternDive(Prefab) {
         e2m4_moat(build, nx, fx, 1, self.wide - 1, d);
         # The floor over the cistern, the gap across it, pillars under it.
         build.solid(1, 1, u - 1, self.long - 1, self.wide - 1, u);
-        build.widen(over, gx, 1, u - 1, gx + 5, self.wide - 1, u);
-        clear = [[nx, self.lane - 1, fx, self.lane + 5], [nx, self.wide - 5, fx, self.wide], [gx - 1, 0, gx + 6, self.wide]];
+        build.widen(over, gx, 1, u - 1, gx + 7, self.wide - 1, u);
+        clear = [[nx, self.lane - 1, fx, self.lane + 5], [nx, self.wide - 5, fx, self.wide], [gx - 1, 0, gx + 8, self.wide]];
         pillars(build, nx + 3, 3, fx - 3, self.wide - 3, -d, u - 1, 6, clear);
         # The hatch in the floor at the near end, a lift down through it to
         # the walkway.
@@ -300,7 +301,7 @@ node CisternDive(Prefab) {
             build.foe(float(nx + 4 + index * 6) + 0.5, float(self.wide // 2) + 0.5, 4, "monster_wizard", 180.0);
         }
         build.foe(3.5, 3.5, u, "monster_ogre", 0.0, patrol=[[3.5, 3.5], [float(gx) - 2.5, 3.5]]);
-        roof = build.touch(float(gx + 5), 1.0, float(u), float(gx + 7), float(self.wide - 1), float(u + 6));
+        roof = build.touch(float(gx + 7), 1.0, float(u), float(gx + 9), float(self.wide - 1), float(u + 6));
         keeper = build.waiting();
         roof +>:Fires:+> keeper;
         build.foe(float(self.long) - 6.5, float(self.wide // 2) - 1.5, u, E2M5_FOES.pick(dice, self.danger, True), 180.0, waits=keeper);
@@ -327,11 +328,11 @@ node GrandStair(Prefab) {
         self.source = E2M5;
         self.district = level_district(E2M5);
         self.long = dice.between(32, 34);
-        self.wide = dice.between(16, 19);
+        self.wide = dice.between(20, 23);
         self.deep = dice.between(11, 13);
-        self.tall = dice.between(11, 13);
+        self.tall = dice.between(19, 23);
         self.switchback = dice.chance(0.5);
-        self.channel = dice.chance(0.6);
+        self.channel = dice.chance(0.85);
         self.bridged = dice.chance(0.6);
         self.stash = dice.chance(0.6);
         self.low = -self.deep - 7;
@@ -377,12 +378,16 @@ node GrandStair(Prefab) {
         # The channel across the floor below, bridged or swum.
         cx = max(7 + self.deep, 12 + self.deep // 2);
         if self.channel {
-            e2m4_moat(build, cx, cx + 5, 1, walk_y, 5, low, self.bridged);
+            e2m4_moat(build, cx, cx + 7, 1, walk_y, 6, low);
+            stair(build, cx + 5, walk_y - 2, low - 6, 2, 6, 2);
+            for y in range(walk_y - 2, walk_y) {
+                build.keep(hall, cx - 1, y, low);
+            }
             if self.bridged {
-                build.solid(cx, middle - 2, low - 1, cx + 5, middle + 2, low);
+                build.solid(cx, middle - 2, low - 1, cx + 7, middle + 2, low);
                 for y in range(middle - 2, middle + 2) {
                     build.keep(hall, cx - 1, y, low);
-                    build.keep(hall, cx + 5, y, low);
+                    build.keep(hall, cx + 7, y, low);
                 }
             }
         }
@@ -401,7 +406,7 @@ node GrandStair(Prefab) {
         late = build.delay(1.5);
         near +>:Fires:+> late;
         late +>:Fires:+> build.summon(2, 1, low, E2M5_FOES.pick(dice, self.danger, True), float(self.long) - 4.5, float(walk_y) + 2.0, low, 180.0);
-        build.foe(float(cx) + 7.5, 3.5, low, E2M5_FOES.pick(dice, self.danger), 90.0, patrol=[[float(cx) + 7.5, 3.5], [float(cx) + 7.5, float(walk_y) - 1.5]]);
+        build.foe(float(cx) + 9.5, 3.5, low, E2M5_FOES.pick(dice, self.danger), 90.0, patrol=[[float(cx) + 9.5, 3.5], [float(cx) + 9.5, float(walk_y) - 1.5]]);
         build.foe(float(self.long // 2) + 0.5, 4.5, low + 6, "monster_wizard", 180.0);
         build.foe(8.5, float(self.wide) - 2.5, 0, "monster_ogre", 0.0, patrol=[[8.5, float(self.wide) - 2.5], [float(self.long) - 3.5, float(self.wide) - 2.5]]);
         if self.stash and self.switchback {
@@ -434,7 +439,7 @@ node SanctumTerraces(Prefab) {
         self.gallery = dice.chance(0.8);
         self.lifted = self.gallery and dice.chance(0.6);
         self.sealed = dice.chance(0.6);
-        self.tall = self.second + dice.between(11, 13);
+        self.tall = self.second + dice.between(20, 24);
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -469,6 +474,8 @@ node SanctumTerraces(Prefab) {
         for y in range(2, 5) {
             build.keep(hall, t2, y, s);
         }
+        # A basin at the first terrace's foot, north of its stair.
+        build.pool(t1 - f, middle + 3, -6, t1, self.wide - 2, 0, 2);
         # The altar on the top terrace, its button on a post.
         build.solid(self.long - 4, self.wide - 7, s, self.long - 2, self.wide - 4, s + 1);
         build.solid(self.long - 3, self.wide - 7, s + 1, self.long - 2, self.wide - 6, s + 3);
@@ -491,8 +498,8 @@ node SanctumTerraces(Prefab) {
             build.foe(3.0, 6.5, s, "monster_ogre", 90.0, patrol=[[3.0, 6.5], [3.0, float(self.wide) - 3.0], [float(t2) - 2.5, float(self.wide) - 3.0]]);
             # A platform the altar's button sets riding between the floor
             # and the catwalk.
-            press +>:Fires:+> build.train([3.0, 3.0, 1.0], [[9.0, float(self.wide - 7), -1.0], [9.0, float(self.wide - 7), float(s - 1)]], 90.0, 2.0, True);
-            for x in range(9, 12) {
+            press +>:Fires:+> build.train([3.0, 3.0, 1.0], [[6.0, float(self.wide - 7), -1.0], [6.0, float(self.wide - 7), float(s - 1)]], 90.0, 2.0, True);
+            for x in range(6, 9) {
                 build.keep(hall, x, self.wide - 4, s);
             }
         } else {
@@ -515,7 +522,7 @@ node SanctumTerraces(Prefab) {
         late = build.delay(1.5);
         press +>:Fires:+> late;
         late +>:Fires:+> build.summon(2, 2, -8, E2M5_FOES.pick(dice, self.danger, True), float(t1) + 2.5, float(middle) + 4.5, f, 180.0);
-        late +>:Fires:+> build.summon(7, 2, -8, "monster_wizard", float(t1) - 4.5, float(middle) + 0.5, 4, 0.0);
+        late +>:Fires:+> build.summon(2, 6, -8, "monster_wizard", float(t1) - 4.5, float(middle) + 0.5, 4, 0.0);
         # The top terrace's guard wakes as the player comes up onto the
         # first; a knight walks the floor.
         up = build.touch(float(t1), float(middle - 2), float(f), float(t1 + 2), float(middle + 2), float(f + 6));
@@ -665,7 +672,7 @@ node ManseExit(Prefab) {
         self.lifted = dice.chance(0.4);
         self.moat = dice.chance(0.6);
         self.stash = dice.chance(0.6);
-        self.tall = self.deep + dice.between(10, 12);
+        self.tall = self.deep + dice.between(16, 20);
         self.low = -self.deep - 7;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -680,7 +687,7 @@ node ManseExit(Prefab) {
         low = -self.deep;
         wall = 10;
         inner = self.wide - 5;
-        hall = build.room(1, 1, 0, wall, self.wide - 1, 12, variant=dice.below(3));
+        hall = build.room(1, 1, 0, wall, self.wide - 1, 14, variant=dice.below(3));
         below = build.room(wall + 1, 1, low, self.long - 1, inner, self.tall, variant=dice.below(3));
         build.level(below, 0);
         build.doorway(hall, self.enter);
@@ -708,10 +715,14 @@ node ManseExit(Prefab) {
         }
         # The slipgate on a dais, on an island in a pool in some.
         if self.moat {
-            e2m4_moat(build, self.long - 10, self.long - 1, 1, inner, 5, low, True);
-            build.solid(self.long - 7, middle - 3, low - 5, self.long - 2, middle + 3, low + 1);
+            e2m4_moat(build, self.long - 10, self.long - 1, 1, inner, 6, low);
+            stair(build, self.long - 5, inner - 2, low - 6, 2, 6, 2);
+            build.solid(self.long - 7, middle - 3, low - 6, self.long - 2, middle + 3, low + 1);
             build.solid(self.long - 10, middle - 2, low - 1, self.long - 7, middle + 2, low);
             for y in range(middle - 2, middle + 2) {
+                build.keep(below, self.long - 11, y, low);
+            }
+            for y in range(inner - 2, inner) {
                 build.keep(below, self.long - 11, y, low);
             }
         } else {

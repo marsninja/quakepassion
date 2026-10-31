@@ -6,12 +6,13 @@ lava crossed stone by stone or on a platform a plate on the floor sets
 going, plates that loose a fan of spikes, the gold key caged on a
 balcony. Raised in e2m7's own palette.
 
-- `UnderearthCave`: the start. A cave, a pool in it and a shelf over its
-  north side up a stair; the way on through the far wall is barred ("Go
+- `UnderearthCave`: the start. A cave, a pool in it, a sill of rock across
+  it past the pool and a shelf over its north side up a stair; the way on through the far wall is barred ("Go
   for a swim first...") until a button under the water and one on the
   shelf are both pushed. Diving brings scrags in by teleporter; a low
   button by a rock opens a niche under the shelf (a secret).
-- `ShotMarks`: a hall of pillars, a gallery along its north side; marks
+- `ShotMarks`: a hall of pillars in three bays, the middle one up two steps,
+  a drowned aisle in the near one, a gallery along its north side; marks
   on the walls and pillars (e2m7's shootable triggers) must all be shot
   before the bars across its ways on below sink, counting down as each
   is hit.
@@ -24,7 +25,8 @@ balcony. Raised in e2m7's own palette.
   beyond whose way on is opened by a button near by ("This door is opened
   near by..."), plates before the shelf's stair loosing a fan of spikes
   from the wall (a hub).
-- `CagedKey`: the key room. A balcony across a hall's far end, the key
+- `CagedKey`: the key room. A balcony across a hall's far end, a pool off
+  the floor toward the closets, the key
   caged on it behind bars a button high on the near wall opens when shot,
   a lift or a stair up; plates before the balcony loose spikes; taking the
   key opens the closets below and brings scrags in.
@@ -37,7 +39,8 @@ import from ..prefab { Prefab, Port, Lay, Raise, Raising, Cue, Fires }
 import from ..kits { level_district }
 import from ..cast { BUTTON_MATERIAL }
 import from .roster { FoeMix }
-import from .common { stair, boulders, stalactites, lift, ring_path }
+import from .common { stair, stalactites, lift, ring_path }
+import from .e1m2_parts { low_rocks }
 import from .e2m4 { e2m4_bars, e2m4_key, e2m4_moat, e2m4_stash }
 
 glob E2M7: str = "q1:e2m7";
@@ -121,9 +124,9 @@ node UnderearthCave(Prefab) {
         self.title = "Underearth cave";
         self.source = E2M7;
         self.district = level_district(E2M7);
-        self.long = dice.between(28, 32);
+        self.long = dice.between(30, 34);
         self.wide = dice.between(20, 24);
-        self.tall = dice.between(16, 18);
+        self.tall = dice.between(21, 25);
         self.secret_nook = dice.chance(0.6);
         self.low = -10;
         self.high = self.tall + 1;
@@ -141,7 +144,7 @@ node UnderearthCave(Prefab) {
         cave = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(cave, s);
         # The pool, a button under its water on its south wall.
-        e2m4_moat(build, 9, 17, 2, 9, 7);
+        e2m4_moat(build, 9, 19, 2, 12, 8);
         below = build.push(13.0, 2.0, -6.0, 1);
         # The shelf along the north wall over the pool's edge, a stair up.
         build.solid(2, self.wide - 6, s - 1, self.long - 1, self.wide - 1, s);
@@ -150,6 +153,12 @@ node UnderearthCave(Prefab) {
             build.keep(cave, x, self.wide - 6, s);
         }
         build.solid(self.long - 4, self.wide - 4, s, self.long - 3, self.wide - 3, s + 3);
+        # The ground under the shelf a step up; a sill of rock across the cave
+        # past the pool.
+        build.solid(2, self.wide - 6, 0, 19, self.wide - 1, 1);
+        build.solid(19, 1, 0, 20, self.wide - 1, 1);
+        build.solid(20, 1, 0, 21, self.wide - 1, 2);
+        build.solid(21, 1, 0, 22, self.wide - 1, 1);
         above = build.push(float(self.long - 4), float(self.wide) - 3.5, float(s) + 1.2, 2);
         both = build.tally(2, "The way on is open");
         below +>:Fires:+> both;
@@ -176,19 +185,19 @@ node UnderearthCave(Prefab) {
             build.secret(float(self.long - 5), float(self.wide - 5), 0.0, float(self.long - 2), float(self.wide - 3), 3.0);
             build.supply(float(self.long) - 3.5, float(self.wide) - 4.0, 0, "item_artifact_super_damage");
         }
-        clear = [[0, middle - 3, 5, middle + 3], [8, 1, 18, 10], [5, self.wide - 7 - s, 10, self.wide - 5], [self.long - 6, middle - 3, self.long, middle + 3], [self.long - 9, 0, self.long - 3, 4]];
-        boulders(build, dice, 1, 1, self.long - 1, self.wide - 7, 0, dice.between(3, 5), clear);
+        clear = [[0, middle - 3, 5, middle + 3], [8, 1, 20, 13], [5, self.wide - 7 - s, 10, self.wide - 5], [self.long - 6, middle - 3, self.long, middle + 3], [self.long - 9, 0, self.long - 3, 4], [18, 0, 23, self.wide]];
+        low_rocks(build, dice, 1, 1, self.long - 1, self.wide - 7, 0, dice.between(3, 5), 2, clear);
         stalactites(build, dice, 3, 3, self.long - 3, self.wide - 7, self.tall, dice.between(5, 8));
         # The dead about the cave wake as the player comes past the pool;
         # an ogre walks the shelf.
-        past = build.touch(17.0, 1.0, 0.0, 19.0, float(self.wide - 6), 6.0);
+        past = build.touch(19.0, 1.0, 0.0, 22.0, float(self.wide - 1), 8.0);
         dead = build.waiting();
         past +>:Fires:+> dead;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 6.5 - float(index) * 2.0, 3.5 + float(index) * 3.0, 0, E2M7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=dead);
+            build.foe(float(self.long) - 3.5 - float(index), 3.5 + float(index) * 3.0, 0, E2M7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=dead);
         }
         build.foe(10.5, float(self.wide) - 3.0, s, "monster_ogre", 0.0, patrol=[[10.5, float(self.wide) - 3.0], [float(self.long) - 7.5, float(self.wide) - 3.0]]);
-        build.foe(20.5, float(middle) + 0.5, 0, "monster_zombie", 90.0, patrol=[[20.5, 3.5], [20.5, float(self.wide) - 8.5]]);
+        build.foe(24.5, float(middle) + 0.5, 0, "monster_zombie", 90.0, patrol=[[24.5, 5.5], [24.5, float(self.wide) - 8.5]]);
         build.start(2.5, float(middle) + 0.5, 0, 0.0);
         build.supply(2.5, float(middle) - 1.5, 0, "item_shells");
         build.supply(float(self.long) - 2.5, float(middle) + 3.5, 0, "item_health");
@@ -210,7 +219,7 @@ node ShotMarks(Prefab) {
         self.district = level_district(E2M7);
         self.long = dice.between(28, 32);
         self.wide = dice.between(17, 20);
-        self.tall = dice.between(15, 17);
+        self.tall = dice.between(20, 24);
         self.stash = dice.chance(0.5);
         self.marks = dice.order(9)[:dice.between(5, 7)];
         self.low = -9;
@@ -235,6 +244,13 @@ node ShotMarks(Prefab) {
         for x in range(5 + g, 8 + g) {
             build.keep(hall, x, gy, g);
         }
+        # The hall in three bays: the middle one up two steps, floor and all
+        # under the gallery; an aisle of the near one drowned.
+        build.solid(11, 1, 0, 12, self.wide - 1, 1);
+        build.solid(12, 1, 0, self.long - 12, self.wide - 1, 2);
+        build.solid(self.long - 12, 1, 0, self.long - 11, self.wide - 1, 1);
+        build.pool(2, 1, -8, 10, 5, 0, 2, False, False);
+        stair(build, 2, 1, -8, 0, 8, 2);
         # A row of pillars down the hall's south half.
         columns: list[float] = [];
         for x in range(8, self.long - 5, 6) {
@@ -286,7 +302,7 @@ node ShotMarks(Prefab) {
             e2m4_stash(build, 3, gy + 1, 5, self.wide - 2, g, 0, "item_artifact_super_damage");
         }
         build.supply(float(self.long) - 2.5, float(self.wide) - 3.0, g, "item_health");
-        build.supply(2.5, 2.5, 0, "item_shells");
+        build.supply(3.5, 6.5, 0, "item_shells");
     }
 }
 
@@ -303,7 +319,7 @@ node SpikeRing(Prefab) {
         self.district = level_district(E2M7);
         self.long = dice.between(22, 26);
         self.wide = dice.between(22, 26);
-        self.tall = self.gallery + dice.between(10, 12);
+        self.tall = self.gallery + dice.between(14, 17);
         self.low = -9;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -327,6 +343,11 @@ node SpikeRing(Prefab) {
         for x in range(g + 1, g + 4) {
             build.keep(room, x, 3, g);
         }
+        # The floor north of the pillar up two steps, under the gallery too;
+        # the far south corner a step up.
+        build.solid(1, cy + 4, 0, self.long - 1, cy + 5, 1);
+        build.solid(1, cy + 5, 0, self.long - 1, self.wide - 1, 2);
+        build.solid(cx + 5, 1, 0, self.long - 1, cy - 5, 1);
         # The pillar, and the ring of spike shooters about it, fired one
         # after another round and round once the player comes in.
         build.solid(cx - 2, cy - 2, 0, cx + 2, cy + 2, self.tall);
@@ -352,7 +373,7 @@ node SpikeRing(Prefab) {
         # The four buttons, two below and two on the gallery; all pushed,
         # the ways on below open and what was waiting is brought in.
         four = build.tally(4, "The way on is open");
-        for at in [[float(self.long - 1), float(cy) + 5.5, 1.2, 2.0], [float(self.long) - 5.5, 1.0, 1.2, 1.0], [5.5, float(self.wide - 1), float(g) + 1.2, 3.0], [float(self.long - 1), 5.5, float(g) + 1.2, 2.0]] {
+        for at in [[float(self.long - 1), float(cy) + 5.5, 3.2, 2.0], [float(self.long) - 5.5, 1.0, 2.2, 1.0], [5.5, float(self.wide - 1), float(g) + 1.2, 3.0], [float(self.long - 1), 5.5, float(g) + 1.2, 2.0]] {
             build.push(at[0], at[1], at[2], int(at[3])) +>:Fires:+> four;
         }
         build.doorway(room, self.enter);
@@ -375,12 +396,12 @@ node SpikeRing(Prefab) {
         guard = build.waiting();
         coming +>:Fires:+> guard;
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx) + 4.5, float(cy) - 4.5 + float(index) * 4.5, 0, E2M7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
+            build.foe(float(cx) + 4.5, float(cy) - 3.5 + float(index) * 3.0, 0, E2M7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
         build.foe(2.5, float(self.wide) - 2.5, g, "monster_ogre", 0.0, patrol=[[2.5, float(self.wide) - 2.5], [float(self.long) - 2.5, float(self.wide) - 2.5], [float(self.long) - 2.5, 2.5], [2.5, 2.5]]);
         build.foe(float(cx) + 0.5, float(cy) - 5.5, 6, "monster_wizard", 0.0);
-        build.foe(float(cx) - 5.5, float(cy) + 5.5, 0, "monster_zombie", 0.0, patrol=[[float(cx) - 5.5, float(cy) + 5.5], [float(cx) + 5.5, float(cy) + 5.5]]);
-        build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, 0, "item_health");
+        build.foe(float(cx) - 5.5, float(cy) + 6.5, 2, "monster_zombie", 0.0, patrol=[[float(cx) - 5.5, float(cy) + 6.5], [float(cx) + 5.5, float(cy) + 6.5]]);
+        build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, 2, "item_health");
         build.supply(2.5, 2.5, g, "item_rockets");
     }
 }
@@ -401,7 +422,7 @@ node LavaRiver(Prefab) {
         self.district = level_district(E2M7);
         self.long = dice.between(30, 32);
         self.wide = dice.between(22, 26);
-        self.tall = dice.between(16, 20);
+        self.tall = dice.between(22, 27);
         self.shelf = dice.between(6, 7);
         self.rafted = dice.chance(0.5);
         self.stash = dice.chance(0.5);
@@ -429,20 +450,22 @@ node LavaRiver(Prefab) {
         # on its north half; a span of rock, or a platform a plate on the
         # floor sets riding, on its south.
         rx = 10;
-        build.pool(rx, 1, -3, rx + 7, self.wide - 1, 0, 4, False, False);
+        build.pool(rx, 1, -5, rx + 7, self.wide - 1, 0, 4, False, False);
         for at in [rx + 1, rx + 3, rx + 5] {
-            build.solid(at, self.wide - 7, -3, at + 1, self.wide - 5, 0);
+            build.solid(at, self.wide - 7, -5, at + 1, self.wide - 5, 0);
         }
         if self.rafted {
             plate = e2m7_plate(build, float(rx - 3), 4.0, float(rx - 1), 6.0, 0);
             plate +>:Fires:+> build.train([3.0, 4.0, 1.0], [[float(rx), 3.0, -1.0], [float(rx + 4), 3.0, -1.0]], 160.0, 2.0, True);
         } else {
-            build.solid(rx, 3, -3, rx + 7, 7, 0);
+            build.solid(rx, 3, -5, rx + 7, 7, 0);
         }
         for y in range(3, 7) {
             build.keep(cave, rx - 1, y, 0);
             build.keep(cave, rx + 7, y, 0);
         }
+        # A pool of water on the near bank, off the way along it.
+        build.pool(3, middle + 1, -6, 9, self.wide - 6, 0, 2);
         # The shelf along the far end's north side, a stair up its face; the
         # way on from its end opened by a button near by, at the stair's
         # foot; plates before the stair loose a fan of spikes from the wall.
@@ -503,11 +526,11 @@ node CagedKey(Prefab) {
         self.source = E2M7;
         self.district = level_district(E2M7);
         self.long = dice.between(22, 26);
-        self.hall_wide = dice.between(15, 17);
+        self.hall_wide = dice.between(19, 21);
         self.wide = self.hall_wide + 4;
         self.balcony = dice.between(6, 7);
         self.lifted = dice.chance(0.5);
-        self.tall = self.balcony + dice.between(9, 10);
+        self.tall = self.balcony + dice.between(12, 15);
         self.low = -9;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -552,6 +575,8 @@ node CagedKey(Prefab) {
         build.solid(cx, cy - 3, b + 6, self.long - 1, cy + 3, b + 7);
         bars = e2m4_bars(build, float(cx), float(cy - 2), float(cx + 1), float(cy + 2), b, 6, "The cage opens elsewhere...");
         build.push(1.0, float(cy) + 4.5, float(b) + 2.0, 0, True) +>:Fires:+> bars;
+        # A pool off the floor toward the closets.
+        build.pool(3, cy + 3, -7, bx - 1, side - 4, 0, 2);
         # Plates before the balcony loose spikes from the side walls.
         for x0 in [bx - 7, bx - 4] {
             plate = build.touch(float(x0), float(cy - 1), 0.0, float(x0 + 2), float(cy + 1), 4.0, False);
@@ -593,10 +618,10 @@ node UnderearthExit(Prefab) {
         self.title = "Underearth exit" + (" (" + self.key[4:] + " door)" if self.key else "");
         self.source = E2M7;
         self.district = level_district(E2M7);
-        self.long = dice.between(26, 30);
+        self.long = dice.between(30, 34);
         self.wide = dice.between(16, 18);
         self.shelf = dice.between(9, 10);
-        self.tall = self.shelf + dice.between(8, 10);
+        self.tall = self.shelf + dice.between(12, 15);
         self.low = -9;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
@@ -620,6 +645,9 @@ node UnderearthExit(Prefab) {
         if self.key {
             e2m4_bars(build, float(wall), float(middle - 2), float(wall + 1), float(middle + 2), 0, 8, "", self.key);
         }
+        # A pool past the wall against the north side.
+        build.pool(wall + 2, middle + 3, -6, self.long - 13, self.wide - 1, 0, 2, False, False);
+        stair(build, wall + 7, middle + 3, -6, 2, 6, 2);
         # The shelf, a slab over a hollow at the far end, the slipgate on it;
         # a stair up in two flights along the south wall, turning on a
         # landing.
@@ -650,14 +678,14 @@ node UnderearthExit(Prefab) {
         for index in range(dice.between(2, 3)) {
             build.foe(float(self.long) - 3.5, 6.5 + float(index) * 2.5, 0, E2M7_FOES.pick(dice, self.danger, index == 0), 180.0, waits=hollow);
         }
-        clear = [[0, middle - 3, 5, middle + 3], [wall - 4, middle - 3, wall + 4, middle + 3], [sx - 6, 0, self.long, self.wide]];
-        boulders(build, dice, 1, 1, self.long - 1, self.wide - 1, 0, dice.between(3, 6), clear);
+        clear = [[0, middle - 3, 5, middle + 3], [wall - 4, middle - 3, wall + 4, middle + 3], [sx - 6, 0, self.long, self.wide], [wall + 1, middle + 2, sx, self.wide]];
+        low_rocks(build, dice, 1, 1, self.long - 1, self.wide - 1, 0, dice.between(3, 6), 2, clear);
         stalactites(build, dice, 3, 3, sx - 2, self.wide - 3, self.tall, dice.between(4, 7));
         for index in range(dice.between(2, 3)) {
             build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, E2M7_FOES.pick(dice, self.danger, index == 0), 180.0);
         }
         build.foe(float(self.long) - 3.5, 2.5, s, E2M7_FOES.pick(dice, self.danger, True), 180.0, patrol=[[float(self.long) - 3.5, 2.5], [float(self.long) - 3.5, float(self.wide) - 2.5]]);
-        build.foe(float(wall) + 3.5, 2.5, 0, "monster_zombie", 90.0, patrol=[[float(wall) + 3.5, 2.5], [float(wall) + 3.5, float(self.wide) - 2.5]]);
+        build.foe(float(wall) + 3.5, 2.5, 0, "monster_zombie", 90.0, patrol=[[float(wall) + 3.5, 2.5], [float(wall) + 3.5, float(middle) + 1.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
         build.supply(float(sx) - 2.5, 2.5, half, "item_health");
     }

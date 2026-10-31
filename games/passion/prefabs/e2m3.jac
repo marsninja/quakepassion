@@ -5,10 +5,11 @@ dead a moment after its button is pressed, the gold key in a vault below.
 Raised in e2m3's own palette. Each stretch takes its shape from its dice
 as well as its sizes.
 
-- `CryptGate`: the start. A nave sunk between buttresses, a gallery over
-  the north bays up a stair, a way on from it; the dead in the bays wake
-  as the nave is crossed; the Well of Wishes at the near end, deep water
-  with a secret at its bottom ("Welcome to the Well of Wishes!").
+- `CryptGate`: the start. A nave drowned between buttresses, a causeway
+  down it, a gallery over the north bays up a stair, a way on from it; the
+  dead in the bays wake as the nave is crossed; the Well of Wishes at the
+  near end, deep water with a secret at its bottom, a drain swum from the
+  nave's water ("Welcome to the Well of Wishes!").
 - `Cistern`: a walkway over a deep cistern and a dry pit beyond its dam;
   the walkway's far span always there, or drawn up by a button on the near
   floor ("This door opens nearby...") or by a drop into the pit; the drop
@@ -18,12 +19,12 @@ as well as its sizes.
   galleries over the ledges; the side ways on opened by a button on the
   far ledge; foes sent in as the crossing is reached.
 - `DecayCrypt`: a crypt, a tomb raised in its middle with the button on
-  it, a channel of water across its near end, a gallery over its north
-  wall; the button opens the door on
+  it, a wide channel of water across its near end, swum under its causeway, a
+  gallery over its north wall; the button opens the door on
   at once and, a moment later, the secret doors of the alcoves in its
   walls on the dead behind them (e2m3's delayed walls of zombies).
 - `KnightVault`: the key room: a vault down a stair from a ledge, a
-  gallery over the stair, the key on a bier; taking it opens the closets
+  drowned aisle under the gallery over the stair, the key on a bier; taking it opens the closets
   and sends one more in behind.
 - `CryptExit`: the end: a hall, a door (a key's, as a gate, or one that
   opens as it is neared), a stair up to a gallery and the slipgate on it,
@@ -69,7 +70,7 @@ def secret_alcoves(build: Raising, cue: Cue, line: int, starts: list[int], z: in
     }
 }
 
-"""The start: a nave sunk between buttresses, a gallery over the north
+"""The start: a nave drowned between buttresses, a gallery over the north
 bays, the Well of Wishes."""
 node CryptGate(Prefab) {
     has tall: int = 16;
@@ -80,8 +81,8 @@ node CryptGate(Prefab) {
         self.source = E2M3;
         self.district = level_district(E2M3);
         self.long = dice.between(26, 30);
-        self.wide = dice.between(18, 20);
-        self.tall = dice.between(16, 18);
+        self.wide = dice.between(20, 22);
+        self.tall = dice.between(20, 23);
         self.low = -17;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -95,12 +96,16 @@ node CryptGate(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         nave = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
-        build.level(nave, -2);
         build.level(nave, 7);
-        # The sunken nave, two steps down at each end.
-        build.widen(nave, 7, 4, -2, self.long - 7, self.wide - 4, 0);
-        stair(build, 8, 4, -2, 2, 2, self.wide - 8);
-        stair(build, self.long - 9, 4, -2, 0, 2, self.wide - 8);
+        # The nave drowned between its buttresses, a causeway down its middle,
+        # steps up out of the water onto the side aisles.
+        build.pool(7, 4, -10, self.long - 7, self.wide - 4, 0, 2, False, False);
+        slab(build, 7, middle - 2, self.long - 7, middle + 2, 0);
+        keep_box(build, nave, 6, middle - 3, self.long - 6, middle + 3, 0);
+        stair(build, 10, 4, -10, 0, 10, 2);
+        stair(build, 10, self.wide - 6, -10, 0, 10, 2);
+        keep_box(build, nave, 7, 3, self.long - 7, 6, 0);
+        keep_box(build, nave, 7, self.wide - 6, self.long - 7, self.wide - 3, 0);
         # Buttresses along the side walls, bays between them; the north ones
         # under the gallery.
         clear = [[0, middle - 3, 7, middle + 3], [0, 0, 7, 6], [self.long - 7, 0, self.long, 4], [self.long - 7, self.wide - 4, self.long, self.wide]];
@@ -115,6 +120,9 @@ node CryptGate(Prefab) {
         # secret at its bottom.
         build.room(2, 1, -15, 5, 4, 0);
         flood(build, 2, 1, -15, 5, 4, -1);
+        # A drain from the nave's water into the well, swum.
+        build.room(5, 3, -8, 7, 6, -4);
+        flood(build, 5, 3, -8, 7, 6, -4);
         keep_box(build, nave, 1, 1, 6, 5, 0);
         build.touch(2.0, 1.0, 0.0, 5.0, 4.0, 4.0, False, "Welcome to the Well of Wishes!");
         build.secret(2.0, 1.0, -15.0, 5.0, 4.0, -12.0);
@@ -126,13 +134,14 @@ node CryptGate(Prefab) {
         build.start(2.5, float(middle) + 0.5, 0, 0.0);
         build.supply(2.5, float(middle) + 2.5, 0, "item_shells");
         # The dead in the bays wake as the nave's middle is reached.
-        crossing = build.touch(float(self.long // 2 - 1), 4.0, -2.0, float(self.long // 2 + 2), float(self.wide - 4), 4.0);
+        crossing = build.touch(float(self.long // 2 - 1), float(middle - 2), 0.0, float(self.long // 2 + 2), float(middle + 2), 4.0);
         bays = build.waiting();
         crossing +>:Fires:+> bays;
         for index in range(dice.between(2, 3)) {
             build.foe(float(5 + index * 3) + 0.5, 1.5 if index % 2 == 0 else float(self.wide) - 1.5, 0, "monster_zombie", 0.0, waits=bays);
         }
-        build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, -2, E2M3_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, 0, E2M3_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2) + 0.5, 5.5, -5, "monster_fish", 0.0);
         build.foe(13.5, float(self.wide) - 2.5, 7, "monster_ogre", 0.0, patrol=[[13.5, float(self.wide) - 2.5], [float(self.long) - 3.5, float(self.wide) - 2.5]]);
         build.supply(float(self.long) - 2.5, float(middle) + 0.5, 0, "item_health");
         build.supply(float(self.long) - 3.5, float(self.wide) - 2.5, 7, "item_shells");
@@ -151,7 +160,7 @@ node Cistern(Prefab) {
         self.district = level_district(E2M3);
         self.long = dice.between(30, 34);
         self.wide = dice.between(15, 17);
-        self.tall = dice.between(16, 18);
+        self.tall = dice.between(21, 25);
         self.drawn = dice.chance(0.5);
         self.low = -20;
         self.high = self.tall + 1;
@@ -249,11 +258,11 @@ node BridgeHall(Prefab) {
         self.title = "Bridge hall";
         self.source = E2M3;
         self.district = level_district(E2M3);
-        self.long = dice.between(26, 30);
-        self.wide = dice.between(26, 30);
-        self.tall = dice.between(18, 20);
+        self.long = dice.between(28, 32);
+        self.wide = dice.between(28, 32);
+        self.tall = dice.between(24, 28);
         self.pit = dice.between(6, 7);
-        self.low = -self.pit - 14;
+        self.low = -self.pit - 16;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -272,8 +281,8 @@ node BridgeHall(Prefab) {
         build.level(hall, 8);
         build.widen(hall, 6, 6, low, self.long - 6, self.wide - 6, 0);
         # The deep pool in the pit's floor, a well in its bed.
-        build.pool(cx - 4, cy - 4, low - 8, cx + 4, cy + 4, low, 2);
-        sump(build, cx + 1, cy + 1, low - 13, low - 8, 2);
+        build.pool(9, 9, low - 10, self.long - 9, self.wide - 9, low, 2, False, True, True);
+        sump(build, cx + 1, cy + 1, low - 15, low - 10, 2);
         # Lifts up out of the pit in two corners, waiting at their feet.
         for corner in [[6, 6], [self.long - 8, self.wide - 8]] {
             build.put_box({"classname": "func_plat", "height": str(self.pit * 16), "speed": "200"}, float(corner[0]), float(corner[1]), -0.5, float(corner[0] + 2), float(corner[1] + 2), 0.0, kit_of(build.district).step);
@@ -314,16 +323,16 @@ node BridgeHall(Prefab) {
         roused = build.waiting();
         crossing +>:Fires:+> roused;
         for index in range(dice.between(1, 2)) {
-            build.foe(float(8 + index * 4) + 0.5, float(cy) + 5.5, low, E2M3_FOES.pick(dice, self.danger), 0.0, waits=roused);
+            build.foe(float(8 + index * 4) + 0.5, float(self.wide) - 7.5, low, E2M3_FOES.pick(dice, self.danger), 0.0, waits=roused);
         }
         build.foe(float(cx) + 0.5, float(cy) - 4.5, 0, E2M3_FOES.pick(dice, self.danger, True), 270.0);
         build.foe(8.5, 3.0, 8, "monster_ogre", 0.0, patrol=[[8.5, 3.0], [float(self.long) - 3.5, 3.0]]);
         build.foe(float(self.long) - 3.5, float(self.wide) - 3.0, 8, "monster_zombie", 180.0, patrol=[[float(self.long) - 3.5, float(self.wide) - 3.0], [8.5, float(self.wide) - 3.0]]);
-        build.foe(float(cx) - 2.5, float(cy) + 0.5, low - 6, "monster_fish", 0.0);
+        build.foe(float(cx) - 2.5, float(cy) + 0.5, low - 7, "monster_fish", 0.0);
         build.supply(3.0, 3.0, 8, "item_health");
         build.supply(float(self.long) - 3.0, float(self.wide) - 3.0, 8, "item_health");
-        build.supply(8.5, float(cy) - 5.5, low, "item_health");
-        build.supply(float(self.long) - 9.0, float(cy) + 5.5, low, "item_spikes");
+        build.supply(7.5, float(cy) - 5.5, low, "item_health");
+        build.supply(float(self.long) - 7.5, float(cy) + 5.5, low, "item_spikes");
         build.supply(3.0, float(self.wide) - 3.0, 0, "item_shells");
         build.supply(3.0, float(cy) + 3.5, 0, "item_health");
     }
@@ -341,12 +350,12 @@ node DecayCrypt(Prefab) {
         self.title = "Decay crypt";
         self.source = E2M3;
         self.district = level_district(E2M3);
-        self.long = dice.between(28, 32);
+        self.long = dice.between(30, 34);
         self.hw = dice.between(16, 18);
         self.wide = self.hw + 8;
-        self.tall = dice.between(14, 16);
+        self.tall = dice.between(19, 23);
         self.shot = dice.chance(0.4);
-        self.low = -12;
+        self.low = -13;
         self.high = self.tall + 1;
         mid = (5 + self.wide - 5) // 2;
         self.enter = Port(face=2, along=float(mid), floor=0);
@@ -362,18 +371,20 @@ node DecayCrypt(Prefab) {
         mid = (y0 + y1) // 2;
         door_x = self.long - 6;
         hall = build.room(1, y0, 0, door_x, y1, self.tall, variant=dice.below(3));
-        chamber = build.room(door_x + 1, y0, 0, self.long - 1, y1, 10, variant=dice.below(3));
+        chamber = build.room(door_x + 1, y0, 0, self.long - 1, y1, 12, variant=dice.below(3));
         # The channel of water across the near end, a causeway over it, steps
         # out of it on both sides, a well in its bed.
-        build.pool(5, y0, -6, 9, y1, 0, 2, False, True, True);
-        build.solid(5, mid - 2, -6, 9, mid + 2, 0);
-        keep_box(build, hall, 4, mid - 2, 10, mid + 2, 0);
-        sump(build, 6, mid + 3, -11, -6, 2);
+        build.pool(5, y0, -7, 12, y1, 0, 2, False, False);
+        build.solid(5, mid - 2, -3, 12, mid + 2, 0);
+        keep_box(build, hall, 4, mid - 2, 13, mid + 2, 0);
+        stair(build, 5, y0, -7, 0, 7, 2);
+        stair(build, 5, y1 - 2, -7, 0, 7, 2);
+        sump(build, 6, mid + 3, -12, -7, 2);
         # The tomb, two lifts up, a step round it, the button on its
         # sarcophagus (or high on the far wall, to be shot).
-        cx = self.long // 2;
-        build.solid(cx - 4, mid - 3, 0, cx + 4, mid + 4, 1);
-        build.solid(cx - 3, mid - 2, 1, cx + 3, mid + 3, 2);
+        cx = (12 + door_x) // 2;
+        build.solid(cx - 3, mid - 3, 0, cx + 3, mid + 4, 1);
+        build.solid(cx - 2, mid - 2, 1, cx + 2, mid + 3, 2);
         build.solid(cx - 1, mid, 2, cx + 1, mid + 1, 4);
         if self.shot {
             press = build.push(float(door_x), float(mid) + 4.5, 9.0, 2, True);
@@ -382,10 +393,10 @@ node DecayCrypt(Prefab) {
         }
         # A gallery along the north wall over the alcoves, a lift up to it
         # past the channel.
-        slab(build, 13, y1 - 3, door_x, y1, 7);
-        lift(build, 10, y1 - 3, 13, y1, 0, 7);
-        keep_box(build, hall, 10, y1 - 4, 15, y1, 7);
-        keep_box(build, hall, 9, y1 - 4, 14, y1, 0);
+        slab(build, 16, y1 - 3, door_x, y1, 7);
+        lift(build, 13, y1 - 3, 16, y1, 0, 7);
+        keep_box(build, hall, 13, y1 - 4, 18, y1, 7);
+        keep_box(build, hall, 12, y1 - 4, 17, y1, 0);
         # The door on opens at once ("This door opens nearby...").
         build.widen(chamber, door_x, mid - 2, 0, door_x + 1, mid + 2, 8);
         press +>:Fires:+> build.opened(float(door_x), float(mid - 2), 0.0, float(door_x + 1), float(mid + 2), 8.0);
@@ -393,7 +404,7 @@ node DecayCrypt(Prefab) {
         # A moment later the alcoves in both walls open on their dead.
         later = build.delay(4.0);
         press +>:Fires:+> later;
-        starts = [x for x in [11, 16, 21, 26] if x + 3 <= door_x - 1];
+        starts = [x for x in [14, 19, 24, 29] if x + 3 <= door_x - 1];
         secret_alcoves(build, later, y0, starts[:3], 0, -1, ["monster_zombie", "monster_zombie", E2M3_FOES.pick(dice, self.danger, True)]);
         secret_alcoves(build, later, y1, starts[1:], 0, 1, ["monster_zombie", E2M3_FOES.pick(dice, self.danger)]);
         build.doorway(hall, self.enter);
@@ -402,14 +413,14 @@ node DecayCrypt(Prefab) {
         }
         # Crossing the causeway wakes the crypt's ogre; a hell knight waits
         # beyond the door.
-        crossing = build.touch(5.0, float(mid - 2), 0.0, 9.0, float(mid + 2), 6.0);
+        crossing = build.touch(5.0, float(mid - 2), 0.0, 12.0, float(mid + 2), 6.0);
         guard = build.waiting();
         crossing +>:Fires:+> guard;
         build.foe(float(cx) + 4.5, float(mid) + 5.5, 0, E2M3_FOES.pick(dice, self.danger, True), 180.0, waits=guard);
         build.foe(float(self.long) - 2.5, float(mid) + 0.5, 0, E2M3_FOES.pick(dice, self.danger, True), 180.0, waits=guard);
-        build.foe(12.5, float(y0) + 1.5, 0, "monster_zombie", 0.0, patrol=[[12.5, float(y0) + 1.5], [float(door_x) - 2.5, float(y0) + 1.5]]);
+        build.foe(13.5, float(y0) + 1.5, 0, "monster_zombie", 0.0, patrol=[[13.5, float(y0) + 1.5], [float(door_x) - 2.5, float(y0) + 1.5]]);
         build.foe(7.0, float(mid) + 5.5, -5, "monster_fish", 0.0);
-        build.foe(15.5, float(y1) - 1.5, 7, E2M3_FOES.pick(dice, self.danger), 0.0, patrol=[[15.5, float(y1) - 1.5], [float(door_x) - 1.5, float(y1) - 1.5]]);
+        build.foe(18.5, float(y1) - 1.5, 7, E2M3_FOES.pick(dice, self.danger), 0.0, patrol=[[18.5, float(y1) - 1.5], [float(door_x) - 1.5, float(y1) - 1.5]]);
         build.supply(2.5, float(y0) + 1.5, 0, "item_health");
         build.supply(float(self.long) - 2.5, float(y1) - 1.5, 0, "item_rockets");
         build.supply(float(door_x) - 1.5, float(y1) - 1.5, 7, "item_health");
@@ -433,7 +444,7 @@ node KnightVault(Prefab) {
         self.hall_wide = dice.between(16, 18);
         self.wide = self.hall_wide + 4;
         self.deep = dice.between(5, 6);
-        self.tall = dice.between(13, 15);
+        self.tall = dice.between(18, 22);
         self.low = -self.deep - 10;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -462,6 +473,9 @@ node KnightVault(Prefab) {
         lift(build, 1, 1, 4, 4, 0, 6);
         keep_box(build, vault, 1, 1, 6, 5, 6);
         keep_box(build, vault, 1, 1, 5, 5, 0);
+        # The aisle under the gallery drowned, steps up out of it along it.
+        build.pool(7 + self.deep, 1, low - 7, self.long - 1, 4, low, 2, False, False);
+        stair(build, 13 + self.deep, 1, low - 7, 2, 7, 2);
         # The bier at the far end, the key on it.
         build.solid(self.long - 6, cy - 1, low, self.long - 3, cy + 2, low + 1);
         pillars(build, 9 + self.deep, 5, self.long - 7, 6, low, self.tall, 4, []);
@@ -492,8 +506,8 @@ node CryptExit(Prefab) {
         self.district = level_district(E2M3);
         self.long = dice.between(26, 28);
         self.wide = dice.between(14, 16);
-        self.tall = dice.between(16, 18);
-        self.low = -12;
+        self.tall = dice.between(20, 24);
+        self.low = -14;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
@@ -505,7 +519,7 @@ node CryptExit(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         wall = self.long - 15;
-        hall = build.room(1, 1, 0, wall, self.wide - 1, 12, variant=dice.below(3));
+        hall = build.room(1, 1, 0, wall, self.wide - 1, 14, variant=dice.below(3));
         chapel = build.room(wall + 1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         build.level(chapel, 6);
         build.doorway(hall, self.enter);
@@ -520,9 +534,10 @@ node CryptExit(Prefab) {
         # gallery's front.
         stair(build, wall + 2, middle - 2, 0, 0, 6, 4);
         slab(build, wall + 8, 1, self.long - 1, self.wide - 1, 6);
-        arcade(build, wall + 8, 3, self.wide - 3, 0, 5, 3, True);
-        build.pool(wall + 9, 2, -6, self.long - 4, self.wide - 2, 0, 2);
-        sump(build, self.long - 7, middle - 1, -11, -6, 2);
+        arcade(build, wall + 8, 3, self.wide - 3, 0, 5, 4, True);
+        build.pool(wall + 9, 1, -8, self.long - 1, self.wide - 1, 0, 2);
+        keep_box(build, chapel, wall + 8, 1, wall + 9, self.wide - 1, 0);
+        sump(build, self.long - 7, middle - 1, -13, -8, 2);
         for y in range(middle - 2, middle + 2) {
             build.keep(chapel, wall + 8, y, 6);
         }
