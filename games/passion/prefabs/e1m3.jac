@@ -8,22 +8,25 @@ palette.
   grand stair down into it (or two flights down its side walls from a
   landing over a lower vault), pillars down its length and zombies waiting
   in the niches of its walls, roused as the player reaches a stair's foot.
-- `Catacombs`: three passages each way crossing in a grid, a tall crypt
+- `Catacombs`: three passages each way crossing in a grid, their stretches
+  between the crossings worn a step higher than the crossings, a tall crypt
   where the middle ones cross (or a flooded crossing, a footbridge over it
-  where a foe is brought in behind the player by a teleporter), zombies in
-  niches and shambling the passages; ways on in every direction (a hub as
-  well as a stretch passed through); a closet in a block opens to a shot.
-- `SunkenCrypt`: a crypt, a ledge across its far end and the way on up on
-  it; shooting the button on the ledge's face raises a stair out of the
+  where a foe is brought in behind the player by a teleporter), two of the
+  grid's blocks fallen in to flooded cisterns the passages run beside,
+  zombies in niches and shambling the passages; ways on in every direction
+  (a hub as well as a stretch passed through); a closet in a block opens to
+  a shot.
+- `SunkenCrypt`: a crypt, its middle sunk under water, a ledge across its
+  far end and the way on up on it; shooting the button on the ledge's face raises a stair out of the
   floor up to it (e1m3's stair of doors raised by a shot button), straight
   or turning up a side wall onto a platform and on; the crypt's dead wake
   as it rises and one is brought in behind; a gallery may run back along a
   side wall from the ledge, a closet at its end.
-- `Graveyard`: a court under the sky, rows of graves, a channel of water
-  across it under a stone footbridge (or stepping stones), and a terrace
+- `Graveyard`: a court under the sky, rows of graves, a broad channel of
+  water across it under a stone footbridge (or stepping stones), and a terrace
   up a stair at the far end where ogres stand guard, roused as the player
   crosses; the terrace may roof a tomb, its dead and a closet in its wall.
-- `PitFerry`: a pit (dry, or lava) crossed by platforms riding back and
+- `PitFerry`: a pit (dry, flooded, or lava) crossed by platforms riding back and
   forth over it (e1m3's trains), a lift or stair up out of it, the far
   ledge's guard roused as the player lands.
 - `GoldCrypt`: the key room. A hall over a crypt far below, reached down a
@@ -43,6 +46,7 @@ import from ..space { Space }
 import from .roster { FoeMix }
 import from .common { stair, pillars, apart, niches, spiral, ring_path, lift }
 import from .e1m1_parts { deck, stash, bars }
+import from .e1m2_parts { keep_box }
 
 glob E1M3: str = "q1:e1m3";
 
@@ -79,7 +83,7 @@ node CryptStair(Prefab) {
         self.high = self.drop + self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=self.drop);
-        self.leaves = [Port(face=0, along=middle - 3.0, floor=0), Port(face=0, along=middle + 3.0, floor=0)];
+        self.leaves = [Port(face=0, along=middle - 3.0, floor=1), Port(face=0, along=middle + 3.0, floor=1)];
         visitor.place(self);
     }
 
@@ -153,15 +157,18 @@ node CryptStair(Prefab) {
     }
 }
 
-"""Three passages each way crossing in a grid, a tall crypt in the middle
-(or a flooded crossing under a footbridge); ways on in every direction."""
+"""Three passages each way crossing in a grid, a step up between the
+crossings; a tall crypt in the middle (or a flooded crossing under a
+footbridge, and two blocks of the grid fallen in to cisterns); ways on in
+every direction."""
 node Catacombs(Prefab) {
     has block: int = 5,
         tall: int = 9,
         flooded: bool = False,
         raft: bool = False,
         barred: bool = False,
-        hidden: bool = False;
+        hidden: bool = False,
+        diagonal: bool = False;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
@@ -170,24 +177,30 @@ node Catacombs(Prefab) {
         self.district = level_district(E1M3);
         self.block = dice.between(5, 6);
         self.tall = dice.between(9, 10);
-        self.flooded = dice.chance(0.6);
+        self.flooded = dice.chance(0.8);
         self.raft = self.flooded and dice.chance(0.7);
         self.barred = dice.chance(0.7);
-        self.hidden = self.block == 6 and dice.chance(0.7);
+        self.diagonal = dice.chance(0.5);
+        self.hidden = self.block == 6 and (not self.flooded or not self.diagonal) and dice.chance(0.7);
         self.long = 2 * self.block + 12;
         self.wide = 2 * self.block + 12;
         self.low = -6;
         self.high = self.tall + 9;
         lines = [float(2 + index * (self.block + 3)) + 1.5 for index in range(3)];
-        self.enter = Port(face=2, along=lines[1], floor=0);
+        self.enter = Port(face=2, along=lines[1], floor=1);
         self.leaves = [
-            Port(face=0, along=lines[1], floor=0),
-            Port(face=1, along=lines[1], floor=0),
-            Port(face=3, along=lines[1], floor=0),
-            Port(face=0, along=lines[0], floor=0),
-            Port(face=1, along=lines[2], floor=0)
+            Port(face=0, along=lines[1], floor=1),
+            Port(face=1, along=lines[1], floor=1),
+            Port(face=3, along=lines[1], floor=1),
+            Port(face=0, along=lines[0], floor=1),
+            Port(face=1, along=lines[2], floor=1)
         ];
         visitor.place(self);
+    }
+
+    """Whether the grid's block (i, j) has fallen in to a cistern."""
+    def wet_block(i: int, j: int) -> bool {
+        return self.flooded and (i == j) == self.diagonal;
     }
 
     can rise with Raise entry {
@@ -202,6 +215,33 @@ node Catacombs(Prefab) {
         mid = starts[1];
         crypt = build.room(mid - 2, mid - 2, 0, mid + 5, mid + 5, self.tall + 4);
         build.level(crypt, 0);
+        # The passages between the crossings worn a step higher than the
+        # crossings, but for the spine from the way in on through the crypt.
+        for at in [starts[0], starts[2]] {
+            for index in range(2) {
+                build.solid(at, starts[index] + 3, 0, at + 3, starts[index + 1], 1);
+                build.solid(starts[index] + 3, at, 0, starts[index + 1], at + 3, 1);
+            }
+        }
+        build.solid(mid, starts[0] + 3, 0, mid + 3, mid - 2, 1);
+        build.solid(mid, mid + 5, 0, mid + 3, starts[2], 1);
+        # Two blocks of the grid fallen in: cisterns open beside the passages,
+        # steps up out of each to the passage on their far side.
+        for i in range(2) {
+            for j in range(2) {
+                if self.wet_block(i, j) {
+                    x0 = starts[i] + 3;
+                    y0 = starts[j] + 3;
+                    build.room(x0, y0, 0, x0 + self.block, y0 + self.block, self.tall);
+                    build.pool(x0, y0, -5, x0 + self.block, y0 + self.block, 0, 2);
+                    for passage in passages {
+                        for x in [x0 - 1, x0, x0 + 1] {
+                            build.keep(passage, x, y0 + self.block, 1);
+                        }
+                    }
+                }
+            }
+        }
         if self.flooded {
             # The crossing flooded, steps out at both sides, a footbridge on
             # along the way through; on it a foe is brought in behind.
@@ -243,13 +283,18 @@ node Catacombs(Prefab) {
             build.touch(1.0, float(mid), 0.0, 3.0, float(mid + 3), 6.0, True, "The ways on are barred");
             bars(build, lever, self.taken, self.long, self.wide);
         }
-        # Niches in the blocks along the passages, between the crossings.
+        # Niches in the blocks along the passages, between the crossings
+        # (none in a block fallen in).
         spots: list[list[float]] = [];
         for index in range(2) {
             between = starts[index] + 3 + self.block // 2 - 1;
-            for at in starts {
-                spots.extend(niches(build, passages[0], at - 1, between, between + 2, 0, 6, 3, True, -1));
-                spots.extend(niches(build, passages[0], at - 1, between, between + 2, 0, 6, 3, False, -1));
+            for (line, at) in enumerate(starts) {
+                if line == 0 or not self.wet_block(line - 1, index) {
+                    spots.extend(niches(build, passages[0], at - 1, between, between + 2, 0, 6, 3, True, -1));
+                }
+                if line == 0 or not self.wet_block(index, line - 1) {
+                    spots.extend(niches(build, passages[0], at - 1, between, between + 2, 0, 6, 3, False, -1));
+                }
             }
         }
         # A closet in the first block, its door on the first passage's
@@ -280,10 +325,11 @@ node Catacombs(Prefab) {
     }
 }
 
-"""A court under the sky: graves, a channel with a footbridge (or stepping
-stones), a terrace up a stair at the far end (over a tomb, or on solid)."""
+"""A court under the sky: graves, a broad channel with a footbridge (or
+stepping stones), a terrace up a stair at the far end (over a tomb, or on solid)."""
 node Graveyard(Prefab) {
     has channel_x: int = 10,
+        channel: int = 6,
         lane: int = 6,
         terrace: int = 5,
         tall: int = 16,
@@ -296,10 +342,11 @@ node Graveyard(Prefab) {
         self.title = "Graveyard";
         self.source = E1M3;
         self.district = level_district(E1M3);
-        self.long = dice.between(24, 28);
+        self.long = dice.between(27, 31);
         self.wide = dice.between(16, 20);
         self.tall = dice.between(16, 18);
         self.channel_x = dice.between(9, 11);
+        self.channel = dice.between(6, 7);
         self.tomb = dice.chance(0.5);
         self.stones = self.wide >= 17 and dice.chance(0.6);
         self.terrace = dice.between(7, 8) if self.tomb else dice.between(5, 6);
@@ -308,11 +355,11 @@ node Graveyard(Prefab) {
         self.low = -7;
         self.high = self.tall + 1;
         top_x = float(self.long - 1 - self.terrace) + float(self.terrace) * 0.5;
-        self.enter = Port(face=2, along=float(dice.between(3, self.wide - 3)), floor=0);
+        self.enter = Port(face=2, along=float(dice.between(3, self.wide - 3)), floor=1);
         self.leaves = [
-            Port(face=0, along=float(self.wide // 2), floor=self.top),
-            Port(face=1, along=top_x, floor=self.top),
-            Port(face=3, along=top_x, floor=self.top)
+            Port(face=0, along=float(self.wide // 2), floor=self.top + 1),
+            Port(face=1, along=top_x, floor=self.top + 1),
+            Port(face=3, along=top_x, floor=self.top + 1)
         ];
         visitor.place(self);
     }
@@ -323,19 +370,20 @@ node Graveyard(Prefab) {
         court = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(court, self.top);
         # The channel, steps up out of it at both ends.
-        build.pool(self.channel_x, 1, -6, self.channel_x + 4, self.wide - 1, 0, 2, False, True, True);
+        far_bank = self.channel_x + self.channel;
+        build.pool(self.channel_x, 1, -6, far_bank, self.wide - 1, 0, 2, False, True, True);
         if self.stones {
-            # Stepping stones: one block in the middle, a cell of water to
+            # Stepping stones: a long block in the middle, a cell of water to
             # jump either side of it.
-            build.solid(self.channel_x + 1, self.lane, -6, self.channel_x + 3, self.lane + 3, 0);
+            build.solid(self.channel_x + 1, self.lane, -6, far_bank - 1, self.lane + 3, 0);
         } else {
             # The footbridge a slab arching over the water, the channel
             # running on under it.
-            build.solid(self.channel_x, self.lane, -1, self.channel_x + 4, self.lane + 3, 0);
+            build.solid(self.channel_x, self.lane, -1, far_bank, self.lane + 3, 0);
         }
         for across in range(3) {
             build.keep(court, self.channel_x - 1, self.lane + across, 0);
-            build.keep(court, self.channel_x + 4, self.lane + across, 0);
+            build.keep(court, far_bank, self.lane + across, 0);
         }
         # The terrace, and its stair up the middle.
         terrace_x = self.long - 1 - self.terrace;
@@ -370,7 +418,7 @@ node Graveyard(Prefab) {
         }
         # A second stair up the terrace's face against a side wall.
         side_y = 1 if self.lane > middle else self.wide - 4;
-        side_stair = not self.tomb and self.channel_x + 6 < terrace_x - self.top;
+        side_stair = not self.tomb and far_bank + 2 < terrace_x - self.top;
         if side_stair {
             stair(build, terrace_x - self.top, side_y, 0, 0, self.top, 3);
             for y in range(side_y, side_y + 3) {
@@ -383,14 +431,14 @@ node Graveyard(Prefab) {
             build.doorway(court, port);
         }
         # Graves in rows across the near half and between channel and stair.
-        clear = [[0, int(self.enter.along) - 3, 4, int(self.enter.along) + 3], [self.channel_x - 2, self.lane - 1, self.channel_x + 6, self.lane + 4], [terrace_x - self.top - 2, middle - 3, terrace_x, middle + 4]];
+        clear = [[0, int(self.enter.along) - 3, 4, int(self.enter.along) + 3], [self.channel_x - 2, self.lane - 1, far_bank + 2, self.lane + 4], [terrace_x - self.top - 2, middle - 3, terrace_x, middle + 4]];
         if self.tomb {
             clear.append([terrace_x - 3, 0, terrace_x, self.wide]);
         }
         if side_stair {
             clear.append([terrace_x - self.top - 2, side_y - 1, terrace_x, side_y + 4]);
         }
-        for x in list(range(3, self.channel_x - 1, 3)) + list(range(self.channel_x + 6, terrace_x - 1, 3)) {
+        for x in list(range(3, self.channel_x - 1, 3)) + list(range(far_bank + 2, terrace_x - 1, 3)) {
             for y in range(2, self.wide - 2, 4) {
                 if apart([x, y, x + 1, y + 2], clear) {
                     build.solid(x, y, 0, x + 1, y + 2, dice.between(1, 2));
@@ -401,7 +449,7 @@ node Graveyard(Prefab) {
             build.foe(4.5 + float(index) * 2.0, 2.5 + float(index % 2) * float(self.wide - 5), 0, E1M3_FOES.pick(dice, self.danger), 0.0);
         }
         # The terrace's guard is roused as the player crosses the channel.
-        crossing = build.touch(float(self.channel_x), float(self.lane), 0.0, float(self.channel_x + 4), float(self.lane + 3), 6.0);
+        crossing = build.touch(float(self.channel_x), float(self.lane), 0.0, float(far_bank), float(self.lane + 3), 6.0);
         guard = build.waiting();
         crossing +>:Fires:+> guard;
         if self.tomb {
@@ -412,9 +460,9 @@ node Graveyard(Prefab) {
             build.foe(float(terrace_x) + 2.5, 3.5 + float(index) * 4.0, self.top, E1M3_FOES.pick(dice, self.danger, True), 180.0, waits=guard);
         }
         # Zombies wandering the graves, either side of the channel.
-        build.foe(float(self.channel_x) + 6.5, 2.5, 0, "monster_zombie", 90.0, patrol=[[float(self.channel_x) + 5.5, 1.5], [float(self.channel_x) + 5.5, float(self.wide) - 2.5]]);
+        build.foe(float(far_bank) + 2.5, 2.5, 0, "monster_zombie", 90.0, patrol=[[float(far_bank) + 1.5, 1.5], [float(far_bank) + 1.5, float(self.wide) - 2.5]]);
         build.foe(2.5, 2.5, 0, "monster_zombie", 90.0, patrol=[[2.5, 2.5], [float(self.channel_x) - 1.5, 2.5], [float(self.channel_x) - 1.5, float(self.wide) - 2.5]]);
-        build.supply(float(self.channel_x) + 6.5, float(self.wide) - 2.5, 0, "item_health");
+        build.supply(float(far_bank) + 2.5, float(self.wide) - 2.5, 0, "item_health");
         build.supply(float(self.long) - 2.5, 2.5, self.top, "item_rockets");
     }
 }
@@ -435,13 +483,13 @@ node SunkenCrypt(Prefab) {
         self.turning = dice.chance(0.5);
         self.gallery = not self.turning and dice.chance(0.7);
         self.ledge = dice.between(10, 12) if self.turning else dice.between(7, 9);
-        self.long = dice.between(24, 26);
+        self.long = dice.between(28, 32);
         self.wide = dice.between(14, 16);
         self.tall = self.ledge + dice.between(9, 11);
         self.low = -self.ledge - 2;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
-        self.enter = Port(face=2, along=middle, floor=0);
+        self.enter = Port(face=2, along=middle, floor=1);
         self.leaves = [Port(face=0, along=middle, floor=self.ledge), Port(face=1, along=float(self.long - 3), floor=self.ledge), Port(face=3, along=float(self.long - 3), floor=self.ledge)];
         visitor.place(self);
     }
@@ -486,6 +534,11 @@ node SunkenCrypt(Prefab) {
             stair_from = ledge_x - self.ledge;
         }
         build.touch(1.0, 1.0, 0.0, 4.0, float(self.wide - 1), 6.0, True, "Shoot the button!");
+        # The crypt's middle sunk under water, a walk round it by the niches.
+        if stair_from - 2 - 5 >= 4 {
+            build.pool(5, 4, -3, stair_from - 2, self.wide - 4, 0, 2);
+            build.foe(float(stair_from) * 0.5 + 2.5, float(middle) + 0.5, -2, "monster_fish", 0.0);
+        }
         # The crypt's dead wake as the stair grinds up; a moment on, a foe is
         # brought in behind the player, from a closet sealed in the ledge.
         stirred = build.waiting();
@@ -514,7 +567,7 @@ node SunkenCrypt(Prefab) {
             }
         }
         build.foe(float(self.long) - 3.5, float(middle) + 0.5, self.ledge, E1M3_FOES.pick(dice, self.danger, True), 180.0);
-        build.foe(3.5, float(middle) + 0.5, 0, "monster_zombie", 0.0, patrol=[[3.5, float(middle) + 0.5], [float(stair_from) - 2.5, float(middle) + 0.5]]);
+        build.foe(3.5, 2.5, 0, "monster_zombie", 0.0, patrol=[[3.5, 2.5], [float(stair_from) - 2.5, 2.5]]);
         build.supply(float(self.long) - 2.5, 2.5, self.ledge, "item_health");
         build.supply(2.5, float(self.wide) - 2.5, 0, "item_shells");
     }
@@ -531,6 +584,7 @@ node PitFerry(Prefab) {
         deep: int = 8,
         far_top: int = 0,
         lava: bool = False,
+        wet: bool = False,
         two: bool = False,
         plat: bool = False,
         called: bool = False,
@@ -544,7 +598,8 @@ node PitFerry(Prefab) {
         self.near = dice.between(6, 7);
         self.span = dice.between(12, 15);
         self.far = dice.between(7, 8);
-        self.lava = dice.chance(0.4);
+        self.lava = dice.chance(0.3);
+        self.wet = not self.lava and dice.chance(0.7);
         self.two = dice.chance(0.6);
         self.plat = dice.chance(0.5);
         self.called = dice.chance(0.45);
@@ -556,12 +611,12 @@ node PitFerry(Prefab) {
         self.long = 1 + self.near + self.span + self.far + 1;
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
-        self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
+        self.enter = Port(face=2, along=float(self.wide // 2), floor=1);
         far_x = float(self.long - 1 - self.far) + float(self.far) * 0.5;
         self.leaves = [
-            Port(face=0, along=float(self.wide // 2), floor=self.far_top),
-            Port(face=1, along=far_x, floor=self.far_top),
-            Port(face=3, along=far_x, floor=self.far_top)
+            Port(face=0, along=float(self.wide // 2), floor=self.far_top + 1),
+            Port(face=1, along=far_x, floor=self.far_top + 1),
+            Port(face=3, along=far_x, floor=self.far_top + 1)
         ];
         visitor.place(self);
     }
@@ -572,7 +627,12 @@ node PitFerry(Prefab) {
         hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
         x0 = 1 + self.near;
         x1 = x0 + self.span;
-        build.room(x0, 1, -self.deep, x1, self.wide - 1, 0, flood=2 if self.lava else 0, deadly=self.lava);
+        depth_of = self.deep - 3 if self.wet else (2 if self.lava else 0);
+        build.room(x0, 1, -self.deep, x1, self.wide - 1, 0, flood=depth_of, deadly=self.lava);
+        if self.wet {
+            # Flooded nearly to the ledges, what lives down there.
+            build.foe(float(x0) + 5.5, float(self.wide // 2) + 0.5, -self.deep, "monster_fish", 180.0);
+        }
         if self.far_top > 0 {
             build.level(hall, self.far_top);
             build.solid(x1, 1, 0, self.long - 1, self.wide - 1, self.far_top);
@@ -624,13 +684,15 @@ node PitFerry(Prefab) {
             build.foe(float(self.long) - 3.5, 2.5 + float(index) * 4.0, self.far_top, E1M3_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guard);
         }
         build.foe(float(x1) + 2.5, 2.5, self.far_top, "monster_zombie", 90.0, patrol=[[float(x1) + 2.5, 2.5], [float(x1) + 2.5, float(self.wide) - 2.5]]);
-        # Down in a dry pit, the dead and a closet under the near ledge; the
-        # near ledge's edge unrailed beside the way up, to drop in from.
+        # The near ledge's edge unrailed beside the way up, to drop in from;
+        # down in a dry pit, the dead and a closet under the near ledge.
         if not self.lava {
             drop_y = self.up_y + 3 if self.up_y == 1 else self.up_y - 3;
             for y in range(drop_y, drop_y + 3) {
                 build.keep(hall, x0 - 1, y, 0);
             }
+        }
+        if not self.lava and not self.wet {
             for index in range(dice.between(1, 3)) {
                 build.foe(float(x0) + 5.5 + float(index) * 3.0, float(middle) + 0.5, -self.deep, "monster_zombie", 180.0);
             }
@@ -709,10 +771,10 @@ node BoneWell(Prefab) {
         cross = float(self.long // 2);
         if self.down {
             self.enter = Port(face=2, along=self.top_along, floor=self.climb);
-            self.leaves = [Port(face=0, along=middle, floor=0), Port(face=1, along=cross, floor=0), Port(face=3, along=cross, floor=0)];
+            self.leaves = [Port(face=0, along=middle, floor=1), Port(face=1, along=cross, floor=1), Port(face=3, along=cross, floor=1)];
         } else {
-            self.enter = Port(face=2, along=middle, floor=0);
-            self.leaves = [Port(face=0, along=self.top_along, floor=self.climb), Port(face=1, along=cross, floor=0)];
+            self.enter = Port(face=2, along=middle, floor=1);
+            self.leaves = [Port(face=0, along=self.top_along, floor=self.climb), Port(face=1, along=cross, floor=1)];
         }
         visitor.place(self);
     }
@@ -840,9 +902,9 @@ node GoldCrypt(Prefab) {
                 self.winding = False;
             }
         }
-        self.low = -self.depth - 1;
+        self.low = -self.depth - 6;
         self.high = self.tall + 8;
-        self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
+        self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=1);
         self.leaves = [];
         visitor.place(self);
     }
@@ -883,6 +945,8 @@ node GoldCrypt(Prefab) {
             halfway = path[(self.start_at + self.depth // 2) % lap];
             way_up = [float(halfway[0]) + 0.5, float(halfway[1]) + 0.5];
             way_up_z = bottom + self.depth // 2 + 1;
+            # A pool at the foot of the well, what drops down it lands in.
+            build.pool(wx0 + 3, 4, bottom - 4, self.long - 4, side - 3, bottom, 2);
         } else {
             # A shaft down at the hall's far end, and the lift back up it.
             sx = self.long - 6;
@@ -894,6 +958,9 @@ node GoldCrypt(Prefab) {
             }
             build.touch(float(sx) - 2.0, float(cy - 2), 0.0, float(sx), float(cy + 2), 6.0, True, "The crypt lies below");
             way_up = [float(sx) - 1.5, float(cy) + 0.5];
+            # A channel across the crypt between the dais and the lift, a dry
+            # walk along its side by the closets.
+            build.pool(10, 1, bottom - 4, 15, side - 3, bottom, 2);
         }
         # Pillars in the hall above.
         pillars(build, 4, 3, wx0 - 1, 4, 0, self.tall, 4, [[0, cy - 3, 5, cy + 3]]);
@@ -928,7 +995,7 @@ node GoldCrypt(Prefab) {
         build.foe(float(wx0) - 3.5, 2.5, 0, E1M3_FOES.pick(dice, self.danger), 0.0, patrol=[[float(wx0) - 3.5, 2.5], [3.5, 2.5]]);
         build.supply(2.5, 2.5, 0, "item_health");
         build.supply(way_up[0], way_up[1], way_up_z, "item_spikes");
-        build.supply(12.5, float(cy) + 0.5, bottom, "item_health");
+        build.supply(9.5, float(side) - 2.5, bottom, "item_health");
     }
 }
 
@@ -955,7 +1022,7 @@ node Nave(Prefab) {
         self.gate_x = self.long - 1 - (dice.between(13, 14) if self.perch > 0 else dice.between(8, 9));
         self.low = -9;
         self.high = self.tall + 1;
-        self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
+        self.enter = Port(face=2, along=float(self.wide // 2), floor=1);
         self.leaves = [];
         visitor.place(self);
     }

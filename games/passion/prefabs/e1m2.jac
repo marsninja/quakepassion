@@ -7,7 +7,7 @@ which way a crossing goes, a stair or a lift, where the button is, whether
 a secret or an ambush is there at all.
 
 - `MoatGate`: the start. A terrace over a court under the sky (a stash in
-  its face), a moat across the court crossed by a causeway or swum, and
+  its face), a broad moat across the court crossed by a causeway or swum, and
   the castle's wall: a gate through it whose portcullis sinks as the
   player comes up to it, a wall-walk on top (stacked over the gate and
   widened by a hoarding over the bailey) with guards woken from the
@@ -15,7 +15,8 @@ a secret or an ambush is there at all.
   from it high up. Ramparts run back along the side walls over the court
   and the moat: one (most often) up a stair from the terrace, the other
   ending in a drop into the court.
-- `SpikeCorridor`: a hall with a walkway along one wall over an arcade;
+- `SpikeCorridor`: a hall with a walkway along one wall over an arcade, a
+  broad channel of water down its floor;
   spikes fly from the wall while anyone walks the walkway (or the floor
   under it: e1m2's trap corridor); a drop from the walkway's far end wakes
   what waits below and brings one more in by a teleporter, and a stair or
@@ -25,14 +26,15 @@ a secret or an ambush is there at all.
   Shooting (or pressing) the button raises the bars, and scrags are sent in
   behind the player by teleporters (e1m2's shot button and its teleported
   wizards); galleries on both sides joined by a catwalk across the far end
-  or the middle, crates about the floor, a way out from the gallery.
+  or the middle, the floor flooded either side of a causeway (or crates
+  about it), a way out from the gallery.
 - `Drawbridge`: a flooded pit across a hall; the bridge is drawn up out of
   the water by a button on a balcony over the way in (ridden up to by a
   lift), or by shooting one on the far wall (e1m2's drawbridge); an
   underwater niche holds a secret; crossing wakes the far side's guards
   and sends a scrag in behind.
-- `FloodedPassage`: two rooms joined only under water (a pocket of air off
-  the tunnel a secret), or a hall whose middle is a pool to swim across;
+- `FloodedPassage`: two rooms joined only under water, the near room's far
+  half all pool (a pocket of air off the tunnel a secret), or a hall whose middle is a pool to swim across;
   an upper floor over the far room, climbed to by a stair or a lift, runs
   back over the near room, its edge a drop: the way back without the swim.
 - `FerryHall`: a ledge, a flooded (or dry, the floor running on under the
@@ -42,16 +44,17 @@ a secret or an ambush is there at all.
   Steps up to both ledges, a lift to a catwalk high across the pit, and a
   teleporter back from the far ledge.
 - `GreatHall`: the hub: a gallery round the walls (or two galleries and a
-  catwalk across) over an arcade, a stair or a lift, a deep fountain, a
-  teleporter up to the far gallery; ways out on both floors; the gallery's
+  catwalk across) over an arcade, a stair or a lift, a flooded nave with a
+  deep well in it, aisles dry along the galleries, a teleporter up to the far gallery; ways out on both floors; the gallery's
   guards wake at its top.
 - `KeyTower`: the key room. The key high on a dais (an undercroft under
   it) up a stair or a lift, a balcony along one wall joined to it; the
   closets in one wall open as the climb begins and those in the other as
   the key is taken, and a foe is sent in behind (e1m2's knights let out as
-  its silver key is fetched); the quad in a stash in the undercroft.
-- `CastleExit`: the end: a hall with balconies its length, a channel of
-  water across it under a footbridge, a door in its far wall (a key's, as
+  its silver key is fetched); the undercroft flooded, the quad in a stash
+  by its dry walk.
+- `CastleExit`: the end: a hall with balconies its length, a broad channel
+  of water across it under a causeway, a door in its far wall (a key's, as
   a gate, or one that opens as it is neared, sometimes bringing a foe in
   behind) and the way out under an arch beyond, raised on a dais or sunk
   in a court."""
@@ -61,7 +64,7 @@ import from ..kits { level_district }
 import from .roster { q1_foe, q1_palette }
 import from .common { stair, lift, apart }
 import from .e1m5 { crenels }
-import from .e1m2_parts { slab, keep_box, arcade, stash, closets, spike_wall, key_cue }
+import from .e1m2_parts { slab, keep_box, arcade, stash, closets, spike_wall, key_cue, sump }
 
 glob E1M2: str = "q1:e1m2";
 
@@ -136,8 +139,8 @@ node MoatGate(Prefab) {
         self.source = E1M2;
         self.district = level_district(E1M2);
         self.terr = dice.between(5, 6);
-        self.court = dice.between(3, 5);
-        self.moat = dice.between(6, 7);
+        self.court = dice.between(2, 3);
+        self.moat = dice.between(11, 14);
         self.bank = dice.between(3, 4);
         self.wall_h = dice.between(9, 10);
         self.bailey = self.wall_h + dice.between(2, 4);
@@ -221,6 +224,11 @@ node MoatGate(Prefab) {
         keep_box(build, court, wall_x + 2, 1, bailey_x + 4, 5, self.wall_h);
         # A hoarding over the bailey's near part, the wall-walk widened.
         slab(build, bailey_x, 5, bailey_x + 3, self.wide - 1, self.wall_h);
+        # The bailey flooded ankle deep behind the wall (the castle stands in
+        # water), a step up out of it at either end.
+        build.pool(bailey_x + 3, 5, -2, self.long - 3, self.wide - 3, 0, 2, False, False);
+        stair(build, bailey_x + 4, self.lane, -2, 2, 2, 3);
+        stair(build, self.long - 5, self.lane, -2, 0, 2, 3);
         for port in self.taken {
             build.doorway(court, port);
         }
@@ -244,7 +252,7 @@ node MoatGate(Prefab) {
             build.foe(float(self.long) - 3.5 - float(index % 2) * 2.0, float(self.lane) + float(index) * 2.0 - 1.5, 0, e1m2_foe(dice, self.danger, index == 0), 180.0, waits=bailey);
         }
         if dice.chance(0.4) {
-            build.foe(float(moat_x) + float(self.moat) * 0.5, float(self.wide) - 3.5, -6, "monster_fish", 90.0);
+            build.foe(float(moat_x) + float(self.moat) * 0.5, float(self.wide) - 6.5, -6, "monster_fish", 90.0);
         }
         build.foe(float(far_x) - 1.5, float(self.wide) - 2.5, self.wall_h, "monster_army", 180.0, patrol=[[float(far_x) - 1.5, float(self.wide) - 2.5], [float(terrace_x) + 3.5, float(self.wide) - 2.5]]);
         build.supply(float(wall_x) - 1.5, float(self.wide) - 2.5, 0, "item_health");
@@ -274,7 +282,7 @@ node SpikeCorridor(Prefab) {
         self.tall = self.g + dice.between(8, 10);
         self.climb = dice.below(2);
         self.trap = dice.below(2);
-        self.water = dice.chance(0.7);
+        self.water = dice.chance(0.95);
         self.low = -9;
         self.high = self.tall + 1;
         walk_y = 1 + self.below_w;
@@ -311,9 +319,9 @@ node SpikeCorridor(Prefab) {
         # The walkway's far end is open to drop from.
         drop_x = self.long - 9;
         keep_box(build, hall, drop_x, walk_y, drop_x + 4, walk_y + 1, self.g);
-        # A channel of water along the near wall below, or crates.
+        # A broad channel of water along the near wall below, or crates.
         if self.water {
-            build.pool(start + 2, 1, -4, self.long - 6, 4, 0, 2);
+            build.pool(start + 2, 1, -4, self.long - 6, walk_y - 5, 0, 2);
         }
         build.doorway(hall, self.enter);
         for port in self.taken {
@@ -374,16 +382,18 @@ node BarredHall(Prefab) {
         tall: int = 19,
         twin: bool = False,
         middle: bool = False,
-        press: int = 0;
+        press: int = 0,
+        wet: bool = True;
 
     can choose with Lay entry {
         dice = visitor.dice_for(self);
         self.title = "Barred hall";
         self.source = E1M2;
         self.district = level_district(E1M2);
-        self.hall = dice.between(21, 24);
+        self.hall = dice.between(25, 28);
         self.chamber = dice.between(6, 8);
-        self.wide = dice.between(17, 20);
+        self.wide = dice.between(20, 23);
+        self.wet = dice.chance(0.95);
         self.g = dice.between(7, 8);
         self.tall = dice.between(18, 21);
         self.twin = dice.chance(0.5);
@@ -425,14 +435,22 @@ node BarredHall(Prefab) {
         slab(build, walk_x, 5, walk_x + 4, self.wide - 5, self.g);
         keep_box(build, hall, walk_x - 1, 4, walk_x + 5, 6, self.g);
         keep_box(build, hall, walk_x - 1, self.wide - 6, walk_x + 5, self.wide - 4, self.g);
-        # Crates two lifts high about the floor, clear of the ways through.
-        kept: list[list[int]] = [[0, mid - 4, 6, mid + 4], [4, 4, stair_top + 2, 9], [bar_x - 4, mid - 6, bar_x + 1, mid + 6], [1, self.wide - 8, bar_x, self.wide - 5]];
-        for index in range(dice.between(2, 4)) {
-            x = dice.between(stair_top + 2, bar_x - 6);
-            y = dice.between(6, self.wide - 9);
-            if apart([x, y, x + 2, y + 2], kept) {
-                build.solid(x, y, 0, x + 2, y + 2, 2);
-                kept.append([x, y, x + 2, y + 2]);
+        # The hall's floor flooded either side of a causeway up its middle
+        # (steps out of each side onto the causeway), or crates two lifts high
+        # about it, clear of the ways through.
+        if self.wet {
+            build.pool(stair_top + 2, 6, -3, bar_x - 4, self.wide - 6, 0, 2, False, True, True);
+            build.solid(stair_top + 2, mid - 2, -3, bar_x - 4, mid + 2, 0);
+            keep_box(build, hall, stair_top + 1, mid - 2, bar_x - 3, mid + 2, 0);
+        } else {
+            kept: list[list[int]] = [[0, mid - 4, 6, mid + 4], [4, 4, stair_top + 2, 9], [bar_x - 4, mid - 6, bar_x + 1, mid + 6], [1, self.wide - 8, bar_x, self.wide - 5]];
+            for index in range(dice.between(2, 4)) {
+                x = dice.between(stair_top + 2, bar_x - 6);
+                y = dice.between(6, self.wide - 9);
+                if apart([x, y, x + 2, y + 2], kept) {
+                    build.solid(x, y, 0, x + 2, y + 2, 2);
+                    kept.append([x, y, x + 2, y + 2]);
+                }
             }
         }
         # The bars: one gateway or two through the wall between hall and
@@ -472,7 +490,8 @@ node BarredHall(Prefab) {
         halfway +>:Fires:+> guards;
         build.foe(float(bar_x) - 2.5, 3.0, self.g, e1m2_foe(dice, self.danger), 180.0, waits=guards);
         build.foe(float(bar_x) - 2.5, float(self.wide) - 3.0, self.g, e1m2_foe(dice, self.danger, True), 180.0, waits=guards);
-        build.foe(float(stair_top) + 3.5, float(self.wide) - 6.5, 0, "monster_knight", 0.0, patrol=[[float(stair_top) + 3.5, float(self.wide) - 6.5], [float(bar_x) - 6.5, float(self.wide) - 6.5]]);
+        round_y = float(mid) + 0.5 if self.wet else float(self.wide) - 6.5;
+        build.foe(float(stair_top) + 3.5, round_y, 0, "monster_knight", 0.0, patrol=[[float(stair_top) + 3.5, round_y], [float(bar_x) - 6.5, round_y]]);
         build.supply(float(bar_x) - 1.5, 2.5, self.g, "item_shells");
         build.supply(2.5, float(self.wide) - 2.5, 0, "item_health");
     }
@@ -656,7 +675,7 @@ node FloodedPassage(Prefab) {
             # under the wall between them, water to the brim; steps up out of
             # each pool along its far side.
             near_pool = wall_x - 5;
-            build.room(near_pool, self.lane - 1, -6, wall_x, self.lane + 5, 0);
+            build.room(near_pool, 1, -6, wall_x, self.wide - 1, 0);
             build.room(far_x, self.lane - 1, -6, far_x + 5, self.lane + 5, 0);
             build.room(wall_x, self.lane, -6, far_x, self.lane + 3, -2);
             for step in range(6) {
@@ -664,10 +683,11 @@ node FloodedPassage(Prefab) {
                 build.solid(far_x + 4, self.lane - 1 + step, -6, far_x + 5, self.lane + step, -5 + step);
             }
             for z in range(-6, 0) {
-                for y in range(self.lane - 1, self.lane + 5) {
+                for y in range(1, self.wide - 1) {
                     for x in range(near_pool, far_x + 5) {
-                        pool = x < wall_x or x >= far_x;
-                        tunnel = not pool and self.lane <= y < self.lane + 3 and z < -2;
+                        in_lane = self.lane - 1 <= y < self.lane + 5;
+                        pool = x < wall_x or (x >= far_x and in_lane);
+                        tunnel = wall_x <= x < far_x and self.lane <= y < self.lane + 3 and z < -2;
                         if pool or tunnel {
                             build.liquid(x, y, z, 2);
                         }
@@ -686,7 +706,13 @@ node FloodedPassage(Prefab) {
         # out from it.
         mezz_x = far_x + (4 if self.lifted else 10);
         slab(build, mezz_x, 1, self.long - 1, self.wide - 1, 9);
-        arcade(build, mezz_x, 3, self.wide - 5, 0, 8, 4, True);
+        # Its pillars clear of the far pool's steps, whose top they would
+        # shut.
+        for y in range(3, self.wide - 5, 4) {
+            if self.open_water or not self.lifted or y < self.lane - 2 or y >= self.lane + 6 {
+                build.solid(mezz_x, y, 0, mezz_x + 1, y + 1, 8);
+            }
+        }
         if self.lifted {
             lift(build, far_x + 1, self.wide - 4, far_x + 4, self.wide - 1, 0, 9);
             keep_box(build, second, far_x, self.wide - 5, far_x + 5, self.wide - 1, 0);
@@ -749,7 +775,7 @@ node FerryHall(Prefab) {
         self.hw = dice.between(17, 20);
         self.wide = self.hw + 6;
         self.tall = self.ledge + dice.between(15, 17);
-        self.wet = dice.chance(0.6);
+        self.wet = dice.chance(0.95);
         self.twin = dice.chance(0.5);
         self.long = 1 + self.near + self.span + self.far_side + 1;
         self.low = -1;
@@ -856,7 +882,7 @@ node GreatHall(Prefab) {
         self.gallery = dice.between(10, 11);
         self.ring = dice.chance(0.5);
         self.climb = dice.below(2);
-        self.low = -6;
+        self.low = -12;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -907,9 +933,10 @@ node GreatHall(Prefab) {
             keep_box(build, hall, stair_x - 1, inner, stair_x + 4, inner + 4, 0);
         }
         top_x = stair_x + (self.gallery if self.climb == 0 else 2);
-        # The fountain: a pool in the middle, steps up out of it.
-        fx = cx if self.ring else cx + 5;
-        build.pool(fx - 4, cy - 3, -5, fx + 4, cy + 3, 0, 2);
+        # The flooded nave: a pool from the middle to near the far end, a well
+        # in its bed, steps up out of it, aisles dry along both galleries.
+        build.pool(cx - 5, inner + 2, -5, self.long - 5, far_y - 1, 0, 2);
+        sump(build, cx + 3, cy - 1, -11, -5, 3);
         # A teleporter in the floor up to the far gallery.
         build.teleporter(float(cx) - 7.5, float(cy) + 0.5, 0, float(self.long) - 7.5, float(self.wide) - 3.0, self.gallery, 180.0);
         build.doorway(hall, self.enter);
@@ -924,13 +951,14 @@ node GreatHall(Prefab) {
         build.foe(float(self.long) - 6.5, float(self.wide) - 2.5, self.gallery, e1m2_foe(dice, self.danger), 180.0, waits=guards);
         build.foe(5.5, float(self.wide) - 2.5, self.gallery, "monster_knight", 0.0, patrol=[[5.5, float(self.wide) - 2.5], [float(self.long) - 9.5, float(self.wide) - 2.5]]);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx - 6 + index * 4) + 0.5, float(cy) - 4.5, 0, e1m2_foe(dice, self.danger), 180.0);
+            build.foe(float(cx - 6 + index * 4) + 0.5, float(inner) + 0.5, 0, e1m2_foe(dice, self.danger), 180.0);
         }
-        build.foe(8.5, float(cy) + 4.5, 0, "monster_army", 0.0, patrol=[[8.5, float(cy) + 4.5], [float(self.long) - 8.5, float(cy) + 4.5]]);
+        build.foe(8.5, float(far_y) - 0.5, 0, "monster_army", 0.0, patrol=[[8.5, float(far_y) - 0.5], [float(self.long) - 8.5, float(far_y) - 0.5]]);
         for index in range(dice.between(1, 2)) {
             build.foe(float(cx) + 0.5, float(cy) + 0.5, self.gallery + 4, e1m2_foe(dice, self.danger, False, True), 180.0);
         }
         build.supply(2.5, float(cy) + 4.5, 0, "item_health");
+        build.foe(float(cx) + 4.5, float(cy) + 0.5, -4, "monster_fish", 0.0);
         build.supply(float(self.long) - 2.5, float(self.wide) - 2.5, self.gallery, "item_rockets");
         build.supply(float(cx) + 0.5, 2.5, self.gallery, "item_health");
     }
@@ -954,7 +982,7 @@ node KeyTower(Prefab) {
         self.district = level_district(E1M2);
         self.hall_wide = dice.between(14, 16);
         self.tall = dice.between(19, 22);
-        self.dais = dice.between(6, 7);
+        self.dais = dice.between(9, 11);
         self.rise_to = dice.between(8, 10);
         self.climb = dice.below(2);
         self.long = self.dais + self.rise_to + dice.between(13, 16);
@@ -982,6 +1010,8 @@ node KeyTower(Prefab) {
         # it, over the closets' doors.
         slab(build, 3, y0, dais_x, y0 + 4, self.rise_to);
         arcade(build, y0 + 3, 6, dais_x - 2, 0, self.rise_to - 1, 4, False);
+        # The undercroft flooded, but for a dry walk by its side wall.
+        build.pool(dais_x + 1, y0 + 3, -4, self.long - 1, y1, 0, 2);
         # Up to the dais: a stair along the side wall, or a lift.
         stair_x = dais_x - self.rise_to;
         if self.climb == 0 {
@@ -1044,7 +1074,7 @@ node CastleExit(Prefab) {
         self.title = "Castle exit" + (" (" + self.key[4:] + " door)" if self.key else "");
         self.source = E1M2;
         self.district = level_district(E1M2);
-        self.long = dice.between(28, 32);
+        self.long = dice.between(31, 35);
         self.wide = dice.between(16, 18);
         self.tall = dice.between(16, 18);
         self.balcony = dice.between(6, 7);
@@ -1075,13 +1105,13 @@ node CastleExit(Prefab) {
         keep_box(build, hall, bx - 1, self.wide - 4, bx + 1, self.wide - 1, self.balcony);
         # A channel of water across the hall under the balconies, a
         # footbridge over it in the middle, steps out on both sides of it.
-        cut = max(bx + 1, self.wall_x - 7);
-        build.pool(cut, 1, -4, cut + 3, self.wide - 1, 0, 2, False, True, True);
-        build.solid(cut, mid - 2, -4, cut + 3, mid + 2, 0);
-        keep_box(build, hall, cut - 1, mid - 2, cut + 4, mid + 2, 0);
+        cut = max(bx + 1, self.wall_x - 9);
+        build.pool(cut, 1, -4, cut + 7, self.wide - 1, 0, 2, False, True, True);
+        build.solid(cut, mid - 2, -4, cut + 7, mid + 2, 0);
+        keep_box(build, hall, cut - 1, mid - 2, cut + 8, mid + 2, 0);
         for line in [3, self.wide - 4] {
             arcade(build, line, bx + 2, cut - 1, 0, self.balcony - 1, 3, False);
-            arcade(build, line, cut + 4, self.wall_x - 1, 0, self.balcony - 1, 3, False);
+            arcade(build, line, cut + 8, self.wall_x - 1, 0, self.balcony - 1, 3, False);
         }
         # The door through the far wall: a key's, or one that opens as the
         # player comes up to it.

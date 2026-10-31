@@ -12,14 +12,14 @@ dice as well as its sizes.
   button at the foot opens the ways on (e1m6's first button and its door);
   a causeway winding across the lava, an ogre sent in behind halfway; the
   far landing's closets open and its ogres wake as the player arrives.
-- `DoorMaze`: a corridor of doors, rooms behind them, a cross passage whose
-  arms go down a stair, or up one, or stay level, to its ways out; the
+- `DoorMaze`: a corridor of doors stepping up either side of its crossing,
+  rooms a step up behind the doors, a cross passage whose arms go down a stair, or up one, or stay level, to its ways out; the
   ways on are shut, each opened by a button in one of the rooms ("This
   door is opened elsewhere"); rooms that open as the corridor's middle is
   reached, a vault behind a key's door, and a secret room behind a door
   that opens when shot (a hub, and a stretch passed through).
-- `LavaCauseway`: a long hall floored with lava, a causeway down it,
-  ledges high on both sides (a lift up to one, sometimes a bridge across
+- `LavaCauseway`: a long hall floored with lava, a causeway stepping up
+  over its middle, stepped ledges high on both sides (a lift up to one, sometimes a bridge across
   to the other); the button on the ledge opens the way on below; spikes
   fly across the causeway; halfway, closets on the ledge open and a fiend
   is sent in behind; a stash in the wall at the ledge's height.
@@ -28,8 +28,8 @@ dice as well as its sizes.
   stair of doors), spikes flying across it; a hoist riding back up (and
   sometimes a lift); a stash at the foot with a teleporter back to the
   rim; a foe sent in as the bottom is reached.
-- `ZombieGallery`: a hall with a high gallery round three sides (a lift
-  up); the button (on a plinth, or on the gallery) starts a sequence:
+- `ZombieGallery`: a hall with a high gallery round three sides, stepped
+  along its south and over a raised aisle (a lift up); the button (on a plinth, or on the gallery) starts a sequence:
   closets in the gallery's wall open one after another, an ogre is sent
   in and the closets below open, and at the last the way on opens (e1m6's
   chain of delayed triggers).
@@ -220,7 +220,7 @@ node DoorMaze(Prefab) {
         self.high = max(self.tall, self.drop + 10) + 1;
         c0 = max(steps, 8) + 3;
         self.enter = Port(face=2, along=float(c0 + 2), floor=0);
-        self.leaves = [Port(face=0, along=float(c0 + 2), floor=0), Port(face=1, along=float(self.long // 2), floor=self.drop), Port(face=3, along=float(self.long // 2), floor=self.drop)];
+        self.leaves = [Port(face=0, along=float(c0 + 2), floor=1), Port(face=1, along=float(self.long // 2), floor=self.drop), Port(face=3, along=float(self.long // 2), floor=self.drop)];
         visitor.place(self);
     }
 
@@ -233,6 +233,10 @@ node DoorMaze(Prefab) {
         c1 = c0 + 4;
         hall = build.room(1, c0, 0, self.long - 1, c1, self.tall, variant=dice.below(3));
         mid = self.long // 2;
+        # The corridor a step up each side of the crossing and a step more at
+        # its way in's end, so no two bays lie level.
+        build.solid(mid + 2, c0, 0, self.long - 1, c1, 1);
+        build.solid(4, c0, 0, mid - 2, c1, 1);
         # The cross passage's arms, each a straight stair down (or up) to a
         # way out, or level.
         top = max(self.tall, self.drop + 10);
@@ -284,28 +288,30 @@ node DoorMaze(Prefab) {
             y0 = spot[1];
             y1 = spot[2];
             door_y = spot[3];
+            # Each room's floor a step up from the corridor's, past its door.
             room = build.room(x, y0, 0, x + 5, y1, self.tall - 2);
             build.widen(room, x + 1, door_y, 0, x + 4, door_y + 1, 7);
+            build.solid(x, y0, 0, x + 5, y1, 1);
             back = float(y0) if spot[4] == 1 else float(y1);
             facing = 90.0 if spot[4] == 1 else 270.0;
             if rank == 4 {
                 # A vault behind a key's door.
                 build.rising_door(float(x + 1), float(door_y), 0.0, float(x + 4), float(door_y + 1), 7.0, {"key": "key_gold" if dice.chance(0.5) else "key_silver", "wait": "-1"});
-                build.supply(float(x) + 2.5, float(y0 + y1) * 0.5, 0, "item_armor2");
+                build.supply(float(x) + 2.5, float(y0 + y1) * 0.5, 1, "item_armor2");
                 continue;
             }
             if rank >= 5 {
                 # Rooms whose doors open as the corridor's middle is reached,
                 # what waits in them coming out.
                 crossing +>:Fires:+> build.opened(float(x + 1), float(door_y), 0.0, float(x + 4), float(door_y + 1), 7.0);
-                build.foe(float(x) + 2.5, float(y0 + y1) * 0.5, 0, E1M6_FOES.pick(dice, self.danger, True), facing, waits=loosed);
+                build.foe(float(x) + 2.5, float(y0 + y1) * 0.5, 1, E1M6_FOES.pick(dice, self.danger, True), facing, waits=loosed);
                 continue;
             }
             if rank == 3 {
                 # The secret room: its door opens when shot.
                 build.secret_door(float(x + 1), float(door_y), 0.0, float(x + 4), float(door_y + 1), 7.0, 3 if spot[4] == 1 else 1);
                 build.secret(float(x), float(y0), 0.0, float(x + 5), float(y1), 3.0);
-                build.supply(float(x) + 2.5, float(y0 + y1) * 0.5, 0, "item_artifact_super_damage");
+                build.supply(float(x) + 2.5, float(y0 + y1) * 0.5, 1, "item_artifact_super_damage");
                 continue;
             }
             build.put_box({"classname": "func_door", "angle": "-1", "speed": "120", "wait": "4", "lip": "8"}, float(x + 1), float(door_y), 0.0, float(x + 4), float(door_y + 1), 7.0, door);
@@ -314,7 +320,7 @@ node DoorMaze(Prefab) {
                 # A button on the room's back wall opens one way on and wakes
                 # what waits in the corridor; what lies in the room wakes as
                 # it is entered.
-                press = build.push(float(x) + 2.5, back, 1.2, spot[4]);
+                press = build.push(float(x) + 2.5, back, 2.2, spot[4]);
                 seal = seals[rank];
                 if seal is not None {
                     press +>:Fires:+> seal;
@@ -322,21 +328,21 @@ node DoorMaze(Prefab) {
                 woken = build.waiting();
                 press +>:Fires:+> woken;
                 build.foe(float(mid) + 0.5, float(c0) + 2.0 + (1.0 if rank % 2 == 0 else 0.0), 0, E1M6_FOES.pick(dice, self.danger), 180.0, waits=woken);
-                inside = build.touch(float(x + 1), float(y0), 0.0, float(x + 4), float(y1), 6.0);
+                inside = build.touch(float(x + 1), float(y0), 1.0, float(x + 4), float(y1), 7.0);
                 lurking = build.waiting();
                 inside +>:Fires:+> lurking;
-                build.foe(float(x) + 1.0, float(y0 + y1) * 0.5, 0, "monster_zombie", facing, waits=lurking);
+                build.foe(float(x) + 1.0, float(y0 + y1) * 0.5, 1, "monster_zombie", facing, waits=lurking);
                 if rank == 0 {
                     press +>:Fires:+> build.summon(x + 1, c0, -9, E1M6_FOES.pick(dice, self.danger, True), float(x) + 2.5, float(c0) + 2.5, 0, 0.0);
                 }
             } elif dice.chance(0.6) {
-                build.foe(float(x) + 2.5, float(y0 + y1) * 0.5, 0, E1M6_FOES.pick(dice, self.danger), facing);
+                build.foe(float(x) + 2.5, float(y0 + y1) * 0.5, 1, E1M6_FOES.pick(dice, self.danger), facing);
             } else {
-                build.supply(float(x) + 2.5, float(y0 + y1) * 0.5, 0, ["item_health", "item_rockets", "item_spikes", "item_shells"][dice.below(4)]);
+                build.supply(float(x) + 2.5, float(y0 + y1) * 0.5, 1, ["item_health", "item_rockets", "item_spikes", "item_shells"][dice.below(4)]);
             }
         }
         build.foe(float(mid) + 0.5, 2.5, self.drop, E1M6_FOES.pick(dice, self.danger, True), 90.0);
-        build.foe(3.5, float(c0) + 1.5, 0, "monster_knight", 0.0, patrol=[[3.5, float(c0) + 1.5], [float(self.long) - 3.5, float(c0) + 1.5]]);
+        build.foe(2.5, float(c0) + 1.5, 0, "monster_knight", 0.0, patrol=[[2.5, float(c0) + 1.5], [float(self.long) - 3.5, float(c0) + 1.5]]);
     }
 }
 
@@ -377,9 +383,15 @@ node LavaCauseway(Prefab) {
         build.level(hall, self.ledge);
         build.pool(4, 1, -3, self.long - 4, side, 0, 4);
         build.solid(4, middle - 2, -3, self.long - 4, middle + 2, 0);
-        # The ledges along both sides high up, slabs over the lava.
+        # The causeway a step up over its middle third.
+        third_x = self.long // 3;
+        build.solid(third_x, middle - 2, 0, 2 * third_x, middle + 2, 1);
+        # The ledges along both sides high up, slabs over the lava, the south
+        # a step up past its middle, the north a step up for a stretch.
         slab(build, 4, 1, self.long - 1, 5, self.ledge);
         slab(build, 4, side - 4, self.long - 1, side, self.ledge);
+        build.solid(self.long // 2, 1, self.ledge, self.long - 1, 5, self.ledge + 1);
+        build.solid(18, side - 4, self.ledge, self.long - 10, side, self.ledge + 1);
         # The lift up to the north ledge at the near end; sometimes a bridge
         # across between the ledges at the far end.
         lift(build, 1, side - 4, 4, side, 0, self.ledge);
@@ -413,9 +425,11 @@ node LavaCauseway(Prefab) {
         build.touch(1.0, float(middle - 2), 0.0, 3.0, float(middle + 2), 6.0, True, "Beware the lava");
         for index in range(dice.between(2, 4)) {
             at_y = 3.0 if index % 2 == 0 else float(side) - 2.0;
-            build.foe(float(8 + index * 5) + 0.5, at_y, self.ledge, E1M6_FOES.pick(dice, self.danger, True), 90.0 if index % 2 == 0 else 270.0, waits=ledges);
+            at_x = 8 + index * 5;
+            stepped = at_x >= self.long // 2 if index % 2 == 0 else 18 <= at_x < self.long - 10;
+            build.foe(float(at_x) + 0.5, at_y, self.ledge + (1 if stepped else 0), E1M6_FOES.pick(dice, self.danger, True), 90.0 if index % 2 == 0 else 270.0, waits=ledges);
         }
-        build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, 0, E1M6_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, 1, E1M6_FOES.pick(dice, self.danger), 180.0);
         build.foe(6.5, float(side) - 2.0, self.ledge, "monster_knight", 0.0, patrol=[[6.5, float(side) - 2.0], [float(self.long) - 3.5, float(side) - 2.0]]);
         # A stash in the north wall at the ledge's height.
         stash(build, side, self.long - 8, self.ledge, 1, "item_health");
@@ -563,7 +577,12 @@ node ZombieGallery(Prefab) {
         slab(build, 5, 1, self.long - 1, 5, g);
         slab(build, self.long - 5, 5, self.long - 1, side - 4, g);
         slab(build, 5, side - 4, self.long - 1, side, g);
-        arcade(build, 4, 9, self.long - 6, 0, g - 1, 4, False);
+        # The south gallery a step up either side of its way out; the aisle
+        # under it a step up from the floor.
+        build.solid(12, 1, g, self.long // 2 - 3, 5, g + 1);
+        build.solid(self.long // 2 + 3, 1, g, self.long - 6, 5, g + 1);
+        build.solid(5, 1, 0, self.long - 1, 5, 1);
+        arcade(build, 4, 9, self.long - 6, 1, g - 1, 4, False);
         arcade(build, side - 4, 9, self.long - 6, 0, g - 1, 4, False);
         arcade(build, self.long - 5, 7, side - 5, 0, g - 1, 4, True);
         # The lift up to the south gallery's near end.

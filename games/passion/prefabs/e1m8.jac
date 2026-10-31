@@ -110,7 +110,7 @@ node VoidLanding(Prefab) {
         self.long = dice.between(26, 30);
         self.wide = dice.between(18, 22);
         self.depth = dice.between(18, 22);
-        self.tall = dice.between(13, 16);
+        self.tall = dice.between(20, 24);
         self.lane = dice.between(6, self.wide - 7);
         self.leaps = dice.chance(0.5);
         self.low = -self.depth - 1;
@@ -185,12 +185,12 @@ node Ziggurat(Prefab) {
         self.tiers = dice.between(5, 6);
         self.long = 6 + 4 * self.tiers + 10;
         self.wide = 6 + 4 * self.tiers + 6;
-        self.tall = 2 * self.tiers + dice.between(12, 14);
+        self.tall = 2 * self.tiers + dice.between(22, 28);
         self.low = -9;
         self.high = self.tall + 1;
         cy = float(self.wide // 2);
-        self.enter = Port(face=2, along=cy, floor=0);
-        self.leaves = [Port(face=0, along=cy, floor=2 * self.tiers), Port(face=1, along=float(self.long // 2 - 4), floor=0), Port(face=3, along=float(self.long // 2 - 4), floor=0), Port(face=1, along=float(self.long - 5), floor=2 * self.tiers)];
+        self.enter = Port(face=2, along=cy, floor=1);
+        self.leaves = [Port(face=0, along=cy, floor=2 * self.tiers), Port(face=1, along=float(self.long // 2 - 4), floor=1), Port(face=3, along=float(self.long // 2 - 4), floor=1), Port(face=1, along=float(self.long - 5), floor=2 * self.tiers)];
         visitor.place(self);
     }
 
@@ -245,7 +245,7 @@ node Ziggurat(Prefab) {
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
-            if port.floor == 0 {
+            if port.floor <= 1 {
                 press +>:Fires:+> port_gate(build, self.long, self.wide, port);
             }
         }
@@ -291,7 +291,7 @@ node VertigoWalk(Prefab) {
         self.wide = dice.between(18, 22);
         self.depth = dice.between(16, 20);
         self.upper = dice.between(8, 9);
-        self.tall = self.upper + dice.between(10, 12);
+        self.tall = self.upper + dice.between(16, 20);
         self.gaps_low = dice.chance(0.5);
         self.low = -self.depth - 1;
         self.high = self.tall + 1;
@@ -487,7 +487,7 @@ node SilverAltar(Prefab) {
         self.hall_wide = dice.between(20, 22);
         self.wide = self.hall_wide + 4;
         self.depth = dice.between(16, 20);
-        self.tall = dice.between(18, 20);
+        self.tall = dice.between(22, 26);
         self.low = -self.depth - 1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -553,7 +553,7 @@ node VoidExit(Prefab) {
         self.long = dice.between(24, 28);
         self.wide = dice.between(14, 16);
         self.depth = dice.between(16, 20);
-        self.tall = dice.between(16, 18);
+        self.tall = dice.between(22, 26);
         self.low = -self.depth - 1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
