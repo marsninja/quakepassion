@@ -64,7 +64,7 @@ node PlantGate(Prefab) {
         self.wide = dice.between(22, 26);
         self.porch = dice.between(3, 4);
         self.gantry = self.porch + dice.between(6, 7);
-        self.tall = self.gantry + dice.between(10, 12);
+        self.tall = self.gantry + dice.between(30, 38);
         self.climb_lift = dice.chance(0.4);
         self.porch_side = dice.chance(0.5);
         self.crossing = dice.chance(0.6);
@@ -158,7 +158,7 @@ node TurbineHall(Prefab) {
         self.long = dice.between(31, 37);
         self.wide = dice.between(21, 24);
         self.walk = dice.between(9, 10);
-        self.tall = self.walk + dice.between(9, 11);
+        self.tall = self.walk + dice.between(24, 28);
         self.both = dice.chance(0.55);
         self.climb_lift = dice.chance(0.4);
         self.trench = dice.chance(0.5);
@@ -175,7 +175,7 @@ node TurbineHall(Prefab) {
             self.crossings.append(gaps[order[1]]);
         }
         self.low = -4 if self.trench else -1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 8;
         cy = float(self.wide // 2);
         self.enter = Port(face=2, along=cy, floor=0);
         self.leaves = [Port(face=0, along=cy, floor=0), Port(face=0, along=3.0, floor=self.walk), Port(face=3, along=float(self.long - 6), floor=self.walk)];
@@ -287,11 +287,11 @@ node FanShaft(Prefab) {
         self.top = dice.between(12, 16);
         self.long = self.top + dice.between(10, 12);
         self.wide = dice.between(16, 18);
-        self.tall = self.top + dice.between(8, 10);
+        self.tall = self.top + dice.between(22, 26);
         self.upward = dice.chance(0.6);
         self.climb = dice.below(3);
         self.low = -1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 8;
         cy = float(self.wide // 2);
         self.enter = Port(face=2, along=cy + 1.0, floor=0 if self.upward else self.top);
         self.leaves = [Port(face=0, along=cy + 1.0, floor=self.top), Port(face=0, along=cy + 1.0, floor=0), Port(face=3, along=float(self.long // 2), floor=self.top)];
@@ -368,12 +368,12 @@ node ReactorHall(Prefab) {
         self.wide = dice.between(30, 33);
         self.gallery = dice.between(9, 10);
         self.deep = dice.between(8, 10);
-        self.tall = self.gallery + dice.between(10, 12);
+        self.tall = self.gallery + dice.between(30, 34);
         self.bridges = dice.between(1, 3);
         self.pit_stair = dice.chance(0.6);
         self.updraft = dice.chance(0.6);
         self.low = -self.deep - 1;
-        self.high = self.tall + 1;
+        self.high = self.tall + 8;
         cy = float(self.wide // 2);
         self.enter = Port(face=2, along=cy, floor=0);
         self.leaves = [
@@ -480,7 +480,7 @@ node KeyVault(Prefab) {
         self.wide = self.hall_wide + 4;
         self.stairs = dice.chance(0.6);
         self.low = -self.deep - 1;
-        self.high = 11;
+        self.high = 34;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
         visitor.place(self);
@@ -492,7 +492,7 @@ node KeyVault(Prefab) {
         side = self.hall_wide - 1;
         cy = side // 2;
         low = -self.deep;
-        vault = build.room(1, 1, low, self.long - 1, side, 10, variant=dice.below(3));
+        vault = build.room(1, 1, low, self.long - 1, side, 24, variant=dice.below(3));
         build.level(vault, 0);
         # The gallery the way in opens on: a slab over the vault's floor.
         build.solid(1, 1, -1, 7, side, 0);
@@ -536,7 +536,7 @@ node Switchyard(Prefab) {
         self.district = level_district(POWER1);
         self.long = dice.between(30, 33);
         self.wide = dice.between(21, 24);
-        self.tall = dice.between(18, 22);
+        self.tall = dice.between(36, 44);
         self.tower = dice.chance(0.5);
         self.low = -1;
         self.high = self.tall + 1;
