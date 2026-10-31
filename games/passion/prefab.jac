@@ -1834,7 +1834,7 @@ into nothing; never over a mover's or a thing's reach."""
     }
 
     def:priv vault_stretch(prefab: Prefab, boxes: list[list[float]], dice: Stream) {
-        if dice.chance(0.2) {
+        if dice.chance(0.35) {
             return;
         }
         box = prefab_box(prefab);
@@ -1906,11 +1906,13 @@ into nothing; never over a mover's or a thing's reach."""
         while floor > 0 and mass.at(middle % mass.nx, middle // mass.nx, floor - 1) > 0 {
             floor -= 1;
         }
-        spare = tall - (z + 1 - floor);
+        # The stretches stand as tall as they mean to: this lifts the big rooms
+        # left low, to well under the original's tallest.
+        spare = tall * 3 // 4 - (z + 1 - floor);
         if spare < 5 {
             return;
         }
-        wanted = min(VAULT_ROOM - 4, dice.between(max(5, spare * 7 // 10), max(5, spare * 13 // 10)));
+        wanted = min(VAULT_ROOM - 4, dice.between(max(5, spare // 2), spare));
         room: dict[int, int] = {};
         for cell in patch {
             x = cell % mass.nx;

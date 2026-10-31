@@ -325,7 +325,8 @@ node BlastCorridor(Prefab) {
         first +>:Fires:+> doors[0];
         blast_chain(build, first, [[float(da) + 2.5, float(middle) + 0.5, 4.0], [float(da) + 5.5, float(middle) - 1.5, 4.0], [float(db) - 2.5, float(middle) + 1.5, 4.0]]);
         spawn_in(build, dice, self.danger, first, [[float(da) + 3.5, float(self.wide) - 2.5], [float(db) + 2.5, float(self.wide) - 2.5]], self.walk, 180.0);
-        build.solid(da + 3, 1, 0, db - 2, 4, self.walk - 1);
+        # Over the closets' roofs (six lifts), so none opens at the top.
+        build.solid(da + 3, 1, 0, db - 2, 4, max(self.walk - 1, 8));
         for x in range(da + 4, db - 5, 4) {
             guard_closet(build, dice, self.danger, x, 3, 1, first, 0);
         }
