@@ -2,35 +2,41 @@
 and chambers in two floors far apart, the lower one's floor and the upper
 one's galleries and ring walks round it, thrown up between by jump pads,
 windows onto space where the floor drops away into the void, and walks
-out over the void between the station's parts. Quake III's arenas hold
-no foes of their own; q3dm18's are enforcer, army, shambler. Raised in
-q3dm18's own palette.
+out over the void between the station's parts, space open overhead, and
+the small rooms behind its walls: stores and bays a step up off the floors,
+under the galleries, down cross-corridors. Quake III's arenas hold no foes of
+their own; q3dm18's are enforcer, army, shambler. Raised in q3dm18's own
+palette.
 
 - `DockingBay`: the start. A bay, a gallery high along one wall over an
   arcade of columns, pads up to it from the floor at its middle and far
   end (and by the seed a lift up its near end); by the seed a trench along
   the other wall drops away into the void, a window onto space. Walking in
-  wakes the gallery's guards a moment on.
+  wakes the gallery's guards a moment on. Stores behind the arcade's far
+  part, under the gallery.
 - `PadChamber`: the great chamber. A ring walk round it high up (by the
   seed broken on one long side, a trench to the void under the gap), a pit
   in the floor's middle with two pads in it that throw a body up to the
   ring and a stair out; pads from the floor's corners up to the ring's
   ends, at one end or the other or both; when the ring is whole, pads up
   on it throw a body across the chamber from one long side to the other.
+  Bays behind a wall under the ring, along a long side (both, when whole).
 - `SpaceWalk`: out over the void between two parts of the station: a low
   bridge, broken in the middle and thrown across by a pad (by the seed it
   doglegs past the break), and a high one beside it, thrown up to from the
   near deck (and from near the low one's end), to an upper deck over the
-  far one; a lift between the far decks. The break's touch wakes what
-  holds the far deck.
+  far one; a lift between the far decks, a long pad from the upper one back
+  to the near deck, a store under it. The break's touch wakes what holds
+  the far deck.
 - `QuadDais`: the hub. A chamber, a dais in its middle (the quad on it),
   balconies high on two or three walls, a lift up to them, a pad from the
   floor, and from the dais a teleporter (or, by the seed, a pad) up to the
-  far balcony. Stepping onto the dais lets loose the balcony's guards.
+  far balcony. Stores behind a wall under the balconies, each with
+  something in it; stepping onto the dais lets loose the balcony's guards.
 - `RailPerch`: the key room. The key high on a perch (a pillar in the
   room's middle, or a ledge across its far end) thrown up to by a pad;
   taking it opens the closets; by the seed a window onto the void along
-  one wall; a shorting panel sparks.
+  one wall; a store by the door, a shorting panel sparking.
 - `AirlockPortal`: the end (or a gate, the door a key's). An airlock hall,
   a bay with a pit to the void in its floor, the way out on a ledge high
   across the bay's far end, up a pad (or, by the seed, a lift)."""
@@ -41,6 +47,7 @@ import from ..kits { level_district }
 import from .common { stair, key_ambush, lift }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3late_parts { deck, keep_box, void_floor, throw, wake_later, columns }
+import from .q3open_parts { OPEN_AIR, VOID_DROP, chambers, chambers_across }
 
 glob Q3DM18: str = "q3:q3dm18",
      Q3DM18_LIGHT: list[str] = ["monster_enforcer", "monster_army"],
@@ -69,8 +76,8 @@ node DockingBay(Prefab) {
         self.gallery = dice.below(2);
         self.use_lift = dice.chance(0.6);
         self.trench = dice.chance(0.6);
-        self.tall = self.upper + 10;
-        self.low = -11 if self.trench else -1;
+        self.tall = self.upper + OPEN_AIR;
+        self.low = -VOID_DROP - 1 if self.trench else -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         gmid = 3.5 if self.gallery == 0 else float(self.wide) - 3.5;
@@ -92,7 +99,12 @@ node DockingBay(Prefab) {
         lip_y = gy1 - 1 if self.gallery == 0 else gy0;
         out = 1.0 if self.gallery == 0 else -1.0;
         deck(build, 6, gy0, self.long - 1, gy1, self.upper, 2);
-        columns(build, [[x, lip_y] for x in range(8, self.long - 2, 5) if (x < 10 or x > 15) and x < self.long - 9], 0, self.upper - 2);
+        columns(build, [[x, lip_y] for x in range(8, self.long - 2, 5) if x < 10], 0, self.upper - 2);
+        # Stores under the gallery past the first pad.
+        stores = chambers(build, 16, gy0, self.long - 1, gy1, lip_y, 0, 8, self.upper - 2, 5);
+        for spot in stores[:1] {
+            build.supply(spot[0], spot[1], 1, "ammo_bullets", "q2");
+        }
         throw(build, bay, 12.5, float(lip_y) + 0.5 + out * 3.0, 0, 12.5, float(lip_y) + 0.5 - out * 2.0, self.upper, None, [10, lip_y, 15, lip_y + 1]);
         far_x = float(self.long) - 5.5;
         throw(build, bay, far_x, float(lip_y) + 0.5 + out * 3.0, 0, far_x, float(lip_y) + 0.5 - out * 2.0, self.upper, None, [self.long - 8, lip_y, self.long - 3, lip_y + 1]);
@@ -105,9 +117,8 @@ node DockingBay(Prefab) {
             # A window onto space: the floor along the other wall drops away
             # into the void, whose teleporter sends a body back to the door.
             ty0 = self.wide - 5 if self.gallery == 0 else 1;
-            build.widen(bay, 8, ty0, -10, self.long - 3, ty0 + 4, 0);
-            build.level(bay, -10);
-            void_floor(build, 8, ty0, self.long - 3, ty0 + 4, -10, 3.0, py, 0, 0.0);
+            build.widen(bay, 8, ty0, -VOID_DROP, self.long - 3, ty0 + 4, 0);
+            void_floor(build, 8, ty0, self.long - 3, ty0 + 4, -VOID_DROP, 3.0, py, 0, 0.0);
             build.supply(float(self.long) - 6.5, float(ty0) + (-1.5 if self.gallery == 0 else 5.5), 0, "weapon_rocketlauncher", "q3");
         }
         build.doorway(bay, self.enter);
@@ -148,8 +159,8 @@ node PadChamber(Prefab) {
         self.upper = dice.between(14, 16);
         self.open_side = [0, 1, 3][dice.below(3)];
         self.corner_pads = dice.chance(0.5);
-        self.tall = self.upper + 10;
-        self.low = -9;
+        self.tall = self.upper + OPEN_AIR;
+        self.low = -VOID_DROP - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         up_face = 3 if self.open_side == 1 else 1;
@@ -170,7 +181,7 @@ node PadChamber(Prefab) {
         cy = self.wide // 2;
         u = self.upper;
         ring = 4;
-        hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=self.open_side != 0);
+        hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(hall, u);
         build.level(hall, -6);
         # The ring walk, but on the open side.
@@ -185,9 +196,21 @@ node PadChamber(Prefab) {
         # Under the open side, a trench to the void: a window onto space.
         if self.open_side != 0 {
             ty0 = self.wide - 5 if self.open_side == 1 else 1;
-            build.widen(hall, 7, ty0, -8, self.long - 7, ty0 + 4, 0);
-            build.level(hall, -8);
-            void_floor(build, 7, ty0, self.long - 7, ty0 + 4, -8, 3.0, float(cy) + 0.5, 0, 0.0);
+            build.widen(hall, 7, ty0, -VOID_DROP, self.long - 7, ty0 + 4, 0);
+            void_floor(build, 7, ty0, self.long - 7, ty0 + 4, -VOID_DROP, 3.0, float(cy) + 0.5, 0, 0.0);
+        }
+        # Bays behind a wall under the ring, along the long side of the way
+        # on, clear of it.
+        up_side = 3 if self.open_side == 1 else 1;
+        bx0 = self.long // 2 - 3;
+        by0 = self.wide - 1 - ring if up_side == 1 else 1;
+        bays = chambers(build, bx0, by0, self.long - 6, by0 + ring, by0 if up_side == 1 else by0 + ring - 1, 0, 8, u - 2, 5);
+        if bays {
+            build.supply(bays[0][0], bays[0][1], 1, "ammo_rockets", "q3");
+        }
+        if self.open_side == 0 {
+            # With the ring whole and no trench, bays along the other side too.
+            chambers(build, bx0, 1, self.long - 6, 1 + ring, ring, 0, 8, u - 2, 5);
         }
         # The pit, its stair out and its two pads up to the ring.
         build.widen(hall, cx - 4, cy - 3, -6, cx + 4, cy + 3, 0);
@@ -224,7 +247,7 @@ node PadChamber(Prefab) {
         build.supply(float(cx) - 0.5, float(cy) + 2.0, -6, Q3_HEALTH, "q3");
         build.foe(float(cx) + 3.0, float(cy) - 2.0, -6, SPACE_FOES.pick(dice, self.danger), 180.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(cx + 7) + 0.5, 4.5 + float(index) * float(self.wide - 9) / 2.0, 0, SPACE_FOES.pick(dice, self.danger), 180.0);
+            build.foe(float(cx + 7) + 0.5, float(cy) - 4.5 + float(index) * 4.5, 0, SPACE_FOES.pick(dice, self.danger), 180.0);
         }
         # Out on the floor, the ring's guards come round a moment on.
         walked = build.touch(6.0, 6.0, 0.0, 9.0, float(self.wide - 6), 6.0);
@@ -253,12 +276,12 @@ node SpaceWalk(Prefab) {
         self.district = level_district(Q3DM18);
         self.long = dice.between(34, 38);
         self.wide = dice.between(18, 20);
-        self.deep = dice.between(10, 12);
+        self.deep = VOID_DROP + dice.between(0, 2);
         self.upper = dice.between(8, 10);
         self.upper_first = dice.chance(0.5);
         self.twist = dice.chance(0.5);
         self.brk = self.long // 2 - 2 + dice.between(-2, 2);
-        self.tall = self.upper + 10;
+        self.tall = self.upper + OPEN_AIR;
         self.low = -self.deep - 1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -308,6 +331,13 @@ node SpaceWalk(Prefab) {
         throw(build, walk, float(far) - 3.5, float(ly1) + 2.0, 0, float(far) - 11.0, float(uy0) + 1.5, u, None, [far - 13, uy0, far - 9, uy0 + 3]);
         outer = uy0 if self.upper_first else uy0 + 2;
         keep_box(build, walk, g, outer, g + 3, outer + 1, u);
+        # The long way back: a pad from the upper deck, off both bridges'
+        # lines, over the void to the near deck.
+        back = float(self.wide) - 3.0 if self.upper_first else 3.0;
+        throw(build, walk, float(self.long) - 4.0, back, u, 5.0, back, 0, [far, int(back) - 1, far + 1, int(back) + 2], [9, int(back) - 1, 10, int(back) + 2]);
+        # A store under the upper deck, against the side wall.
+        store_y = 1 if self.upper_first else self.wide - 5;
+        chambers(build, far + 1, store_y, self.long - 1, store_y + 4, store_y + 3 if self.upper_first else store_y, 0, 6, u - 2, 6);
         void_floor(build, 1, 1, self.long - 1, self.wide - 1, low, 3.5, py, 0, 0.0, 14);
         build.doorway(walk, self.enter);
         for port in self.taken {
@@ -323,7 +353,7 @@ node SpaceWalk(Prefab) {
         brink = build.touch(float(g - 3), float(ly0), 0.0, float(g), float(ly0 + 4), 6.0);
         far_side = wake_later(build, brink, 1.0);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(self.long) - 2.5, 3.0 + float(index) * float(self.wide - 6) / 2.0, 0, SPACE_FOES.pick(dice, self.danger), 180.0, waits=far_side);
+            build.foe(float(self.long) - 2.5, float(middle) - 3.5 + float(index) * 3.5, 0, SPACE_FOES.pick(dice, self.danger), 180.0, waits=far_side);
         }
         build.supply(float(self.long) - 3.5, float(ly1) + 2.0, 0, Q3_HEALTH, "q3");
         build.supply(3.0, 3.0, 0, "ammo_bullets", "q2");
@@ -348,7 +378,7 @@ node QuadDais(Prefab) {
         self.upper = dice.between(12, 14);
         self.three = dice.chance(0.5);
         self.tele = dice.chance(0.6);
-        self.tall = self.upper + 10;
+        self.tall = self.upper + OPEN_AIR;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -378,6 +408,18 @@ node QuadDais(Prefab) {
         if self.three {
             deck(build, 8, 1, self.long - 6, 6, u, 2);
             throw(build, hall, float(cx) + 6.0, 9.5, 0, float(cx) + 6.0, 3.5, u, None, [cx + 4, 5, cx + 9, 6]);
+        }
+        # Stores behind a wall under the balconies, each a step up off the
+        # floor.
+        stores = chambers(build, 9, self.wide - 6, self.long - 7, self.wide - 1, self.wide - 6, 0, 8, u - 2, 5);
+        if self.three {
+            stores.extend(chambers(build, 9, 1, self.long - 11, 6, 5, 0, 8, u - 2, 5));
+        }
+        stores.extend(chambers_across(build, self.long - 6, 9, self.long - 1, self.wide - 6, self.long - 6, 0, 8, u - 2, 5));
+        for (index, spot) in enumerate(stores) {
+            if index % 2 == 0 {
+                build.supply(spot[0], spot[1], 1, "ammo_rockets" if index % 4 == 0 else Q3_HEALTH, "q3");
+            }
         }
         # The lift up to the +y balcony's end.
         lift(build, 5, self.wide - 4, 8, self.wide - 1, 0, u);
@@ -440,8 +482,8 @@ node RailPerch(Prefab) {
         self.upper = dice.between(10, 13);
         self.far_ledge = dice.chance(0.5);
         self.window = dice.chance(0.5);
-        self.tall = self.upper + 9;
-        self.low = -11 if self.window else -1;
+        self.tall = self.upper + OPEN_AIR;
+        self.low = -VOID_DROP - 1 if self.window else -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
@@ -454,7 +496,7 @@ node RailPerch(Prefab) {
         side = self.hall_wide - 1;
         cy = side // 2;
         u = self.upper;
-        room = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3), sky=self.window);
+        room = build.room(1, 1, 0, self.long - 1, side, self.tall, variant=dice.below(3), sky=True);
         build.level(room, u);
         build.doorway(room, self.enter);
         if self.far_ledge {
@@ -472,21 +514,22 @@ node RailPerch(Prefab) {
         if self.window {
             # A window onto space along the wall across from the closets:
             # the floor drops away into the void there.
-            build.widen(room, 6, 1, -10, px0 - 1, 5, 0);
-            build.level(room, -10);
-            void_floor(build, 6, 1, px0 - 1, 5, -10, 3.0, float(cy) + 0.5, 0, 0.0, 8);
+            build.widen(room, 6, 1, -VOID_DROP, px0 - 1, 5, 0);
+            void_floor(build, 6, 1, px0 - 1, 5, -VOID_DROP, 3.0, float(cy) + 0.5, 0, 0.0, 8);
         }
+        # A store by the door, along the wall across from the closets.
+        chambers(build, 1, 1, 6, 5, 4, 0, 7, 9, 5);
         key_ambush(build, self.key, key_x, float(cy) + 0.5, u, side, 0, [2, 7], [SPACE_FOES.pick(dice, self.danger, True), SPACE_FOES.pick(dice, self.danger)]);
         build.foe(key_x, float(cy) + 2.5, u, SPACE_FOES.pick(dice, self.danger), 180.0);
         build.foe(float(px0) - 4.5, float(side) - 3.0, 0, SPACE_FOES.pick(dice, self.danger), 0.0);
-        build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
+        build.supply(3.5, 2.5, 1, Q3_HEALTH, "q3");
         build.supply(float(px0) - 2.0, float(cy) + 3.5, 0, "ammo_rockets", "q3");
         # A shorting panel by the door, sparking now and then.
         build.timer(5.0) +>:Fires:+> build.sparks(1.2, float(side) - 2.5, 3.0, 0);
     }
 }
 
-"""The end (or a gate): an airlock hall, a bay with a pit to the void, the
+"""The end (or a gate): an airlock hall, stores off it, a bay with a pit to the void, the
 way out on a ledge high across its far end."""
 node AirlockPortal(Prefab) {
     has key: str = "",
@@ -503,8 +546,8 @@ node AirlockPortal(Prefab) {
         self.wide = dice.between(20, 22);
         self.upper = dice.between(8, 10);
         self.use_lift = dice.chance(0.5);
-        self.tall = self.upper + 10;
-        self.low = -9;
+        self.tall = self.upper + OPEN_AIR;
+        self.low = -VOID_DROP - 1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
@@ -526,11 +569,13 @@ node AirlockPortal(Prefab) {
         if self.key {
             build.rising_door(float(wall), float(middle - 2), 0.0, float(wall + 1), float(middle + 2), 8.0, {"key": self.key, "wait": "-1"});
         }
+        # Stores either side of the airlock's way through.
+        chambers(build, 1, 1, 8, middle - 2, middle - 3, 0, 8, 10, 7);
+        chambers(build, 1, middle + 3, 8, self.wide - 1, middle + 3, 0, 8, 10, 7);
         # The pit to the void in the bay's floor.
         lx = self.long - 8;
-        build.widen(bay, wall + 4, middle - 3, -8, lx - 5, middle + 4, 0);
-        build.level(bay, -8);
-        void_floor(build, wall + 4, middle - 3, lx - 5, middle + 4, -8, float(wall) + 2.0, py, 0, 0.0, 8);
+        build.widen(bay, wall + 4, middle - 3, -VOID_DROP, lx - 5, middle + 4, 0);
+        void_floor(build, wall + 4, middle - 3, lx - 5, middle + 4, -VOID_DROP, float(wall) + 2.0, py, 0, 0.0, 8);
         # The ledge high across the far end, and the way up to it.
         deck(build, lx, 1, self.long - 1, self.wide - 1, u, 2);
         throw(build, bay, float(lx) - 3.0, float(middle) - 3.5, 0, float(lx) + 3.0, float(middle) - 3.5, u, None, [lx, middle - 6, lx + 1, middle - 1]);
@@ -548,11 +593,11 @@ node AirlockPortal(Prefab) {
             build.foe(float(self.long) - 4.5, 3.5 + float(index) * float(self.wide - 7) / 2.0, u, SPACE_FOES.pick(dice, self.danger, index == 0), 180.0, waits=guards);
         }
         for index in range(dice.between(1, 2)) {
-            build.foe(float(wall) - 3.5, 2.5 + float(index) * 4.0, 0, SPACE_FOES.pick(dice, self.danger), 180.0);
+            build.foe(float(wall) - 3.5, 2.5 + float(index) * 2.0, 1, SPACE_FOES.pick(dice, self.danger), 180.0);
         }
         build.foe(float(lx) - 2.5, float(self.wide) - 3.5, 0, SPACE_FOES.pick(dice, self.danger), 180.0);
-        build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
-        build.supply(2.5, float(self.wide) - 2.5, 0, Q3_HEALTH, "q3");
+        build.supply(3.5, 2.5, 1, Q3_HEALTH, "q3");
+        build.supply(3.5, float(self.wide) - 2.5, 1, Q3_HEALTH, "q3");
         build.supply(float(lx) - 2.0, 3.0, 0, "ammo_rockets", "q3");
         build.timer(4.0) +>:Fires:+> build.sparks(float(wall) + 0.2, float(middle) + 3.5, 4.0, 0);
     }

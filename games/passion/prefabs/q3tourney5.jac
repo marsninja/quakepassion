@@ -51,7 +51,7 @@ node InstinctGate(Prefab) {
         self.long = dice.between(22, 24);
         self.wide = dice.between(16, 18);
         self.side = dice.below(2);
-        self.tall = 16;
+        self.tall = 32;
         self.low = -5;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -113,7 +113,7 @@ node SunkenCourt(Prefab) {
         self.long = dice.between(26, 28);
         self.wide = dice.between(22, 24);
         self.pool = dice.chance(0.5);
-        self.tall = 16;
+        self.tall = 32;
         self.low = -9;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -184,7 +184,7 @@ node PillarHall(Prefab) {
         self.wide = dice.between(18, 20);
         self.bx = self.long // 2 + dice.between(1, 2);
         self.both = dice.chance(0.5);
-        self.tall = 16;
+        self.tall = 32;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -249,7 +249,7 @@ node InstinctCourt(Prefab) {
         self.district = level_district(Q3TOURNEY5);
         self.long = dice.between(30, 32);
         self.wide = dice.between(26, 28);
-        self.tall = 20;
+        self.tall = 34;
         self.low = -5;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -318,7 +318,7 @@ node QuadShrine(Prefab) {
         self.long = dice.between(24, 26);
         self.hall_wide = dice.between(18, 20);
         self.wide = self.hall_wide + 4;
-        self.tall = 18;
+        self.tall = 32;
         self.low = -5;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -366,7 +366,7 @@ node InstinctEnd(Prefab) {
         self.district = level_district(Q3TOURNEY5);
         self.long = dice.between(26, 28);
         self.wide = dice.between(18, 20);
-        self.tall = 14;
+        self.tall = 28;
         self.low = -5;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);

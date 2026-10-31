@@ -1,10 +1,12 @@
 """Prefabs drawn from Quake III's q3tourney3, Hell's Gate: gothic ledges
-and outcrops at three heights over a fiery abyss, thrown between by jump
-pads set low on the outcrops, narrow bridges, a court before a great
-gate, fires bursting on timers. Quake III's arenas hold no foes of their
+and outcrops at three heights over a fiery abyss under an open sky, thrown
+between by jump pads set low on the outcrops, narrow bridges, a court before
+a great gate, fires bursting on timers, a floor low in the abyss under the
+court. Quake III's arenas hold no foes of their
 own; q3tourney3's are hell_knight, knight, demon1. Raised in
-q3tourney3's own palette. The abyss's floor burns whoever falls, and
-jump pads or teleporters on it send them back up.
+q3tourney3's own palette. The abyss's floor, too far
+down to reckon on, burns whoever falls, and jump pads or teleporters on it
+send them back up.
 
 - `HellsPorch`: the start. A porch over the abyss under an arch, a stair
   down its side to a terrace, a pad from the terrace's lip up to the far
@@ -21,10 +23,12 @@ jump pads or teleporters on it send them back up.
 - `GateCourt`: the hub. A court before a great gate: the stage high in the
   middle up a flying stair, terraces low along both walls down stairs
   from the near ledge, pads from the terraces up to the stage, fires
-  flaring at the gate's columns.
-- `BrimstoneShrine`: the key room. The key on a shrine high over the
-  abyss, a pad down to a low outcrop and one from it up to the shrine;
-  taking it opens closets on the entry ledge, a teleporter back to them.
+  flaring at the gate's columns; under the stage the abyss's low floor,
+  stepped down to from a terrace, a pad back up.
+- `BrimstoneShrine`: the key room. The key on a shrine high in the middle
+  of the abyss, a narrow walk round it along one wall (or both) and the far
+  one, a step off the far walk to a low outcrop and a pad from it up to the
+  shrine; taking it opens closets on the entry ledge, a teleporter back.
 - `HellsGate`: the end (or a gate, the door a key's). A hall, a deck over
   the abyss, a narrow bridge (or a pad) to the stage, the way out under
   the great gate's arch; fires burst along the bridge."""
@@ -35,6 +39,7 @@ import from ..kits { level_district }
 import from .common { stair, key_ambush }
 import from .q3arena { Q3_HEALTH, Q3_ARMOR }
 import from .q3late_parts { deck, keep_box, void_floor, void_pads, throw, wake_later, flying_stair, columns }
+import from .q3open_parts { OPEN_AIR, VOID_DROP, foot_shelf }
 
 glob Q3TOURNEY3: str = "q3:q3tourney3",
      Q3TOURNEY3_LIGHT: list[str] = ["monster_hell_knight", "monster_knight"],
@@ -65,8 +70,8 @@ node HellsPorch(Prefab) {
         self.wide = dice.between(18, 20);
         self.terrace_side = dice.below(2);
         self.bridge = dice.chance(0.5);
-        self.tall = 16;
-        self.low = -19;
+        self.tall = 4 + OPEN_AIR;
+        self.low = -VOID_DROP - 5;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         ty = 2 if self.terrace_side == 0 else self.wide - 10;
@@ -81,7 +86,7 @@ node HellsPorch(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         py = float(middle) + 0.5;
-        low = -18;
+        low = -VOID_DROP - 4;
         ty = 2 if self.terrace_side == 0 else self.wide - 10;
         bridge_y = self.wide - 5 if self.terrace_side == 0 else 2;
         hall = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
@@ -107,7 +112,7 @@ node HellsPorch(Prefab) {
             stair(build, self.long - 11, bridge_y, 0, 0, 4, 3);
         }
         other_y = float(ty + 8 + bridge_y) * 0.5 if self.terrace_side == 0 else float(bridge_y + 3 + ty) * 0.5;
-        void_pads(build, hall, 1, 1, self.long - 1, self.wide - 1, low, [[22.0, float(ty) + 4.0, 14.0, float(ty) + 6.5, -4.0], [18.0, other_y, float(self.long) - 3.5, other_y, 4.0]], [[17, ty + 5, 18, ty + 8, -4], [self.long - 7, int(other_y) - 1, self.long - 6, int(other_y) + 2, 4]]);
+        void_pads(build, hall, 1, 1, self.long - 1, self.wide - 1, low, [[22.0, float(ty) + 4.0, 15.0, float(ty) + 6.5, -4.0], [18.0, other_y, float(self.long) - 3.5, other_y, 4.0]], [[17, ty + 5, 18, ty + 8, -4], [self.long - 7, int(other_y) - 1, self.long - 6, int(other_y) + 2, 4]]);
         build.doorway(hall, self.enter);
         for port in self.taken {
             build.doorway(hall, port);
@@ -147,8 +152,8 @@ node GateBridge(Prefab) {
         self.stage = dice.between(3, 4);
         self.broken = dice.chance(0.5);
         self.outcrop = [0, 1, 3][dice.below(3)];
-        self.tall = 15;
-        self.low = -19;
+        self.tall = self.stage + OPEN_AIR;
+        self.low = -VOID_DROP - 6;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -161,7 +166,7 @@ node GateBridge(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         py = float(middle) + 0.5;
-        low = -18;
+        low = -VOID_DROP - 5;
         land = self.long - 10;
         st = self.stage;
         hall = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
@@ -230,8 +235,8 @@ node AbyssPads(Prefab) {
         self.side = dice.below(2);
         self.shortcut = dice.chance(0.5);
         self.far_z = [2, 4][dice.below(2)];
-        self.tall = 17;
-        self.low = -19;
+        self.tall = 4 + OPEN_AIR;
+        self.low = -VOID_DROP - 5;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -244,7 +249,7 @@ node AbyssPads(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         py = float(middle) + 0.5;
-        low = -18;
+        low = -VOID_DROP - 4;
         fz = self.far_z;
         hall = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         for z in [0, -4, 4, fz] {
@@ -303,8 +308,8 @@ node GateCourt(Prefab) {
         self.long = dice.between(32, 34);
         self.wide = dice.between(26, 28);
         self.stage = 4;
-        self.tall = 18;
-        self.low = -19;
+        self.tall = 4 + OPEN_AIR;
+        self.low = -VOID_DROP - 15;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
@@ -317,7 +322,7 @@ node GateCourt(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         py = float(middle) + 0.5;
-        low = -18;
+        low = -VOID_DROP - 14;
         court = build.room(1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);
         for z in [0, -4, 4] {
             build.level(court, z);
@@ -340,6 +345,11 @@ node GateCourt(Prefab) {
         build.solid(self.long - 4, 9, 14, self.long - 1, self.wide - 9, 16);
         burst(build, float(self.long) - 2.5, 10.5, 5.0, 4.0);
         burst(build, float(self.long) - 2.5, float(self.wide) - 10.5, 5.0, 5.0);
+        # The abyss's low floor under the stage, stepped down to from the -y
+        # terrace, a pad from it back up to the near ledge.
+        foot_shelf(build, court, 11, 5, self.long - 3, self.wide - 5, -14, [self.long - 11, 5, self.long - 5, 6], -4, 13.0, 7.5, 6.0, 7.5, 0, [9, 6, 10, 9]);
+        build.supply(float(self.long) - 5.5, 7.0, -14, "ammo_rockets", "q3");
+        build.foe(20.5, float(middle) + 0.5, -14, HELL_FOES.pick(dice, self.danger), 0.0);
         void_floor(build, 1, 1, self.long - 1, self.wide - 1, low, 4.0, py, 0, 0.0, 12);
         build.doorway(court, self.enter);
         for port in self.taken {
@@ -362,12 +372,14 @@ node GateCourt(Prefab) {
     }
 }
 
-"""The key room: the key on a shrine high over the abyss, a pad down to a
-low outcrop and one from it up to the shrine."""
+"""The key room: a shrine high in the middle of the abyss, a narrow walk round
+it from the entry ledge to the far wall, a step off the walk down to a low
+outcrop and a pad from there up to the shrine."""
 node BrimstoneShrine(Prefab) {
     has key: str = "key_silver",
         hall_wide: int = 20,
         side: int = 0,
+        both: bool = False,
         tall: int = 17;
 
     can choose with Lay entry {
@@ -375,12 +387,13 @@ node BrimstoneShrine(Prefab) {
         self.title = "Brimstone shrine (" + ("gold" if self.key == "key_gold" else "silver") + ")";
         self.source = Q3TOURNEY3;
         self.district = level_district(Q3TOURNEY3);
-        self.long = dice.between(26, 28);
+        self.long = dice.between(30, 32);
         self.hall_wide = dice.between(20, 22);
         self.wide = self.hall_wide + 4;
         self.side = dice.below(2);
-        self.tall = 17;
-        self.low = -19;
+        self.both = dice.chance(0.5);
+        self.tall = 6 + OPEN_AIR;
+        self.low = -VOID_DROP - 5;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
         self.leaves = [];
@@ -392,30 +405,37 @@ node BrimstoneShrine(Prefab) {
         dice = build.begin(self);
         side = self.hall_wide - 1;
         cy = side // 2;
-        low = -18;
+        low = -VOID_DROP - 4;
         room = build.room(1, 1, low, self.long - 1, side, self.tall, variant=dice.below(3), sky=True);
         for z in [0, -4, 6] {
             build.level(room, z);
         }
         build.doorway(room, self.enter);
         deck(build, 1, 1, 11, side, 0, 3);
-        my = 2 if self.side == 0 else side - 8;
-        sy = side - 9 if self.side == 0 else 2;
-        deck(build, 14, my, 20, my + 6, -4, 2);
-        sx = self.long - 8;
-        deck(build, sx, sy, self.long - 2, sy + 7, 6, 2);
-        keep_box(build, room, sx, sy, sx + 1, sy + 7, 6);
-        keep_box(build, room, sx, sy if self.side == 0 else sy + 6, self.long - 2, sy + 1 if self.side == 0 else sy + 7, 6);
-        throw(build, room, 8.0, float(my) + 3.0, 0, 16.0, float(my) + 3.0, -4, [10, my + 1, 11, my + 5], [14, my + 1, 15, my + 5]);
-        throw(build, room, 18.5, float(my) + 3.0, -4, float(sx) + 3.0, float(sy) + 3.5, 6, [19, my, 20, my + 6], None);
-        build.teleporter(float(self.long) - 3.5, float(sy) + 5.5, 6, 4.0, float(cy) + 0.5, 0, 0.0);
+        # The walk round the abyss, along one wall (or both) and the far one.
+        lane = 1 if self.side == 0 else side - 3;
+        deck(build, 11, lane, self.long - 5, lane + 3, 0, 2);
+        if self.both {
+            other = side - 3 if self.side == 0 else 1;
+            deck(build, 11, other, self.long - 5, other + 3, 0, 2);
+        }
+        deck(build, self.long - 5, 1, self.long - 1, side, 0, 2);
+        # The shrine in the middle of it all.
+        sx1 = self.long - 10;
+        deck(build, 15, 6, sx1, side - 5, 6, 3);
+        # The low outcrop off the far walk, the pad up from it to the shrine.
+        deck(build, self.long - 9, cy - 3, self.long - 5, cy + 4, -4, 2);
+        keep_box(build, room, self.long - 5, cy - 2, self.long - 4, cy + 3, 0);
+        throw(build, room, float(self.long) - 7.0, float(cy) + 0.5, -4, float(sx1) - 3.5, float(cy) + 0.5, 6, None, [sx1 - 1, cy - 2, sx1, cy + 3]);
+        # From the shrine, a teleporter back to the entry ledge.
+        build.teleporter(17.5, float(cy) + 3.5, 6, 4.0, float(cy) + 0.5, 0, 0.0);
         void_floor(build, 1, 1, self.long - 1, side, low, 4.0, float(cy) + 0.5, 0, 0.0, 12);
-        key_ambush(build, self.key, float(self.long) - 4.5, float(sy) + 2.0, 6, side, 0, [2, 7], [HELL_FOES.pick(dice, self.danger, True), HELL_FOES.pick(dice, self.danger)]);
-        build.foe(float(sx) + 2.0, float(sy) + 5.0, 6, HELL_FOES.pick(dice, self.danger), 180.0);
-        build.foe(17.0, float(my) + 1.5, -4, HELL_FOES.pick(dice, self.danger), 180.0);
-        burst(build, float(sx) - 1.0, float(sy) + 3.5, 7.0, 4.0);
+        key_ambush(build, self.key, 17.5, float(cy) - 1.5, 6, side, 0, [2, 7], [HELL_FOES.pick(dice, self.danger, True), HELL_FOES.pick(dice, self.danger)]);
+        build.foe(float(sx1) - 2.5, float(cy) - 2.5, 6, HELL_FOES.pick(dice, self.danger), 180.0);
+        build.foe(float(self.long) - 3.0, float(lane) + 1.5, 0, HELL_FOES.pick(dice, self.danger), 180.0);
+        burst(build, float(sx1) + 1.0, float(cy) + 0.5, 7.0, 4.0);
         build.supply(2.5, 2.5, 0, Q3_HEALTH, "q3");
-        build.supply(15.0, float(my) + 4.5, -4, "ammo_cells", "q3");
+        build.supply(float(self.long) - 8.0, float(cy) + 3.0, -4, "ammo_cells", "q3");
     }
 }
 
@@ -434,8 +454,8 @@ node HellsGate(Prefab) {
         self.long = dice.between(32, 34);
         self.wide = dice.between(18, 20);
         self.bridge = dice.chance(0.6);
-        self.tall = 18;
-        self.low = -19;
+        self.tall = 4 + OPEN_AIR;
+        self.low = -VOID_DROP - 5;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
         self.leaves = [];
@@ -447,7 +467,7 @@ node HellsGate(Prefab) {
         dice = build.begin(self);
         middle = self.wide // 2;
         py = float(middle) + 0.5;
-        low = -18;
+        low = -VOID_DROP - 4;
         wall = 8;
         hall = build.room(1, 1, 0, wall, self.wide - 1, 10, variant=dice.below(3));
         void = build.room(wall + 1, 1, low, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3), sky=True);

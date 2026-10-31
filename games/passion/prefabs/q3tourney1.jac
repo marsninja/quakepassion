@@ -1,5 +1,5 @@
 """Prefabs drawn from Quake III's q3tourney1, Power Station 0218: a power
-station's halls on one floor and the works under and over it: a core
+station's tall halls on one floor and the works under and over it: a core
 ringed by a walk, conduits charged with power in trenches crossed by
 catwalks, turbine halls with gantries overhead, consoles sparking, and
 the charged fields that burn whoever walks into them (the original's
@@ -60,7 +60,7 @@ node ControlRoom(Prefab) {
         self.mezz = dice.between(6, 7);
         self.side = dice.below(2);
         self.use_lift = dice.chance(0.4);
-        self.tall = self.mezz + 9;
+        self.tall = self.mezz + 22;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -133,7 +133,7 @@ node PowerCore(Prefab) {
         self.ring = dice.between(6, 7);
         self.stair_wall = dice.chance(0.5);
         self.bridge_side = dice.chance(0.5);
-        self.tall = self.ring + 12;
+        self.tall = self.ring + 22;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -214,7 +214,7 @@ node ConduitTrench(Prefab) {
         self.trench = dice.between(6, self.wide - 11);
         self.gantry = dice.chance(0.6);
         self.gx = self.long // 2 + dice.between(-2, 2);
-        self.tall = 14;
+        self.tall = 28;
         self.low = -6;
         self.high = self.tall + 1;
         near_mid = float(1 + self.trench) * 0.5;
@@ -292,7 +292,7 @@ node TurbineHall(Prefab) {
         self.gantry = dice.between(7, 8);
         self.gx = self.long // 2 + dice.between(-2, 2);
         self.corner = dice.below(2);
-        self.tall = self.gantry + 10;
+        self.tall = self.gantry + 22;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -370,7 +370,7 @@ node TransformerVault(Prefab) {
         self.wide = self.hall_wide + 4;
         self.dais = dice.between(6, 7);
         self.use_lift = dice.chance(0.4);
-        self.tall = self.dais + 9;
+        self.tall = self.dais + 22;
         self.low = -1;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -429,7 +429,7 @@ node ReactorGate(Prefab) {
         self.wide = dice.between(20, 22);
         self.both = dice.chance(0.5);
         self.gallery = dice.between(6, 7);
-        self.tall = self.gallery + 9;
+        self.tall = self.gallery + 22;
         self.low = -4;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
