@@ -21,10 +21,11 @@ own palette.
   one across the water to the far wall; ways on from the ledge, the
   galleries and the bridge (a hub). A teleporter at the bottom of the
   water throws a swimmer up onto a secret perch.
-- `VoreHall`: a hall, ledges over arcades along its walls, a pool in its
-  middle; four guardians (vores, as a run goes deeper) wake on the ledges
-  as the player comes in, and only when all four are dead does the way on
-  open (e4m7's counter of the four vores). Spawn are teleported in.
+- `VoreHall`: a hall drowned but for a cross of causeways, a deep tank in
+  each quarter and a tower standing in each; four guardians (vores, as a
+  run goes deeper) wake on the towers as the player comes in, and only when
+  all four are dead does the way on open (e4m7's counter of the four
+  vores). Spawn are teleported in.
 - `RisingStair`: a pool across a hall, the way on on a ledge high over the
   water at its far end; a button shot on the ledge's face (or pressed deep
   under the water) raises a stair of slow doors out of the pool to it
@@ -411,15 +412,14 @@ node AzureCistern(Prefab) {
     }
 }
 
-"""A hall, ledges over arcades along its walls, a pool in its middle; four
-guardians on the ledges must die before the way on opens."""
+"""A hall drowned but for a cross of causeways, four deep tanks in its
+quarters, a tower standing in each with a guardian on top; only when all
+four are dead does the way on open."""
 node VoreHall(Prefab) {
-    has ledge: int = 9,
-        both_ledges: bool = True,
-        pool_here: bool = True,
-        stairs_up: bool = False,
-        bridge_here: bool = True,
-        hub: bool = False,
+    has deep: int = 8,
+        perch: int = 7,
+        lane: int = 4,
+        cross: int = 14,
         tall: int = 21;
 
     can choose with Lay entry {
@@ -427,79 +427,58 @@ node VoreHall(Prefab) {
         self.title = "Vore hall";
         self.source = E4M7;
         self.district = level_district(E4M7);
-        self.ledge = dice.between(9, 10);
-        self.both_ledges = dice.chance(0.6);
-        self.pool_here = dice.chance(0.6);
-        # A hub's way on along a ledge wants the stairs up to it.
-        self.stairs_up = dice.chance(0.5) or self.hub;
-        self.bridge_here = dice.chance(0.65);
-        self.long = dice.between(26, 30);
-        self.wide = dice.between(20, 24);
-        self.tall = self.ledge + dice.between(10, 12);
-        self.low = -8;
+        self.deep = dice.between(7, 9);
+        self.perch = dice.between(6, 9);
+        self.lane = 4;
+        self.long = dice.between(30, 34);
+        self.wide = dice.between(26, 30);
+        # The causeway across stands off the middle, so the quarters differ.
+        self.cross = self.long // 2 + dice.between(-3, 3);
+        self.tall = self.perch + dice.between(10, 13);
+        self.low = -self.deep - 1;
         self.high = self.tall + 8;
         middle = float(self.wide // 2);
         self.enter = Port(face=2, along=middle, floor=0);
         self.leaves = [
             Port(face=0, along=middle, floor=0),
-            Port(face=1, along=float(self.long - 5), floor=0),
-            Port(face=3, along=float(self.long - 5), floor=0)
+            Port(face=1, along=float(self.cross) + float(self.lane) * 0.5, floor=0),
+            Port(face=3, along=float(self.cross) + float(self.lane) * 0.5, floor=0)
         ];
-        if self.hub {
-            self.leaves.append(Port(face=0, along=float(self.wide - 3), floor=self.ledge));
-        }
         visitor.place(self);
     }
 
     can rise with Raise entry {
         build = visitor.build;
         dice = build.begin(self);
-        middle = self.wide // 2;
-        g = 4;
-        hall = build.room(1, 1, 0, self.long - 1, self.wide - 1, self.tall, variant=dice.below(3));
-        build.level(hall, self.ledge);
-        sides = [0, 1] if self.both_ledges else [1];
-        lx0 = 2 + self.ledge if self.stairs_up else 5;
-        perches: list[list[float]] = [];
-        for side in sides {
-            y0 = 1 if side == 0 else self.wide - 1 - g;
-            build.solid(lx0, y0, self.ledge - 1, self.long - 1, y0 + g, self.ledge);
-            inner = y0 + g - 1 if side == 0 else y0;
-            for x in range(lx0 + 2, self.long - 3, 4) {
-                build.solid(x, inner, 0, x + 1, inner + 1, self.ledge - 1);
-            }
-            if self.stairs_up {
-                stair(build, 2, y0, 0, 0, self.ledge, g);
-                for y in range(y0, y0 + g) {
-                    build.keep(hall, lx0, y, self.ledge);
-                    build.keep(hall, lx0 - 1, y, self.ledge);
-                }
-            }
-            py = float(y0) + float(g) * 0.5;
-            perches.append([float(self.long) - 4.5, py]);
-            perches.append([float(lx0 + (self.long - lx0) // 2) + 0.5, py]);
-        }
-        if len(sides) == 2 and self.bridge_here {
-            # A bridge between the ledges across the hall's middle.
-            bx = self.long // 2 - 2;
-            build.solid(bx, 1 + g, self.ledge - 1, bx + 4, self.wide - 1 - g, self.ledge);
-            for x in range(bx, bx + 4) {
-                build.keep(hall, x, g, self.ledge);
-                build.keep(hall, x, self.wide - 1 - g, self.ledge);
+        long = self.long;
+        wide = self.wide;
+        middle = wide // 2;
+        half = self.lane // 2;
+        lane0 = middle - half;
+        lane1 = lane0 + self.lane;
+        cx0 = self.cross;
+        cx1 = cx0 + self.lane;
+        shore = 6;
+        far = long - 4;
+        hall = build.room(1, 1, 0, long - 1, wide - 1, self.tall, variant=dice.below(3));
+        build.level(hall, self.perch);
+        # The tanks, each with its own steps up against the shore or the
+        # cross causeway; a tower in the middle of each.
+        towers: list[list[float]] = [];
+        waters: list[list[float]] = [];
+        for (x0, x1) in [(shore, cx0), (cx1, far)] {
+            for (y0, y1, both_ways) in [(1, lane0, False), (lane1, wide - 1, False)] {
+                build.pool(x0, y0, -self.deep, x1, y1, 0, 2, False, True, both_ways);
+                tx = (x0 + x1) // 2 + 1;
+                ty = (y0 + y1) // 2 - 1;
+                build.solid(tx - 1, ty - 1, -self.deep, tx + 2, ty + 2, self.perch);
+                towers.append([float(tx) + 0.5, float(ty) + 0.5]);
+                waters.append([float(x1) - 1.5, float(y0) + 1.5 if y0 > 1 else float(y1) - 1.5]);
             }
         }
-        if len(sides) == 1 {
-            # With one ledge, a balcony across the far end holds the others.
-            build.solid(self.long - 5, 1, self.ledge - 1, self.long - 1, self.wide - 1 - g, self.ledge);
-            perches.append([float(self.long) - 3.0, 3.5]);
-            perches.append([float(self.long) - 3.0, float(middle) - 1.5]);
-        }
-        if self.pool_here {
-            depth = 6;
-            build.pool(8, g + 3, -depth, self.long - 8, self.wide - g - 3, 0, 2, False, False);
-            pool_steps(build, 8, g + 3, depth, 2);
-            pool_steps(build, 8, self.wide - g - 5, depth, 2);
-            build.foe(float(self.long // 2) + 0.5, float(middle) + 0.5, 1 - depth, "monster_fish", 0.0);
+        for across in range(self.lane) {
+            build.keep(hall, shore - 1, lane0 + across, 0);
+            build.keep(hall, far, lane0 + across, 0);
         }
         build.doorway(hall, self.enter);
         for port in self.taken {
@@ -507,27 +486,30 @@ node VoreHall(Prefab) {
         }
         # The four guardians wake as the player comes in; their deaths
         # together open the ways on.
-        into = build.touch(1.0, float(middle - 3), 0.0, 5.0, float(middle + 3), 6.0);
+        into = build.touch(1.0, float(lane0 - 1), 0.0, 5.0, float(lane1 + 1), 6.0);
         roused = build.waiting();
         into +>:Fires:+> roused;
         count = build.tally(4, "The way on is open");
         slain = build.cue([], "slain");
         slain +>:Fires:+> count;
-        for (index, at) in enumerate(perches[:4]) {
+        for (index, at) in enumerate(towers) {
             kind = "monster_shalrath" if self.danger > 0.25 else ("monster_hell_knight" if index % 2 == 0 else "monster_demon1");
-            counted_foe(build, at[0], at[1], self.ledge, kind, 180.0, slain, roused);
+            counted_foe(build, at[0], at[1], self.perch, kind, 180.0, slain, roused);
         }
         for port in onward_ports(self) {
             count +>:Fires:+> port_door(build, self, port);
         }
         # Spawn brought in behind the player as the guardians wake.
         for index in range(1 + (1 if self.danger > 0.4 else 0)) {
-            into +>:Fires:+> build.summon(3 + index * 4, 1, self.tall + 1, "monster_tarbaby", 6.5 + float(index) * 2.0, float(middle) + 0.5, 0, 0.0);
+            into +>:Fires:+> build.summon(3 + index * 4, 1, self.tall + 1, "monster_tarbaby", float(shore) + 1.5 + float(index) * 2.0, float(middle) + 0.5, 0, 0.0);
         }
-        build.foe(float(self.long) - 6.5, float(middle) + 0.5, 0, "monster_hell_knight" if self.danger > 0.3 else "monster_zombie", 90.0, patrol=[[float(self.long) - 6.5, float(g) + 2.5], [float(self.long) - 6.5, float(self.wide - g) - 2.5]]);
+        build.foe(float(cx0) + float(self.lane) * 0.5, 3.5, 0, "monster_hell_knight" if self.danger > 0.3 else "monster_zombie", 90.0, patrol=[[float(cx0) + float(self.lane) * 0.5, 3.5], [float(cx0) + float(self.lane) * 0.5, float(wide) - 3.5]]);
+        for index in range(dice.between(2, 3)) {
+            build.foe(waters[index][0], waters[index][1], 1 - self.deep, "monster_fish", 0.0);
+        }
         build.supply(2.5, 2.5, 0, "item_health");
-        build.supply(2.5, float(self.wide) - 2.5, 0, "item_rockets");
-        build.supply(float(self.long) - 2.5, float(middle) + 0.5, 0, "item_health");
+        build.supply(2.5, float(wide) - 2.5, 0, "item_rockets");
+        build.supply(float(long) - 2.5, float(middle) + 0.5, 0, "item_health");
     }
 }
 
@@ -790,7 +772,6 @@ glob E4M7_STRETCHES: list[list[str]] = [
          ["cistern", "hub"],
          ["cistern", "flow"],
          ["vores", "flow"],
-         ["vores_hub", "hub"],
          ["stair", "flow"],
          ["isle", "keyroom"],
          ["exit", "end"],
@@ -810,9 +791,6 @@ def make_e4m7(name: str, key: str) -> Prefab {
     }
     if name == "vores" {
         return VoreHall();
-    }
-    if name == "vores_hub" {
-        return VoreHall(hub=True);
     }
     if name == "stair" {
         return RisingStair();
