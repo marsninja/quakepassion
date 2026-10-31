@@ -38,7 +38,9 @@ glob Q3DM3: str = "q3:q3dm3",
      Q3DM3_HEAVY: list[str] = ["monster_demon1"],
      # The high walks' height over the floor (the floor's ways out under
      # them open six lifts high, clear of the walks' slabs).
-     Q3DM3_HIGH: int = 7;
+     Q3DM3_HIGH: int = 7,
+     # How far over the floor the sky stands, open over all of its levels.
+     Q3DM3_SKY: int = 40;
 
 """A foe for q3dm3's stretches."""
 glob Q3DM3_FOES: FoeMix = FoeMix(light=Q3DM3_LIGHT, strong=Q3DM3_HEAVY, heavy_light=Q3DM3_HEAVY, scale=0.5);
@@ -59,7 +61,7 @@ node DeathGate(Prefab) {
         self.wide = dice.between(18, 20);
         self.sides = dice.chance(0.5);
         self.access = 0 if self.sides else dice.below(2);
-        self.tall = Q3DM3_HIGH + 10;
+        self.tall = Q3DM3_SKY;
         self.low = -5;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -137,7 +139,7 @@ node DeathTerraces(Prefab) {
         self.wide = dice.between(18, 20);
         self.step_up = dice.between(3, 4);
         self.ledge = dice.chance(0.6);
-        self.tall = 2 * self.step_up + 12;
+        self.tall = 2 * self.step_up + 34;
         self.low = -1;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -225,7 +227,7 @@ node DeathRing(Prefab) {
         self.sides = order[:dice.between(2, 4)];
         self.ups = dice.below(3);
         self.bridge = self.ups > 0 or dice.chance(0.5);
-        self.tall = Q3DM3_HIGH + 10;
+        self.tall = Q3DM3_SKY;
         self.low = -5;
         self.high = self.tall + 1;
         middle = float(self.wide // 2);
@@ -319,18 +321,18 @@ node DeathCrossing(Prefab) {
         self.title = "Death crossing";
         self.source = Q3DM3;
         self.district = level_district(Q3DM3);
-        self.long = dice.between(24, 26);
+        self.long = dice.between(28, 30);
         self.wide = dice.between(24, 26);
         self.low_bridge = dice.chance(0.6);
         self.both = dice.chance(0.6);
-        self.tall = Q3DM3_HIGH + 10;
-        self.low = -5;
+        self.tall = Q3DM3_SKY;
+        self.low = -6;
         self.high = self.tall + 1;
         middle = self.wide // 2;
         self.enter = Port(face=2, along=float(middle + 2), floor=0);
         self.leaves = [
             Port(face=0, along=float(self.wide) - 4.0, floor=0),
-            Port(face=3, along=float(self.long // 2), floor=-4),
+            Port(face=3, along=float(self.long // 2), floor=-5),
             Port(face=1, along=4.0, floor=0),
             Port(face=0, along=float(middle + 1), floor=Q3DM3_HIGH)
         ];
@@ -344,17 +346,18 @@ node DeathCrossing(Prefab) {
         wide = self.wide;
         middle = wide // 2;
         h = Q3DM3_HIGH;
-        arena = build.room(1, 1, -4, long - 1, wide - 1, self.tall, variant=dice.below(3), sky=True);
+        arena = build.room(1, 1, -5, long - 1, wide - 1, self.tall, variant=dice.below(3), sky=True);
         build.level(arena, 0);
         build.level(arena, h);
-        # The floors either side of the trench.
-        build.solid(1, 1, -4, 9, wide - 1, 0);
-        build.solid(long - 9, 1, -4, long - 1, wide - 1, 0);
+        # The floors either side of the trench, deep enough to walk under
+        # the low bridge.
+        build.solid(1, 1, -5, 9, wide - 1, 0);
+        build.solid(long - 9, 1, -5, long - 1, wide - 1, 0);
         keep_box(build, arena, 8, 1, 9, wide - 1, 0);
         keep_box(build, arena, long - 9, 1, long - 8, wide - 1, 0);
         # Stairs down into the trench from both floors.
-        stair(build, 12, wide - 6, -4, 2, 4, 4);
-        stair(build, long - 13, wide - 6, -4, 0, 4, 4);
+        stair(build, 13, wide - 6, -5, 2, 5, 4);
+        stair(build, long - 14, wide - 6, -5, 0, 5, 4);
         if self.low_bridge {
             slab(build, 9, 2, long - 9, 5, 0);
         }
@@ -375,11 +378,11 @@ node DeathCrossing(Prefab) {
         over = build.touch(float(long // 2 - 1), 2.0, 0.0, float(long // 2 + 1), 5.0, 6.0) if self.low_bridge else build.touch(float(long // 2 - 1), float(middle - 1), float(h), float(long // 2 + 1), float(middle + 3), float(h + 6));
         trench = wake_later(build, over, 0.5);
         for index in range(dice.between(2, 3)) {
-            build.foe(float(long // 2) + 0.5, 7.5 + float(index) * 3.0, -4, Q3DM3_FOES.pick(dice, self.danger, index == 0), 90.0, waits=trench);
+            build.foe(float(long // 2) + 0.5, 7.5 + float(index) * 3.0, -5, Q3DM3_FOES.pick(dice, self.danger, index == 0), 90.0, waits=trench);
         }
         build.foe(float(long) - 4.5, 4.5, 0, Q3DM3_FOES.pick(dice, self.danger), 180.0);
         build.foe(float(long) - 3.0, float(middle) + 1.0, h, Q3DM3_FOES.pick(dice, self.danger, True), 180.0);
-        build.supply(float(long // 2) + 0.5, float(wide) - 3.0, -4, Q3_HEALTH, "q3");
+        build.supply(float(long // 2) + 0.5, float(wide) - 3.0, -5, Q3_HEALTH, "q3");
         build.supply(float(long // 2) + 0.5, float(middle) + 1.0, h, "item_armor_shard", "q3");
         build.supply(4.5, 4.5, 0, "item_shells");
         build.supply(float(long) - 4.5, float(wide) - 3.0, 0, "item_health");
@@ -406,7 +409,7 @@ node DeathPillar(Prefab) {
         self.wide = self.hall_wide + 4;
         self.bridges = dice.between(1, 2);
         self.lifted = dice.chance(0.4);
-        self.tall = Q3DM3_HIGH + 10;
+        self.tall = Q3DM3_SKY;
         self.low = -5;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.hall_wide // 2), floor=0);
@@ -479,7 +482,7 @@ node DeathArena(Prefab) {
         self.long = dice.between(35, 37);
         self.wide = dice.between(20, 22);
         self.sides = dice.chance(0.5);
-        self.tall = Q3DM3_HIGH + 10;
+        self.tall = Q3DM3_SKY;
         self.low = -5;
         self.high = self.tall + 1;
         self.enter = Port(face=2, along=float(self.wide // 2), floor=0);
