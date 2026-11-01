@@ -21,6 +21,7 @@ made back to back.
 | `scripts/profile_navigation.jac` | Every original-map actor alerted, attacks held, to isolate movement and routing |
 | `scripts/bot_think_profile.jac` | Q3 bots' navigation, doors, combat and AI walkers per tick (`QP_MAPS`, `QP_SECONDS`) |
 | `scripts/bot_render_profile.jac` | Q3 bot bodies drawn every frame, against the same frames without models |
+| `QP_FRAME_LOG=<file.csv>` on the game, `scripts/frame_report.py` | Every frame of real play: percentiles, how regularly slow frames come, and where each spent its time |
 | `scripts/frame_spike_probe.jac` | Q3 arena frames slower than `QP_SPIKE_MS` with their stages, plus percentiles and load time |
 | `scripts/level_change_leak_probe.jac` | Frame times after each of a series of level loads (`QP_MAPS`, `QP_FRAMES`); it prints a `LOAD` line per map so a wrapper can read the process RSS (for example `ps -o rss= -p <pid>`) between loads |
 
@@ -85,3 +86,20 @@ are listed in [jac native fixes](jac-native-fixes.md).
 - Measurements are single-machine samples (macOS arm64) on selected maps and
   views; broad encounter stress testing across all maps has not been done.
 - Level loading and archive scanning are synchronous; a load stalls the frame.
+
+## Frame pacing and memory
+
+The game builds under `[memory] profile = "rc"` (`jac.toml`): reference counting with no cycle
+collector. The collector stopped the game about 25 ms each time it ran, tracing the whole
+level, and it ran about every 1.3 s at 1,400 fps. Level changes keep the same memory under
+either profile (`scripts/level_change_leak_probe.jac`), and levels load about twice as fast.
+A reference cycle is not reclaimed under `rc`, so nothing should rely on one being collected.
+
+`host_maxfps 0` runs uncapped. Any other value is paced by the engine (`Renderer.pace_frame`).
+raylib's `SetTargetFPS` is not used: its sleep overshoots and drifts, giving 9.6 ms frames on
+a 120 Hz display. A cap leaves input read up to a frame earlier than running uncapped.
+
+The breadcrumb guide never holds up a frame: it follows its trail while the player stays on
+it, and otherwise runs its search a piece at a time (`SolveJob.run`). Its tables hold plain
+numbers: under `rc`, dropping a table of 67,000 small lists frees them all at once, 5-8 ms on
+the tick the search ends.

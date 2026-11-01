@@ -16,13 +16,17 @@ import from ..world.triggers { TouchTrigger, HasTrigger }
 import from ..world.inventory { quantity }
 import from ..world.particle_field { Particle, particle_field, PARTICLE_GLOW }
 import from .graph { LevelGraph, Place, graph_places, graph_gates }
-import from .solve { Solver, MoveStep, DoStep }
+import from .solve { Solver, SolveJob, Plan, MoveStep, DoStep }
 
 # How often where the player is, and what is held, is looked at (the plan
-# is made again when either has changed); how long a wave's fountain at the
-# goal lasts; the spacing of the motes and how far along the trail they are
-# laid; the grid places are found by.
+# is made again when either has changed); how many of a search's states a
+# step may look at, so a plan never holds up a frame, and how many times that
+# when the player has asked and waits for the wave; how long a wave's
+# fountain at the goal lasts; the spacing of the motes and how far along the
+# trail they are laid; the grid places are found by.
 glob GUIDE_LOOK_EVERY: float = 0.25,
+     GUIDE_SEARCH: int = 800,
+     GUIDE_SEARCH_ASKED: int = 4,
      GUIDE_WAVE_TIME: float = 1.2,
      GUIDE_SPACING: float = 40.0,
      GUIDE_REACH: float = 1600.0,
@@ -48,6 +52,13 @@ node Guide {
         # used up (Quake's) is still had, as the graph counts it.
         carried: int = 0,
         trail: list[Vec3] = [],
+        # Each place the trail goes on to, by its point along the trail: the
+        # player walking on along it needs no new plan.
+        route: dict[int, int] = {},
+        # The search under way, and a new one wanted from `plan_from`.
+        job: SolveJob | None = None,
+        replan: bool = False,
+        plan_from: Vec3 = Vec3(),
         goal: Vec3 | None = None,
         goal_kind: str = "",
         goal_what: str = "",
@@ -55,8 +66,10 @@ node Guide {
         area: int = -1,
         held: int = -1,
         look_wait: float = 0.0,
-        # Asked for (the `guide` command): one wave at the next step.
-        asked: bool = False;
+        # Asked for (the `guide` command): one wave once a plan from where
+        # the player stood is made.
+        asked: bool = False,
+        asked_seen: bool = False;
 
     """The graph's solver and the grid of places, made on first use."""
     def prepare -> Solver {
@@ -146,18 +159,39 @@ node Guide {
         return mask;
     }
 
-    """Plan the trail from `origin` in `area` holding `held`: the solver's
-    plan, up to its first token taken (or all the way to the way out)."""
-    def plan(origin: Vec3, area: int, held: int) {
-        solver = self.prepare();
+    """Run the search under way a step's worth, or begin the one wanted."""
+    def search {
+        if self.job is None and self.replan {
+            self.replan = False;
+            self.job = self.prepare().begin(self.area, self.held, self.plan_from);
+        }
+        job = self.job;
+        if job is None or not job.run(GUIDE_SEARCH * (GUIDE_SEARCH_ASKED if self.asked else 1)) {
+            return;
+        }
+        self.job = None;
+        self.lay(job.plan, job.origin);
+        # The player went on while it was made.
+        if job.plan.area != self.area {
+            if job.plan.held == self.held and self.area in self.route {
+                self.walk_on(self.plan_from, self.area);
+            } else {
+                self.replan = True;
+            }
+        }
+    }
+
+    """The trail from `origin` along `made`: up to its first token taken (or
+    all the way to the way out)."""
+    def lay(made: Plan, origin: Vec3) {
         self.trail = [];
-        made = solver.solve(area, held, origin);
+        self.route = {};
         if not made.found {
             return;
         }
         points = [origin];
         aimed = False;
-        last_to = area;
+        last_to = made.area;
         for step in made.steps() {
             if isinstance(step, DoStep) {
                 self.aim(step.point, step.kind, step.what, guide_color(step.kind, step.what));
@@ -169,16 +203,31 @@ node Guide {
                 points.append(step.start);
                 points.append(step.finish);
                 last_to = step.to;
+                self.route[step.to] = len(points) - 1;
             }
         }
         if not aimed {
-            place = solver.by_area.get(last_to, None);
+            place = self.prepare().by_area.get(last_to, None);
             if place is not None {
                 self.aim(place.center, "exit", "", GUIDE_EXIT_COLOR);
                 points.append(place.center);
             }
         }
         self.trail = points;
+    }
+
+    """The player at `origin` has come to `area` further along the trail:
+    the trail from there on."""
+    def walk_on(origin: Vec3, area: int) {
+        at = self.route[area];
+        self.trail = [origin] + self.trail[at:];
+        route: dict[int, int] = {};
+        for (place, point) in self.route.items() {
+            if point >= at {
+                route[place] = point - at + 1;
+            }
+        }
+        self.route = route;
     }
 
     """The goal from now on: a point, what is done there, its colour."""
@@ -222,26 +271,36 @@ node Guide {
     }
 
     """One step of the guide: the plan made again when the player has come
-    into another place or what is held has changed (for the HUD's line on
-    what to do next), and when asked, one wave of motes along it."""
+    somewhere it does not lead or what is held has changed (for the HUD's line
+    on what to do next), and when asked, one wave of motes along it."""
     def follow(world: World, player: Player, origin: Vec3, dt: float) {
         self.prepare();
         self.look_wait -= dt;
-        if self.look_wait <= 0.0 or self.asked {
+        newly_asked = self.asked and not self.asked_seen;
+        if self.look_wait <= 0.0 or newly_asked {
             self.look_wait = GUIDE_LOOK_EVERY;
+            self.asked_seen = self.asked;
             area = self.place_at(origin);
             held = self.held_now(world, player);
             # In the air, the plan stands from the last floor.
-            if area > 0 and (area != self.area or held != self.held or self.asked) {
+            if area > 0 and (area != self.area or held != self.held or newly_asked) {
+                along = held == self.held and not newly_asked and area in self.route;
                 self.area = area;
                 self.held = held;
-                self.plan(origin, area, held);
+                self.plan_from = origin;
+                if along {
+                    self.walk_on(origin, area);
+                } else {
+                    self.replan = True;
+                }
             }
         }
-        if not self.asked {
+        self.search();
+        if not self.asked or self.replan or self.job is not None {
             return;
         }
         self.asked = False;
+        self.asked_seen = False;
         if not self.trail {
             return;
         }

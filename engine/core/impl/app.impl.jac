@@ -76,12 +76,24 @@ impl App.run() {
         self.opening = "";
     }
     frame = 0;
+    frames = FrameLog(path=os.getenv("QP_FRAME_LOG", ""), limit=float(os.getenv("QP_FRAME_SECONDS", "0") or "0"));
     while not self.renderer.should_close() {
         if not self.step() {
             break;
         }
 
+        if frames.path {
+            r = self.render_times;
+            spent = [self.frame_before, self.frame_sim, r.visible, r.portal, r.world, r.models, r.effects, r.weapon, r.hud, r.present];
+            if frames.note(time.time(), self.frame_ticks, self.renderer.frame_time(), spent) {
+                break;
+            }
+        }
         frame += 1;
+        # Timed play only: smokes and fixed-step runs go as fast as they can.
+        if not self.smoke and not self.drawless and self.fixed_dt <= 0.0 {
+            self.renderer.pace_frame();
+        }
         if self.smoke and self.smoke_step(frame) {
             break;
         }
@@ -90,6 +102,9 @@ impl App.run() {
             self.renderer.screenshot(self.capture_path);
             break;
         }
+    }
+    if frames.path {
+        frames.save();
     }
     # Host_WriteConfiguration: keep what the console changed.
     if not self.smoke {
@@ -988,6 +1003,9 @@ impl App.load_destination(
 }
 
 impl App.step() -> bool {
+    self.frame_started = time.time();
+    self.frame_before = 0.0;
+    self.frame_sim = 0.0;
     dt = 0.0 if self.skip_time else (self.fixed_dt if self.fixed_dt > 0.0 else self.renderer.frame_time());
     self.skip_time = False;
     if self.workbench.holding and not self.workbench.active {
@@ -1362,6 +1380,9 @@ impl App.step() -> bool {
         self.jump_pending = self.jump_pending or intent.jump;
     }
     steps = self.physics_clock.advance(min(dt, 0.25));
+    self.frame_ticks = steps;
+    ticking = time.time();
+    self.frame_before = (ticking - self.frame_started) * 1000.0;
     wish = forward_from(self.player.yaw, 0.0).scale(intent.move.y).add(
         right_from(self.player.yaw).scale(intent.move.x)
     );
@@ -1997,6 +2018,7 @@ impl App.step() -> bool {
         self.player.tick_pose.settle();
     }
     self.tick_blend.alpha = self.physics_clock.alpha();
+    self.frame_sim = (time.time() - ticking) * 1000.0;
     self.render_frame();
     return True;
 }

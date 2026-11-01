@@ -61,7 +61,7 @@ import from vendor.raylib {
             y: f32;
     }  def SetWindowState(flags: u32) -> None;  def ClearWindowState(flags: u32) -> None;  def SetWindowPosition(x: i32, y: i32) -> None;  def GetMonitorPosition(monitor: i32) -> Vector2;  def GetScreenWidth -> i32;  def GetScreenHeight -> i32;  def SetWindowSize(
         width: i32, height: i32
-    ) -> None;  def SetWindowMinSize(width: i32, height: i32) -> None;  def GetCurrentMonitor -> i32;  def GetMonitorWidth(
+    ) -> None;  def SetWindowMinSize(width: i32, height: i32) -> None;  def GetCurrentMonitor -> i32;  def GetTime -> f64;  def WaitTime(seconds: f64) -> None;  def GetMonitorWidth(
         monitor: i32
     ) -> i32;  def GetMonitorHeight(monitor: i32) -> i32;  def GetRenderWidth -> i32;  def GetRenderHeight -> i32;  obj ScreenImage {
         has data: u64,
@@ -116,6 +116,9 @@ glob BATCH_ATTRIBUTES_VS: str = "#version 330\nin vec3 vertexPosition; in vec2 v
      BATCH_ATTRIBUTES_FS: str = "#version 330\nin vec4 shade; out vec4 finalColor;\nvoid main(){ finalColor=shade; }\n";
 
 # raylib ConfigFlags.
+# How much of a frame's wait is spent watching the clock rather than asleep.
+glob FRAME_SPIN: float = 0.005;
+
 glob WINDOW_RESIZABLE_FLAG: int = 4,
      WINDOW_HIGHDPI_FLAG: int = 8192,
      WINDOW_UNDECORATED_FLAG: int = 8,
@@ -206,6 +209,7 @@ obj RenderCvars {
 
 obj Renderer {
     has cvars: RenderCvars = RenderCvars(),
+        frame_due: float = 0.0,
         # The live view: refdef.fov_y from the fov cvar, and the window's size
         # in screen units (2D drawing) and in pixels (framebuffers).
         fov: float = 73.74,
@@ -223,6 +227,9 @@ obj Renderer {
     """Register the renderer's cvars."""
     def declare(shell: Shell);
     def set_frame_limit(fps: int);
+    """Wait out the rest of this frame's turn, so frames come evenly at the
+    rate host_maxfps asks (no wait when it asks none)."""
+    def pace_frame();
     def open_window();
     """Follow the window each frame: its live size (a resize is remembered in
     vid_width / vid_height), the view angle and the frame rate cap."""

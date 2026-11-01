@@ -219,6 +219,15 @@ obj Feedback {
             catalog = AssetCatalog(game=game, directory=directory);
             self.catalog = catalog;
             library = catalog.source("q1");
+            # Opened now: opening an archive takes long enough to show as a
+            # hitch when its first sound plays.
+            for other in ["q2", "q3"] {
+                try {
+                    catalog.source(other);
+                } except Exception as error {
+                    print("Sounds unavailable:", other, str(error));
+                }
+            }
         } else {
             library = AssetLibrary(game=game);
             library.open(directory);
