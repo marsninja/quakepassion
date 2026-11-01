@@ -73,7 +73,7 @@ impl Renderer.sync() {
     );
     if cvars.maxfps.modified {
         cvars.maxfps.modified = False;
-        SetTargetFPS(i32(cvars.maxfps.integer));
+        self.frame_due = 0.0;
     }
 }
 
@@ -340,7 +340,29 @@ impl RenderPass.draw with Area entry {
 impl Renderer.set_frame_limit(fps: int) {
     self.cvars.maxfps.assign(str(fps));
     self.cvars.maxfps.modified = False;
-    SetTargetFPS(i32(self.cvars.maxfps.integer));
+    self.frame_due = 0.0;
+}
+
+impl Renderer.pace_frame() {
+    rate = self.cvars.maxfps.integer;
+    if rate <= 0 {
+        return;
+    }
+    period = 1.0 / float(rate);
+    now = float(GetTime());
+    # A frame late starts the count over rather than hurrying to catch up.
+    if self.frame_due <= now - period or self.frame_due == 0.0 {
+        self.frame_due = now + period;
+        return;
+    }
+    # The system's sleep overshoots by milliseconds: sleep part of the way,
+    # then watch the clock for the rest.
+    if self.frame_due - now > FRAME_SPIN {
+        WaitTime(self.frame_due - now - FRAME_SPIN);
+    }
+    while float(GetTime()) < self.frame_due {
+    }
+    self.frame_due += period;
 }
 
 impl Renderer.draw_opponents(world: World, height: float, blend: TickBlend = TickBlend()) {

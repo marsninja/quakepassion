@@ -152,132 +152,34 @@ obj Solver {
     out in `passed_over` does not count (one back to a level already
     played)."""
     def solve(area: int, held: int, origin: Vec3, bans: Bans = Bans(), passed_over: set[int] = set()) -> Plan {
+        job = self.begin(area, held, origin, bans, passed_over);
+        job.run();
+        return job.plan;
+    }
+
+    """The same plan's search, not yet run: for what can't stop the game for
+    it, a piece at a time (`SolveJob.run`)."""
+    def begin(area: int, held: int, origin: Vec3, bans: Bans = Bans(), passed_over: set[int] = set()) -> SolveJob {
         self.prepare();
         plan = Plan(area=area, held=held);
+        job = SolveJob(solver=self, plan=plan, origin=origin, bans=bans, passed_over=passed_over);
         view = self.view;
         if view is None or area <= 0 or area >= view.count or not view.live[area] {
             plan.reason = "standing in no place of the graph";
-            return plan;
+            job.finished = True;
+            return job;
         }
         if not view.exits {
             plan.reason = "the graph has no way out";
-            return plan;
+            job.finished = True;
+            return job;
         }
-        span = self.span;
         # The search begins holding what this place gives too.
-        begun = held | self.gives(area, held, bans);
-        first = area * span + begun;
-        cost: dict[int, float] = {first: 0.0};
-        came: dict[int, list[int]] = {};
-        heap: list[list[float]] = [[0.0, float(first)]];
-        done: dict[int, bool] = {};
-        goal = -1;
-        nearest_gain = -1;
-        popped = 0;
-        while heap and popped < SOLVE_SEARCH {
-            top = solve_heap_pop(heap);
-            state = int(top[1]);
-            if state in done {
-                continue;
-            }
-            done[state] = True;
-            popped += 1;
-            at = state // span;
-            mask = state % span;
-            if at not in passed_over and view.out_with(at, mask) {
-                goal = state;
-                break;
-            }
-            if mask != begun and nearest_gain < 0 {
-                nearest_gain = state;
-            }
-            from_place = self.by_area.get(at, None);
-            steps = view.maybe[at];
-            for index in range(len(steps)) {
-                step = steps[index];
-                if step[1] & mask != step[1] {
-                    continue;
-                }
-                move = view.ways[at][index];
-                if (move.fall and not self.falls) or (bans.moves and bans.move_banned(at, move)) {
-                    continue;
-                }
-                to_place = self.by_area.get(step[0], None);
-                length = 16.0;
-                if from_place is not None and to_place is not None {
-                    length = max(16.0, to_place.center.sub(from_place.center).length());
-                }
-                length = length if move.must else length * SOLVE_MAYBE_SCALE;
-                if view.deadly[step[0]] {
-                    length += SOLVE_DEADLY_COST;
-                }
-                after_mask = mask | self.gives(step[0], mask, bans);
-                after = step[0] * span + after_mask;
-                total = top[0] + length + (SOLVE_TOKEN_COST if after_mask != mask else 0.0);
-                if after not in done and total < cost.get(after, 1.0e18) {
-                    cost[after] = total;
-                    came[after] = [state, at, index];
-                    solve_heap_push(heap, [total, float(after)]);
-                }
-            }
-        }
-        plan.to_exit = goal >= 0;
-        if goal < 0 {
-            goal = nearest_gain;
-        }
-        if goal < 0 {
-            plan.reason = "no way out from place " + str(area) + " holding [" + self.held_words(held) + "]";
-            return plan;
-        }
-        # The states back to the start, and the tokens the way's steps want
-        # (and the way out, when it wants one): only those are taken. A token
-        # taken on the way and wanted by nothing (a button seen in passing)
-        # is no step.
-        states = [goal];
-        while states[0] in came {
-            states.insert(0, came[states[0]][0]);
-        }
-        wanted = (view.exit_bit | view.exit_wants[goal // span]) if plan.to_exit else 0;
-        for at in range(1, len(states)) {
-            link = came[states[at]];
-            wanted |= view.maybe[link[1]][link[2]][1];
-        }
-        if not plan.to_exit {
-            wanted |= (goal % span) & ~held;
-        }
-        last: Step | None = None;
-        last_point = origin;
-        gained = self.gives(area, held, bans) & ~held & wanted;
-        for step in self.takes(gained, area, last_point) {
-            last = solve_link(plan, last, step);
-            last_point = step.point;
-        }
-        for at in range(1, len(states)) {
-            link = came[states[at]];
-            move = view.ways[link[1]][link[2]];
-            last = solve_link(
-                plan,
-                last,
-                MoveStep(
-                    area=link[1],
-                    to=move.to,
-                    kind=move.kind,
-                    model=move.model,
-                    start=move.start,
-                    finish=move.finish,
-                    time=move.time,
-                    must=move.must
-                )
-            );
-            last_point = move.finish;
-            gained = (states[at] % span) & ~(states[at - 1] % span) & wanted;
-            for step in self.takes(gained, move.to, last_point) {
-                last = solve_link(plan, last, step);
-                last_point = step.point;
-            }
-        }
-        plan.found = True;
-        return plan;
+        job.begun = held | self.gives(area, held, bans);
+        first = area * self.span + job.begun;
+        job.cost[first] = 0.0;
+        job.heap.append([0.0, float(first)]);
+        return job;
     }
 
     """The steps that take each token of `gained` in `area`: each its
@@ -330,6 +232,181 @@ obj Solver {
         return ", ".join([view.tokens[index] for index in range(len(view.tokens)) if held & (1 << index)]);
     }
 }
+
+
+"""A plan's search under way: its states so far, run as far as it is let."""
+obj SolveJob {
+    has solver: Solver,
+        plan: Plan,
+        origin: Vec3,
+        bans: Bans,
+        passed_over: set[int],
+        begun: int = 0,
+        cost: dict[int, float] = {},
+        # Each state's way there: the state before and which of its ways.
+        # Plain numbers, not a list each: a search's worth of lists is a frame's
+        # time to free.
+        came: dict[int, int] = {},
+        came_by: dict[int, int] = {},
+        heap: list[list[float]] = [],
+        done: dict[int, bool] = {},
+        goal: int = -1,
+        nearest_gain: int = -1,
+        popped: int = 0,
+        finished: bool = False;
+
+    """Search on for at most `states` states (0: until it ends); answers
+    whether the plan is made."""
+    def run(states: int = 0) -> bool {
+        if self.finished {
+            return True;
+        }
+        solver = self.solver;
+        view = solver.view;
+        if view is None {
+            self.finished = True;
+            return True;
+        }
+        span = solver.span;
+        bans = self.bans;
+        passed_over = self.passed_over;
+        begun = self.begun;
+        cost = self.cost;
+        came = self.came;
+        came_by = self.came_by;
+        heap = self.heap;
+        done = self.done;
+        looked = 0;
+        while heap and self.popped < SOLVE_SEARCH {
+            if states > 0 and looked >= states {
+                return False;
+            }
+            looked += 1;
+            top = solve_heap_pop(heap);
+            state = int(top[1]);
+            if state in done {
+                continue;
+            }
+            done[state] = True;
+            self.popped += 1;
+            at = state // span;
+            mask = state % span;
+            if at not in passed_over and view.out_with(at, mask) {
+                self.goal = state;
+                break;
+            }
+            if mask != begun and self.nearest_gain < 0 {
+                self.nearest_gain = state;
+            }
+            from_place = solver.by_area.get(at, None);
+            steps = view.maybe[at];
+            for index in range(len(steps)) {
+                step = steps[index];
+                if step[1] & mask != step[1] {
+                    continue;
+                }
+                move = view.ways[at][index];
+                if (move.fall and not solver.falls) or (bans.moves and bans.move_banned(at, move)) {
+                    continue;
+                }
+                to_place = solver.by_area.get(step[0], None);
+                length = 16.0;
+                if from_place is not None and to_place is not None {
+                    length = max(16.0, to_place.center.sub(from_place.center).length());
+                }
+                length = length if move.must else length * SOLVE_MAYBE_SCALE;
+                if view.deadly[step[0]] {
+                    length += SOLVE_DEADLY_COST;
+                }
+                after_mask = mask | solver.gives(step[0], mask, bans);
+                after = step[0] * span + after_mask;
+                total = top[0] + length + (SOLVE_TOKEN_COST if after_mask != mask else 0.0);
+                if after not in done and total < cost.get(after, 1.0e18) {
+                    cost[after] = total;
+                    came[after] = state;
+                    came_by[after] = index;
+                    solve_heap_push(heap, [total, float(after)]);
+                }
+            }
+        }
+        self.finished = True;
+        self.lay_out();
+        return True;
+    }
+
+    """The search ended: its way as the plan's chain of steps."""
+    def lay_out {
+        solver = self.solver;
+        view = solver.view;
+        if view is None {
+            return;
+        }
+        plan = self.plan;
+        area = plan.area;
+        held = plan.held;
+        bans = self.bans;
+        came = self.came;
+        came_by = self.came_by;
+        span = solver.span;
+        goal = self.goal;
+        plan.to_exit = goal >= 0;
+        if goal < 0 {
+            goal = self.nearest_gain;
+        }
+        if goal < 0 {
+            plan.reason = "no way out from place " + str(area) + " holding [" + solver.held_words(held) + "]";
+            return;
+        }
+        # The states back to the start, and the tokens the way's steps want
+        # (and the way out, when it wants one): only those are taken. A token
+        # taken on the way and wanted by nothing (a button seen in passing)
+        # is no step.
+        states = [goal];
+        while states[0] in came {
+            states.insert(0, came[states[0]]);
+        }
+        wanted = (view.exit_bit | view.exit_wants[goal // span]) if plan.to_exit else 0;
+        for at in range(1, len(states)) {
+            wanted |= view.maybe[states[at - 1] // span][came_by[states[at]]][1];
+        }
+        if not plan.to_exit {
+            wanted |= (goal % span) & ~held;
+        }
+        last: Step | None = None;
+        last_point = self.origin;
+        gained = solver.gives(area, held, bans) & ~held & wanted;
+        for step in solver.takes(gained, area, last_point) {
+            last = solve_link(plan, last, step);
+            last_point = step.point;
+        }
+        for at in range(1, len(states)) {
+            from_area = states[at - 1] // span;
+            move = view.ways[from_area][came_by[states[at]]];
+            last = solve_link(
+                plan,
+                last,
+                MoveStep(
+                    area=from_area,
+                    to=move.to,
+                    kind=move.kind,
+                    model=move.model,
+                    start=move.start,
+                    finish=move.finish,
+                    time=move.time,
+                    must=move.must
+                )
+            );
+            last_point = move.finish;
+            gained = (states[at] % span) & ~(states[at - 1] % span) & wanted;
+            for step in solver.takes(gained, move.to, last_point) {
+                last = solve_link(plan, last, step);
+                last_point = step.point;
+            }
+        }
+        plan.found = True;
+    }
+}
+
 
 """Put `step` after `last` in `plan` (first when there is none)."""
 def solve_link(plan: Plan, last: Step | None, step: Step) -> Step {

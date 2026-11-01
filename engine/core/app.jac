@@ -5,6 +5,7 @@ draws only what the flood found.
 Method bodies live in impl/app.impl.jac."""
 import math;
 import time;
+import from .framelog { FrameLog }
 import from ..world.gates { ApplyGates, rune_summary }
 import from ..world.chthon { ChthonTick }
 import from ..world.finale {
@@ -394,7 +395,11 @@ obj App {
         quad_sound_wait: float = 0.0,
         show_scores: bool = False,
         arena_progress: ArenaProgress = ArenaProgress(),
-        render_times: RenderTimes = RenderTimes();
+        render_times: RenderTimes = RenderTimes(),
+        frame_ticks: int = 0,
+        frame_started: float = 0.0,
+        frame_before: float = 0.0,
+        frame_sim: float = 0.0;
     # Q3's postgame menu over the podium, its clock, the career award totals
     # and each character's head placement for the scoreboard.
     has postgame: Postgame | None = None,

@@ -13,6 +13,8 @@ require a graphical display. QP_CONFIG_DIR keeps the settings and bindings
 somewhere other than HOME. QP_GENERATED=1 plays generated assets (textures,
 sounds, models and music made by games/procgen) instead of the games' own;
 QP_GENERATED_DIR keeps them somewhere other than ~/.quakepassion-generated.
+QP_FRAME_LOG=<file.csv> records every frame's timings for scripts/frame_report.py,
+and QP_FRAME_SECONDS=<n> exits after that long.
 Arguments starting with "+" run as console commands
 after the configuration (quake.rc's stuffcmds): `./qp +map e1m2 +god`.
 """

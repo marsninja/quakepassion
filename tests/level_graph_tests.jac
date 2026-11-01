@@ -2,6 +2,7 @@ import from engine.math.vec3 { Vec3 }
 import from engine.physics.collision { CollisionMap }
 import from engine.level.graph { LevelGraph, Place, Move, graph_text, graph_from_text, graph_places, graph_gates, graph_openers, graph_things, opener_places }
 import from engine.level.prove { prove, prove_level, prune_traps }
+import from engine.level.solve { Solver, MoveStep }
 import from engine.level.budget { budget_route, start_kit }
 import from games.passion.transform { copy_graph, turned, turn_graph, move_tokens }
 import from games.passion.random { stream_for }
@@ -35,6 +36,23 @@ test "a row walked end to end finishes by the shortest sure route" {
     proof = prove(row_graph(5));
     assert proof.finishes and proof.softlocks == 0;
     assert proof.route == [1, 2, 3, 4, 5];
+}
+
+test "a search run a state at a time makes the plan one run whole does" {
+    atlas = row_graph(6);
+    solver = Solver(atlas=atlas);
+    start = place_of(atlas, 1);
+    whole = solver.solve(1, 0, start.center);
+    job = solver.begin(1, 0, start.center);
+    runs = 0;
+    while not job.run(1) {
+        runs += 1;
+    }
+    assert runs > 1;
+    assert whole.found and job.plan.found;
+    routes = [[step.to for step in plan.steps() if isinstance(step, MoveStep)] for plan in [whole, job.plan]];
+    assert routes[0] == routes[1];
+    assert len(routes[0]) > 0;
 }
 
 test "a pit fallen into is a softlock, and pruning takes it out" {
