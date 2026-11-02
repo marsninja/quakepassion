@@ -75,17 +75,15 @@ walker CrashLand {
             } elif self.water_depth == 1 {
                 delta *= 0.5;
             }
+            # The body's rig voices the landing (`PoseRig`), in its own voice.
             if delta > 60.0 {
                 amount = 10;
-                self.drop = 16.0;
-                self.cue = "sound/player/sarge/fall1.wav";
+                self.drop = 24.0;
             } elif delta > 40.0 {
                 amount = 5;
                 self.drop = 16.0;
-                self.cue = "sound/player/sarge/fall1.wav";
             } elif delta > 7.0 {
                 self.drop = 8.0;
-                self.cue = "sound/player/land1.wav";
             }
         }
         if amount > 0 {
@@ -178,6 +176,10 @@ walker VoiceTick {
             if before < 3 and now >= 3 {
                 self.cues.append("sound/player/watr_un.wav");
             }
+            # g_active.c P_WorldEffects: gurp1 and gurp2 in turn, *drown at the last.
+            if here.gurgled {
+                self.cues.append("sound/player/gurp" + str(1 + here.drown_damage // 2 % 2) + ".wav");
+            }
             # g_combat.c player_die and body_die: at GIB_HEALTH the body gibs
             # (EV_GIB_PLAYER's gibSound) instead of its death cry.
             if q3_gibbed(here) and not voice.burst {
@@ -185,6 +187,7 @@ walker VoiceTick {
             }
             voice.burst = q3_gibbed(here);
         }
+        here.gurgled = False;
         if here.health > 0 {
             voice.burst = False;
         }

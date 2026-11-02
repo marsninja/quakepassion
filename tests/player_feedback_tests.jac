@@ -170,9 +170,10 @@ test "landing reports its speed and falling hurts by each game's thresholds" {
         ("q2", 700.0, 9, "sound/player/male/fall2.wav"),
         ("q2", 800.0, 17, "sound/player/male/fall1.wav"),
         ("q2", 500.0, 0, "sound/player/land1.wav"),
-        ("q3", 800.0, 10, "sound/player/sarge/fall1.wav"),
-        ("q3", 700.0, 5, "sound/player/sarge/fall1.wav"),
-        ("q3", 400.0, 0, "sound/player/land1.wav")
+        # Q3's own body voices its landings (`PoseRig`).
+        ("q3", 800.0, 10, ""),
+        ("q3", 700.0, 5, ""),
+        ("q3", 400.0, 0, "")
     ];
     for row in cases {
         body = Player();
@@ -225,8 +226,29 @@ test "chaingun spins up from one to three shots a frame" {
     }
     assert used == [1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3];
     assert "sound/weapons/Chngnu1a.wav" in state.cues;
-    weapon_input(world, player, collision, state, False, 0.1);
-    assert state.spin == 0 and "sound/weapons/Chngnd1a.wav" in state.cues;
+    # Let go at full spin: it fires out its loop, then winds down.
+    before = quantity(player.inventory, "bullets");
+    for frame in range(5) {
+        weapon_input(world, player, collision, state, False, 0.1);
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=0.1, active=False);
+    }
+    assert before - quantity(player.inventory, "bullets") == 15;
+    assert state.spin == 0 and "sound/weapons/Chngnd1a.wav" in state.cues and state.cooldown > 0.9;
+}
+
+test "a tap of the chaingun runs out its spin-up, nine rounds" {
+    world = World();
+    (player, state) = pf_armed("q2");
+    player.inventory spawn AdjustInventory(kind="weapon_chaingun", amount=1);
+    player.inventory spawn AdjustInventory(kind="bullets", amount=200, capacity=200);
+    assert select_weapon(player, state, 5);
+    collision = CollisionMap();
+    for frame in range(12) {
+        weapon_input(world, player, collision, state, frame == 0, 0.1);
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=0.1, active=False);
+    }
+    assert 200 - quantity(player.inventory, "bullets") == 9;
+    assert state.spin == 0 and "sound/weapons/Chngnd1a.wav" not in state.cues;
 }
 
 test "Q2 BFG leaves 0.8 seconds after the trigger; machinegun climbs" {

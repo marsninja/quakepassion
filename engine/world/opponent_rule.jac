@@ -329,6 +329,11 @@ obj OpponentRule {
         rail: bool = False,
         ranged_min: float = 0.0,
         near_chance: float = -1.0,
+        # A chance past 200 units whatever the range (CheckDemonJump's pounce
+        # across a room); below 0, none of its own.
+        pounce_chance: float = -1.0,
+        # Goes on muttering its idle sound while it hunts (a zombie's groan).
+        mutters_hunting: bool = False,
         mid_chance: float = -1.0,
         rest_min: float = 0.0,
         rest_random: float = 2.0,

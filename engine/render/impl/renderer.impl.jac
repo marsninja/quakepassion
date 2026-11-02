@@ -68,8 +68,9 @@ impl Renderer.sync() {
     self.height = max(1, int(GetScreenHeight()));
     # SCR_CalcRefdef: fov is the horizontal angle of a 4:3 view; the vertical
     # angle stays and wider windows see more to the sides.
+    wide = cvars.fov.number + (ZOOM_FOV - cvars.fov.number) * self.zoom;
     self.fov = math.degrees(
-        2.0 * math.atan(math.tan(math.radians(cvars.fov.number) * 0.5) * 0.75)
+        2.0 * math.atan(math.tan(math.radians(wide) * 0.5) * 0.75)
     );
     if cvars.maxfps.modified {
         cvars.maxfps.modified = False;

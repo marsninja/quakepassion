@@ -583,7 +583,9 @@ obj CollisionMap {
     # Brush sides a shot leaves nothing on, by hull: the sky and Q3
     # SURF_NOIMPACT take no impact at all, Q3 SURF_NOMARKS no marks.
     has no_impact: dict[int, list[Vec3]] = {},
-        no_marks: dict[int, list[Vec3]] = {};
+        no_marks: dict[int, list[Vec3]] = {},
+        # Q3 SURF_NODAMAGE: bounce pads and the like, landed on without a sound.
+        no_fall: dict[int, list[Vec3]] = {};
 
     # Share live geometry and mover offsets, but keep actor stance independent.
     # With `mins`/`maxs` the view traces that box instead of the player's,
@@ -616,7 +618,8 @@ obj CollisionMap {
             monster_clips=self.monster_clips,
             mask=mask,
             no_impact=self.no_impact,
-            no_marks=self.no_marks
+            no_marks=self.no_marks,
+            no_fall=self.no_fall
         );
         if mins is not None and maxs is not None {
             view.fit_body(mins, maxs);
@@ -702,6 +705,19 @@ obj CollisionMap {
             }
         }
         return 0;
+    }
+
+    """Whether the floor a trace ended on is one a fall onto costs nothing."""
+    def soft_floor(trace: Trace) -> bool {
+        if trace.fraction >= 1.0 or trace.hull < 0 {
+            return False;
+        }
+        for normal in self.no_fall.get(trace.hull, []) {
+            if normal.dot(trace.normal) > 0.99 {
+                return True;
+            }
+        }
+        return False;
     }
 
     def set_offset(index: int, offset: Vec3) {

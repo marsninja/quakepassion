@@ -279,8 +279,8 @@ impl Controls.sample(dt: float) -> Intent {
     # IN_MouseMove: sensitivity scales the motion; the mouse turns, looks and
     # (with +strafe, or without mouse look) moves.
     motion = mouse_motion();
-    mouse_x = motion[0] * cvars.sensitivity.number;
-    mouse_y = motion[1] * cvars.sensitivity.number;
+    mouse_x = motion[0] * cvars.sensitivity.number * self.look_scale;
+    mouse_y = motion[1] * cvars.sensitivity.number * self.look_scale;
     looking = cvars.freelook.on() or b.held["mlook"];
     if b.held["strafe"] or (cvars.lookstrafe.on() and looking) {
         side += cvars.m_side.number * mouse_x;
@@ -305,6 +305,7 @@ impl Controls.sample(dt: float) -> Intent {
     intent.jump_held = b.active["jump"] or b.active["moveup"];
     intent.crouch = b.active["movedown"];
     intent.fire = b.active["attack"];
+    intent.zoom = b.active["zoom"];
     intent.scores = b.active["showscores"] or b.active["scores"];
     if b.went_down["button2"] {
         intent.use_item = True;

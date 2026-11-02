@@ -52,9 +52,23 @@ They are scripted runs, not human playthroughs; see
   under the `nogc` memory mode, which QuakePassion does not use). See
   [jac-native-fixes.md](jac-native-fixes.md).
 
-## Remaining fidelity gaps
+## How close to the originals
 
-Each is verified against the code; the linked doc has the detail.
+The games should feel good; the originals are the guide, not a rulebook. Kept on
+purpose: no autoaim, always-run and mouse look on, 120 Hz physics, respawning away
+from opponents, the Q3 match countdown, and weapon switches that wait only for the
+refire left or the switch itself, whichever is longer.
+
+Differences found reading id's source (2026-11) and left for now, as not worth it
+or not yet looked at: Q2 `SURF_SLICK`, Q3 metal footsteps, Q3 ramps about 15% fast,
+Q3's stricter stepping under low ceilings, Q1 sight across water surfaces, vore pod
+flight, and Q1 `item_weapon` boxes. Not compared at all: Q1 doors, plats and seven
+monsters; Q2 `g_func.c`, `m_move.c` and about twelve monsters; Q3 `ai_dmnet.c` and
+`be_ai_move.c`.
+
+## Remaining gaps listed so far
+
+The linked doc has the detail. These are the ones the status docs record.
 
 Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigation-status.md](navigation-status.md), [q1-roster-status.md](q1-roster-status.md), [q2-roster-status.md](q2-roster-status.md)):
 - The fiend's leap does not hold its frame until it lands; the insane

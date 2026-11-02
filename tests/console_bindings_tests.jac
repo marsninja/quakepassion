@@ -230,7 +230,7 @@ test "the controls menu lists each game's actions, then the engine's" {
     q1 = control_actions("q1");
     assert q1[0] == ("+attack", "attack") and q1[1] == ("impulse 10", "change weapon");
     # The engine's seven actions follow the game's own.
-    assert control_actions("q2")[-8] == ("cmd help", "help computer");
+    assert ("cmd help", "help computer") in control_actions("q2");
     assert control_actions("q2")[-1] == ("edit", "studio");
     assert ("weapon 9", "BFG") in control_actions("q3");
     assert control_actions("passion")[0] == ("+attack", "attack");

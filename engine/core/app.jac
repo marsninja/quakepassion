@@ -118,6 +118,8 @@ import from ..world.combat {
     cycle_weapon,
     pickup_switch,
     selected_weapon,
+    out_of_shots,
+    fallback_weapon,
     owns_weapon,
     KillBox,
     ClearActors
@@ -193,7 +195,7 @@ import from ..console.console { Console }
 import from games.controls { binding_layer, control_actions }
 import from ..world.damage { Damage }
 import from ..math.vec3 { Vec3, forward_from, right_from }
-import from ..render.renderer { Renderer, RenderPass, SMOKE_VIDEO }
+import from ..render.renderer { Renderer, RenderPass, SMOKE_VIDEO, ZOOM_FOV, ZOOM_TIME }
 import from .workbench { Workbench, NoWorkbench, SceneView }
 import from ..world.world {
     World,
@@ -414,6 +416,8 @@ obj App {
         pickup_icon: str = "",
         pickup_name: str = "",
         pickup_time: float = 0.0,
+        # The body came down on a soft floor (SURF_NODAMAGE): no landing sound.
+        soft_landing: bool = False,
         heard_hits: int = 0,
         # The simulation time whose sounds settle_sounds last judged.
         sounds_settled: float = -1.0,

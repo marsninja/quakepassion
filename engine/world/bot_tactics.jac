@@ -141,16 +141,17 @@ def aim_point(bot: Opponent, mind: BotCharacter, rule: WeaponRule, foe: Player, 
     }
     target = origin.add(Vec3(z=8.0));
     distance = target.sub(bot.pos).length();
-    if rule.speed > 0.0 and skill > 0.5 {
+    if rule.speed > 0.0 and skill > 0.4 {
         target = origin.add(foe.velocity.scale(distance / rule.speed)).add(Vec3(z=8.0));
     }
     # Splash weapons are aimed at the ground under a grounded enemy.
-    if rule.splash > 0 and rule.speed > 0.0 and skill > 0.6 and foe.grounded {
+    # Not when it stands higher up, or so near the blast would hurt the bot.
+    if rule.splash > 0 and rule.speed > 0.0 and skill > 0.6 and foe.grounded and foe.pos.z <= bot.pos.z + 16.0 {
         floor = collision.trace_point(target, target.sub(Vec3(z=64.0)));
         if not floor.start_solid and floor.fraction < 1.0 {
             ground = target.lerp(target.sub(Vec3(z=64.0)), floor.fraction);
             sight = collision.trace_point(bot.pos, ground.add(Vec3(z=4.0)));
-            if sight.fraction == 1.0 {
+            if sight.fraction == 1.0 and ground.sub(bot.pos).length() > 100.0 {
                 target = ground.add(Vec3(z=4.0));
             }
         }

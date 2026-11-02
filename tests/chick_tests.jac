@@ -78,7 +78,7 @@ test "chick slash uses melee timeline and can be escaped" {
         rule.mid_chance = 1.0;
         world = World();
         player = Player(pos=Vec3(x=60.0));
-        enemy = Opponent(game="q2", rule=rule, attack_wait=0.0);
+        enemy = Opponent(game="q2", rule=rule, attack_wait=0.0, sighted=True);
         world +>:HasOpponent:+> enemy;
         collision = CollisionMap();
         state = CombatState(game="q2");

@@ -988,7 +988,24 @@ obj HudRenderer {
         # The default crosshair (cg_drawCrosshair 4), 24 units square.
         if self.shows_crosshair(status) and self.has_pic("crosshair") {
             size = 24.0 * scale;
-            self.blit("crosshair", float(width) * 0.5 - size * 0.5, float(height) * 0.5 - size * 0.5, size, size);
+            # CG_DrawCrosshair: it grows for 200 ms after a pickup.
+            since = 3.0 - status.pickup_fade;
+            if status.pickup_fade > 0.0 and since < 0.2 {
+                size *= 1.0 + since / 0.2;
+            }
+            self.blit("crosshair", float(width) * 0.5 - size * 0.5, float(height) * 0.5 - size * 0.5, size, size, crosshair_tint(status.health, status.armor));
         }
     }
+}
+
+"""CG_GetColorForHealth: white at 100 and over with armor counted, through
+yellow to red as the two run out."""
+def crosshair_tint(health: int, armor: int) -> list[int] {
+    if health <= 0 {
+        return [0, 0, 0, 255];
+    }
+    count = float(health + min(armor, health * 2));
+    green = 1.0 if count > 60.0 else (0.0 if count < 30.0 else (count - 30.0) / 30.0);
+    blue = 1.0 if count >= 100.0 else (0.0 if count < 66.0 else (count - 66.0) / 33.0);
+    return [255, int(green * 255.0), int(blue * 255.0), 255];
 }

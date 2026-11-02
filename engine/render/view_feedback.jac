@@ -169,7 +169,8 @@ obj ViewFeedback {
         }
         if drop > 0.0 {
             self.land_drop = drop;
-            self.land_time = 0.3;
+            # cg_local.h LAND_DEFLECT_TIME 150, LAND_RETURN_TIME 300.
+            self.land_time = 0.45;
         }
     }
 
@@ -330,8 +331,8 @@ obj ViewFeedback {
         if self.land_time <= 0.0 {
             return 0.0;
         }
-        elapsed = 0.3 - self.land_time;
-        share = elapsed / 0.15 if elapsed < 0.15 else max(0.0, 1.0 - (elapsed - 0.15) / 0.15);
+        elapsed = 0.45 - self.land_time;
+        share = elapsed / 0.15 if elapsed < 0.15 else max(0.0, 1.0 - (elapsed - 0.15) / 0.3);
         return self.land_drop * share;
     }
 

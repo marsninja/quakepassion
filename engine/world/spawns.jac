@@ -20,8 +20,19 @@ def active_entities(game: str, entities: list[MapEntity], skill: int = 1) -> lis
             }
             fields = dict(fields);
             fields["spawnflags"] = str(flags & ~(7936 if game == "q2" else 3840));
+            # A trigger-spawned Q2 monster named only by its target is called
+            # by that name (SP_monster_flyer's fix for jail5), or it would
+            # never come.
+            if game == "q2"
+                and fields.get("classname", "").startswith("monster_")
+                and flags & 2 != 0
+                and not fields.get("targetname", "")
+                and fields.get("target", "") {
+                fields["targetname"] = fields.pop("target");
+            }
         } elif game == "q3" and fields.get("classname", "") != "worldspawn" {
             if atoi(fields.get("notfree", "0")) != 0
+                or atoi(fields.get("notsingle", "0")) != 0
                 or atoi(fields.get("notq3a", "0")) != 0 {
                 continue;
             }

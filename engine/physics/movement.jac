@@ -505,11 +505,13 @@ walker MovePlayer {
             ahead = 0.0;
         }
         direction = level.normalized();
+        # PM_CheckJump: a jump still held counts for nothing on the ground, so
+        # it doesn't lower running speed.
         wish = direction.scale(
             rules.command_speed(
                 ahead,
                 self.command.x,
-                self.command.z,
+                0.0 if body.grounded and body.jump_held else self.command.z,
                 False,
                 self.command_full,
                 speed

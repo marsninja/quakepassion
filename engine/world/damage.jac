@@ -57,6 +57,9 @@ walker Damage {
                 self.amount = max(1, self.amount // 2);
             }
         }
+        if isinstance(here, Player) and here.hurt_scale < 1.0 and not self.bypass_protection {
+            self.amount = max(1, int(float(self.amount) * here.hurt_scale));
+        }
         if not self.bypass_armor {
             self.shielded = power_armor_save(here, self.amount, self.source);
             self.amount -= self.shielded;
