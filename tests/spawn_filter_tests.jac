@@ -66,7 +66,6 @@ test "local Q3 arena respects free-for-all and base-game exclusions" {
             fields={
                 "classname": "item_health",
                 "gametype": "ffa team",
-                "notsingle": "1",
                 "notteam": "1",
                 "spawnflags": "512"
             }

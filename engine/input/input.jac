@@ -37,6 +37,7 @@ obj Intent {
         jump: bool = False,
         jump_held: bool = False,
         crouch: bool = False,
+        zoom: bool = False,
         fire: bool = False,
         weapon: int = 0,
         weapon_step: int = 0,
@@ -186,7 +187,8 @@ glob BUTTON_NAMES: list[str] = [
     "mlook",
     "showscores",
     "scores",
-    "button2"
+    "button2",
+    "zoom"
 ];
 
 """The input layer: its buttons, its cvars and the one-shot requests the
@@ -194,7 +196,9 @@ commands leave for the next move."""
 node Controls {
     has cvars: InputCvars = InputCvars(),
         pending: Intent = Intent(),
-        booted: bool = False;
+        booted: bool = False,
+        # What of the mouse's motion turns the view (less in +zoom).
+        look_scale: float = 1.0;
 
     """Create the buttons and declare the input commands and cvars."""
     def declare(shell: Shell);

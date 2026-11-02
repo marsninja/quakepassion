@@ -52,6 +52,9 @@ def add_model(
         silent = 20 if bsp.game == "q3" else 4;
         for side in range(min(len(brush.side_flags), len(normals))) {
             flags = brush.side_flags[side];
+            if bsp.game == "q3" and flags & 1 != 0 {
+                collision.no_fall.setdefault(hull, []).append(normals[side]);
+            }
             if flags & silent != 0 {
                 collision.no_impact.setdefault(hull, []).append(normals[side]);
             } elif bsp.game == "q3" and flags & 32 != 0 {

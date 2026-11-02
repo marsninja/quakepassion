@@ -28,7 +28,8 @@ glob GAME_CONTROL_ACTIONS: dict[str, list[tuple[str, str]]] = {
         ("+mlook", "mouse look"),
         ("+klook", "keyboard look"),
         ("+moveup", "swim up"),
-        ("+movedown", "swim down")
+        ("+movedown", "swim down"),
+        ("+zoom", "zoom")
     ],
     "q2": [
         ("+attack", "attack"),
@@ -52,7 +53,8 @@ glob GAME_CONTROL_ACTIONS: dict[str, list[tuple[str, str]]] = {
         ("invuse", "use item"),
         ("invprev", "prev item"),
         ("invnext", "next item"),
-        ("cmd help", "help computer")
+        ("cmd help", "help computer"),
+        ("+zoom", "zoom")
     ],
     "q3": [
         ("+scores", "show scores"),
@@ -82,7 +84,8 @@ glob GAME_CONTROL_ACTIONS: dict[str, list[tuple[str, str]]] = {
         ("weapon 9", "BFG"),
         ("+attack", "attack"),
         ("weapprev", "prev weapon"),
-        ("weapnext", "next weapon")
+        ("weapnext", "next weapon"),
+        ("+zoom", "zoom")
     ]
 };
 
@@ -100,13 +103,13 @@ glob ENGINE_CONTROL_ACTIONS: list[tuple[str, str]] = [
 
 """The bindings QuakePassion adds after each game's default.cfg."""
 glob GAME_BINDING_LAYERS: dict[str, str] = {
-    "q1": "bind w +forward\nbind s +back\nbind a +moveleft\nbind d +moveright\nbind MWHEELUP \"impulse 12\"\nbind MWHEELDOWN \"impulse 10\"\nbind F3 \"toggle qp_overlay\"\nbind F4 noclip\nbind F8 edit\nbind g guide\n",
-    "q2": "bind w +forward\nbind s +back\nbind a +moveleft\nbind d +moveright\nbind MWHEELUP weapprev\nbind MWHEELDOWN weapnext\nbind F3 \"toggle qp_overlay\"\nbind F4 noclip\nbind F8 edit\nbind g guide\n",
-    "q3": "bind F3 \"toggle qp_overlay\"\nbind F4 noclip\nbind F8 edit\nbind F6 \"echo Quick Saving...; wait; save quick\"\nbind F9 \"echo Quick Loading...; wait; load quick\"\nbind F12 screenshot\nbind g guide\n"
+    "q1": "bind w +forward\nbind s +back\nbind a +moveleft\nbind d +moveright\nbind MWHEELUP \"impulse 12\"\nbind MWHEELDOWN \"impulse 10\"\nbind F3 \"toggle qp_overlay\"\nbind F4 noclip\nbind F8 edit\nbind g guide\nbind MOUSE3 +zoom\n",
+    "q2": "bind w +forward\nbind s +back\nbind a +moveleft\nbind d +moveright\nbind MWHEELUP weapprev\nbind MWHEELDOWN weapnext\nbind F3 \"toggle qp_overlay\"\nbind F4 noclip\nbind F8 edit\nbind g guide\nbind MOUSE3 +zoom\n",
+    "q3": "bind F3 \"toggle qp_overlay\"\nbind F4 noclip\nbind F8 edit\nbind F6 \"echo Quick Saving...; wait; save quick\"\nbind F9 \"echo Quick Loading...; wait; load quick\"\nbind F12 screenshot\nbind g guide\nbind MOUSE3 +zoom\n"
 };
 
 """A complete layout for a game that ships no default.cfg."""
-glob FALLBACK_BINDINGS: str = "unbindall\nbind w +forward\nbind s +back\nbind a +moveleft\nbind d +moveright\nbind UPARROW +forward\nbind DOWNARROW +back\nbind LEFTARROW +left\nbind RIGHTARROW +right\nbind PGDN +lookup\nbind DEL +lookdown\nbind END centerview\nbind SPACE +jump\nbind c +movedown\nbind SHIFT +speed\nbind CTRL +attack\nbind ALT +strafe\nbind MOUSE1 +attack\nbind TAB +showscores\nbind ENTER invuse\nbind 1 \"impulse 1\"\nbind 2 \"impulse 2\"\nbind 3 \"impulse 3\"\nbind 4 \"impulse 4\"\nbind 5 \"impulse 5\"\nbind 6 \"impulse 6\"\nbind 7 \"impulse 7\"\nbind 8 \"impulse 8\"\nbind 9 \"weapon 9\"\nbind / \"impulse 10\"\nbind MWHEELUP \"impulse 12\"\nbind MWHEELDOWN \"impulse 10\"\nbind ` toggleconsole\nbind ~ toggleconsole\nbind F3 \"toggle qp_overlay\"\nbind F4 noclip\nbind F8 edit\nbind F6 \"save quick\"\nbind F9 \"load quick\"\nbind F12 screenshot\nbind g guide\n";
+glob FALLBACK_BINDINGS: str = "unbindall\nbind w +forward\nbind s +back\nbind a +moveleft\nbind d +moveright\nbind UPARROW +forward\nbind DOWNARROW +back\nbind LEFTARROW +left\nbind RIGHTARROW +right\nbind PGDN +lookup\nbind DEL +lookdown\nbind END centerview\nbind SPACE +jump\nbind c +movedown\nbind SHIFT +speed\nbind CTRL +attack\nbind ALT +strafe\nbind MOUSE1 +attack\nbind TAB +showscores\nbind ENTER invuse\nbind 1 \"impulse 1\"\nbind 2 \"impulse 2\"\nbind 3 \"impulse 3\"\nbind 4 \"impulse 4\"\nbind 5 \"impulse 5\"\nbind 6 \"impulse 6\"\nbind 7 \"impulse 7\"\nbind 8 \"impulse 8\"\nbind 9 \"weapon 9\"\nbind / \"impulse 10\"\nbind MWHEELUP \"impulse 12\"\nbind MWHEELDOWN \"impulse 10\"\nbind ` toggleconsole\nbind ~ toggleconsole\nbind F3 \"toggle qp_overlay\"\nbind F4 noclip\nbind F8 edit\nbind F6 \"save quick\"\nbind F9 \"load quick\"\nbind F12 screenshot\nbind g guide\nbind MOUSE3 +zoom\n";
 
 """The controls menu's rows for `game`: its own actions, then the engine's."""
 def control_actions(game: str) -> list[tuple[str, str]] {

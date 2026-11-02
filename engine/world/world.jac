@@ -86,7 +86,9 @@ node Actor(Entity) {
 }
 
 node Player(Actor) {
-    has god_mode: bool = False;
+    has god_mode: bool = False,
+        # What of a hit the player takes: Q2's Easy halves it (T_Damage).
+        hurt_scale: float = 1.0;
     has velocity: Vec3 = Vec3(),
         grounded: bool = False,
         teleport_cooldown: float = 0.0,
@@ -99,6 +101,8 @@ node Player(Actor) {
         water_current: Vec3 = Vec3(),
         air_remaining: float = 12.0,
         drown_damage: int = 2,
+        # Took a lungful of water this tick (VoiceTick sounds it).
+        gurgled: bool = False,
         hazard_wait: float = 0.0;
     # Movement memory: Q3 PMF_TIME_KNOCKBACK, PMF_JUMP_HELD / Q1 FL_JUMPRELEASED,
     # the last airborne fall speed (Q1 jump_flag), Q1 FL_WATERJUMP, Q2

@@ -44,6 +44,7 @@ walker EnvironmentTick {
                     bypass_armor=self.game != "q1",
                     means="drown"
                 );
+                here.gurgled = True;
                 here.air_remaining += 1.0;
             }
         }

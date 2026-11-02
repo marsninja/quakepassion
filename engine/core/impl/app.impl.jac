@@ -787,11 +787,13 @@ impl App.load_destination(
             and game == self.level.bsp.game
             and not (game == "q1" and name == "start" and runes > 0);
         player = spawn_player(level, spawnpoint, returning=runes > 0 and name == "start");
+        player.hurt_scale = 0.5 if game == "q2" and skill <= 0 else 1.0;
         if carrying {
             # Q1 client.qc SetChangeParms clamps carried health to 50-100.
+            # Q2 ExitLevel takes health over the maximum back down to it.
             player.health = max(50, min(100, self.player.health))
                 if game == "q1"
-                else self.player.health;
+                else (min(self.player.health, self.player.max_health) if game == "q2" else self.player.health);
             player.max_health = self.player.max_health;
             player.armor = self.player.armor;
             player.armor_capacity = self.player.armor_capacity;
@@ -804,6 +806,12 @@ impl App.load_destination(
                 skip_keys=game in ["q1", "passion"], skip_flags=new_unit
             );
             player.inventory = copied.result;
+            # ClientBegin keeps FL_POWER_ARMOR: a screen left on stays on.
+            for kind in ["power_screen", "power_shield"] {
+                if effect(self.player, kind) is not None {
+                    player +>:Empowered:+> Powerup(kind=kind, remaining=-1.0);
+                }
+            }
             # SetChangeParms: at least 25 shells carry over.
             if game == "q1" and quantity(player.inventory, "shells") < 25 {
                 player.inventory spawn AdjustInventory(
@@ -1261,6 +1269,9 @@ impl App.step() -> bool {
     scripted = self.scripted;
     sampled = self.controls.sample(dt);
     intent = Intent() if self.smoke or self.finale_active else sampled;
+    # +zoom eases in and out; the mouse slows with the view (CG_CalcFov).
+    self.renderer.zoom = max(0.0, min(1.0, self.renderer.zoom + (dt if intent.zoom else -dt) / ZOOM_TIME));
+    self.controls.look_scale = 1.0 - self.renderer.zoom * (1.0 - ZOOM_FOV / max(1.0, self.renderer.cvars.fov.number));
     if scripted is not None and not self.finale_active {
         intent = scripted;
     }
@@ -1363,8 +1374,11 @@ impl App.step() -> bool {
             # cg_event.c: the player's own body cues its pain, death, jumps,
             # landings and footsteps in its character's voice.
             for cue in follow_body(self.world, self.player, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, hurt, self.combat.shots) {
-                self.audio.play_path(cue);
+                if not (self.soft_landing and cue.endswith(("land1.wav", "fall1.wav", "pain100_1.wav"))) {
+                    self.audio.play_path(cue);
+                }
             }
+            self.soft_landing = False;
         }
         self.pain_health = self.player.health;
         self.pain_time = max(0.0, self.pain_time - dt);
@@ -1506,7 +1520,7 @@ impl App.step() -> bool {
                 command=Vec3(
                     x=intent.move.x,
                     y=intent.move.y,
-                    z=intent.move.z - (1.0 if intent.crouch else 0.0)
+                    z=intent.move.z
                 ),
                 current=immersed.current,
                 command_full=self.controls.full_move_speed(),
@@ -1521,7 +1535,9 @@ impl App.step() -> bool {
             if moved.stepped > 0.0 {
                 self.view.step(moved.stepped);
             }
-            if moved.landed > 0.0 and self.level.active {
+            if moved.landed > 0.0 and self.level.active and self.level.collision.soft_floor(self.level.collision.trace(self.player.pos, self.player.pos.sub(Vec3(z=2.0)))) {
+                self.soft_landing = True;
+            } elif moved.landed > 0.0 and self.level.active {
                 landing = self.player spawn CrashLand(
                     game=self.level.bsp.game,
                     speed=moved.landed,
@@ -1855,6 +1871,8 @@ impl App.step() -> bool {
                 }
             }
             self.combat.impacts = [];
+            # items.qc: holding the best weapon there is, ammo brings out a better.
+            dry = self.level.bsp.game == "q1" and out_of_shots(self.player, self.combat);
             pickup_result = self.world spawn PickupTick(
                 player=self.player,
                 start=previous_origin,
@@ -1903,6 +1921,9 @@ impl App.step() -> bool {
                 pickup_switch(
                     self.player, self.combat, key, key in pickup_result.fresh_weapons
                 );
+            }
+            if dry and pickup_result.collected > 0 and not out_of_shots(self.player, self.combat) {
+                fallback_weapon(self.player, self.combat);
             }
             triggers = self.world spawn TriggerTick(
                 player=self.player,

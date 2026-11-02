@@ -119,6 +119,10 @@ glob BATCH_ATTRIBUTES_VS: str = "#version 330\nin vec3 vertexPosition; in vec2 v
 # How much of a frame's wait is spent watching the clock rather than asleep.
 glob FRAME_SPIN: float = 0.005;
 
+# cg_zoomfov and ZOOM_TIME: +zoom narrows the view to this, this fast.
+glob ZOOM_FOV: float = 22.5,
+     ZOOM_TIME: float = 0.15;
+
 glob WINDOW_RESIZABLE_FLAG: int = 4,
      WINDOW_HIGHDPI_FLAG: int = 8192,
      WINDOW_UNDECORATED_FLAG: int = 8,
@@ -210,6 +214,8 @@ obj RenderCvars {
 obj Renderer {
     has cvars: RenderCvars = RenderCvars(),
         frame_due: float = 0.0,
+        # How far into +zoom's narrow view, 0 to 1.
+        zoom: float = 0.0,
         # The live view: refdef.fov_y from the fov cvar, and the window's size
         # in screen units (2D drawing) and in pixels (framebuffers).
         fov: float = 73.74,
