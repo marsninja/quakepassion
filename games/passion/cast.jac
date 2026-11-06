@@ -470,16 +470,16 @@ def cast_teleporters(atlas: LevelGraph, made: Sculpting, casting: Casting, taken
                 continue;
             }
             done[key] = True;
-            here = made.ground_at(move.start, place.area);
+            start = made.ground_at(move.start, place.area);
             there = made.ground_at(move.finish, move.to);
-            if here is None or there is None {
+            if start is None or there is None {
                 continue;
             }
-            taken[ground_id(here)] = True;
+            taken[ground_id(start)] = True;
             taken[ground_id(there)] = True;
             number += 1;
             name = "tele" + str(number);
-            at = made.ground_point(here);
+            at = made.ground_point(start);
             floor = at[2] - 24.0;
             casting.put_brushed(
                 {"classname": "func_wall", "_passion": "teleporter"},
@@ -508,15 +508,15 @@ def cast_jump_pads(atlas: LevelGraph, made: Sculpting, casting: Casting, taken: 
                 continue;
             }
             done[place.area] = True;
-            here = made.ground_at(move.start, place.area);
+            start = made.ground_at(move.start, place.area);
             there = made.ground_at(move.finish, move.to);
-            if here is None or there is None {
+            if start is None or there is None {
                 continue;
             }
-            taken[ground_id(here)] = True;
+            taken[ground_id(start)] = True;
             number += 1;
             name = "pad" + str(number);
-            at = made.ground_point(here);
+            at = made.ground_point(start);
             floor = at[2] - 24.0;
             arrive = made.ground_point(there);
             casting.put_brushed(

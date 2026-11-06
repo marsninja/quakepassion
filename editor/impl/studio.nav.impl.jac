@@ -88,11 +88,11 @@ impl Studio.draw_nav {
             if place is None {
                 continue;
             }
-            here = place.center.add(Vec3(z=8.0));
+            point = place.center.add(Vec3(z=8.0));
             if last is not None {
-                wire_line(last, here, ink(0xffffff, 255));
+                wire_line(last, point, ink(0xffffff, 255));
             }
-            last = here;
+            last = point;
         }
         for trap in proof.traps {
             place = by_area.get(int(trap.split(" ")[0]), None);

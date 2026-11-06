@@ -222,11 +222,11 @@ def edge_trim_steps(mass: Massing, by_id: dict[int, Space], made: Dressing) -> I
                             cell = run_cell(direction, line, along);
                             cx = cell[0];
                             cy = cell[1];
-                            here = mass.at(cx, cy, z);
-                            if here > 0 and wall_stands(mass, cx + step[0], cy + step[1], z, top) and (not top or tall_room(by_id, here))
-                                and in_room(by_id, here) {
+                            cell_owner = mass.at(cx, cy, z);
+                            if cell_owner > 0 and wall_stands(mass, cx + step[0], cy + step[1], z, top) and (not top or tall_room(by_id, cell_owner))
+                                and in_room(by_id, cell_owner) {
                                 if (not top and not mass.air(cx, cy, z - 1)) or (top and not mass.air(cx, cy, z + 1)) {
-                                    owner = here;
+                                    owner = cell_owner;
                                 }
                             }
                         }
@@ -726,8 +726,8 @@ def railing_steps(mass: Massing, by_id: dict[int, Space], made: Dressing) -> Ite
                         cell = run_cell(direction, line, along);
                         cx = cell[0];
                         cy = cell[1];
-                        here = mass.at(cx, cy, z);
-                        space = owner_space(by_id, here);
+                        cell_owner = mass.at(cx, cy, z);
+                        space = owner_space(by_id, cell_owner);
                         # Not on stairs, and only where the walk stays two
                         # cells wide behind the railing.
                         if space is not None and space.role not in ["corridor", "window"] and mass.standing(cx, cy, z)
@@ -736,7 +736,7 @@ def railing_steps(mass: Massing, by_id: dict[int, Space], made: Dressing) -> Ite
                             ny_ = cy + step[1];
                             if mass.air(nx_, ny_, z) and mass.air(nx_, ny_, z - 1) and mass.air(nx_, ny_, z - 2)
                                 and mass.air(nx_, ny_, z - 3) and mass.headroom(cx, cy, z) >= 4 {
-                                owner = here;
+                                owner = cell_owner;
                             }
                         }
                     }

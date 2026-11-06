@@ -16,7 +16,7 @@ back.
 The areas, the flood that numbers them and what it seals off are in
 engine/world/map_areas.jac."""
 import from engine.formats.numbers { atof, atoi }
-import from .world { World, Area }
+import from .world { World, BspArea }
 import from .doors { Door, HasDoor, DoorMember }
 import from .signals { Signal, HasSignal }
 import from .map_areas {
@@ -45,7 +45,7 @@ edge OpensPortal: Door --> AreaPortal {
 each area of the map, every leaf `Within` its own. None for a game or map
 without areas. A studio's baked level numbers its areas as Quake II does,
 from 1 (its solid leaves are in area 0)."""
-def chart_areas(world: World, bsp: Bsp, leaves: list[Area]) -> AreaMap | None {
+def chart_areas(world: World, bsp: Bsp, leaves: list[BspArea]) -> AreaMap | None {
     if bsp.game not in ["q2", "q3", "passion"] {
         return None;
     }

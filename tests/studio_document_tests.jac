@@ -667,8 +667,8 @@ test "the logic graph puts each entity a column past what fires it" {
     placed = scene.logic_nodes();
     assert len(placed) == 4;
     columns: dict[str, int] = {};
-    for node in placed {
-        columns[node.item.classname() + str(node.row)] = node.column;
+    for slot in placed {
+        columns[slot.item.classname() + str(slot.row)] = slot.column;
     }
     assert columns["func_button0"] == 0 and columns["trigger_relay0"] == 1;
     assert columns["func_door0"] == 2 and columns["func_door1"] == 2;

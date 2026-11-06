@@ -5217,8 +5217,8 @@ obj Studio(Workbench) {
         }
         placed = scene.logic_nodes();
         arrows = 0;
-        for node in placed {
-            arrows += len(scene.fires(node.item));
+        for slot in placed {
+            arrows += len(scene.fires(slot.item));
         }
         lines.append(
             "studio: logic nodes=" + str(len(placed)) + " links=" + str(arrows) + " shown="

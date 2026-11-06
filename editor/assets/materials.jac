@@ -108,10 +108,10 @@ obj ArchiveMaterials(Materials) {
         waiting: list[str] = [""];
         while len(waiting) > 0 {
             part = waiting.pop();
-            here = top + "/" + part if part else top;
-            for entry_name in sorted(os.listdir(here)) {
+            folder = top + "/" + part if part else top;
+            for entry_name in sorted(os.listdir(folder)) {
                 inner = part + "/" + entry_name if part else entry_name;
-                if os.path.isdir(here + "/" + entry_name) {
+                if os.path.isdir(folder + "/" + entry_name) {
                     waiting.append(inner);
                 } elif image_kind(entry_name) {
                     found.append(lead + inner);

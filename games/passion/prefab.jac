@@ -381,14 +381,14 @@ def boxes_meet(a: list[int], b: list[int], margin: int) -> bool {
 """The prefabs a prefab is reached through, the nearest first."""
 def prefab_ancestors(prefab: Prefab) -> list[Prefab] {
     found: list[Prefab] = [];
-    here = prefab;
+    current = prefab;
     while True {
-        before = [here<-:Next:<-][?:Prefab];
+        before = [current<-:Next:<-][?:Prefab];
         if not before {
             return found;
         }
-        here = before[0];
-        found.append(here);
+        current = before[0];
+        found.append(current);
     }
     return found;
 }

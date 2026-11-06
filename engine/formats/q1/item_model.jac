@@ -127,12 +127,12 @@ def bake_item_face(bsp: Bsp, face: Face, palette: bytes) -> ItemFaceBake {
     low_t = 1.0e30;
     high_t = -1.0e30;
     for corner in range(count) {
-        s = face.uv[corner * 2] * float(width);
-        t = face.uv[corner * 2 + 1] * float(height);
-        low_s = min(low_s, s);
-        high_s = max(high_s, s);
-        low_t = min(low_t, t);
-        high_t = max(high_t, t);
+        corner_s = face.uv[corner * 2] * float(width);
+        corner_t = face.uv[corner * 2 + 1] * float(height);
+        low_s = min(low_s, corner_s);
+        high_s = max(high_s, corner_s);
+        low_t = min(low_t, corner_t);
+        high_t = max(high_t, corner_t);
     }
     first_s = int(math.floor(low_s));
     first_t = int(math.floor(low_t));

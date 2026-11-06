@@ -434,7 +434,10 @@ def entity_origin(entity: MapEntity) -> Vec3 {
     return Vec3(x=float(coords[0]), y=float(coords[1]), z=float(coords[2]));
 }
 
-def load_traversal(world: World, bsp: Bsp) {
+"""Load the level's teleporters and pushes; the trigger collision map their
+volumes are cut from, whose hull graphs the level's teardown destroys
+(Level.triggers)."""
+def load_traversal(world: World, bsp: Bsp) -> CollisionMap {
     volumes = build_collision(bsp, triggers=True)
         if bsp.game == "q1"
         else build_brush_collision(bsp, triggers=True);
@@ -601,4 +604,5 @@ def load_traversal(world: World, bsp: Bsp) {
         }
         world +>:HasTraversal:+> traversal;
     }
+    return volumes;
 }

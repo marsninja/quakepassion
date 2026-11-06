@@ -34,8 +34,8 @@ impl App.restart_passion() -> bool {
         return False;
     }
     arrival = run.arrival;
-    here = run.here;
-    if arrival is None or here is None or here.name != self.level.name {
+    current = run.here;
+    if arrival is None or current is None or current.name != self.level.name {
         return False;
     }
     # The player comes back as they came in: carried into the level again,

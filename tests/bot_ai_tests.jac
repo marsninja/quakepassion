@@ -129,11 +129,11 @@ test "bots choose goals by fuzzy item weight over travel time and avoid them aft
 test "the ai_dmnet.c nodes are a graph of the switches between them" {
     brain = build_bot_brain();
     fight = brain.nodes["battle_fight"];
-    targets = [node.name for node in [fight->:Leads:->][?:AINode]];
+    targets = [state.name for state in [fight->:Leads:->][?:AINode]];
     assert sorted(targets) == ["battle_chase", "battle_retreat", "intermission", "respawn", "seek_ltg", "stand"];
-    assert [node.name for node in [brain.nodes["respawn"]->:Leads:->][?:AINode]] == ["seek_ltg"];
-    assert [node.name for node in [brain.nodes["intermission"]->:Leads:->][?:AINode]] == ["stand"];
-    assert "intermission" not in [node.name for node in [brain.nodes["stand"]->:Leads:->][?:AINode]];
+    assert [state.name for state in [brain.nodes["respawn"]->:Leads:->][?:AINode]] == ["seek_ltg"];
+    assert [state.name for state in [brain.nodes["intermission"]->:Leads:->][?:AINode]] == ["stand"];
+    assert "intermission" not in [state.name for state in [brain.nodes["stand"]->:Leads:->][?:AINode]];
 }
 
 """A bot and a rival on an open floor, in a match that names them."""

@@ -85,9 +85,9 @@ def run_body(
     left = False;
     jumped = takeoff is None;
     for count in range(int(3.0 / tick)) {
-        here = body.pos.sub(Vec3(z=collision.eye_height));
+        feet = body.pos.sub(Vec3(z=collision.eye_height));
         jump = False;
-        if not jumped and takeoff is not None and here.sub(takeoff).dot(heading) >= 0.0 {
+        if not jumped and takeoff is not None and feet.sub(takeoff).dot(heading) >= 0.0 {
             jump = True;
             jumped = True;
         }
@@ -98,7 +98,7 @@ def run_body(
         if left and body.grounded {
             return body.pos.sub(Vec3(z=collision.eye_height));
         }
-        if here.z < origin.z - 1024.0 {
+        if feet.z < origin.z - 1024.0 {
             return None;
         }
     }
@@ -782,17 +782,17 @@ def train_legs(train: Train) -> list[TrainLeg] {
     legs: list[TrainLeg] = [];
     for k in range(len(points)) {
         ahead = [point for point in [points[k]->:TrackNext:->][?:TrackPoint] if point in points];
-        here = boxes[k];
-        legs.append(TrainLeg(box=here, low=here.maxs.z, high=here.maxs.z));
+        box = boxes[k];
+        legs.append(TrainLeg(box=box, low=box.maxs.z, high=box.maxs.z));
         if not ahead or ahead[0].teleport {
             continue;
         }
         there = boxes[points.index(ahead[0])];
         swept = AABB(
-            mins=Vec3(x=min(here.mins.x, there.mins.x), y=min(here.mins.y, there.mins.y), z=min(here.mins.z, there.mins.z)),
-            maxs=Vec3(x=max(here.maxs.x, there.maxs.x), y=max(here.maxs.y, there.maxs.y), z=max(here.maxs.z, there.maxs.z))
+            mins=Vec3(x=min(box.mins.x, there.mins.x), y=min(box.mins.y, there.mins.y), z=min(box.mins.z, there.mins.z)),
+            maxs=Vec3(x=max(box.maxs.x, there.maxs.x), y=max(box.maxs.y, there.maxs.y), z=max(box.maxs.z, there.maxs.z))
         );
-        legs.append(TrainLeg(box=swept, low=min(here.maxs.z, there.maxs.z), high=max(here.maxs.z, there.maxs.z)));
+        legs.append(TrainLeg(box=swept, low=min(box.maxs.z, there.maxs.z), high=max(box.maxs.z, there.maxs.z)));
     }
     return legs;
 }

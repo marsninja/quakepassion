@@ -170,17 +170,17 @@ def clip_winding(points: list[Vec3], plane: Plane3) -> list[Vec3] {
     sides = [plane.side(point) for point in points];
     kept: list[Vec3] = [];
     for i in range(count) {
-        here = points[i];
+        corner = points[i];
         there = points[(i + 1) % count];
         near = sides[i];
         far = sides[(i + 1) % count];
         if near <= BRUSH_EPSILON {
-            kept.append(here);
+            kept.append(corner);
         }
         if (near > BRUSH_EPSILON and far < -BRUSH_EPSILON) or (near < -BRUSH_EPSILON and far > BRUSH_EPSILON) {
             # The edge crosses the plane: keep where it does.
             part = near / (near - far);
-            kept.append(here.add(there.sub(here).scale(part)));
+            kept.append(corner.add(there.sub(corner).scale(part)));
         }
     }
     return kept if len(kept) >= 3 else [];

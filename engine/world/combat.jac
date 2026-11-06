@@ -2347,20 +2347,20 @@ def change_role(player: Player, state: CombatState, role: int) -> bool {
         state.messages.append("no weapon.");
         return False;
     }
-    here = -1;
+    current = -1;
     for i in range(len(held)) {
         if held[i].slot == state.weapon {
-            here = i;
+            current = i;
         }
     }
     for step in range(1, len(held) + 1) {
-        rule = held[(here + step) % len(held)];
+        rule = held[(current + step) % len(held)];
         if rule.slot != state.weapon and has_ammo_for(player, rule) {
             swap_weapon(state, rule);
             return True;
         }
     }
-    if here < 0 {
+    if current < 0 {
         state.messages.append("not enough ammo.");
     }
     return False;
@@ -2378,9 +2378,9 @@ def cycle_weapon(player: Player, state: CombatState, step: int) -> bool {
     if state.weapon not in slots {
         return False;
     }
-    here = slots.index(state.weapon);
+    current = slots.index(state.weapon);
     for offset in range(1, len(slots)) {
-        rule = weapon_rule(state, slots[(here + offset * step) % len(slots)]);
+        rule = weapon_rule(state, slots[(current + offset * step) % len(slots)]);
         if rule is not None and owns_weapon(player, rule) and has_ammo_for(player, rule) {
             swap_weapon(state, rule);
             return True;

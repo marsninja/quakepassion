@@ -96,44 +96,44 @@ obj FuzzySeparator {
 two cases the weights are mixed by a scale botlib figures in integers, so
 it is always 0 and the later case's weight is taken whole."""
 def fuzzy_weight(inventory: list[int], cases: list[FuzzySeparator], k: int = 0) -> float {
-    here = cases[k];
-    have = inventory[here.index] if here.index < len(inventory) else 0;
-    if have < here.value {
-        return fuzzy_weight(inventory, here.child) if here.child else here.weight;
+    current = cases[k];
+    have = inventory[current.index] if current.index < len(inventory) else 0;
+    if have < current.value {
+        return fuzzy_weight(inventory, current.child) if current.child else current.weight;
     }
     if k + 1 < len(cases) {
         after = cases[k + 1];
         if have < after.value {
-            w1 = fuzzy_weight(inventory, here.child) if here.child else here.weight;
+            w1 = fuzzy_weight(inventory, current.child) if current.child else current.weight;
             w2 = fuzzy_weight(inventory, after.child) if after.child else after.weight;
-            scale = float((have - here.value) // (after.value - here.value));
+            scale = float((have - current.value) // (after.value - current.value));
             return scale * w1 + (1.0 - scale) * w2;
         }
         return fuzzy_weight(inventory, cases, k + 1);
     }
-    return here.weight;
+    return current.weight;
 }
 
 """be_ai_weight.c FuzzyWeightUndecided_r: as fuzzy_weight, but a balanced
 weight is drawn at random within its range (a nested switch under the later
 of two cases is still decided, as in botlib)."""
 def undecided_weight(inventory: list[int], cases: list[FuzzySeparator], dice: WeightDice, k: int = 0) -> float {
-    here = cases[k];
-    have = inventory[here.index] if here.index < len(inventory) else 0;
-    if have < here.value {
-        return undecided_weight(inventory, here.child, dice) if here.child else here.ranged(dice);
+    current = cases[k];
+    have = inventory[current.index] if current.index < len(inventory) else 0;
+    if have < current.value {
+        return undecided_weight(inventory, current.child, dice) if current.child else current.ranged(dice);
     }
     if k + 1 < len(cases) {
         after = cases[k + 1];
         if have < after.value {
-            w1 = undecided_weight(inventory, here.child, dice) if here.child else here.ranged(dice);
+            w1 = undecided_weight(inventory, current.child, dice) if current.child else current.ranged(dice);
             w2 = fuzzy_weight(inventory, after.child) if after.child else after.ranged(dice);
-            scale = float((have - here.value) // (after.value - here.value));
+            scale = float((have - current.value) // (after.value - current.value));
             return scale * w1 + (1.0 - scale) * w2;
         }
         return undecided_weight(inventory, cases, dice, k + 1);
     }
-    return here.weight;
+    return current.weight;
 }
 
 """A weight config (weightconfig_t): named fuzzy weights."""
