@@ -193,7 +193,7 @@ walker BotThink {
         contest: ArenaMatch | None = None,
         map_name: str = "",
         level: Level | None = None,
-        intermission: bool = False,
+        at_intermission: bool = False,
         world: World | None = None,
         bsp: Bsp | None = None,
         switches: int = 0;
@@ -1245,7 +1245,7 @@ walker BotThink {
     """AINode_Seek_LTG."""
     can seek_long_term_goal with SeekLongTermGoal entry {
         memory = self.memory;
-        if self.intermission {
+        if self.at_intermission {
             visit self.enter(here, "intermission");
             return;
         }
@@ -1303,7 +1303,7 @@ walker BotThink {
     """AINode_Seek_NBG."""
     can seek_nearby_goal with SeekNearbyGoal entry {
         memory = self.memory;
-        if self.intermission {
+        if self.at_intermission {
             visit self.enter(here, "intermission");
             return;
         }
@@ -1356,7 +1356,7 @@ walker BotThink {
     with none left the bot is back to its nearby goal. An enemy ends it."""
     can seek_activate_entity with SeekActivateEntity entry {
         memory = self.memory;
-        if self.intermission {
+        if self.at_intermission {
             visit self.enter(here, "intermission");
             return;
         }
@@ -1436,7 +1436,7 @@ walker BotThink {
     """AINode_Battle_Fight."""
     can battle_fight with BattleFight entry {
         memory = self.memory;
-        if self.intermission {
+        if self.at_intermission {
             visit self.enter(here, "intermission");
             return;
         }
@@ -1511,7 +1511,7 @@ walker BotThink {
     """AINode_Battle_Chase."""
     can battle_chase with BattleChase entry {
         memory = self.memory;
-        if self.intermission {
+        if self.at_intermission {
             visit self.enter(here, "intermission");
             return;
         }
@@ -1571,7 +1571,7 @@ walker BotThink {
     """AINode_Battle_Retreat."""
     can battle_retreat with BattleRetreat entry {
         memory = self.memory;
-        if self.intermission {
+        if self.at_intermission {
             visit self.enter(here, "intermission");
             return;
         }
@@ -1633,7 +1633,7 @@ walker BotThink {
     """AINode_Battle_NBG."""
     can battle_nearby_goal with BattleNearbyGoal entry {
         memory = self.memory;
-        if self.intermission {
+        if self.at_intermission {
             visit self.enter(here, "intermission");
             return;
         }
@@ -1705,7 +1705,7 @@ walker BotThink {
         memory = self.memory;
         if memory.respawn_waiting {
             # The intermission brings the dead back (BeginIntermission).
-            if not self.dead() or self.intermission {
+            if not self.dead() or self.at_intermission {
                 visit self.enter(here, "seek_ltg");
             }
         } elif memory.respawn_time < self.now {
@@ -1728,7 +1728,7 @@ walker BotThink {
     within the level does."""
     can intermission with Intermission entry {
         memory = self.memory;
-        if self.intermission {
+        if self.at_intermission {
             return;
         }
         if self.chat_start_level() {
@@ -1885,7 +1885,7 @@ walker BotTactics {
             contest=contest,
             map_name=self.map_name,
             level=self.level,
-            intermission=self.intermission,
+            at_intermission=self.intermission,
             world=self.world,
             bsp=level.bsp if level is not None else None
         );

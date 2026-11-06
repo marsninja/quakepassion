@@ -329,15 +329,15 @@ def evaluate_tokens(tokens: list[ScriptToken], integer: bool, defines: dict[str,
         at = 0;
         slot = 0;
         while at + 1 < len(operators) {
-            here = operators[at];
+            current = operators[at];
             after = operators[at + 1];
-            if here.depth > after.depth {
+            if current.depth > after.depth {
                 break;
             }
-            if here.depth == after.depth and here.priority >= after.priority {
+            if current.depth == after.depth and current.priority >= after.priority {
                 break;
             }
-            if here.mark not in ["!", "~"] {
+            if current.mark not in ["!", "~"] {
                 slot += 1;
             }
             at += 1;

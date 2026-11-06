@@ -41,6 +41,14 @@ node Area {
 }
 
 
+"""A leaf of a BSP level's tree: its index among the BSP's leaves and the
+faces it marks."""
+node BspArea(Area) {
+    has index: int = 0,
+        faces: list[int] = [];
+}
+
+
 """Indexes the areas holding entities (occupants above zero), kept by
 move_to_area: passes over the world's entities visit these few rather than
 every leaf of the level."""

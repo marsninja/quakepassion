@@ -16,7 +16,7 @@ import os;
 import time;
 import from engine.world.world { World }
 import from engine.world.level { load_level }
-import from engine.world.teardown { destroy_graph, collision_roots }
+import from engine.world.teardown { destroy_graph, level_roots }
 import from engine.assets.content { game_directory }
 import from engine.level.graph { LevelGraph, Place, graph_places, write_graph, read_graph }
 import from engine.level.extract { read_level_graph }
@@ -83,7 +83,7 @@ def read_essence(spec: str) -> LevelGraph {
     atlas.notes.append("required " + " ".join(proof.required));
     atlas.notes.append("lowest " + str(round(ledger.lowest, 1)));
     atlas.notes.append("read in " + str(round(time.time() - began, 1)) + " s");
-    destroy_graph(world, collision_roots(level.collision));
+    destroy_graph(world, level_roots(level));
     return atlas;
 }
 

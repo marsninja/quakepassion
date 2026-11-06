@@ -720,10 +720,10 @@ node ShamblerVault(Prefab) {
         door = build.opened(float(door_x), float(mid - 2), 0.0, float(door_x + 1), float(mid + 2), 8.0);
         # Galleries along both walls over the cells, stairs up at the near
         # end (a stash in one).
-        for (at, edge) in [(y0, y0 + 3), (y1 - 4, y1 - 4)] {
+        for (at, line) in [(y0, y0 + 3), (y1 - 4, y1 - 4)] {
             stair(build, 4, at, 0, 0, 7, 4);
             slab(build, 11, at, door_x, at + 4, 7);
-            arcade(build, edge, 18, door_x - 1, 0, 6, 4, False);
+            arcade(build, line, 18, door_x - 1, 0, 6, 4, False);
             keep_box(build, hall, 9, at, 12, at + 4, 7);
         }
         stash(build, y0 + 4, 8, 0, 3, "item_artifact_super_damage");

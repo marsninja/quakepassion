@@ -320,8 +320,8 @@ def lay_grounds(made: Sculpting) {
         keyed[ground_key(ground)] = ground;
     }
     for place in places {
-        here = made.by_area.get(place.area, []);
-        if not here {
+        grounds = made.by_area.get(place.area, []);
+        if not grounds {
             continue;
         }
         for move in [edge place->:Move:->] {
@@ -334,7 +334,7 @@ def lay_grounds(made: Sculpting) {
             }
             pairs: list[list[Ground]] = [];
             if move.kind in [TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_SWIM, TRAVEL_WATERJUMP, TRAVEL_WALKOFFLEDGE] {
-                for a in here {
+                for a in grounds {
                     for b in there {
                         if abs(a.x - b.x) + abs(a.y - b.y) == 1 {
                             pairs.append([a, b]);
@@ -345,7 +345,7 @@ def lay_grounds(made: Sculpting) {
             if not pairs {
                 best: list[Ground] = [];
                 nearest = 1.0e9;
-                for a in here {
+                for a in grounds {
                     for b in there {
                         gap = float(abs(a.x - b.x) + abs(a.y - b.y)) + 0.1 * float(abs(a.z - b.z));
                         if gap < nearest and a is not b {

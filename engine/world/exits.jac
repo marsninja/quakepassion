@@ -107,7 +107,9 @@ def exit_spawn(request: str) -> str {
     return parts[1] if len(parts) == 2 else "";
 }
 
-def load_exits(world: World, bsp: Bsp) {
+"""Load the level's exits; the trigger collision map their volumes are cut
+from, whose hull graphs the level's teardown destroys (Level.triggers)."""
+def load_exits(world: World, bsp: Bsp) -> CollisionMap {
     volumes = CollisionMap();
     if bsp.game == "q1" {
         volumes = build_collision(bsp, triggers=True);
@@ -154,4 +156,5 @@ def load_exits(world: World, bsp: Bsp) {
         world +>:HasSignal:+> signal;
         world +>:HasExit:+> portal;
     }
+    return volumes;
 }

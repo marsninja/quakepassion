@@ -72,19 +72,19 @@ def lost_moves(essence: LevelGraph, level: LevelGraph, made: Sculpting, limit: i
             }
             a = made.moved(move.start.x, move.start.y, move.start.z);
             b = made.moved(move.finish.x, move.finish.y, move.finish.z);
-            here = place_at(places, Vec3(x=a[0], y=a[1], z=a[2]));
+            start = place_at(places, Vec3(x=a[0], y=a[1], z=a[2]));
             there = place_at(places, Vec3(x=b[0], y=b[1], z=b[2]));
             checked += 1;
-            if here is None or there is None or here is there {
+            if start is None or there is None or start is there {
                 continue;
             }
-            if not surely_near(by_area, here, there, 6) {
+            if not surely_near(by_area, start, there, 6) {
                 missing += 1;
                 if len(lost) < limit {
                     lost.append(
                         "lost kind " + str(move.kind) + " essence " + str(int(move.start.x)) + "," + str(int(move.start.y)) + "," + str(int(move.start.z))
                             + " -> " + str(int(move.finish.x)) + "," + str(int(move.finish.y)) + "," + str(int(move.finish.z)) + " level "
-                            + str(int(a[0])) + "," + str(int(a[1])) + "," + str(int(a[2])) + " places " + str(here.area) + " -> " + str(there.area)
+                            + str(int(a[0])) + "," + str(int(a[1])) + "," + str(int(a[2])) + " places " + str(start.area) + " -> " + str(there.area)
                     );
                 }
             }

@@ -23,31 +23,6 @@ def:priv bone_spot(point: Vec3) -> str {
     return bone_number(point.x) + "," + bone_number(point.y) + "," + bone_number(point.z);
 }
 
-def:priv tint_word(tint: int) -> str {
-    digits = "0123456789abcdef";
-    word = "";
-    for place in range(6) {
-        word = digits[(tint >> (place * 4)) & 15] + word;
-    }
-    return word;
-}
-
-def:priv tint_from(word: str) -> int {
-    digits = "0123456789abcdef";
-    text = word.lower().lstrip("#");
-    if len(text) != 6 {
-        return -1;
-    }
-    value = 0;
-    for letter in text {
-        if letter not in digits {
-            return -1;
-        }
-        value = value * 16 + digits.index(letter);
-    }
-    return value;
-}
-
 impl Studio.bone_in_hand -> Bone | None {
     doc = self.model_doc;
     if doc is None {
@@ -333,8 +308,8 @@ impl Studio.bone_command(scene: Scene, args: list[str]) -> bool {
         taken = doc.hold_points(in_hand.name, list(picked_now), weight[0] if len(weight) > 0 else 1.0);
         print("studio: bones took " + str(taken));
         self.say(in_hand.name + " carries " + str(taken) + " more points" if taken > 0 else "Pick points for the bone to carry first (ed_pick)");
-    } elif how == "tint" and len(args) > 2 and tint_from(args[2]) >= 0 {
-        doc.tint_bone(in_hand.name, tint_from(args[2]));
+    } elif how == "tint" and len(args) > 2 and word_tint(args[2]) >= 0 {
+        doc.tint_bone(in_hand.name, word_tint(args[2]));
     } elif how == "turn" and len(args) > 3 and args[2] in ["x", "y", "z"] and len(numbers) > 0 {
         about = Vec3(x=1.0) if args[2] == "x" else (Vec3(y=1.0) if args[2] == "y" else Vec3(z=1.0));
         if not doc.swing_bone(in_hand.name, about, numbers[0]) {

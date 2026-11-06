@@ -396,22 +396,22 @@ def route_passage(start: Vec3, finish: Vec3, taken: dict[tuple[int, int], list[i
     goal: tuple[int, int, int] | None = None;
     while heap and expanded < EMBED_SEARCH {
         item = heap_pop(heap);
-        here = (item[1], item[2], item[3]);
+        cell = (item[1], item[2], item[3]);
         expanded += 1;
-        if here[0] == b[0] and here[1] == b[1] and abs(here[2] - b[2]) <= 1 {
-            goal = here;
+        if cell[0] == b[0] and cell[1] == b[1] and abs(cell[2] - b[2]) <= 1 {
+            goal = cell;
             break;
         }
         for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
             for dz in [-1, 0, 1] {
-                nxt = (here[0] + dx, here[1] + dy, here[2] + dz);
+                nxt = (cell[0] + dx, cell[1] + dy, cell[2] + dz);
                 if (nxt[0], nxt[1]) not in near and not clears(taken.get((nxt[0], nxt[1]), []), nxt[2]) {
                     continue;
                 }
-                step = cost[here] + 4 + (2 if dz != 0 else 0);
+                step = cost[cell] + 4 + (2 if dz != 0 else 0);
                 if nxt not in cost or step < cost[nxt] {
                     cost[nxt] = step;
-                    came[nxt] = here;
+                    came[nxt] = cell;
                     heap_push(heap, [step + 4 * (abs(nxt[0] - b[0]) + abs(nxt[1] - b[1])) + 2 * abs(nxt[2] - b[2]), nxt[0], nxt[1], nxt[2]]);
                 }
             }
