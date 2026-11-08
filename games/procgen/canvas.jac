@@ -37,11 +37,11 @@ def stroke(into: Field, strokes: list[list[tuple[float, float]]], width: float) 
         low_y = 1.0e9;
         high_x = -1.0e9;
         high_y = -1.0e9;
-        for (x, y) in points {
-            low_x = min(low_x, x);
-            low_y = min(low_y, y);
-            high_x = max(high_x, x);
-            high_y = max(high_y, y);
+        for (point_x, point_y) in points {
+            low_x = min(low_x, point_x);
+            low_y = min(low_y, point_y);
+            high_x = max(high_x, point_x);
+            high_y = max(high_y, point_y);
         }
         x0 = max(0, int(low_x - half - 1.0));
         y0 = max(0, int(low_y - half - 1.0));

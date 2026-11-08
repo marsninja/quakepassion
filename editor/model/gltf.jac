@@ -197,6 +197,8 @@ def base64_bytes(text: str) -> bytes | None {
         if bits >= 8 {
             bits -= 8;
             made.append((held >> bits) & 0xFF);
+            # Keep only the bits not yet given out.
+            held = held & ((1 << bits) - 1);
         }
     }
     return bytes(made);

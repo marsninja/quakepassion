@@ -30,11 +30,11 @@ test "the arms lie in the face, a repeat of the material long each way" {
     leaning = lay_arms(slope, laid, 128.0, 64.0);
     assert leaning is not None and about(leaning[0].dot(slope), 0.0) and about(leaning[1].dot(slope), 0.0);
     foot = Vec3(x=10.0, y=20.0, z=-15.0);
-    here = mapping_place(laid, foot);
+    place = mapping_place(laid, foot);
     along = mapping_place(laid, foot.add(leaning[0]));
     down = mapping_place(laid, foot.add(leaning[1]));
-    assert about(along[0] - here[0], 128.0) and about(along[1] - here[1], 0.0);
-    assert about(down[0] - here[0], 0.0) and about(down[1] - here[1], 64.0);
+    assert about(along[0] - place[0], 128.0) and about(along[1] - place[1], 0.0);
+    assert about(down[0] - place[0], 0.0) and about(down[1] - place[1], 64.0);
     # A material laid edge on to a face has no arms there.
     assert lay_arms(up, Mapping(s_axis=Vec3(x=1.0), t_axis=Vec3(z=1.0)), 64.0, 64.0) is None;
     assert about(swept_between(Vec3(x=1.0), Vec3(y=2.0), up), 90.0) and about(swept_between(Vec3(x=1.0), Vec3(y=-2.0), up), -90.0);

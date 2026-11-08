@@ -60,25 +60,25 @@ def find_leak(brushes: list[list[Side]], starts: list[Vec3], cell: float = 16.0,
     at = 0;
     out_key = "";
     while at < len(queue) {
-        here = queue[at];
+        spot = queue[at];
         at += 1;
         outcome.cells += 1;
         if outcome.cells > budget {
             outcome.gave_up = True;
             return outcome;
         }
-        if here[0] < -1 or here[1] < -1 or here[2] < -1 or here[0] > counts[0] or here[1] > counts[1]
-            or here[2] > counts[2] {
-            out_key = str(here[0]) + "," + str(here[1]) + "," + str(here[2]);
+        if spot[0] < -1 or spot[1] < -1 or spot[2] < -1 or spot[0] > counts[0] or spot[1] > counts[1]
+            or spot[2] > counts[2] {
+            out_key = str(spot[0]) + "," + str(spot[1]) + "," + str(spot[2]);
             break;
         }
         middle = Vec3(
-            x=low.x + (float(here[0]) + 0.5) * cell,
-            y=low.y + (float(here[1]) + 0.5) * cell,
-            z=low.z + (float(here[2]) + 0.5) * cell
+            x=low.x + (float(spot[0]) + 0.5) * cell,
+            y=low.y + (float(spot[1]) + 0.5) * cell,
+            z=low.z + (float(spot[2]) + 0.5) * cell
         );
         for step in steps {
-            there = [here[0] + step[0], here[1] + step[1], here[2] + step[2]];
+            there = [spot[0] + step[0], spot[1] + step[1], spot[2] + step[2]];
             key = str(there[0]) + "," + str(there[1]) + "," + str(there[2]);
             if key in came {
                 continue;
@@ -106,7 +106,7 @@ def find_leak(brushes: list[list[Side]], starts: list[Vec3], cell: float = 16.0,
             if stopped {
                 continue;
             }
-            came[key] = str(here[0]) + "," + str(here[1]) + "," + str(here[2]);
+            came[key] = str(spot[0]) + "," + str(spot[1]) + "," + str(spot[2]);
             queue.append(there);
         }
     }

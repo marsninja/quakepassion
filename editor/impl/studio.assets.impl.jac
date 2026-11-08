@@ -8,9 +8,9 @@ def:priv files_under(folder: str) -> list[str] {
     waiting: list[str] = [""];
     while len(waiting) > 0 {
         part = waiting.pop();
-        here = folder + "/" + part if part else folder;
-        for entry_name in sorted(os.listdir(here)) {
-            path = here + "/" + entry_name;
+        directory = folder + "/" + part if part else folder;
+        for entry_name in sorted(os.listdir(directory)) {
+            path = directory + "/" + entry_name;
             inner = part + "/" + entry_name if part else entry_name;
             if os.path.isdir(path) {
                 waiting.append(inner);

@@ -66,9 +66,9 @@ impl Studio.draw_depth_lines(view: SceneView) {
         along = ahead.cross(axis).normalized();
         base = view.eye.sub(axis.scale(view.eye.dot(axis)));
         reach = view.span * 4.0;
-        for (side, edge) in enumerate([held.depth_low, held.depth_high]) {
+        for (side, depth) in enumerate([held.depth_low, held.depth_high]) {
             pulled = self.resizing and self.resize_side == 970 + (number + 1) * 2 + side;
-            spot = base.add(axis.scale(self.resize_by if pulled else edge));
+            spot = base.add(axis.scale(self.resize_by if pulled else depth));
             wire_line(spot.sub(along.scale(reach)), spot.add(along.scale(reach)), ink(0xff7a18) if pulled else ink(0xe5484d));
         }
     }
@@ -93,10 +93,10 @@ impl Studio.depth_knobs -> list[tuple[int, Vec3]] {
         # A knob on each red line, a third of the way from the view's middle.
         along = ahead.cross(axis).normalized();
         base = lens.eye.sub(axis.scale(lens.eye.dot(axis))).add(along.scale(lens.span * 0.3));
-        for (side, edge) in enumerate([held.depth_low, held.depth_high]) {
+        for (side, depth) in enumerate([held.depth_low, held.depth_high]) {
             index = 970 + number * 2 + side;
             pulled = self.resizing and self.resize_side == index;
-            found.append((index, base.add(axis.scale(self.resize_by if pulled else edge))));
+            found.append((index, base.add(axis.scale(self.resize_by if pulled else depth))));
         }
     }
     return found;

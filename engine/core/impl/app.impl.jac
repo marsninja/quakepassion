@@ -893,7 +893,7 @@ impl App.load_destination(
             next_campaign spawn Remember(name=self.level.name, data=departed);
         }
         last_world = self.world;
-        last_roots = collision_roots(self.level.collision);
+        last_roots = level_roots(self.level);
         last_roots.append(self.player);
         last_roots.append(self.player.inventory);
         self.campaign = next_campaign;
@@ -2791,8 +2791,8 @@ impl App.render_portal(faces: list[int]) {
     p = self.player;
     # RF_THIRD_PERSON: the player's body shows only in the portal view,
     # until the death view shows it in the main one too (CG_Player).
-    here = self.level.areas[self.level.locate(p.pos)] if self.level.areas else None;
-    show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, True, here, self.combat.shots);
+    area = self.level.areas[self.level.locate(p.pos)] if self.level.areas else None;
+    show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, True, area, self.combat.shots);
     draw_portal_view(
         self.portal_target,
         self.level,
@@ -2809,7 +2809,7 @@ impl App.render_portal(faces: list[int]) {
         self.tick_blend,
         flares=self.flares
     );
-    show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, self.third_person(), here, self.combat.shots);
+    show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, self.third_person(), area, self.combat.shots);
 }
 
 """Q3 BeginIntermission in single player: the view moves to the intermission

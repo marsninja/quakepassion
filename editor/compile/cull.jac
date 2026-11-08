@@ -25,16 +25,16 @@ def split_polygon(points: list[Vec3], normal: Vec3, dist: float) -> list[list[Ve
     count = len(points);
     for index in range(count) {
         point = points[index];
-        here = sides[index];
-        if here >= -CULL_EPSILON {
+        distance = sides[index];
+        if distance >= -CULL_EPSILON {
             front.append(point);
         }
-        if here <= CULL_EPSILON {
+        if distance <= CULL_EPSILON {
             back.append(point);
         }
         following = sides[(index + 1) % count];
-        if (here > CULL_EPSILON and following < -CULL_EPSILON) or (here < -CULL_EPSILON and following > CULL_EPSILON) {
-            share = here / (here - following);
+        if (distance > CULL_EPSILON and following < -CULL_EPSILON) or (distance < -CULL_EPSILON and following > CULL_EPSILON) {
+            share = distance / (distance - following);
             other = points[(index + 1) % count];
             cut = point.add(other.sub(point).scale(share));
             front.append(cut);

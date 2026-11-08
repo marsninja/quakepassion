@@ -68,7 +68,7 @@ import from .liquids {
     liquid_kind,
     load_liquids
 }
-import from .world { World, Area, Player, move_to_area }
+import from .world { World, BspArea, Player, move_to_area }
 import from .signals { Signal }
 import from .lighting { Lighting, LightPointSource, LightSpot, load_light_grid }
 
@@ -77,11 +77,6 @@ node Split {
         distance: float,
         first_face: int = 0,
         face_count: int = 0;
-}
-
-node BspArea(Area) {
-    has index: int = 0,
-        faces: list[int] = [];
 }
 
 edge Front: Split --> Split | BspArea {}
@@ -439,6 +434,9 @@ obj Level {
     has active: bool = False,
         skill: int = 1,
         collision: CollisionMap = CollisionMap(),
+        # The trigger collision maps its exits' and traversals' volumes are
+        # cut from: hull graphs that its teardown destroys with it.
+        triggers: list[CollisionMap] = [],
         movement: MovementProfile = MovementProfile(),
         name: str = "",
         bsp: Bsp = Bsp(),
@@ -998,7 +996,7 @@ def prepare_level(world: World, level: Level) {
     load_gates(world, level.bsp, level.collision);
     load_pickup_signals(world, level.bsp);
     load_opponent_signals(world, level.bsp);
-    load_exits(world, level.bsp);
+    level.triggers.append(load_exits(world, level.bsp));
     load_trains(world, level.bsp, level.collision);
     # The particles and puffs the level's effects spawn, in this game's kinds.
     particle_field(world, game);
@@ -1058,7 +1056,7 @@ def prepare_level(world: World, level: Level) {
     load_portals(world, level.bsp);
     load_shooters(world, level.bsp);
     load_targets(world, level.bsp);
-    load_traversal(world, level.bsp);
+    level.triggers.append(load_traversal(world, level.bsp));
     load_fixture_uses(world, level.bsp);
     head = level.bsp.models[0].head if level.bsp.models else -1;
     level.area_map = chart_areas(world, level.bsp, level.areas);

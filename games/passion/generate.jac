@@ -44,7 +44,7 @@ import from engine.level.extract { read_level_graph }
 import from engine.level.prove { prove_level, explain_proof, prune_traps }
 import from engine.level.budget { budget_route, start_kit }
 import from engine.level.guide { guide_level }
-import from engine.world.teardown { destroy_graph, collision_roots }
+import from engine.world.teardown { destroy_graph, level_roots }
 import from games.items { populate_pickups }
 import from games.opponents { populate_opponents }
 import from editor.formats.map { MapItem, MapFile }
@@ -625,7 +625,7 @@ def prove_made(
             line += " | " + " | ".join(outside);
         }
     }
-    destroy_graph(world, collision_roots(level.collision));
+    destroy_graph(world, level_roots(level));
     if not clean {
         kinds: dict[int, int] = {};
         for place in graph_places(atlas) {

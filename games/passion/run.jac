@@ -62,9 +62,9 @@ node Run {
         if ahead is not None and ahead.name == name {
             return ahead;
         }
-        here = self.here;
-        if here is not None and here.name == name and here.finished and not here.failure {
-            return here;
+        current = self.here;
+        if current is not None and current.name == name and current.finished and not current.failure {
+            return current;
         }
         return Forge(name=name, directory=self.directory, materials=self.shared_materials() if self.directory else None);
     }
@@ -86,8 +86,8 @@ node Run {
     """Whether the level named is the one the run is playing (a scene the
     studio plays is not)."""
     def plays(name: str) -> bool {
-        here = self.here;
-        return here is not None and here.name == name;
+        current = self.here;
+        return current is not None and current.name == name;
     }
 
     """The level being opened has opened."""
@@ -123,11 +123,11 @@ node Run {
 
     """The level being played has been cleared: note it."""
     def cleared(kills: int, monsters: int, now: float) {
-        here = self.here;
-        if here is None {
+        current = self.here;
+        if current is None {
             return;
         }
-        self +>:Went:+> Cleared(name=here.name, depth=self.depth, kills=kills, monsters=monsters, seconds=max(0.0, now - self.began));
+        self +>:Went:+> Cleared(name=current.name, depth=self.depth, kills=kills, monsters=monsters, seconds=max(0.0, now - self.began));
     }
 
     """The levels cleared so far, in order."""
@@ -181,10 +181,10 @@ def run_of_level(run: Run | None, name: str, directory: str) -> Run {
     found = run_of(name);
     engine = level_engine(name);
     if run is not None and run.seed == found[0] and run.engine == engine {
-        here = run.here;
+        current = run.here;
         # A run's first level asked for again starts the run afresh, unless
         # it is the level being played (begun again after a death).
-        if found[1] > 1 or (here is not None and here.name == name) {
+        if found[1] > 1 or (current is not None and current.name == name) {
             return run;
         }
     }

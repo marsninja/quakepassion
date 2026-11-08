@@ -292,8 +292,8 @@ impl Studio.list_library(ui: StudioUi) {
 impl Studio.fill_graph(scene: Scene, ui: StudioUi) {
     boxes: list[GraphNode] = [];
     arrows: list[GraphLink] = [];
-    for node in scene.logic_nodes() {
-        item = node.item;
+    for slot in scene.logic_nodes() {
+        item = slot.item;
         name = item.fields.get("targetname", "");
         fired = item.fields.get("target", "");
         words = name;
@@ -314,8 +314,8 @@ impl Studio.fill_graph(scene: Scene, ui: StudioUi) {
                 key=str(item.serial),
                 text=item.classname(),
                 note=words,
-                column=node.column,
-                row=node.row,
+                column=slot.column,
+                row=slot.row,
                 tone="good" if times > 0 else "text",
                 picked=scene.is_selected(item)
             )

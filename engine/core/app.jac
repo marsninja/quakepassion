@@ -128,7 +128,7 @@ import from games.deaths { prepare_death }
 import from ..world.particles { Explosion, HasExplosion, ImpactSound, HasImpactSound, spawn_effect }
 import from ..render.view_feedback { ViewFeedback }
 import from ..world.light_effects { combat_lights }
-import from ..world.teardown { destroy_graph, collision_roots }
+import from ..world.teardown { destroy_graph, level_roots }
 import from games.opponents { populate_opponents, populate_finale }
 import from games.items { populate_pickups }
 import from games.fixtures { populate_fixtures }
